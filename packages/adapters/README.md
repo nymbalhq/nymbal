@@ -39,7 +39,7 @@ version 0.0.0; its first release is 0.1.0. Add `--dry-run` to see what it would 
 Pick another starting point with `--from-provider`, for example `pnpm new-adapter email <provider> --from-provider smtp`
 for a plain SMTP relay. The command refuses a provider the slot already has and a directory that already exists.
 
-The other slots have no starting point. An ai adapter has no contract suite to prove a copy against, and a new document
+The other slots have no starting point. An ai adapter is not yet a copy source, and a new document
 store, event bus or media store is kernel work (the kernel pins its primitives, and their contract runs need Postgres,
 Redis or MinIO): open an issue first. Reviews, analytics and tax have built-in providers only. For these, bring your
 own package with `--from` (below).

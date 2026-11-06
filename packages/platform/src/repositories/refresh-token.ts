@@ -1,4 +1,4 @@
-import { and, eq, isNull, lt } from 'drizzle-orm'
+import { and, eq, isNotNull, isNull, lt } from 'drizzle-orm'
 import {
   postgresDb,
   sqliteDb,
@@ -44,10 +44,21 @@ function rowToToken(row: Record<string, unknown>): RefreshTokenRow {
 export interface RefreshTokenRepository extends StoreRepository {
   insert(tx: Tx, t: RefreshTokenInsert): Promise<void>
   findById(tx: ReadTx, id: string): Promise<RefreshTokenRow | null>
+  /**
+   * Inserts `next` as the successor of `oldJti`. The old row's `revokedAt` is set only if it has none: re-rotating a
+   * token inside the reuse window keeps the instant of its first rotation, so the window never slides.
+   */
   rotate(tx: Tx, oldJti: string, next: RefreshTokenInsert): Promise<void>
   revoke(tx: Tx, id: string): Promise<void>
+  /** Revokes every row of the customer not revoked already, leaving earlier `revokedAt` instants as they were. */
   revokeAllForCustomer(tx: Tx, customerId: string): Promise<void>
   purgeExpired(tx: Tx, now: Date): Promise<number>
+  /**
+   * Deletes rotated rows (a successor is recorded) revoked before `revokedBefore`. Rows revoked with no successor
+   * (logout, sign-out of every session) stay until they expire, so presenting one stays a plain refusal.
+   */
+  purgeRotated(tx: Tx, revokedBefore: Date): Promise<number>
+  deleteByCustomer(tx: Tx, customerId: string): Promise<void>
 }
 
 export function createRefreshTokenRepository(store: CommandStore): RefreshTokenRepository {
@@ -97,9 +108,11 @@ export function createRefreshTokenRepository(store: CommandStore): RefreshTokenR
     async rotate(tx, oldJti, next) {
       if (tx.kind === 'sqlite') {
         const db = sqliteDb(tx)
-        db.update(sqliteSchema.refreshTokens)
-          .set({ revokedAt: new Date().toISOString(), replacedByJti: next.id })
-          .where(eq(sqliteSchema.refreshTokens.id, oldJti))
+        const old = sqliteSchema.refreshTokens
+        db.update(old).set({ replacedByJti: next.id }).where(eq(old.id, oldJti)).run()
+        db.update(old)
+          .set({ revokedAt: new Date().toISOString() })
+          .where(and(eq(old.id, oldJti), isNull(old.revokedAt)))
           .run()
         db.insert(sqliteSchema.refreshTokens)
           .values({
@@ -115,10 +128,12 @@ export function createRefreshTokenRepository(store: CommandStore): RefreshTokenR
         return
       }
       const db = postgresDb(tx)
+      const old = postgresSchema.refreshTokens
+      await db.update(old).set({ replacedByJti: next.id }).where(eq(old.id, oldJti))
       await db
-        .update(postgresSchema.refreshTokens)
-        .set({ revokedAt: new Date(), replacedByJti: next.id })
-        .where(eq(postgresSchema.refreshTokens.id, oldJti))
+        .update(old)
+        .set({ revokedAt: new Date() })
+        .where(and(eq(old.id, oldJti), isNull(old.revokedAt)))
       await db.insert(postgresSchema.refreshTokens).values({
         id: next.id,
         customerId: next.customerId,
@@ -158,14 +173,24 @@ export function createRefreshTokenRepository(store: CommandStore): RefreshTokenR
         sqliteDb(tx)
           .update(sqliteSchema.refreshTokens)
           .set({ revokedAt: new Date().toISOString() })
-          .where(eq(sqliteSchema.refreshTokens.customerId, customerId))
+          .where(
+            and(
+              eq(sqliteSchema.refreshTokens.customerId, customerId),
+              isNull(sqliteSchema.refreshTokens.revokedAt),
+            ),
+          )
           .run()
         return
       }
       await postgresDb(tx)
         .update(postgresSchema.refreshTokens)
         .set({ revokedAt: new Date() })
-        .where(eq(postgresSchema.refreshTokens.customerId, customerId))
+        .where(
+          and(
+            eq(postgresSchema.refreshTokens.customerId, customerId),
+            isNull(postgresSchema.refreshTokens.revokedAt),
+          ),
+        )
     },
     async purgeExpired(tx, now) {
       if (tx.kind === 'sqlite') {
@@ -179,6 +204,30 @@ export function createRefreshTokenRepository(store: CommandStore): RefreshTokenR
         .delete(postgresSchema.refreshTokens)
         .where(lt(postgresSchema.refreshTokens.expiresAt, now))
       return result.rowCount ?? 0
+    },
+    async purgeRotated(tx, revokedBefore) {
+      if (tx.kind === 'sqlite') {
+        const t = sqliteSchema.refreshTokens
+        const result = sqliteDb(tx)
+          .delete(t)
+          .where(and(isNotNull(t.replacedByJti), lt(t.revokedAt, revokedBefore.toISOString())))
+          .run()
+        return result.changes
+      }
+      const t = postgresSchema.refreshTokens
+      const result = await postgresDb(tx)
+        .delete(t)
+        .where(and(isNotNull(t.replacedByJti), lt(t.revokedAt, revokedBefore)))
+      return result.rowCount ?? 0
+    },
+    async deleteByCustomer(tx, customerId) {
+      if (tx.kind === 'sqlite') {
+        const t = sqliteSchema.refreshTokens
+        sqliteDb(tx).delete(t).where(eq(t.customerId, customerId)).run()
+        return
+      }
+      const t = postgresSchema.refreshTokens
+      await postgresDb(tx).delete(t).where(eq(t.customerId, customerId))
     },
   }
 }

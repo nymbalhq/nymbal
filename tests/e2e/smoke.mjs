@@ -72,6 +72,12 @@ async function main() {
     logger: platform.logger,
     documentStore: platform.documentStore,
     version: VERSION,
+    // No app here: the default block, as createApp resolves it with nothing set.
+    network: {
+      trustedProxies: ['loopback'],
+      trustedProxiesSource: { kind: 'default', name: 'default' },
+      clientIpRequiresLock: false,
+    },
   })
   await http.start()
 

@@ -1,0 +1,2326 @@
+[
+  {
+    "id": 113,
+    "name": "Pebble Notebook",
+    "slug": "pebble-notebook",
+    "permalink": "http://localhost:8888/product/pebble-notebook/",
+    "date_created": "2026-11-04T18:29:32",
+    "date_created_gmt": "2026-11-04T18:29:32",
+    "date_modified": "2026-11-04T18:29:32",
+    "date_modified_gmt": "2026-11-04T18:29:32",
+    "type": "simple",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "<p>Pebble Notebook from the synthetic catalogue.</p>\n",
+    "short_description": "<p>Pebble Notebook.</p>\n",
+    "sku": "EU-101",
+    "price": "61.25",
+    "regular_price": "61.25",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "reduced-rate",
+    "manage_stock": true,
+    "stock_quantity": 32,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "0.40",
+    "dimensions": {
+      "length": "21",
+      "width": "6",
+      "height": "2"
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 26,
+        "name": "Notebooks",
+        "slug": "notebooks"
+      }
+    ],
+    "brands": [],
+    "tags": [],
+    "images": [
+      {
+        "id": 12,
+        "date_created": "2026-11-04T18:29:25",
+        "date_created_gmt": "2026-11-04T18:29:25",
+        "date_modified": "2026-11-04T18:29:25",
+        "date_modified_gmt": "2026-11-04T18:29:25",
+        "src": "http://localhost:8888/wp-content/uploads/2026/11/swatch-green.png",
+        "name": "Green swatch",
+        "alt": "",
+        "srcset": "",
+        "sizes": "(max-width: 64px) 100vw, 64px",
+        "thumbnail": "http://localhost:8888/wp-content/uploads/2026/11/swatch-green.png"
+      }
+    ],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\"><bdi>61,25&nbsp;<span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&euro;</span></bdi></span>",
+    "related_ids": [65, 23, 47, 53, 29],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/113",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 114,
+    "name": "Pebble Pen",
+    "slug": "pebble-pen",
+    "permalink": "http://localhost:8888/product/pebble-pen/",
+    "date_created": "2026-11-04T18:29:32",
+    "date_created_gmt": "2026-11-04T18:29:32",
+    "date_modified": "2026-11-04T18:29:32",
+    "date_modified_gmt": "2026-11-04T18:29:32",
+    "type": "simple",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "<p>Pebble Pen from the synthetic catalogue.</p>\n",
+    "short_description": "<p>Pebble Pen.</p>\n",
+    "sku": "EU-102",
+    "price": "18.50",
+    "regular_price": "18.50",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": true,
+    "stock_quantity": 39,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "0.55",
+    "dimensions": {
+      "length": "22",
+      "width": "7",
+      "height": "3"
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 27,
+        "name": "Pens",
+        "slug": "pens"
+      }
+    ],
+    "brands": [],
+    "tags": [],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\"><bdi>18,50&nbsp;<span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&euro;</span></bdi></span>",
+    "related_ids": [30, 84, 42, 108, 102],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/114",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 115,
+    "name": "Saffron Pan",
+    "slug": "saffron-pan",
+    "permalink": "http://localhost:8888/product/saffron-pan/",
+    "date_created": "2026-11-04T18:29:32",
+    "date_created_gmt": "2026-11-04T18:29:32",
+    "date_modified": "2026-11-04T18:29:32",
+    "date_modified_gmt": "2026-11-04T18:29:32",
+    "type": "simple",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "<p>Saffron Pan from the synthetic catalogue.</p>\n",
+    "short_description": "<p>Saffron Pan.</p>\n",
+    "sku": "EU-103",
+    "price": "55.75",
+    "regular_price": "55.75",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": true,
+    "stock_quantity": 1,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "0.70",
+    "dimensions": {
+      "length": "23",
+      "width": "8",
+      "height": "4"
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 18,
+        "name": "Pans",
+        "slug": "pans"
+      }
+    ],
+    "brands": [],
+    "tags": [],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\"><bdi>55,75&nbsp;<span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&euro;</span></bdi></span>",
+    "related_ids": [91, 85, 109, 13, 37],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/115",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 116,
+    "name": "Saffron Plate",
+    "slug": "saffron-plate",
+    "permalink": "http://localhost:8888/product/saffron-plate/",
+    "date_created": "2026-11-04T18:29:32",
+    "date_created_gmt": "2026-11-04T18:29:32",
+    "date_modified": "2026-11-04T18:29:32",
+    "date_modified_gmt": "2026-11-04T18:29:32",
+    "type": "simple",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "<p>Saffron Plate from the synthetic catalogue.</p>\n",
+    "short_description": "<p>Saffron Plate.</p>\n",
+    "sku": "EU-104",
+    "price": "12.00",
+    "regular_price": "12.00",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": true,
+    "stock_quantity": 8,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "0.85",
+    "dimensions": {
+      "length": "24",
+      "width": "9",
+      "height": "5"
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 19,
+        "name": "Tableware",
+        "slug": "tableware"
+      }
+    ],
+    "brands": [],
+    "tags": [],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\"><bdi>12,00&nbsp;<span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&euro;</span></bdi></span>",
+    "related_ids": [68, 38, 26, 104, 20],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/116",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 117,
+    "name": "Saffron Pruner",
+    "slug": "saffron-pruner",
+    "permalink": "http://localhost:8888/product/saffron-pruner/",
+    "date_created": "2026-11-04T18:29:32",
+    "date_created_gmt": "2026-11-04T18:29:32",
+    "date_modified": "2026-11-04T18:29:32",
+    "date_modified_gmt": "2026-11-04T18:29:32",
+    "type": "simple",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "<p>Saffron Pruner from the synthetic catalogue.</p>\n",
+    "short_description": "<p>Saffron Pruner.</p>\n",
+    "sku": "EU-105",
+    "price": "49.25",
+    "regular_price": "49.25",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": true,
+    "stock_quantity": 15,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "1.00",
+    "dimensions": {
+      "length": "25",
+      "width": "10",
+      "height": "6"
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 22,
+        "name": "Pruners",
+        "slug": "pruners"
+      }
+    ],
+    "brands": [],
+    "tags": [],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\"><bdi>49,25&nbsp;<span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&euro;</span></bdi></span>",
+    "related_ids": [63, 57, 81, 93, 39],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/117",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 118,
+    "name": "Saffron Planter",
+    "slug": "saffron-planter",
+    "permalink": "http://localhost:8888/product/saffron-planter/",
+    "date_created": "2026-11-04T18:29:32",
+    "date_created_gmt": "2026-11-04T18:29:32",
+    "date_modified": "2026-11-04T18:29:32",
+    "date_modified_gmt": "2026-11-04T18:29:32",
+    "type": "simple",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "<p>Saffron Planter from the synthetic catalogue.</p>\n",
+    "short_description": "<p>Saffron Planter.</p>\n",
+    "sku": "EU-106",
+    "price": "6.50",
+    "regular_price": "6.50",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": true,
+    "stock_quantity": 22,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "1.15",
+    "dimensions": {
+      "length": "26",
+      "width": "11",
+      "height": "7"
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 23,
+        "name": "Planters",
+        "slug": "planters"
+      }
+    ],
+    "brands": [],
+    "tags": [],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\"><bdi>6,50&nbsp;<span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&euro;</span></bdi></span>",
+    "related_ids": [88, 100, 34, 94, 64],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/118",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 119,
+    "name": "Saffron Notebook",
+    "slug": "saffron-notebook",
+    "permalink": "http://localhost:8888/product/saffron-notebook/",
+    "date_created": "2026-11-04T18:29:32",
+    "date_created_gmt": "2026-11-04T18:29:32",
+    "date_modified": "2026-11-04T18:29:32",
+    "date_modified_gmt": "2026-11-04T18:29:32",
+    "type": "simple",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "<p>Saffron Notebook from the synthetic catalogue.</p>\n",
+    "short_description": "<p>Saffron Notebook.</p>\n",
+    "sku": "EU-107",
+    "price": "43.75",
+    "regular_price": "43.75",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "reduced-rate",
+    "manage_stock": true,
+    "stock_quantity": 29,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "1.30",
+    "dimensions": {
+      "length": "27",
+      "width": "12",
+      "height": "8"
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 26,
+        "name": "Notebooks",
+        "slug": "notebooks"
+      }
+    ],
+    "brands": [],
+    "tags": [],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\"><bdi>43,75&nbsp;<span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&euro;</span></bdi></span>",
+    "related_ids": [47, 59, 53, 107, 101],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/119",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 120,
+    "name": "Saffron Pen",
+    "slug": "saffron-pen",
+    "permalink": "http://localhost:8888/product/saffron-pen/",
+    "date_created": "2026-11-04T18:29:32",
+    "date_created_gmt": "2026-11-04T18:29:32",
+    "date_modified": "2026-11-04T18:29:32",
+    "date_modified_gmt": "2026-11-04T18:29:32",
+    "type": "simple",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "<p>Saffron Pen from the synthetic catalogue.</p>\n",
+    "short_description": "<p>Saffron Pen.</p>\n",
+    "sku": "EU-108",
+    "price": "80.00",
+    "regular_price": "80.00",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": true,
+    "stock_quantity": 36,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "0.10",
+    "dimensions": {
+      "length": "28",
+      "width": "13",
+      "height": "9"
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 27,
+        "name": "Pens",
+        "slug": "pens"
+      }
+    ],
+    "brands": [],
+    "tags": [],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\"><bdi>80,00&nbsp;<span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&euro;</span></bdi></span>",
+    "related_ids": [102, 36, 114, 66, 60],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/120",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 121,
+    "name": "Teal Pan",
+    "slug": "teal-pan",
+    "permalink": "http://localhost:8888/product/teal-pan/",
+    "date_created": "2026-11-04T18:29:32",
+    "date_created_gmt": "2026-11-04T18:29:32",
+    "date_modified": "2026-11-04T18:29:32",
+    "date_modified_gmt": "2026-11-04T18:29:32",
+    "type": "simple",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "<p>Teal Pan from the synthetic catalogue.</p>\n",
+    "short_description": "<p>Teal Pan.</p>\n",
+    "sku": "EU-109",
+    "price": "37.25",
+    "regular_price": "37.25",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": true,
+    "stock_quantity": 43,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "0.25",
+    "dimensions": {
+      "length": "29",
+      "width": "14",
+      "height": "10"
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 18,
+        "name": "Pans",
+        "slug": "pans"
+      }
+    ],
+    "brands": [],
+    "tags": [],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\"><bdi>37,25&nbsp;<span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&euro;</span></bdi></span>",
+    "related_ids": [79, 37, 55, 43, 97],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/121",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 122,
+    "name": "Teal Plate",
+    "slug": "teal-plate",
+    "permalink": "http://localhost:8888/product/teal-plate/",
+    "date_created": "2026-11-04T18:29:32",
+    "date_created_gmt": "2026-11-04T18:29:32",
+    "date_modified": "2026-11-04T18:29:32",
+    "date_modified_gmt": "2026-11-04T18:29:32",
+    "type": "simple",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "<p>Teal Plate from the synthetic catalogue.</p>\n",
+    "short_description": "<p>Teal Plate.</p>\n",
+    "sku": "EU-110",
+    "price": "59.60",
+    "regular_price": "74.50",
+    "sale_price": "59.60",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": true,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": true,
+    "stock_quantity": 5,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "0.40",
+    "dimensions": {
+      "length": "30",
+      "width": "15",
+      "height": "1"
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 19,
+        "name": "Tableware",
+        "slug": "tableware"
+      }
+    ],
+    "brands": [],
+    "tags": [],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<del aria-hidden=\"true\"><span class=\"woocommerce-Price-amount amount\"><bdi>74,50&nbsp;<span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&euro;</span></bdi></span></del> <span class=\"screen-reader-text\">Original price was: 74,50&nbsp;&euro;.</span><ins aria-hidden=\"true\"><span class=\"woocommerce-Price-amount amount\"><bdi>59,60&nbsp;<span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&euro;</span></bdi></span></ins><span class=\"screen-reader-text\">Current price is: 59,60&nbsp;&euro;.</span>",
+    "related_ids": [50, 14, 32, 80, 68],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/122",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 123,
+    "name": "Teal Pruner",
+    "slug": "teal-pruner",
+    "permalink": "http://localhost:8888/product/teal-pruner/",
+    "date_created": "2026-11-04T18:29:32",
+    "date_created_gmt": "2026-11-04T18:29:32",
+    "date_modified": "2026-11-04T18:29:32",
+    "date_modified_gmt": "2026-11-04T18:29:32",
+    "type": "simple",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "<p>Teal Pruner from the synthetic catalogue.</p>\n",
+    "short_description": "<p>Teal Pruner.</p>\n",
+    "sku": "EU-111",
+    "price": "31.75",
+    "regular_price": "31.75",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": true,
+    "stock_quantity": 12,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "0.55",
+    "dimensions": {
+      "length": "31",
+      "width": "16",
+      "height": "2"
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 22,
+        "name": "Pruners",
+        "slug": "pruners"
+      }
+    ],
+    "brands": [],
+    "tags": [],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\"><bdi>31,75&nbsp;<span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&euro;</span></bdi></span>",
+    "related_ids": [51, 15, 27, 39, 33],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/123",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 124,
+    "name": "Teal Planter",
+    "slug": "teal-planter",
+    "permalink": "http://localhost:8888/product/teal-planter/",
+    "date_created": "2026-11-04T18:29:32",
+    "date_created_gmt": "2026-11-04T18:29:32",
+    "date_modified": "2026-11-04T18:29:32",
+    "date_modified_gmt": "2026-11-04T18:29:32",
+    "type": "simple",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "<p>Teal Planter from the synthetic catalogue.</p>\n",
+    "short_description": "<p>Teal Planter.</p>\n",
+    "sku": "EU-112",
+    "price": "68.00",
+    "regular_price": "68.00",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": true,
+    "stock_quantity": 19,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "0.70",
+    "dimensions": {
+      "length": "32",
+      "width": "17",
+      "height": "3"
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 23,
+        "name": "Planters",
+        "slug": "planters"
+      }
+    ],
+    "brands": [],
+    "tags": [],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\"><bdi>68,00&nbsp;<span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&euro;</span></bdi></span>",
+    "related_ids": [52, 88, 46, 16, 34],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/124",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 125,
+    "name": "Teal Notebook",
+    "slug": "teal-notebook",
+    "permalink": "http://localhost:8888/product/teal-notebook/",
+    "date_created": "2026-11-04T18:29:32",
+    "date_created_gmt": "2026-11-04T18:29:32",
+    "date_modified": "2026-11-04T18:29:32",
+    "date_modified_gmt": "2026-11-04T18:29:32",
+    "type": "simple",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "<p>Teal Notebook from the synthetic catalogue.</p>\n",
+    "short_description": "<p>Teal Notebook.</p>\n",
+    "sku": "EU-113",
+    "price": "25.25",
+    "regular_price": "25.25",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "reduced-rate",
+    "manage_stock": true,
+    "stock_quantity": 26,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "0.85",
+    "dimensions": {
+      "length": "33",
+      "width": "18",
+      "height": "4"
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 26,
+        "name": "Notebooks",
+        "slug": "notebooks"
+      }
+    ],
+    "brands": [],
+    "tags": [],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\"><bdi>25,25&nbsp;<span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&euro;</span></bdi></span>",
+    "related_ids": [119, 107, 83, 65, 35],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/125",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 126,
+    "name": "Teal Pen",
+    "slug": "teal-pen",
+    "permalink": "http://localhost:8888/product/teal-pen/",
+    "date_created": "2026-11-04T18:29:33",
+    "date_created_gmt": "2026-11-04T18:29:33",
+    "date_modified": "2026-11-04T18:29:33",
+    "date_modified_gmt": "2026-11-04T18:29:33",
+    "type": "simple",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "<p>Teal Pen from the synthetic catalogue.</p>\n",
+    "short_description": "<p>Teal Pen.</p>\n",
+    "sku": "EU-114",
+    "price": "62.50",
+    "regular_price": "62.50",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": true,
+    "stock_quantity": 33,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "1.00",
+    "dimensions": {
+      "length": "34",
+      "width": "19",
+      "height": "5"
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 27,
+        "name": "Pens",
+        "slug": "pens"
+      }
+    ],
+    "brands": [],
+    "tags": [],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\"><bdi>62,50&nbsp;<span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&euro;</span></bdi></span>",
+    "related_ids": [84, 30, 108, 78, 96],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/126",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 127,
+    "name": "Willow Pan",
+    "slug": "willow-pan",
+    "permalink": "http://localhost:8888/product/willow-pan/",
+    "date_created": "2026-11-04T18:29:33",
+    "date_created_gmt": "2026-11-04T18:29:33",
+    "date_modified": "2026-11-04T18:29:33",
+    "date_modified_gmt": "2026-11-04T18:29:33",
+    "type": "simple",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "<p>Willow Pan from the synthetic catalogue.</p>\n",
+    "short_description": "<p>Willow Pan.</p>\n",
+    "sku": "EU-115",
+    "price": "19.75",
+    "regular_price": "19.75",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": true,
+    "stock_quantity": 40,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "1.15",
+    "dimensions": {
+      "length": "35",
+      "width": "20",
+      "height": "6"
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 18,
+        "name": "Pans",
+        "slug": "pans"
+      }
+    ],
+    "brands": [],
+    "tags": [],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\"><bdi>19,75&nbsp;<span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&euro;</span></bdi></span>",
+    "related_ids": [67, 91, 19, 49, 31],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/127",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 128,
+    "name": "Willow Plate",
+    "slug": "willow-plate",
+    "permalink": "http://localhost:8888/product/willow-plate/",
+    "date_created": "2026-11-04T18:29:33",
+    "date_created_gmt": "2026-11-04T18:29:33",
+    "date_modified": "2026-11-04T18:29:33",
+    "date_modified_gmt": "2026-11-04T18:29:33",
+    "type": "simple",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "<p>Willow Plate from the synthetic catalogue.</p>\n",
+    "short_description": "<p>Willow Plate.</p>\n",
+    "sku": "EU-116",
+    "price": "56.00",
+    "regular_price": "56.00",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": true,
+    "stock_quantity": 2,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "1.30",
+    "dimensions": {
+      "length": "36",
+      "width": "21",
+      "height": "7"
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 19,
+        "name": "Tableware",
+        "slug": "tableware"
+      }
+    ],
+    "brands": [],
+    "tags": [],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\"><bdi>56,00&nbsp;<span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&euro;</span></bdi></span>",
+    "related_ids": [20, 122, 86, 32, 62],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/128",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 129,
+    "name": "Willow Pruner",
+    "slug": "willow-pruner",
+    "permalink": "http://localhost:8888/product/willow-pruner/",
+    "date_created": "2026-11-04T18:29:33",
+    "date_created_gmt": "2026-11-04T18:29:33",
+    "date_modified": "2026-11-04T18:29:33",
+    "date_modified_gmt": "2026-11-04T18:29:33",
+    "type": "simple",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "<p>Willow Pruner from the synthetic catalogue.</p>\n",
+    "short_description": "<p>Willow Pruner.</p>\n",
+    "sku": "EU-117",
+    "price": "13.25",
+    "regular_price": "13.25",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": true,
+    "stock_quantity": 9,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "0.10",
+    "dimensions": {
+      "length": "37",
+      "width": "22",
+      "height": "8"
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 22,
+        "name": "Pruners",
+        "slug": "pruners"
+      }
+    ],
+    "brands": [],
+    "tags": [],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\"><bdi>13,25&nbsp;<span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&euro;</span></bdi></span>",
+    "related_ids": [39, 105, 99, 111, 93],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/129",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 130,
+    "name": "Willow Planter",
+    "slug": "willow-planter",
+    "permalink": "http://localhost:8888/product/willow-planter/",
+    "date_created": "2026-11-04T18:29:33",
+    "date_created_gmt": "2026-11-04T18:29:33",
+    "date_modified": "2026-11-04T18:29:33",
+    "date_modified_gmt": "2026-11-04T18:29:33",
+    "type": "simple",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "<p>Willow Planter from the synthetic catalogue.</p>\n",
+    "short_description": "<p>Willow Planter.</p>\n",
+    "sku": "EU-118",
+    "price": "50.50",
+    "regular_price": "50.50",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": true,
+    "stock_quantity": 16,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "0.25",
+    "dimensions": {
+      "length": "38",
+      "width": "23",
+      "height": "9"
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 23,
+        "name": "Planters",
+        "slug": "planters"
+      }
+    ],
+    "brands": [],
+    "tags": [],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\"><bdi>50,50&nbsp;<span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&euro;</span></bdi></span>",
+    "related_ids": [100, 70, 106, 58, 16],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/130",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 131,
+    "name": "Willow Notebook",
+    "slug": "willow-notebook",
+    "permalink": "http://localhost:8888/product/willow-notebook/",
+    "date_created": "2026-11-04T18:29:33",
+    "date_created_gmt": "2026-11-04T18:29:33",
+    "date_modified": "2026-11-04T18:29:33",
+    "date_modified_gmt": "2026-11-04T18:29:33",
+    "type": "simple",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "<p>Willow Notebook from the synthetic catalogue.</p>\n",
+    "short_description": "<p>Willow Notebook.</p>\n",
+    "sku": "EU-119",
+    "price": "7.75",
+    "regular_price": "7.75",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "reduced-rate",
+    "manage_stock": true,
+    "stock_quantity": 23,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "0.40",
+    "dimensions": {
+      "length": "39",
+      "width": "24",
+      "height": "10"
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 26,
+        "name": "Notebooks",
+        "slug": "notebooks"
+      }
+    ],
+    "brands": [],
+    "tags": [],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\"><bdi>7,75&nbsp;<span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&euro;</span></bdi></span>",
+    "related_ids": [29, 47, 89, 17, 59],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/131",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 132,
+    "name": "Willow Pen",
+    "slug": "willow-pen",
+    "permalink": "http://localhost:8888/product/willow-pen/",
+    "date_created": "2026-11-04T18:29:33",
+    "date_created_gmt": "2026-11-04T18:29:33",
+    "date_modified": "2026-11-04T18:29:33",
+    "date_modified_gmt": "2026-11-04T18:29:33",
+    "type": "simple",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "<p>Willow Pen from the synthetic catalogue.</p>\n",
+    "short_description": "<p>Willow Pen.</p>\n",
+    "sku": "EU-120",
+    "price": "35.20",
+    "regular_price": "44.00",
+    "sale_price": "35.20",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": true,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": true,
+    "stock_quantity": 30,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "0.55",
+    "dimensions": {
+      "length": "10",
+      "width": "5",
+      "height": "1"
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 27,
+        "name": "Pens",
+        "slug": "pens"
+      }
+    ],
+    "brands": [],
+    "tags": [],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<del aria-hidden=\"true\"><span class=\"woocommerce-Price-amount amount\"><bdi>44,00&nbsp;<span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&euro;</span></bdi></span></del> <span class=\"screen-reader-text\">Original price was: 44,00&nbsp;&euro;.</span><ins aria-hidden=\"true\"><span class=\"woocommerce-Price-amount amount\"><bdi>35,20&nbsp;<span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&euro;</span></bdi></span></ins><span class=\"screen-reader-text\">Current price is: 35,20&nbsp;&euro;.</span>",
+    "related_ids": [18, 66, 24, 120, 78],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/132",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 133,
+    "name": "Enamel Kettle",
+    "slug": "enamel-kettle",
+    "permalink": "http://localhost:8888/product/enamel-kettle/",
+    "date_created": "2026-11-04T18:29:33",
+    "date_created_gmt": "2026-11-04T18:29:33",
+    "date_modified": "2026-11-04T18:29:35",
+    "date_modified_gmt": "2026-11-04T18:29:35",
+    "type": "variable",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "<p>A stovetop kettle in three colours.</p>\n",
+    "short_description": "",
+    "sku": "KETTLE",
+    "price": "31.20",
+    "regular_price": "",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": true,
+    "purchasable": true,
+    "total_sales": 1,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": false,
+    "stock_quantity": null,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "0.90",
+    "dimensions": {
+      "length": "22",
+      "width": "18",
+      "height": "20"
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 17,
+        "name": "Cookware",
+        "slug": "cookware"
+      }
+    ],
+    "brands": [],
+    "tags": [
+      {
+        "id": 28,
+        "name": "New",
+        "slug": "new"
+      }
+    ],
+    "images": [
+      {
+        "id": 10,
+        "date_created": "2026-11-04T18:29:24",
+        "date_created_gmt": "2026-11-04T18:29:24",
+        "date_modified": "2026-11-04T18:29:24",
+        "date_modified_gmt": "2026-11-04T18:29:24",
+        "src": "http://localhost:8888/wp-content/uploads/2026/11/swatch-red.png",
+        "name": "Red swatch",
+        "alt": "",
+        "srcset": "",
+        "sizes": "(max-width: 64px) 100vw, 64px",
+        "thumbnail": "http://localhost:8888/wp-content/uploads/2026/11/swatch-red.png"
+      }
+    ],
+    "attributes": [
+      {
+        "id": 1,
+        "name": "Colour",
+        "slug": "pa_colour",
+        "position": 0,
+        "visible": true,
+        "variation": true,
+        "options": ["Blue", "Green", "Red"]
+      },
+      {
+        "id": 0,
+        "name": "Capacity",
+        "slug": "Capacity",
+        "position": 0,
+        "visible": true,
+        "variation": false,
+        "options": ["1.5 l"]
+      }
+    ],
+    "default_attributes": [],
+    "variations": [134, 135, 136],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\" aria-hidden=\"true\"><bdi>31,20&nbsp;<span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&euro;</span></bdi></span> <span aria-hidden=\"true\">&ndash;</span> <span class=\"woocommerce-Price-amount amount\" aria-hidden=\"true\"><bdi>41,00&nbsp;<span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&euro;</span></bdi></span><span class=\"screen-reader-text\">Price range: 31,20&nbsp;&euro; through 41,00&nbsp;&euro;</span>",
+    "related_ids": [112, 62],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": true,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/133",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 137,
+    "name": "Garden Gloves",
+    "slug": "garden-gloves",
+    "permalink": "http://localhost:8888/product/garden-gloves/",
+    "date_created": "2026-11-04T18:29:33",
+    "date_created_gmt": "2026-11-04T18:29:33",
+    "date_modified": "2026-11-04T18:29:36",
+    "date_modified_gmt": "2026-11-04T18:29:36",
+    "type": "variable",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "",
+    "short_description": "",
+    "sku": "GLOVES",
+    "price": "12.50",
+    "regular_price": "",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "purchasable": true,
+    "total_sales": 2,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": true,
+    "stock_quantity": 28,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "0.15",
+    "dimensions": {
+      "length": "",
+      "width": "",
+      "height": ""
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "4.00",
+    "rating_count": 1,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 21,
+        "name": "Tools",
+        "slug": "garden-tools"
+      }
+    ],
+    "brands": [],
+    "tags": [],
+    "images": [
+      {
+        "id": 12,
+        "date_created": "2026-11-04T18:29:25",
+        "date_created_gmt": "2026-11-04T18:29:25",
+        "date_modified": "2026-11-04T18:29:25",
+        "date_modified_gmt": "2026-11-04T18:29:25",
+        "src": "http://localhost:8888/wp-content/uploads/2026/11/swatch-green.png",
+        "name": "Green swatch",
+        "alt": "",
+        "srcset": "",
+        "sizes": "(max-width: 64px) 100vw, 64px",
+        "thumbnail": "http://localhost:8888/wp-content/uploads/2026/11/swatch-green.png"
+      }
+    ],
+    "attributes": [
+      {
+        "id": 2,
+        "name": "Size",
+        "slug": "pa_size",
+        "position": 0,
+        "visible": true,
+        "variation": true,
+        "options": ["L", "M", "S"]
+      }
+    ],
+    "default_attributes": [],
+    "variations": [138, 139, 140],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\" aria-hidden=\"true\"><bdi>12,50&nbsp;<span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&euro;</span></bdi></span> <span aria-hidden=\"true\">&ndash;</span> <span class=\"woocommerce-Price-amount amount\" aria-hidden=\"true\"><bdi>13,50&nbsp;<span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&euro;</span></bdi></span><span class=\"screen-reader-text\">Price range: 12,50&nbsp;&euro; through 13,50&nbsp;&euro;</span>",
+    "related_ids": [],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": true,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/137",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 141,
+    "name": "Fountain Pen",
+    "slug": "fountain-pen",
+    "permalink": "http://localhost:8888/product/fountain-pen/",
+    "date_created": "2026-11-04T18:29:34",
+    "date_created_gmt": "2026-11-04T18:29:34",
+    "date_modified": "2026-11-04T18:29:36",
+    "date_modified_gmt": "2026-11-04T18:29:36",
+    "type": "variable",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "",
+    "short_description": "",
+    "sku": "FOUNTAIN",
+    "price": "24.95",
+    "regular_price": "",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "purchasable": true,
+    "total_sales": 1,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": false,
+    "stock_quantity": null,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "0.03",
+    "dimensions": {
+      "length": "",
+      "width": "",
+      "height": ""
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "3.00",
+    "rating_count": 1,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 27,
+        "name": "Pens",
+        "slug": "pens"
+      }
+    ],
+    "brands": [],
+    "tags": [
+      {
+        "id": 29,
+        "name": "Gift",
+        "slug": "gift"
+      }
+    ],
+    "images": [],
+    "attributes": [
+      {
+        "id": 1,
+        "name": "Colour",
+        "slug": "pa_colour",
+        "position": 0,
+        "visible": true,
+        "variation": true,
+        "options": ["Blue", "Red"]
+      }
+    ],
+    "default_attributes": [],
+    "variations": [142, 143],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\"><bdi>24,95&nbsp;<span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&euro;</span></bdi></span>",
+    "related_ids": [96, 120, 30, 78, 132],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": true,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/141",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  }
+]

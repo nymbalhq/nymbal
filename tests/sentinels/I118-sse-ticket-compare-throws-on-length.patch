@@ -1,0 +1,18 @@
+# id: I118
+# kind: injected
+# defect: the event-stream ticket signature goes to timingSafeEqual without the byte-length check, so a ticket whose signature is shorter or longer throws RangeError and answers 500
+# where: packages/platform/src/routes/events-sse.ts:58
+# killed-by: packages/platform/src/routes/events-sse.test.ts AC-20 (a signature one character different, one shorter, one longer or empty is refused as ticket.invalid without throwing)
+# suite: pnpm vitest run --project platform-unit packages/platform/src/routes/events-sse.test.ts
+diff --git a/packages/platform/src/routes/events-sse.ts b/packages/platform/src/routes/events-sse.ts
+--- a/packages/platform/src/routes/events-sse.ts
++++ b/packages/platform/src/routes/events-sse.ts
+@@ -55,7 +55,7 @@
+   const expected = Buffer.from(createHmac('sha256', secret).update(body).digest('base64url'))
+   const given = Buffer.from(sig)
+   // timingSafeEqual throws on unequal lengths; a length differs only for a forged ticket, so it may return early.
+-  if (given.length !== expected.length || !timingSafeEqual(given, expected)) return null
++  if (!timingSafeEqual(given, expected)) return null
+   try {
+     return JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as TicketPayload
+   } catch {

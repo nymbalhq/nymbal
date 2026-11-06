@@ -12,6 +12,7 @@ import {
 } from '@nymbalhq/types'
 import type { Repositories } from '../../repositories/index.js'
 import { buildCategoryDoc, CATEGORIES } from '../../read-models/builders.js'
+import { settle } from '../../read-models/settle.js'
 import { subscribeDerived, type DerivedHandler } from '../derived.js'
 
 export interface CategoryProjectionDeps {
@@ -36,16 +37,22 @@ export function categoryProjection(deps: CategoryProjectionDeps): DerivedHandler
     event,
   ) => {
     const { id, slug } = event.payload.category
-    const category = await repos.category.store.read((tx) => repos.category.findById(tx, id))
-    if (!category) {
-      // The slug may since have gone to another category, whose document stays.
-      const stored = await documentStore.get<{ id: string }>(CATEGORIES, slug)
-      if (stored?.id === id) await documentStore.delete(CATEGORIES, slug)
-      logger.debug({ slug, eventType: event.type }, 'category gone; projection deleted')
-      return
-    }
-    await documentStore.put(CATEGORIES, category.slug, buildCategoryDoc(category, storeId))
-    logger.debug({ slug: category.slug, eventType: event.type }, 'category projected')
+    await settle(documentStore, `category ${id}`, async () => {
+      const category = await repos.category.store.read((tx) => repos.category.findById(tx, id))
+      if (!category) {
+        // The slug may since have gone to another category, whose document stays.
+        return {
+          puts: [],
+          deletes: async () => {
+            const stored = await documentStore.get<{ id: string }>(CATEGORIES, slug)
+            return stored?.id === id ? [{ collection: CATEGORIES, key: slug }] : []
+          },
+        }
+      }
+      const doc = buildCategoryDoc(category, storeId)
+      return { puts: [{ collection: CATEGORIES, key: category.slug, doc }] }
+    })
+    logger.debug({ slug, eventType: event.type }, 'category projected')
   }
 
   const onDeleted: EventHandler<CategoryDeletedV1Payload> = async (event) => {

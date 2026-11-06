@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import {
   ArrowLeft,
@@ -27,6 +27,7 @@ import { OrderStatusSelect } from '@/components/orders/OrderStatusSelect'
 import { OrderTimeline } from '@/components/orders/OrderTimeline'
 import { OrderNotesPanel } from '@/components/orders/OrderNotesPanel'
 import { OrderRefundDialog } from '@/components/orders/OrderRefundDialog'
+import { ShipOrderDialog } from '@/components/orders/ShipOrderDialog'
 import { HistoryTab } from '@/components/history/HistoryTab'
 import {
   useOrder,
@@ -34,14 +35,21 @@ import {
   useMarkPaidOrder,
   useCancelOrder,
   useMarkDeliveredOrder,
-  useShipOrder,
   useResendConfirmation,
 } from '@/hooks/useOrders'
+import { ApiError } from '@/lib/api'
 import { formatMoney } from '@/lib/money'
 import { formatDate } from '@/lib/dates'
 import { tid } from '@/lib/testid'
 import { cn } from '@/lib/utils'
-import type { CaptureMethod, Order, OrderPayment, OrderRefund, OrderStatus } from '@nymbalhq/types'
+import type {
+  CaptureMethod,
+  Order,
+  OrderPayment,
+  OrderRefund,
+  OrderSource,
+  OrderStatus,
+} from '@nymbalhq/types'
 
 /** No confirmation is due before payment, and a cancelled order was never paid: the server refuses both. */
 const NO_CONFIRMATION_DUE: readonly OrderStatus[] = ['pending', 'cancelled']
@@ -64,6 +72,13 @@ const CAPTURE_METHOD_LABELS: Record<CaptureMethod, string> = {
   provider: 'Payment provider',
   manual: 'Recorded manually',
   import: 'Imported',
+}
+
+/** Who brought the order, as the operator reads it. */
+function sourceLabel(source: OrderSource): string {
+  if (source === 'storefront') return 'Storefront'
+  if (source === 'import') return 'Imported'
+  return `Agent · ${source.slice('agent:'.length)}`
 }
 
 const REFUND_STATUS_LABELS: Record<OrderRefund['status'], string> = {
@@ -114,6 +129,16 @@ function PaymentPanel({ order }: { order: Order & { payment: OrderPayment } }) {
             <dd className="text-zinc-700">{CAPTURE_METHOD_LABELS[order.captureMethod]}</dd>
           </div>
         )}
+        <div className="flex justify-between gap-3">
+          <dt className="text-zinc-500">Source</dt>
+          <dd
+            className="truncate text-zinc-700"
+            data-testid={tid('order', 'source')}
+            data-source={order.source}
+          >
+            {sourceLabel(order.source)}
+          </dd>
+        </div>
         {order.paymentIntentId && (
           <div className="flex justify-between">
             <dt className="text-zinc-500">Intent ID</dt>
@@ -168,14 +193,34 @@ function AddressBlock({ address, label }: { address: Order['billingAddress']; la
 export function OrderDetailPage() {
   const { orderNumber } = useParams<{ orderNumber: string }>()
   const [showRefund, setShowRefund] = useState(false)
+  const [showShip, setShowShip] = useState(false)
+  const [actionError, setActionError] = useState<string | null>(null)
+  // Set in the click itself: `isPending` reaches the button only after a render, too late for a double click.
+  const acting = useRef(false)
+  const [busy, setBusy] = useState(false)
 
   const { data: order, isLoading } = useOrder(orderNumber ?? '')
   const { data: notes = [] } = useOrderNotes(order?.id ?? '')
   const markPaid = useMarkPaidOrder()
   const cancelOrder = useCancelOrder()
   const markDelivered = useMarkDeliveredOrder()
-  const shipOrder = useShipOrder()
   const resend = useResendConfirmation()
+
+  /** Runs one order action at a time and says why the server refused it. */
+  const runAction = async (send: () => Promise<unknown>) => {
+    if (acting.current) return
+    acting.current = true
+    setBusy(true)
+    setActionError(null)
+    try {
+      await send()
+    } catch (err) {
+      setActionError(err instanceof ApiError ? err.message : 'The order could not be updated.')
+    } finally {
+      acting.current = false
+      setBusy(false)
+    }
+  }
 
   if (isLoading) {
     return (
@@ -212,24 +257,19 @@ export function OrderDetailPage() {
       return {
         label: 'Record payment',
         icon: CheckCircle,
-        action: () => void markPaid.mutateAsync({ orderId: order.id }),
+        action: () => void runAction(() => markPaid.mutateAsync({ orderId: order.id })),
       }
     if (order.status === 'processing')
       return {
         label: 'Mark Shipped',
         icon: Truck,
-        action: () =>
-          void shipOrder.mutateAsync({
-            orderId: order.id,
-            trackingNumber: '',
-            carrier: '',
-          }),
+        action: () => setShowShip(true),
       }
     if (order.status === 'shipped')
       return {
         label: 'Mark Delivered',
         icon: CheckCircle,
-        action: () => void markDelivered.mutateAsync(order.id),
+        action: () => void runAction(() => markDelivered.mutateAsync(order.id)),
       }
     return null
   }
@@ -259,6 +299,15 @@ export function OrderDetailPage() {
           <OrderStatusBadge status={order.status} data-testid={tid('order', 'status-badge')} />
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {actionError !== null && (
+            <span
+              role="alert"
+              className="text-xs text-red-600"
+              data-testid={tid('order', 'action-error')}
+            >
+              {actionError}
+            </span>
+          )}
           {resendResult !== null && (
             <span
               role="status"
@@ -269,7 +318,13 @@ export function OrderDetailPage() {
             </span>
           )}
           {primary && (
-            <Button size="sm" onClick={primary.action} className="gap-1.5">
+            <Button
+              size="sm"
+              onClick={primary.action}
+              disabled={busy}
+              className="gap-1.5"
+              data-testid={tid('order', 'primary-action')}
+            >
               <primary.icon className="h-4 w-4" />
               {primary.label}
             </Button>
@@ -304,8 +359,9 @@ export function OrderDetailPage() {
                 </DropdownMenuItem>
               )}
               <DropdownMenuItem
-                onClick={() => void cancelOrder.mutateAsync({ orderId: order.id })}
+                onClick={() => void runAction(() => cancelOrder.mutateAsync({ orderId: order.id }))}
                 className="gap-2 text-red-600"
+                data-testid={tid('order', 'action', 'cancel')}
                 disabled={
                   order.payment.capturedMinor > 0 ||
                   ['cancelled', 'refunded', 'delivered'].includes(order.status)
@@ -523,6 +579,12 @@ export function OrderDetailPage() {
       </div>
 
       {showRefund && <OrderRefundDialog order={order} onClose={() => setShowRefund(false)} />}
+      <ShipOrderDialog
+        orderId={order.id}
+        orderNumber={order.orderNumber}
+        open={showShip}
+        onOpenChange={setShowShip}
+      />
     </div>
   )
 }

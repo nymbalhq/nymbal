@@ -10,6 +10,7 @@ export function mapReview(
     productId: nymbalProductId,
     customerId: nymbalCustomerId,
     orderId: null,
+    author: null,
     rating: Math.min(5, Math.max(1, wc.rating)),
     title: '',
     body: wc.review.replace(/<[^>]+>/g, '').trim(),

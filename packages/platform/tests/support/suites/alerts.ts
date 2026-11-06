@@ -78,12 +78,19 @@ interface Capture {
   attempts: TransactionalEmail[]
   /** Address → how many more sends to it the adapter refuses. */
   refuse: Map<string, number>
+  /**
+   * Awaited inside each back-in-stock or price-drop send, before the adapter accepts it: what happens while that
+   * row's alert is being sent.
+   */
+  onAlert: ((to: string) => Promise<void>) | null
 }
 
 function capture(): Capture {
   const sent: TransactionalEmail[] = []
   const attempts: TransactionalEmail[] = []
   const refuse = new Map<string, number>()
+  const alertTemplates = new Set([ALERT_MAIL, PRICE_ALERT_MAIL])
+  const hooks: Pick<Capture, 'onAlert'> = { onAlert: null }
   const adapter: EmailAdapter = {
     kind: 'email',
     providerName: 'alerts-capture',
@@ -94,6 +101,9 @@ function capture(): Capture {
     healthCheck: async () => ({ status: 'healthy' }),
     async sendTransactional(message) {
       attempts.push(message)
+      if (hooks.onAlert !== null && alertTemplates.has(message.template)) {
+        await hooks.onAlert(message.to)
+      }
       const left = refuse.get(message.to) ?? 0
       if (left > 0) {
         refuse.set(message.to, left - 1)
@@ -105,7 +115,18 @@ function capture(): Capture {
     syncCustomerToList: async () => undefined,
     removeCustomerFromList: async () => undefined,
   }
-  return { adapter, sent, attempts, refuse }
+  return {
+    adapter,
+    sent,
+    attempts,
+    refuse,
+    get onAlert() {
+      return hooks.onAlert
+    },
+    set onAlert(act) {
+      hooks.onAlert = act
+    },
+  }
 }
 
 function alertsConfig(email: 'custom' | 'native', origins: string[], currency?: string) {
@@ -147,6 +168,7 @@ interface Store {
 /** The relay's wait before a retry, in a store opened with `retry`: a failed first delivery stays failed until the clock moves. */
 const RETRY_DELAY_MS = 60_000
 const DAY_MS = 24 * 60 * 60_000
+const MINUTE_MS = 60_000
 /** The relay's default. */
 const MAX_ATTEMPTS = 5
 
@@ -328,9 +350,18 @@ function positional(sql: string): string {
 }
 
 /** One write on a connection of its own (the raw reader is read-only). */
-async function write(s: Store, sql: string, params: unknown[]): Promise<void> {
-  if (s.k.dialect === 'sqlite') {
-    const db = new Database(s.k.target)
+function write(s: Store, sql: string, params: unknown[]): Promise<void> {
+  return writeAt(s.k.dialect, s.k.target, sql, params)
+}
+
+async function writeAt(
+  dialect: Dialect,
+  target: string,
+  sql: string,
+  params: unknown[],
+): Promise<void> {
+  if (dialect === 'sqlite') {
+    const db = new Database(target)
     try {
       db.prepare(sql).run(...params)
     } finally {
@@ -338,7 +369,7 @@ async function write(s: Store, sql: string, params: unknown[]): Promise<void> {
     }
     return
   }
-  const client = new pg.Client({ connectionString: s.k.target })
+  const client = new pg.Client({ connectionString: target })
   await client.connect()
   try {
     await client.query(positional(sql), params)
@@ -363,6 +394,38 @@ async function backdate(s: Store, row: Row): Promise<number> {
         : old.toISOString()
   await write(s, `UPDATE ${TABLE} SET updated_at = ? WHERE id = ?`, [value, row.id])
   return LONG_AGO
+}
+
+/** Moves a row's last confirmation `ms` into the past: the clock as the confirmation throttle reads it. */
+async function confirmationSentAgo(s: Store, rowId: string, ms: number): Promise<void> {
+  await write(s, `UPDATE ${TABLE} SET confirmation_sent_at = ? WHERE id = ?`, [
+    new Date(Date.now() - ms).toISOString(),
+    rowId,
+  ])
+}
+
+/** What a subscribe answer shows a caller, less the headers that differ per request. */
+const answerShape = (a: Answer) => ({
+  status: a.status,
+  text: a.text,
+  headers: Object.fromEntries(
+    [...a.headers.entries()].filter(
+      ([name]) =>
+        !['date', 'x-request-id', 'x-correlation-id'].includes(name) && !/rate-?limit/i.test(name),
+    ),
+  ),
+})
+
+/** The alert events of `type` a row has in the log since `afterSeq`. */
+async function alertEventsOf(
+  s: Store,
+  type: string,
+  rowId: string,
+  afterSeq: number,
+): Promise<number> {
+  return (await eventRows(s.raw, 'seq > ? AND type = ?', [afterSeq, type])).filter(
+    (e) => (e.envelope.payload as { subscriptionId?: string }).subscriptionId === rowId,
+  ).length
 }
 
 /** Waits until the outbox has handed every event to the bus, so every send that will happen has happened. */
@@ -575,14 +638,35 @@ type Op =
   | { kind: 'unsubscribe'; who: number }
   | { kind: 'restock'; delta: number }
   | { kind: 'sellout' }
+  | { kind: 'lapse'; who: number }
 
 interface Shopper {
   email: string
   state: State
   origin: string | null
   confirmations: number
+  /** Whether the row's last confirmation is younger than the confirmation interval. */
+  recent: boolean
   /** The origin of each alert sent, in order. */
   alerts: string[]
+}
+
+/**
+ * The confirmation rule: a new row, or one reissued from `unsubscribed` or `fired`, is sent one confirmation (its
+ * link is new); a `pending` row is sent one only when its last is at least the interval old; an `active` row none. A
+ * burst of concurrent identical subscribes counts once.
+ */
+function confirmationOwed(p: { state: State; recent: boolean }): boolean {
+  if (p.state === 'active') return false
+  return p.state !== 'pending' || !p.recent
+}
+
+/** The interval passes for a row: its last confirmation is backdated a long way. */
+async function lapse(s: Store, email: string, variantId: string, kind: string): Promise<boolean> {
+  const rows = await rowsFor(s, email, variantId, kind)
+  if (rows.length === 0) return false
+  await confirmationSentAgo(s, rows[0]!.id, Date.now() - LONG_AGO)
+  return true
 }
 
 const PEOPLE = 3
@@ -601,6 +685,7 @@ const arbRestock = fc.record({
   delta: fc.integer({ min: 1, max: 3 }),
 })
 const arbSellout = fc.constant({ kind: 'sellout' as const })
+const arbLapse = fc.record({ kind: fc.constant('lapse' as const), who: arbWho })
 
 class Machine {
   readonly people: Shopper[]
@@ -616,6 +701,7 @@ class Machine {
       state: 'none' as State,
       origin: null,
       confirmations: 0,
+      recent: false,
       alerts: [],
     }))
   }
@@ -631,14 +717,20 @@ class Machine {
         Array.from({ length: k }, () => subscribe(s, email, product.variantId, origin)),
       )
       expect(
-        answers.map((a) => a.status),
+        answers.map((a) => [a.status, said(a)]),
         `${JSON.stringify(op)}: ${answers[0]?.text}`,
-      ).toEqual(answers.map(() => 202))
+      ).toEqual(answers.map(() => [202, 'pending']))
       if (p.state !== 'active') {
+        if (confirmationOwed(p)) {
+          p.confirmations += 1
+          p.recent = true
+        }
         p.state = 'pending'
         p.origin = origin
-        p.confirmations += k
       }
+    } else if (op.kind === 'lapse') {
+      const p = this.people[op.who]!
+      if (await lapse(s, p.email, product.variantId, KIND)) p.recent = false
     } else if (op.kind === 'confirm') {
       const p = this.people[op.who]!
       if (mailsTo(s, p.email, CONFIRM_MAIL).length === 0) return
@@ -683,6 +775,7 @@ type PriceOp =
   | { kind: 'confirm'; who: number }
   | { kind: 'unsubscribe'; who: number }
   | { kind: 'price'; move: 'up' | 'down' | 'equal'; step: number }
+  | { kind: 'lapse'; who: number }
 
 interface Watcher {
   email: string
@@ -691,6 +784,8 @@ interface Watcher {
   /** The price the row was last told, or saw when it subscribed. */
   baseline: number | null
   confirmations: number
+  /** Whether the row's last confirmation is younger than the confirmation interval. */
+  recent: boolean
   /** Each alert sent: the old and new price, and the origin its links are at. */
   alerts: Array<{ previous: number; price: number; origin: string }>
 }
@@ -723,6 +818,7 @@ class PriceMachine {
       origin: null,
       baseline: null,
       confirmations: 0,
+      recent: false,
       alerts: [],
     }))
   }
@@ -733,13 +829,22 @@ class PriceMachine {
       const p = this.people[op.who]!
       const origin = ORIGINS[op.origin]!
       const res = await subscribe(s, p.email, product.variantId, origin, PRICE_DROP)
-      expect(res.status, `${JSON.stringify(op)}: ${res.text.slice(0, 300)}`).toBe(202)
+      expect([res.status, said(res)], `${JSON.stringify(op)}: ${res.text.slice(0, 300)}`).toEqual([
+        202,
+        'pending',
+      ])
       if (p.state !== 'active') {
         if (p.state === 'none' || p.state === 'unsubscribed') p.baseline = this.price
+        if (confirmationOwed(p)) {
+          p.confirmations += 1
+          p.recent = true
+        }
         p.state = 'pending'
         p.origin = origin
-        p.confirmations += 1
       }
+    } else if (op.kind === 'lapse') {
+      const p = this.people[op.who]!
+      if (await lapse(s, p.email, product.variantId, PRICE_DROP)) p.recent = false
     } else if (op.kind === 'confirm') {
       const p = this.people[op.who]!
       if (mailsTo(s, p.email, PRICE_CONFIRM_MAIL).length === 0) return
@@ -789,17 +894,33 @@ class PriceMachine {
  * schema as it stood before this feature, whatever number its migration takes.
  */
 function migrationsBeforeAlerts(dialect: Dialect): { root: string; drop(): void } {
+  return migrationsCopy(dialect, (entries, from) => {
+    const first = entries.findIndex((entry) =>
+      readFileSync(join(from, `${entry.tag}.sql`), 'utf8').includes(TABLE),
+    )
+    return first === -1 ? entries : entries.slice(0, first)
+  })
+}
+
+/** A copy of the migrations folder holding every migration numbered up to `last` (`'0019'`). */
+function migrationsThrough(dialect: Dialect, last: string): { root: string; drop(): void } {
+  return migrationsCopy(dialect, (entries) => entries.filter((e) => e.tag.slice(0, 4) <= last))
+}
+
+type JournalEntry = { idx: number; tag: string }
+
+function migrationsCopy(
+  dialect: Dialect,
+  pick: (entries: JournalEntry[], from: string) => JournalEntry[],
+): { root: string; drop(): void } {
   const root = mkdtempSync(join(tmpdir(), 'alerts-migrations-'))
   const from = join(MIGRATIONS_ROOT, dialect)
   const to = join(root, dialect)
   mkdirSync(join(to, 'meta'), { recursive: true })
   const journal = JSON.parse(readFileSync(join(from, 'meta', '_journal.json'), 'utf8')) as {
-    entries: Array<{ idx: number; tag: string }>
+    entries: JournalEntry[]
   }
-  const first = journal.entries.findIndex((entry) =>
-    readFileSync(join(from, `${entry.tag}.sql`), 'utf8').includes(TABLE),
-  )
-  journal.entries = first === -1 ? journal.entries : journal.entries.slice(0, first)
+  journal.entries = pick(journal.entries, from)
   for (const entry of journal.entries) {
     cpSync(join(from, `${entry.tag}.sql`), join(to, `${entry.tag}.sql`))
   }
@@ -880,6 +1001,25 @@ async function tableCounts(raw: RawReader, dialect: Dialect): Promise<Record<str
   const counts: Record<string, number> = {}
   for (const { name } of names) counts[name] = await raw.count(`"${name}"`)
   return counts
+}
+
+/** A column's declared type on the alerts table, lower-cased; null when there is no such column. */
+async function columnTypeOf(
+  raw: RawReader,
+  dialect: Dialect,
+  column: string,
+): Promise<string | null> {
+  const rows =
+    dialect === 'sqlite'
+      ? await raw.rows<{ type: string }>(
+          `SELECT type FROM pragma_table_info('${TABLE}') WHERE name = ?`,
+          [column],
+        )
+      : await raw.rows<{ type: string }>(
+          'SELECT data_type AS type FROM information_schema.columns WHERE table_name = ? AND column_name = ?',
+          [TABLE, column],
+        )
+  return rows[0] === undefined ? null : rows[0].type.toLowerCase()
 }
 
 async function columnsOf(raw: RawReader, dialect: Dialect): Promise<string[]> {
@@ -1086,22 +1226,73 @@ export function alertsSuite(dialect: Dialect, options: AlertsSuiteOptions): void
       expect((await rowOf(s, email, p.variantId)).status).toBe('unsubscribed')
     })
 
-    it('AC-2: a repeat subscribe on a pending row from another allowed origin sends a confirmation whose links are at the new origin', async () => {
+    it('AC-7: a repeat subscribe on a pending row inside the confirmation interval, from the same or another allowed origin, sends no confirmation, answers as the first subscribe did and logs alert.repeated.v1, not alert.requested.v1; the first confirmation’s link still activates the row', async () => {
       const p = await seedProduct(s.k, 0)
-      const email = freshEmail('ac2-origin')
-      await subscribed(s, email, p.variantId, SHOP_A)
-      await subscribed(s, email, p.variantId, SHOP_B)
+      const email = freshEmail('ac7-inside')
+      const before = await lastSeq(s)
+      const first = await subscribe(s, email, p.variantId, SHOP_A)
+      await delivered(s)
+      const row = await rowOf(s, email, p.variantId)
+      const requestedFirst = await alertEventsOf(s, 'alert.requested.v1', row.id, before)
+      const mark = await lastSeq(s)
+
+      const repeats = [
+        await subscribe(s, email, p.variantId, SHOP_A),
+        await subscribe(s, email, p.variantId, SHOP_B),
+      ]
       await delivered(s)
 
-      const origins = mailsTo(s, email, CONFIRM_MAIL).map((m) => [
-        link(m.vars['confirmUrl'], '/alerts/confirm').origin,
+      expect(
+        mailsTo(s, email, CONFIRM_MAIL).length,
+        'confirmations after two repeats inside the interval',
+      ).toBe(1)
+      expect([first.status, said(first)]).toEqual([202, 'pending'])
+      // CORS answers each request at its own origin; every other byte and header is the first answer's.
+      const firstAt = (origin: string) => {
+        const shape = answerShape(first)
+        return { ...shape, headers: { ...shape.headers, 'access-control-allow-origin': origin } }
+      }
+      expect(repeats.map(answerShape)).toEqual([firstAt(SHOP_A), firstAt(SHOP_B)])
+      expect({
+        requested: await alertEventsOf(s, 'alert.requested.v1', row.id, mark),
+        repeated: await alertEventsOf(s, 'alert.repeated.v1', row.id, mark),
+      }).toEqual({ requested: 0, repeated: repeats.length })
+      expect(requestedFirst).toBe(1)
+
+      const confirmed = await confirm(s, latestConfirmation(s, email).confirm)
+      expect([confirmed.status, said(confirmed)]).toEqual([200, 'active'])
+      expect((await rowOf(s, email, p.variantId)).status).toBe('active')
+    })
+
+    it('AC-7: a repeat subscribe on a pending row whose last confirmation is 9 minutes old sends none; once it is 11 minutes old, past the 10-minute interval, a repeat from another allowed origin sends one confirmation whose links are at that origin, for the row’s same confirm token', async () => {
+      const p = await seedProduct(s.k, 0)
+      const email = freshEmail('ac7-past')
+      await subscribed(s, email, p.variantId, SHOP_A)
+      await delivered(s)
+      const row = await rowOf(s, email, p.variantId)
+
+      await confirmationSentAgo(s, row.id, 9 * MINUTE_MS)
+      await subscribed(s, email, p.variantId, SHOP_B)
+      await delivered(s)
+      const inside = mailsTo(s, email, CONFIRM_MAIL).length
+
+      await confirmationSentAgo(s, row.id, 11 * MINUTE_MS)
+      await subscribed(s, email, p.variantId, SHOP_B)
+      await delivered(s)
+      const mails = mailsTo(s, email, CONFIRM_MAIL)
+
+      expect(mails.length, 'confirmations after a repeat past the interval').toBe(inside + 1)
+      expect(inside, 'confirmations after a repeat just inside the interval').toBe(1)
+      const links = mails.map((m) => [
+        link(m.vars['confirmUrl'], '/alerts/confirm'),
         link(m.vars['unsubscribeUrl'], '/alerts/unsubscribe').origin,
       ])
-      expect(origins).toEqual([
-        [SHOP_A, SHOP_A],
-        [SHOP_B, SHOP_B],
+      const after = await rowOf(s, email, p.variantId)
+      expect(links).toEqual([
+        [{ origin: SHOP_A, token: after.confirm_token }, SHOP_A],
+        [{ origin: SHOP_B, token: after.confirm_token }, SHOP_B],
       ])
-      expect((await rowOf(s, email, p.variantId)).origin).toBe(SHOP_B)
+      expect(after.origin).toBe(SHOP_B)
     })
 
     it('AC-2: a missing Origin, or one that is not exactly an allowed origin, answers 400 alerts.origin_not_allowed with no row and no mail', async () => {
@@ -1232,7 +1423,7 @@ export function alertsSuite(dialect: Dialect, options: AlertsSuiteOptions): void
       )
     }, 300_000)
 
-    it('AC-5: property: over random sequences of subscribes (in case and space variants), k concurrent identical subscribes, confirms, unsubscribes and restock cycles, there is at most one row per address, variant and kind; an active row gets no mail from a repeat, and each accepted repeat on a pending, unsubscribed or fired row leaves it pending and sends one confirmation', async () => {
+    it('AC-8: property: over random sequences of subscribes (in case and space variants), k concurrent identical subscribes, confirms, unsubscribes, restock cycles and confirmation intervals passing, there is at most one row per address, variant and kind and every answer is 202 pending; a new row, or one reissued from unsubscribed or fired, is sent one confirmation (one for a k-burst); a repeat on a pending row is sent one only once its last is at least the interval old; an active row none', async () => {
       const arbBurst = fc.record({
         kind: fc.constant('burst' as const),
         who: arbWho,
@@ -1249,6 +1440,7 @@ export function alertsSuite(dialect: Dialect, options: AlertsSuiteOptions): void
             arbBurst.map((op) => [op]),
             arbConfirm.map((op) => [op]),
             arbUnsubscribe.map((op) => [op]),
+            arbLapse.map((op) => [op]),
             arbCycle,
           ),
           { minLength: 1, maxLength: 8 },
@@ -1278,8 +1470,12 @@ export function alertsSuite(dialect: Dialect, options: AlertsSuiteOptions): void
           examples: [
             [
               [
+                { kind: 'burst', who: 1, k: 3 },
                 { kind: 'subscribe', who: 0, form: null, origin: 0 },
                 { kind: 'burst', who: 0, k: 3 },
+                { kind: 'lapse', who: 0 },
+                { kind: 'burst', who: 0, k: 2 },
+                { kind: 'subscribe', who: 0, form: null, origin: 1 },
                 { kind: 'confirm', who: 0 },
                 { kind: 'burst', who: 0, k: 3 },
                 { kind: 'restock', delta: 1 },
@@ -1290,6 +1486,7 @@ export function alertsSuite(dialect: Dialect, options: AlertsSuiteOptions): void
                   form: { left: 2, right: 1, pattern: 'upper' },
                   origin: 1,
                 },
+                { kind: 'subscribe', who: 0, form: null, origin: 0 },
                 { kind: 'unsubscribe', who: 0 },
                 { kind: 'burst', who: 0, k: 2 },
               ],
@@ -1522,6 +1719,46 @@ export function alertsSuite(dialect: Dialect, options: AlertsSuiteOptions): void
       expect(mailsTo(s, email, CONFIRM_MAIL).length, 'confirmations after the retry').toBe(1)
       expect(await deliveryOf(s, requested!.id)).toEqual([1, true, false])
     })
+
+    it('AC-7: a confirmation the adapter refused starts no interval: a repeat subscribe after the refusal sends one confirmation, and the refused event’s later retry sends none, so the address gets one in all and both events are delivered', async () => {
+      twice.on = false
+      const p = await seedProduct(s.k, 0)
+      const email = freshEmail('ac7-refused')
+      s.mail.refuse.set(norm(email), 1)
+      const before = await lastSeq(s)
+      const tried = () =>
+        s.mail.attempts.filter((m) => m.to === norm(email) && m.template === CONFIRM_MAIL).length
+
+      await subscribed(s, email, p.variantId)
+      await settled(s)
+      const refused = { tried: tried(), sent: mailsTo(s, email, CONFIRM_MAIL).length }
+
+      await subscribed(s, email, p.variantId)
+      await settled(s)
+      const afterRepeat = mailsTo(s, email, CONFIRM_MAIL).length
+
+      await retried(s)
+      await retried(s)
+      const requested = await eventRows(s.raw, 'seq > ? AND type = ?', [
+        before,
+        'alert.requested.v1',
+      ])
+
+      expect(refused, 'the first confirmation, refused').toEqual({ tried: 1, sent: 0 })
+      expect(afterRepeat, 'confirmations after the repeat').toBe(refused.sent + 1)
+      expect(mailsTo(s, email, CONFIRM_MAIL).length, 'confirmations after the retry').toBe(
+        afterRepeat,
+      )
+      expect(
+        requested.map((e) => [e.deliveredAt != null, e.deadAt != null]),
+        'alert.requested.v1 for the first subscribe and for the repeat after the refusal',
+      ).toEqual([
+        [true, false],
+        [true, false],
+      ])
+      const confirmed = await confirm(s, latestConfirmation(s, email).confirm)
+      expect([confirmed.status, said(confirmed)]).toEqual([200, 'active'])
+    })
   })
 
   describe(`alerts: price-drop subscriptions and their baseline (${dialect})`, () => {
@@ -1666,13 +1903,14 @@ export function alertsSuite(dialect: Dialect, options: AlertsSuiteOptions): void
       await s?.close()
     })
 
-    it('AC-4: property: with every event delivered twice, over random price rises, drops and equal saves and subscription states, the price alerts sent equal the model: an active row is mailed exactly when the new price is below the previous one and its baseline, which then moves to the new price, and it stays active; pending and unsubscribed rows get nothing; each alert names both prices in the store currency, links the product and the row’s unsubscribe link at its origin, never says back in stock or one-time, and has one alert.sent.v1', async () => {
+    it('AC-8: property: with every event delivered twice, over random price rises, drops and equal saves, subscription states and confirmation intervals passing, the price alerts sent equal the model: an active row is mailed exactly when the new price is below the previous one and its baseline, which then moves to the new price, and it stays active; pending and unsubscribed rows get nothing; each alert names both prices in the store currency, links the product and the row’s unsubscribe link at its origin, never says back in stock or one-time, and has one alert.sent.v1; confirmations are one per new or reissued row and one per interval on a pending row', async () => {
       twice.on = true
       const arbOps = fc.array(
         fc.oneof(
           { arbitrary: arbPriceSubscribe, weight: 2 },
           { arbitrary: arbConfirm, weight: 2 },
           { arbitrary: arbUnsubscribe, weight: 1 },
+          { arbitrary: arbLapse, weight: 1 },
           { arbitrary: arbPrice, weight: 4 },
         ),
         { minLength: 1, maxLength: 12 },
@@ -1773,6 +2011,10 @@ export function alertsSuite(dialect: Dialect, options: AlertsSuiteOptions): void
           examples: [
             [
               [
+                { kind: 'subscribe', who: 2, origin: 0 },
+                { kind: 'subscribe', who: 2, origin: 1 },
+                { kind: 'lapse', who: 2 },
+                { kind: 'subscribe', who: 2, origin: 0 },
                 { kind: 'subscribe', who: 0, origin: 1 },
                 { kind: 'confirm', who: 0 },
                 { kind: 'price', move: 'down', step: 300 },
@@ -1919,6 +2161,246 @@ export function alertsSuite(dialect: Dialect, options: AlertsSuiteOptions): void
     })
   })
 
+  describe(`alerts: an unsubscribe while a fan-out runs (${dialect})`, () => {
+    let s: Store
+    const twice = { on: false }
+    const START_PRICE = 1500
+    const DROPPED = 1200
+
+    /** Each kind, the mail it alerts with, the event that triggers it and the stock it is seeded at. */
+    const KINDS = [
+      { kind: KIND, alert: ALERT_MAIL, trigger: 'product.restocked.v1', stock: 0 },
+      { kind: PRICE_DROP, alert: PRICE_ALERT_MAIL, trigger: PRICE_CHANGED, stock: 4 },
+    ] as const
+    type Kind = (typeof KINDS)[number]
+
+    beforeAll(async () => {
+      s = await openStore(options)
+      // At-least-once: while `twice.on`, the bus hands every event to the subscribers twice.
+      const bus = s.k.eventBus
+      const publish = bus.publish.bind(bus)
+      bus.publish = async function <T>(event: NymbalEvent<T>): Promise<void> {
+        await publish(event)
+        if (twice.on) await publish(event)
+      }
+    }, 60_000)
+
+    afterAll(async () => {
+      await s?.close()
+    })
+
+    async function activated(k: Kind, email: string, variantId: string): Promise<void> {
+      if (k.kind === KIND) await activate(s, email, variantId)
+      else await activatePriceDrop(s, email, variantId)
+    }
+
+    /** The variant back in stock, or its price lowered below every row's baseline. */
+    async function fire(k: Kind, p: Seeded): Promise<void> {
+      if (k.kind === KIND) await restock(s, p.variantId, 1)
+      else await reprice(s, p, DROPPED)
+    }
+
+    /**
+     * Posts the row's unsubscribe from inside an alert's send and returns once a second connection reads the row
+     * `unsubscribed`. The answer itself is left pending: the commit asks the relay for a drain, which waits for the
+     * delivery this send is part of.
+     */
+    async function leaveDuringSend(row: Row): Promise<{ answer: Promise<Answer> }> {
+      const answer = unsubscribe(s, row.unsubscribe_token)
+      await vi.waitFor(
+        async () => {
+          const [now] = await rowsWhere(s, 'id = ?', [row.id])
+          expect(now?.status).toBe('unsubscribed')
+        },
+        { timeout: 10_000, interval: 10 },
+      )
+      return { answer }
+    }
+
+    for (const k of KINDS) {
+      it(`AC-3: (${k.kind}) of two active rows on one variant, the one unsubscribed through its link while the other’s alert is being sent gets no alert, stays unsubscribed and has no alert.sent.v1; the other is mailed once and recorded; the trigger is delivered, not failed`, async () => {
+        twice.on = false
+        const p = await seedProduct(s.k, k.stock)
+        const emails = [freshEmail('ac3-a'), freshEmail('ac3-b')]
+        for (const email of emails) await activated(k, email, p.variantId)
+        const rows = await Promise.all(emails.map((e) => rowOf(s, e, p.variantId, k.kind)))
+        const left: Array<{ email: string; answer: Promise<Answer> }> = []
+        s.mail.onAlert = async (to) => {
+          if (left.length > 0) return
+          const other = rows.find((r) => r.email !== to)!
+          left.push({ email: other.email, ...(await leaveDuringSend(other)) })
+        }
+        const before = await lastSeq(s)
+        try {
+          await fire(k, p)
+          await delivered(s)
+        } finally {
+          s.mail.onAlert = null
+        }
+
+        const trigger = await triggerOf(s, k.trigger, p.variantId, before)
+        expect(left.length, 'unsubscribes made while an alert was being sent').toBe(1)
+        const answer = await left[0]!.answer
+        expect([answer.status, said(answer)]).toEqual([200, 'unsubscribed'])
+        const gone = rows.find((r) => r.email === left[0]!.email)!
+        const mailed = rows.find((r) => r.email !== gone.email)!
+        expect(
+          [mailed, gone].map((r) => mailsTo(s, r.email, k.alert).length),
+          'alerts to [the row being mailed, the row unsubscribed meanwhile]',
+        ).toEqual([1, 0])
+        expect(await sentPerRow(s, [mailed.id, gone.id], trigger.id)).toEqual([1, 0])
+        const after = await Promise.all(
+          [mailed, gone].map((r) => rowOf(s, r.email, p.variantId, k.kind)),
+        )
+        expect(after.map((r) => [r.status, baselineOf(r)])).toEqual(
+          k.kind === KIND
+            ? [
+                ['fired', null],
+                ['unsubscribed', null],
+              ]
+            : [
+                ['active', DROPPED],
+                ['unsubscribed', START_PRICE],
+              ],
+        )
+        expect((await deliveryOf(s, trigger.id)).slice(1), '[delivered, dead]').toEqual([
+          true,
+          false,
+        ])
+      })
+    }
+
+    type Point = 'never' | 'before' | { during: number }
+    const arbPlan = fc.record({
+      confirmed: fc.oneof(
+        { arbitrary: fc.constant(true), weight: 3 },
+        { arbitrary: fc.constant(false), weight: 1 },
+      ),
+      point: fc.oneof(
+        fc.constant<Point>('never'),
+        fc.constant<Point>('before'),
+        fc.nat({ max: 3 }).map((i): Point => ({ during: i })),
+      ),
+    })
+    type Mark = { send: number } | { gone: number; during: number | null }
+
+    it('AC-4: property: with every event delivered twice, over random subscription states of both kinds and each row unsubscribed before the trigger, while another row’s alert is sent or while its own is, a trigger and row have one alert.sent.v1 exactly when the row was active when its send was recorded; a row unsubscribed before its turn gets no mail, one unsubscribed during its own send at most that one and keeps unsubscribed and its baseline; a redelivery mails nothing more', async () => {
+      await fc.assert(
+        fc.asyncProperty(
+          fc.constantFrom(...KINDS),
+          fc.array(arbPlan, { minLength: 2, maxLength: 4 }),
+          async (k, plans) => {
+            twice.on = false
+            const p = await seedProduct(s.k, k.stock)
+            const emails = plans.map((_, i) => freshEmail(`ac4-${i}`))
+            for (const [i, plan] of plans.entries()) {
+              if (plan.confirmed) await activated(k, emails[i]!, p.variantId)
+              else await subscribed(s, emails[i]!, p.variantId, SHOP_A, k.kind)
+            }
+            await delivered(s)
+            const rows = await Promise.all(emails.map((e) => rowOf(s, e, p.variantId, k.kind)))
+
+            const timeline: Mark[] = []
+            const answers: Array<Promise<Answer>> = []
+            const leave = async (j: number, during: number | null): Promise<void> => {
+              if (during === null)
+                answers.push(Promise.resolve(await unsubscribe(s, rows[j]!.unsubscribe_token)))
+              else answers.push((await leaveDuringSend(rows[j]!)).answer)
+              timeline.push({ gone: j, during })
+            }
+            for (const [i, plan] of plans.entries())
+              if (plan.point === 'before') await leave(i, null)
+            const during = new Map<number, number[]>()
+            for (const [j, plan] of plans.entries()) {
+              if (typeof plan.point !== 'object') continue
+              const at = plan.point.during % plans.length
+              during.set(at, [...(during.get(at) ?? []), j])
+            }
+            await delivered(s)
+
+            s.mail.onAlert = async (to) => {
+              const i = rows.findIndex((r) => r.email === to)
+              timeline.push({ send: i })
+              const due = during.get(i) ?? []
+              during.delete(i)
+              for (const j of due) await leave(j, i)
+            }
+            const before = await lastSeq(s)
+            twice.on = true
+            try {
+              await fire(k, p)
+              await delivered(s)
+            } finally {
+              s.mail.onAlert = null
+              twice.on = false
+            }
+
+            const trigger = await triggerOf(s, k.trigger, p.variantId, before)
+            const sent = await sentPerRow(
+              s,
+              rows.map((r) => r.id),
+              trigger.id,
+            )
+            const after = await Promise.all(emails.map((e) => rowOf(s, e, p.variantId, k.kind)))
+            for (const [i, plan] of plans.entries()) {
+              const label = `${k.kind} row ${i} ${JSON.stringify(plan)}: ${JSON.stringify(timeline)}`
+              const sends = timeline.flatMap((m, at) => ('send' in m && m.send === i ? [at] : []))
+              const goneAt = timeline.findIndex((m) => 'gone' in m && m.gone === i)
+              const goneMark =
+                goneAt === -1 ? null : (timeline[goneAt] as { during: number | null })
+              const ownSend = goneMark !== null && goneMark.during === i
+              expect(
+                sends.filter((at) => goneAt !== -1 && at > goneAt),
+                `${label}: alerts begun after its unsubscribe`,
+              ).toEqual([])
+              expect(sends.length, `${label}: alerts`).toBeLessThanOrEqual(1)
+              const recorded = sends.length === 1 && !ownSend ? 1 : 0
+              expect(sent[i], `${label}: alert.sent.v1`).toBe(recorded)
+              if (plan.confirmed && goneMark === null) expect(sends.length, label).toBe(1)
+              const status =
+                goneMark !== null
+                  ? 'unsubscribed'
+                  : !plan.confirmed
+                    ? 'pending'
+                    : k.kind === KIND
+                      ? 'fired'
+                      : 'active'
+              const baseline = k.kind === KIND ? null : recorded === 1 ? DROPPED : START_PRICE
+              expect([after[i]!.status, baselineOf(after[i]!)], label).toEqual([status, baseline])
+            }
+            const unsubscribed = (await Promise.all(answers)).map((a) => [a.status, said(a)])
+            expect(unsubscribed).toEqual(unsubscribed.map(() => [200, 'unsubscribed']))
+            expect((await deliveryOf(s, trigger.id)).slice(1), '[delivered, dead]').toEqual([
+              true,
+              false,
+            ])
+          },
+        ),
+        {
+          numRuns: options.propertyRuns,
+          examples: [
+            [
+              KINDS[0],
+              [
+                { confirmed: true, point: { during: 0 } },
+                { confirmed: true, point: { during: 0 } },
+                { confirmed: true, point: 'never' },
+              ],
+            ],
+            [
+              KINDS[1],
+              [
+                { confirmed: true, point: { during: 1 } },
+                { confirmed: true, point: { during: 0 } },
+                { confirmed: false, point: 'before' },
+              ],
+            ],
+          ],
+        },
+      )
+    }, 300_000)
+  })
+
   describe(`alerts: stores that cannot take a subscription (${dialect})`, () => {
     it('AC-2: a store whose only allowed origin is * answers 400 alerts.origin_not_allowed, with no row and no mail', async () => {
       const star = await openStore(options, { origins: ['*'] })
@@ -1986,6 +2468,7 @@ export function alertsSuite(dialect: Dialect, options: AlertsSuiteOptions): void
             'created_at',
             'updated_at',
             'confirmed_at',
+            'confirmation_sent_at',
           ].sort(),
         )
         expect(sortedIndexes(await indexesOf(raw, dialect))).toEqual(
@@ -1999,6 +2482,78 @@ export function alertsSuite(dialect: Dialect, options: AlertsSuiteOptions): void
       } finally {
         await raw.close()
         before.drop()
+      }
+    }, 60_000)
+
+    it('AC-9: the confirmation migration applies on top of 0019 with existing alert rows, keeps every row of every table, and gives alert_subscriptions confirmation_sent_at, typed as confirmed_at is and null on every existing row', async () => {
+      const target = await options.fresh()
+      const through = migrationsThrough(dialect, '0019')
+      const raw = openRaw(dialect, target)
+      const OLD_COLUMNS =
+        'id, email, kind, variant_id, product_id, status, confirm_token, unsubscribe_token, origin, baseline_price_minor, created_at, updated_at, confirmed_at'
+      try {
+        await migrate(dialect, target, through.root)
+        await seedAt(dialect, target)
+        const variants = await raw.rows<{ id: string; product_id: string }>(
+          'SELECT id, product_id FROM variants ORDER BY id',
+        )
+        const at = new Date().toISOString()
+        const seeded: Array<[string, string, number | null, string | null]> = [
+          ['pending', KIND, null, null],
+          ['active', PRICE_DROP, 900, at],
+          ['unsubscribed', KIND, null, at],
+        ]
+        for (const [i, [status, kind, baseline, confirmedAt]] of seeded.entries()) {
+          const v = variants[i % variants.length]!
+          await writeAt(
+            dialect,
+            target,
+            `INSERT INTO ${TABLE} (${OLD_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              randomUUID(),
+              freshEmail(`ac9-${i}`),
+              kind,
+              v.id,
+              v.product_id,
+              status,
+              unknownToken(),
+              unknownToken(),
+              SHOP_A,
+              baseline,
+              at,
+              at,
+              confirmedAt,
+            ],
+          )
+        }
+        const kept = await tableCounts(raw, dialect)
+        const columnsBefore = await columnsOf(raw, dialect)
+        const rowsBefore = await raw.rows(`SELECT ${OLD_COLUMNS} FROM ${TABLE} ORDER BY id`)
+        expect(kept[TABLE], 'alert rows before the migration').toBe(seeded.length)
+
+        await migrate(dialect, target, MIGRATIONS_ROOT)
+
+        const after = await tableCounts(raw, dialect)
+        expect(Object.fromEntries(Object.keys(kept).map((t) => [t, after[t]]))).toEqual(kept)
+        expect(await columnsOf(raw, dialect)).toEqual(
+          [...columnsBefore, 'confirmation_sent_at'].sort(),
+        )
+        expect(await raw.rows(`SELECT ${OLD_COLUMNS} FROM ${TABLE} ORDER BY id`)).toEqual(
+          rowsBefore,
+        )
+        expect(
+          (
+            await raw.rows<{ sent: unknown }>(
+              `SELECT confirmation_sent_at AS sent FROM ${TABLE} ORDER BY id`,
+            )
+          ).map((r) => r.sent),
+        ).toEqual(rowsBefore.map(() => null))
+        expect(await columnTypeOf(raw, dialect, 'confirmation_sent_at')).toBe(
+          await columnTypeOf(raw, dialect, 'confirmed_at'),
+        )
+      } finally {
+        await raw.close()
+        through.drop()
       }
     }, 60_000)
   })

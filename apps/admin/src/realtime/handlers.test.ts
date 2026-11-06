@@ -53,6 +53,7 @@ function order(id: string, status: OrderStatus, sequence: number): Order {
     capturedAt: null,
     refundedMinor: 0,
     captureMethod: null,
+    source: 'storefront',
     createdAt: '2026-10-18T10:00:00.000Z',
     updatedAt: '2026-10-18T10:00:00.000Z',
   }

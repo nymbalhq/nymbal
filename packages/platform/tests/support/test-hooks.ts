@@ -103,33 +103,14 @@ function base(opts: TestHooksOptions) {
   }
 }
 
-/** The test provider as a shipping adapter: flat rates, labels and tracking, and its webhook. */
+/** The test provider as a shipping adapter: no rates, labels or tracking registration, only its webhook. */
 export function createTestHooksAdapter(opts: TestHooksOptions = {}): ShippingAdapter {
-  return {
+  const hookOnly: Omit<ShippingAdapter, 'rate' | 'createLabel' | 'startTracking' | 'track'> = {
     kind: 'shipping',
     ...base(opts),
-    async rate(params) {
-      return [
-        {
-          carrier: TEST_HOOKS,
-          service: 'standard',
-          amountMinor: 0,
-          currency: params.currency,
-          estimatedDays: 2,
-        },
-      ]
-    },
-    async createLabel(params) {
-      return {
-        labelUrl: `data:text/plain,${params.orderId}`,
-        trackingNumber: `TH-${params.orderId}`,
-        carrier: params.carrier,
-      }
-    },
-    async track() {
-      return { status: 'in_transit', lastUpdateAt: new Date(0).toISOString() }
-    },
+    capabilities: () => [],
   }
+  return hookOnly as ShippingAdapter
 }
 
 /** The same provider shape in the tax slot, for a store with a second hooked (or same-named) slot. */

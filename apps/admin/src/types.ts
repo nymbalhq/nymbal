@@ -1,5 +1,6 @@
 // Admin-only view shapes. Every shape the admin shares with the kernel is imported from @nymbalhq/types.
 import type {
+  AgentSurfaceCapabilities,
   Customer,
   Order,
   OrderHistoryEntry,
@@ -73,6 +74,20 @@ export interface DashboardStats {
   }
   recentOrders: Order[]
   lowStock: InventoryRow[]
+  agents: AgentsDashboard
+}
+
+/** The dashboard's Agents tile: the agent surfaces on, and the agent orders since `since` (the last 30 days). */
+export interface AgentsDashboard {
+  since: string
+  /** The store's currency, which the tile's money is formatted in. */
+  currency: string
+  surfaces: Array<{ name: 'ucp'; capabilities: AgentSurfaceCapabilities }>
+  mcp: { enabled: boolean; writes: 'proposal' | 'apply' }
+  profilePath: '/.well-known/ucp' | null
+  orders: { count: number; revenueMinor: number }
+  /** At most five agents, the most revenue first. */
+  bySource: Array<{ source: `agent:${string}`; count: number; revenueMinor: number }>
 }
 
 export interface Notification {

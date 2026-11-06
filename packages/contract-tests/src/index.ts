@@ -1,4 +1,5 @@
 import type { Slot } from '@nymbalhq/types'
+import { runAiContract } from './ai.js'
 import { runAnalyticsContract } from './analytics.js'
 import type { Build } from './common.js'
 import { runDocumentStoreContract } from './document-store.js'
@@ -15,12 +16,19 @@ import { runTaxContract } from './tax.js'
 export { adapterContext } from './adapter-context.js'
 export { BOUND_MS, type Build, type ContractOptions } from './common.js'
 export { CONTRACT_KINDS } from './kinds.js'
+export {
+  runAiContract,
+  type AiCapability,
+  type AiContractOptions,
+  type AiFailingBuild,
+  type AiFailureMode,
+} from './ai.js'
 export { runDocumentStoreContract, type DocumentStoreContractOptions } from './document-store.js'
 export { runEventBusContract, type EventBusContractOptions } from './event-bus.js'
 export { runMediaStorageContract, type MediaStorageContractOptions } from './media-storage.js'
 export { runPaymentsContract, type PaymentsContractOptions } from './payments.js'
 export { runEmailContract } from './email.js'
-export { runReviewsContract } from './reviews.js'
+export { runReviewsContract, type ReviewsContractOptions } from './reviews.js'
 export { runSearchContract, type SearchContractOptions } from './search.js'
 export {
   matchesQuery,
@@ -29,7 +37,7 @@ export {
   type ContractProduct,
 } from './search-oracle.js'
 export { runAnalyticsContract } from './analytics.js'
-export { runShippingContract } from './shipping.js'
+export { runShippingContract, type ShippingContractOptions } from './shipping.js'
 export { runTaxContract } from './tax.js'
 export { runWebhookContract, type WebhookContractOptions, type WebhookRequest } from './webhook.js'
 export {
@@ -71,6 +79,7 @@ const suites = {
   analytics: runAnalyticsContract as ContractSuite,
   shipping: runShippingContract as ContractSuite,
   tax: runTaxContract as ContractSuite,
+  ai: runAiContract as ContractSuite,
   documentStore: runDocumentStoreContract as ContractSuite,
   eventBus: runEventBusContract as ContractSuite,
   media: (name, build, options = {}) =>

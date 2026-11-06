@@ -46,12 +46,8 @@ const { title } = Astro.props
     let state = client.auth.getState()
 
     if (!state.isAuthenticated) {
-      try {
-        await client.auth.loadProfile()
-        state = client.auth.getState()
-      } catch {
-        // ignore — will redirect below
-      }
+      await client.auth.restore()
+      state = client.auth.getState()
     }
 
     if (!state.isAuthenticated) {

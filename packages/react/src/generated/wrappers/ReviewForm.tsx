@@ -36,16 +36,6 @@ export const ReviewForm = /* @__PURE__ */ forwardRef<HTMLElement, ReviewFormProp
 
   useEffect(() => {
     const el = ref.current
-    if (!el) return
-    if (props.productId !== undefined) {
-      el.setAttribute('product-id', String(props.productId))
-    } else {
-      el.removeAttribute('product-id')
-    }
-  }, [props.productId])
-
-  useEffect(() => {
-    const el = ref.current
     if (!el || !props.onSubmitted) return
     const handler = props.onSubmitted as EventListener
     el.addEventListener('nymbal:review:submitted', handler)
@@ -55,7 +45,7 @@ export const ReviewForm = /* @__PURE__ */ forwardRef<HTMLElement, ReviewFormProp
     useDefine(NymbalReviewForm)
 
     return (
-      <nymbal-review-form ref={ref as React.Ref<HTMLElement>} product-id={props.productId} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
+      <nymbal-review-form ref={ref as React.Ref<HTMLElement>} {...{ 'product-id': props.productId }} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
         // The server render goes on the tag itself: a full load parses its template into the shadow root, which React
         // does not see, and a soft navigation's innerHTML leaves it for the element to upgrade.
         dangerouslySetInnerHTML={props.serverHtml === undefined ? undefined : { __html: props.serverHtml }}

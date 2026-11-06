@@ -1,0 +1,18 @@
+# id: I125
+# kind: injected
+# defect: review.submitted.v1 carries the rating the customer asked for, not the one the reviews adapter stored, so a 9 is announced for a review stored at 5
+# where: packages/platform/src/services/review-service.ts:87
+# killed-by: packages/platform/src/services/review-service.test.ts (announces what the adapter stored, not what was asked)
+# suite: pnpm vitest run --project platform-unit packages/platform/src/services/review-service.test.ts
+diff --git a/packages/platform/src/services/review-service.ts b/packages/platform/src/services/review-service.ts
+--- a/packages/platform/src/services/review-service.ts
++++ b/packages/platform/src/services/review-service.ts
+@@ -84,7 +84,7 @@ export function createReviewService(deps: ReviewServiceDeps): ReviewService {
+           productId: review.productId,
+           customerId,
+           orderId: review.orderId,
+-          rating: review.rating,
++          rating: input.rating,
+         })
+       })
+       logger.debug({ reviewId: review.id, productId }, 'review submitted')

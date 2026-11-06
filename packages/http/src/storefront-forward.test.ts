@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { createServer, request, type IncomingHttpHeaders, type Server } from 'node:http'
 import type { Socket } from 'node:net'
 import fc from 'fast-check'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { securitySchema } from '@nymbalhq/config'
 import { FastifyHttpAdapter } from './fastify-adapter.js'
 import { forwardToStorefront } from './storefront-forward.js'
@@ -316,6 +316,103 @@ describe('AC-11: the forward to the storefront is faithful', () => {
   })
 })
 
+// AC-2: a client's `Connection` header names hop-by-hop headers for the next hop to drop. Dropping the forward's own
+// Host and X-Forwarded-* after it sets them would hand the storefront the internal origin to build its URLs on.
+const FORWARDED_HEADERS = [
+  'host',
+  'x-forwarded-host',
+  'x-forwarded-proto',
+  'x-forwarded-for',
+] as const
+
+/** What the storefront saw of the four headers the forward sets. */
+function forwardedOf(seen: Seen | undefined): Record<string, string | undefined> {
+  const h = seen?.headers ?? {}
+  return Object.fromEntries(
+    FORWARDED_HEADERS.map((name) => [name, h[name] === undefined ? undefined : String(h[name])]),
+  )
+}
+
+describe('AC-2: a Connection header naming the forwarded headers does not strip them', () => {
+  it('AC-2: for any non-empty subset of Host and X-Forwarded-* named in Connection, the storefront sees the public host, its scheme and the client address, as it does without the header', async () => {
+    const up = await startUpstream()
+    const { base } = await serve(up.port)
+    const origin = new URL(PUBLIC_URL)
+    let run = 0
+    await fc.assert(
+      fc.asyncProperty(
+        fc.shuffledSubarray([...FORWARDED_HEADERS], { minLength: 1 }),
+        async (listed) => {
+          run += 1
+          const plainUrl = `/page?run=${run}&connection=none`
+          const listedUrl = `/page?run=${run}&connection=listed`
+          const plain = await call(`${base}${plainUrl}`)
+          const withList = await call(`${base}${listedUrl}`, {
+            headers: { connection: listed.join(', ') },
+          })
+          const seenPlain = forwardedOf(up.seen.find((s) => s.url === plainUrl))
+          const seenListed = forwardedOf(up.seen.find((s) => s.url === listedUrl))
+
+          expect(plain.status).toBe(200)
+          expect(withList.status).toBe(plain.status)
+          expect(seenListed).toEqual(seenPlain)
+          expect(seenListed['host']).toBe(origin.host)
+          expect(seenListed['x-forwarded-host']).toBe(origin.host)
+          expect(seenListed['x-forwarded-proto']).toBe(origin.protocol.slice(0, -1))
+          expect(seenListed['x-forwarded-for']?.split(',').at(-1)?.trim()).toBe('127.0.0.1')
+        },
+      ),
+      { numRuns: 15 },
+    )
+  })
+
+  it('AC-2: `Connection: x-forwarded-host, x-forwarded-proto` still reaches the storefront with the public host and scheme', async () => {
+    const up = await startUpstream()
+    const { base } = await serve(up.port)
+    const origin = new URL(PUBLIC_URL)
+
+    const res = await call(`${base}/product/linen-shirt`, {
+      headers: { connection: 'x-forwarded-host, x-forwarded-proto' },
+    })
+    const seen = forwardedOf(up.seen.find((s) => s.url === '/product/linen-shirt'))
+
+    expect(res.status).toBe(200)
+    expect(seen['host']).toBe(origin.host)
+    expect(seen['x-forwarded-host']).toBe(origin.host)
+    expect(seen['x-forwarded-proto']).toBe(origin.protocol.slice(0, -1))
+  })
+})
+
+// AC-3: a request line under /api/ whose percent-encoding does not decode is the API's to refuse; it must not fall
+// through to the storefront's wildcard.
+describe('AC-3: a malformed /api/ URL is refused by the API', () => {
+  it('AC-3: /api/ targets with a bad percent-encoding answer 400 JSON FST_ERR_BAD_URL and never reach the storefront', async () => {
+    const up = await startUpstream()
+    const { base } = await serve(up.port)
+    const malformed = fc.oneof(
+      fc.constantFrom('/api/%E0%A4%A', '/api/%zz'),
+      fc
+        .tuple(
+          fc.stringMatching(/^[a-z0-9-]{0,8}(\/[a-z0-9-]{1,8}){0,2}$/),
+          fc.constantFrom('%zz', '%g1', '%E0%A4%A', '%C3', '%FF', '%E0%A4', '%'),
+        )
+        .map(([path, bad]) => `/api/${path}${bad}`),
+    )
+    await fc.assert(
+      fc.asyncProperty(malformed, async (target) => {
+        const res = await call(`${base}${target}`)
+
+        expect(res.status).toBe(400)
+        expect(res.headers['content-type']).toMatch(/^application\/json/)
+        expect((JSON.parse(res.body.toString()) as { code?: string }).code).toBe('FST_ERR_BAD_URL')
+      }),
+      { numRuns: 30 },
+    )
+
+    expect(up.seen.filter((s) => s.url.startsWith('/api'))).toEqual([])
+  })
+})
+
 describe('AC-5: the forward drains', () => {
   it('AC-5: after refuse() a new page request answers 503 and never reaches the upstream, the API still answers, the forward in flight completes, and drained() resolves true only once it has', async () => {
     const up = await startUpstream()
@@ -368,5 +465,98 @@ describe('AC-5: the forward drains', () => {
     expect(render.status).toBe(200)
     expect(await forward.drained(1000)).toBe(true)
     expect(forward.inFlight()).toBe(0)
+  })
+})
+
+// AC-7: the forward tells the storefront who the shopper is in a form only this API can have made: the client address
+// the API resolved (the peer, a listed proxy's X-Forwarded-For client, or a listed proxy's client-address header),
+// attested under the adapter's own key. Whatever a client sends in that header is replaced. The clock is pinned so the
+// adapter's own attestation of an address, made by the test, is the token the forward sent.
+const SHOPPER_HEADER = 'x-nymbal-shopper'
+const CLIENT = '203.0.113.9'
+const EDGE_CLIENT = '198.51.100.44'
+
+async function serveAttested(
+  upstreamPort: number,
+  network: { trustedProxies: string[]; clientIpHeader?: string },
+) {
+  const adapter = new FastifyHttpAdapter({ logger, security, ...network })
+  adapter.registerRoute('GET', '/api/ip', async (ctx) => ({ status: 200, body: { ip: ctx.ip } }))
+  forwardToStorefront(adapter, { port: upstreamPort, publicUrl: PUBLIC_URL })
+  await adapter.start(0, '127.0.0.1')
+  cleanup.push(() => adapter.stop())
+  return { base: `http://127.0.0.1:${adapter.boundPort}`, adapter }
+}
+
+describe('AC-7: the forward attests the address the API resolved', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  const cases = [
+    { label: 'trustedProxies []', network: { trustedProxies: [] }, resolved: '127.0.0.1' },
+    {
+      label: "trustedProxies ['loopback']",
+      network: { trustedProxies: ['loopback'] },
+      resolved: CLIENT,
+    },
+    {
+      label: 'clientIpHeader True-Client-IP from a listed peer',
+      network: { trustedProxies: ['loopback'], clientIpHeader: 'True-Client-IP' },
+      resolved: EDGE_CLIENT,
+    },
+  ] as const
+  for (const [i, c] of cases.entries()) {
+    it(`AC-7: with ${c.label} the storefront receives x-nymbal-shopper equal to the adapter's attestation of ${c.resolved}, the address the API's own context resolves, and of no other`, async () => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(new Date('2026-11-03T12:00:00.000Z'))
+      const up = await startUpstream()
+      const { base, adapter } = await serveAttested(up.port, {
+        ...c.network,
+        trustedProxies: [...c.network.trustedProxies],
+      })
+      const headers = { 'x-forwarded-for': CLIENT, 'true-client-ip': EDGE_CLIENT }
+
+      const res = await call(`${base}/attested?case=${i}`, { headers })
+      const api = JSON.parse((await call(`${base}/api/ip`, { headers })).body.toString()) as {
+        ip: string
+      }
+      const seen = up.seen.find((s) => s.url === `/attested?case=${i}`)
+      const others = ['127.0.0.1', CLIENT, EDGE_CLIENT].filter((ip) => ip !== c.resolved)
+
+      expect(res.status).toBe(200)
+      expect(api.ip).toBe(c.resolved)
+      // `<ip>~<expiresMs>~<mac>`: the address the token is for, before the adapter confirms it is its own.
+      expect(String(seen?.headers[SHOPPER_HEADER]).split('~')[0]).toBe(api.ip)
+      expect(seen?.headers[SHOPPER_HEADER]).toBe(adapter.attestShopper(api.ip))
+      expect(
+        others.map((ip) => seen?.headers[SHOPPER_HEADER] === adapter.attestShopper(ip)),
+      ).toEqual(others.map(() => false))
+    })
+  }
+
+  it("AC-7: an inbound x-nymbal-shopper on the page request, the adapter's own token for another address included, is replaced by the attestation of the client's address", async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-03T12:00:00.000Z'))
+    const up = await startUpstream()
+    const { base, adapter } = await serveAttested(up.port, { trustedProxies: ['loopback'] })
+    const forgedFor = '198.51.100.7'
+    const inbound = [
+      adapter.attestShopper(forgedFor),
+      `${forgedFor}~${Date.now() + 60_000}~${'A'.repeat(43)}`,
+      'not-a-token',
+    ]
+
+    const received: unknown[] = []
+    for (const [i, value] of inbound.entries()) {
+      const url = `/replaced?i=${i}`
+      const res = await call(`${base}${url}`, {
+        headers: { 'x-forwarded-for': CLIENT, [SHOPPER_HEADER]: value },
+      })
+      expect(res.status).toBe(200)
+      received.push(up.seen.find((s) => s.url === url)?.headers[SHOPPER_HEADER])
+    }
+
+    expect(received).toEqual(inbound.map(() => adapter.attestShopper(CLIENT)))
   })
 })

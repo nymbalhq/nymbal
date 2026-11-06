@@ -1,9 +1,15 @@
-import { DEFAULT_JWT_SECRET, type NymbalConfig } from '@nymbalhq/config'
+import {
+  DEFAULT_JWT_SECRET,
+  resolveOriginLock,
+  resolveTrustedProxies,
+  type NymbalConfig,
+} from '@nymbalhq/config'
 import {
   ConfigError,
   type CommerceSlot,
   type HealthReport,
   type PaymentsAdapter,
+  type ResolvedNetwork,
 } from '@nymbalhq/types'
 import { createPlatform, resolvePrimitives, type Platform } from './platform.js'
 import type { ResolvePrimitivesOptions } from './platform.js'
@@ -22,7 +28,7 @@ import { isNotConfigured } from './adapters/not-configured.js'
 import { createLogger } from './logger.js'
 import { loadBootSettings } from './settings/load.js'
 import { addSecret, scrubbingLogger } from './settings/secret-set.js'
-import { JWT_SECRET_ENV, resolveAuthSecret } from './auth-secret.js'
+import { isLoopbackHost, JWT_SECRET_ENV, resolveAuthSecret } from './auth-secret.js'
 import { buildServices, type ServiceRegistry } from './services/index.js'
 import { createEventPublisher, type EventPublisher } from './events/publisher.js'
 import { createRelay, deliveringBus, type CreateRelayOptions, type Relay } from './events/relay.js'
@@ -33,11 +39,20 @@ import {
   startInventoryReservationSweeper,
   startCartAbandonmentSweeper,
   startEventRetentionSweeper,
+  startRefreshTokenSweeper,
   type EventArchiveWriter,
   type SweeperHandle,
 } from './sweepers/index.js'
 import { importAdapterModule, resolveChoice } from './adapters/resolve.js'
-import type { HttpAdapter } from '@nymbalhq/types'
+import type { AgentSurfaces, HttpAdapter, ToolSurface } from '@nymbalhq/types'
+import { RouteTable, recordingAdapter } from './mcp/route-table.js'
+import { toolsOf } from './mcp/registry.js'
+import { createInvoker, type Invoker } from './mcp/invoke.js'
+import { policyOf } from './mcp/proposals.js'
+import { createAgentSurfaces } from './agents/surfaces.js'
+import { resolveAcpSettings } from './agents/acp/settings.js'
+import { idempotentCommand } from './audit/idempotency.js'
+import { runAsActor, type Actor } from './audit/actor.js'
 
 export interface NymbalApp {
   platform: Platform
@@ -48,10 +63,21 @@ export interface NymbalApp {
   /** Delivers the event log to the bus; started by createApp, stopped by stop(). */
   relay: Relay
   /**
+   * The trusted proxies, client-address header and origin lock, resolved once from the environment, the config and the
+   * security adapter's contribution: the block every HTTP server for this app is built with.
+   */
+  network: ResolvedNetwork
+  /**
    * Registers the API on the adapter. The admin is served at /admin/ when `adminRoot` is passed (its dist directory,
    * or null for a 404 that says how to build it) or `NYMBAL_ADMIN_DIST` is set.
    */
   attachHttp(adapter: HttpAdapter, options?: AttachHttpOptions): Promise<void>
+  /** The API's routes as agent tools, run in process through the handlers `attachHttp` registered; set by it. */
+  readonly mcp: ToolSurface | undefined
+  /** The routes as the admin's assistant runs them: as `mcp`, but only `agents.autoApprove` applies a write. */
+  readonly assistantTools: ToolSurface | undefined
+  /** The agent surfaces (UCP) and crawl files, over `mcp`; set by `attachHttp` once `mcp` is. */
+  readonly agents: AgentSurfaces | undefined
   /** Each slot's provider and its adapter's own `capabilities()`; an ai slot of `none` offers nothing. */
   capabilities(): CapabilitiesReport
   stop(): Promise<void>
@@ -76,7 +102,12 @@ export interface CreateAppOptions extends ResolvePrimitivesOptions {
   adapters?: InjectedAdapters
   /** How the event relay retries a failed delivery (`createRelay`). */
   relay?: Pick<CreateRelayOptions, 'maxAttempts' | 'retryDelayMs' | 'intervalMs' | 'now'>
+  /** How often expired and used refresh tokens are deleted; tests shorten it. */
+  refreshTokenSweep?: { intervalMs?: number }
 }
+
+/** Who an ACP agent's keyed requests are recorded as: the agent's own name is a label anyone holding the key can set. */
+const ACP_ACTOR: Actor = { kind: 'system', id: 'acp' }
 
 /**
  * A production process must not run on the stub payments adapter (its unsigned webhook confirms any order) or sign
@@ -206,6 +237,12 @@ export async function createApp(
   )
   const adapterLogger = logger.child({ layer: 'adapter' })
   checkInjectedAdapters(config, options.adapters)
+  const policy = policyOf(config.agents)
+  // The admin's assistant is not an MCP client: `agents.mcp.writes: 'apply'` never applies what it asks for.
+  const assistantPolicy = policyOf({
+    ...config.agents,
+    mcp: { ...config.agents.mcp, writes: 'proposal' },
+  })
   const jwt = resolveAuthSecret(config, process.env)
   addSecret(jwt.secret)
   const shadowed = process.env[JWT_SECRET_ENV]
@@ -238,6 +275,14 @@ export async function createApp(
   )
   refuseUnsafeProduction(config, payments, jwt.secret)
   const security = await resolveSecurityAdapter(config, adapterLogger)
+  const originLock = resolveOriginLock(config, process.env)
+  const network: ResolvedNetwork = {
+    ...resolveTrustedProxies(config, process.env, {
+      adapter: config.security.adapter,
+      network: security.network?.() ?? {},
+    }),
+    ...(originLock !== undefined && { originLock }),
+  }
   const archive = await eventArchiveWriter(config)
   const primitives = await resolvePrimitives(config, { ...options, logger })
   // Until the app is returned, nothing else holds the connections the primitives and the command store open.
@@ -287,6 +332,8 @@ export async function createApp(
         source: 'nymbal-app',
       },
     })
+    let mcp: Invoker | undefined
+    let assistantTools: Invoker | undefined
     const services = buildServices({
       config,
       store: platform.commandStore,
@@ -296,7 +343,13 @@ export async function createApp(
       payments: adapters.payments,
       searchAdapter: adapters.search,
       email: adapters.email,
+      reviews: adapters.reviews,
       jwtSecret: jwt.secret,
+      executeProposal: (row, auth) => {
+        if (mcp === undefined)
+          throw new Error('a proposal runs through the routes attachHttp registers')
+        return mcp.execute(row, auth)
+      },
     })
 
     await registerHandlers({
@@ -350,8 +403,17 @@ export async function createApp(
         retentionDays: config.events.retentionDays,
         ...(archive !== undefined && { archive }),
       }),
+      startRefreshTokenSweeper({
+        store: platform.commandStore,
+        refreshTokens: repos.refreshToken,
+        logger,
+        ...(options.refreshTokenSweep?.intervalMs !== undefined && {
+          intervalMs: options.refreshTokenSweep.intervalMs,
+        }),
+      }),
     ]
 
+    let agents: AgentSurfaces | undefined
     const app: NymbalApp = {
       platform,
       repos,
@@ -359,12 +421,29 @@ export async function createApp(
       services,
       publisher,
       relay,
+      network,
       async attachHttp(adapter, options = {}) {
+        // Anyone can sign a token with the published default secret, so it is served on loopback only.
+        if (jwt.source === 'default' && !isLoopbackHost(config.http.host)) {
+          throw new ConfigError(
+            `security.auth.jwtSecret is the schema default and ${JWT_SECRET_ENV} is not set, so the API may listen on loopback only, not on ${config.http.host}; set ${JWT_SECRET_ENV} to a secret of your own (\`openssl rand -base64 32\`).`,
+            { code: 'config.default_jwt_secret_exposed', context: { host: config.http.host } },
+          )
+        }
+        const acp = resolveAcpSettings(config, adapters.payments)
+        if (acp !== null) {
+          addSecret(acp.apiKey)
+          logger.warn(
+            {},
+            'agents.acp is on: Agentic Commerce Protocol checkout is beta, and its API may change',
+          )
+        }
         await adapters.security.applyMiddleware(adapter, config.security)
         const { registerAllRoutes } = await import('./routes/register.js')
+        const table = new RouteTable()
         registerAllRoutes({
           config,
-          adapter,
+          adapter: recordingAdapter(table, adapter),
           services,
           adapters,
           repos,
@@ -375,7 +454,70 @@ export async function createApp(
           jwtSecret: jwt.secret,
           adminRoot:
             options.adminRoot !== undefined ? options.adminRoot : process.env['NYMBAL_ADMIN_DIST'],
+          assistantTools: () => assistantTools,
         })
+        const tools = toolsOf(table)
+        mcp = createInvoker({ table, tools, proposals: services.proposals, policy, logger })
+        assistantTools = createInvoker({
+          table,
+          tools,
+          proposals: services.proposals,
+          policy: assistantPolicy,
+          logger,
+        })
+        agents = createAgentSurfaces({
+          config,
+          mcp,
+          variants: (variantId) =>
+            platform.commandStore.read(async (tx) => {
+              const variant = await repos.variant.findById(tx, variantId)
+              if (variant === null) return null
+              return (await repos.product.findById(tx, variant.productId))?.slug ?? null
+            }),
+          // A cart a customer has claimed is theirs, no longer the agent's to read or hand on.
+          cart: async (token) => {
+            const cart = await services.cart.get(token)
+            return cart === null || cart.customerId === null ? cart : null
+          },
+          ...(acp !== null && {
+            acp: {
+              orders: {
+                converted: (token) =>
+                  platform.commandStore.read((tx) =>
+                    repos.order.findLastConvertedByCartToken(tx, token),
+                  ),
+                pending: (token) =>
+                  platform.commandStore.read((tx) => repos.order.findPendingByCartToken(tx, token)),
+              },
+              sessions: platform.documentStore,
+              checkout: services.checkout,
+              idempotent: (command, { key, hash }, run) =>
+                runAsActor(ACP_ACTOR, () =>
+                  idempotentCommand(
+                    platform.commandStore,
+                    command,
+                    { actor: ACP_ACTOR, key, hash, provider: true },
+                    run,
+                  ),
+                ),
+              payments: {
+                providerName: adapters.payments.providerName,
+                environment: acp.environment,
+              },
+              config: acp,
+              logger: logger.child({ surface: 'acp' }),
+            },
+          }),
+        })
+      },
+      get mcp() {
+        return mcp
+      },
+      get assistantTools() {
+        return assistantTools
+      },
+      get agents() {
+        return agents
       },
       capabilities() {
         const commerce = Object.fromEntries(

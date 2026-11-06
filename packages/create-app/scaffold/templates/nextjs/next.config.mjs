@@ -1,5 +1,6 @@
 import { relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { pagePolicy } from './lib/page-policy.mjs'
 
 // NYMBAL_ELEMENTS_ENTRY (an absolute path) is the store's elements entry in place of elements/index.ts, on the server
 // and in the browser (the E2E override fixture).
@@ -32,11 +33,19 @@ const nextConfig = {
     }
   },
   // The order page's URL carries the order's key; no request from it, nor from its not-found render, may refer it on.
+  // `strict-origin` sends the origin alone: a form posted to the page's server action keeps its Origin, which Next
+  // checks, where `no-referrer` would send `Origin: null` and the action would be refused.
   async headers() {
+    const policy = pagePolicy({
+      apiUrl: process.env.NEXT_PUBLIC_NYMBAL_API_URL ?? 'http://localhost:3001',
+      dev: process.env.NODE_ENV !== 'production',
+    })
     return [
+      // Only the policy: a Referrer-Policy here would replace the order page's.
+      { source: '/:path*', headers: [{ key: 'Content-Security-Policy', value: policy }] },
       {
         source: '/order/:orderNumber',
-        headers: [{ key: 'Referrer-Policy', value: 'no-referrer' }],
+        headers: [{ key: 'Referrer-Policy', value: 'strict-origin' }],
       },
     ]
   },

@@ -34,32 +34,12 @@ export const StockBadge = /* @__PURE__ */ forwardRef<HTMLElement, StockBadgeProp
     const innerRef = useRef<HTMLElement>(null)
     const ref = (forwardedRef ?? innerRef) as React.RefObject<HTMLElement | null>
 
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (props.productId !== undefined) {
-      el.setAttribute('product-id', String(props.productId))
-    } else {
-      el.removeAttribute('product-id')
-    }
-  }, [props.productId])
-
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (props.stock !== undefined) {
-      el.setAttribute('stock', String(props.stock))
-    } else {
-      el.removeAttribute('stock')
-    }
-  }, [props.stock])
-
 
 
     useDefine(NymbalStockBadge)
 
     return (
-      <nymbal-stock-badge ref={ref as React.Ref<HTMLElement>} product-id={props.productId} stock={props.stock} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
+      <nymbal-stock-badge ref={ref as React.Ref<HTMLElement>} {...{ 'product-id': props.productId, 'STOCK': props.stock }} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
         // The server render goes on the tag itself: a full load parses its template into the shadow root, which React
         // does not see, and a soft navigation's innerHTML leaves it for the element to upgrade.
         dangerouslySetInnerHTML={props.serverHtml === undefined ? undefined : { __html: props.serverHtml }}

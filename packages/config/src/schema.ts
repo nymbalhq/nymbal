@@ -7,6 +7,11 @@ import {
   type InfrastructureSlot,
 } from './known-infrastructure.js'
 import { type CommerceSlot } from './known-providers.js'
+import {
+  clientIpHeaderProblem,
+  trustedProxyMessage,
+  trustedProxyProblem,
+} from './trusted-proxies.js'
 
 const rateLimitRuleSchema = z.object({
   requests: z.number().int().positive(),
@@ -21,6 +26,20 @@ const rateLimitPathPattern = /^\/[\w\-/*:]*$/
 /** The schema's JWT secret when none is configured: fine for development, refused in production. */
 export const DEFAULT_JWT_SECRET = 'dev-secret-please-override-me-1234567890'
 
+/** An address the store ships from; `region` may be empty, for countries without one. */
+const shipFromSchema = z.object({
+  firstName: z.string().min(1),
+  lastName: z.string().min(1),
+  company: z.string().optional(),
+  addressLine1: z.string().min(1),
+  addressLine2: z.string().optional(),
+  city: z.string().min(1),
+  region: z.string(),
+  postalCode: z.string().min(1),
+  country: z.string().regex(/^[A-Z]{2}$/, 'country must be two upper-case letters, such as "GB"'),
+  phone: z.string().optional(),
+})
+
 export const storeSchema = z.object({
   name: z.string().min(1),
   currency: z.string().length(3),
@@ -32,6 +51,8 @@ export const storeSchema = z.object({
     .url()
     .transform((url) => url.replace(/\/+$/, ''))
     .optional(),
+  /** Where parcels are sent from, for shipping rates. */
+  shipFrom: shipFromSchema.optional(),
 })
 
 const quotedList = (values: readonly string[]): string => values.map((v) => `'${v}'`).join(', ')
@@ -42,12 +63,10 @@ function infrastructureValue<const V extends readonly [string, ...string[]]>(
   values: V,
 ) {
   return z.enum(values, {
-    errorMap: (issue, ctx) =>
-      issue.code === z.ZodIssueCode.invalid_enum_value
-        ? {
-            message: `unknown ${slot} '${String(issue.received)}'; the ${slot} values are ${quotedList(values)}`,
-          }
-        : { message: ctx.defaultError },
+    error: (issue) =>
+      issue.code === 'invalid_value'
+        ? `unknown ${slot} '${String(issue.input)}'; the ${slot} values are ${quotedList(values)}`
+        : undefined,
   })
 }
 
@@ -141,12 +160,10 @@ function infrastructureBlock(slot: BlockSlot) {
         config: z.record(z.string(), z.unknown()).optional(),
       },
       {
-        errorMap: (issue, ctx) =>
-          issue.code === z.ZodIssueCode.invalid_type && typeof ctx.data === 'string'
-            ? {
-                message: `infrastructure.${slot} takes a block: write { provider: '${ctx.data}' }`,
-              }
-            : { message: ctx.defaultError },
+        error: (issue) =>
+          issue.code === 'invalid_type' && typeof issue.input === 'string'
+            ? `infrastructure.${slot} takes a block: write { provider: '${issue.input}' }`
+            : undefined,
       },
     )
     .superRefine((block, ctx) => {
@@ -216,12 +233,10 @@ export const s3Schema = z
       forcePathStyle: z.boolean().optional(),
     },
     {
-      errorMap: (issue, ctx) =>
-        issue.code === z.ZodIssueCode.unrecognized_keys
-          ? {
-              message: `unknown infrastructure.s3 key${issue.keys.length > 1 ? 's' : ''} ${quotedList(issue.keys)}; the s3 keys are ${quotedList(S3_KEYS)}, and credentials come from the AWS SDK (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, a profile or a role), never the config`,
-            }
-          : { message: ctx.defaultError },
+      error: (issue) =>
+        issue.code === 'unrecognized_keys'
+          ? `unknown infrastructure.s3 key${issue.keys.length > 1 ? 's' : ''} ${quotedList(issue.keys)}; the s3 keys are ${quotedList(S3_KEYS)}, and credentials come from the AWS SDK (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, a profile or a role), never the config`
+          : undefined,
     },
   )
   .strict()
@@ -237,10 +252,8 @@ export const infrastructureSchema = z
       s3: s3Schema.optional(),
     },
     {
-      errorMap: (issue, ctx) =>
-        issue.code === z.ZodIssueCode.unrecognized_keys
-          ? { message: unrecognizedInfrastructureKeys(issue.keys) }
-          : { message: ctx.defaultError },
+      error: (issue) =>
+        issue.code === 'unrecognized_keys' ? unrecognizedInfrastructureKeys(issue.keys) : undefined,
     },
   )
   .strict()
@@ -285,6 +298,38 @@ const customRuleSchema = z.object({
   action: z.enum(['block', 'managed_challenge', 'js_challenge', 'log']),
 })
 
+/** An RFC 9110 field name. */
+const HEADER_TOKEN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/
+/** Headers HTTP, the API or a CDN already gives a meaning, which a CDN would overwrite or the API would misread. */
+const OWNED_HEADERS = [
+  'host',
+  'cookie',
+  'authorization',
+  'content-length',
+  'content-type',
+  'transfer-encoding',
+  'connection',
+  'forwarded',
+  'x-nymbal-shopper',
+  'x-correlation-id',
+  'x-real-ip',
+]
+
+const originLockHeaderSchema = z.string().superRefine((header, ctx) => {
+  const lower = header.toLowerCase()
+  const problem = !HEADER_TOKEN.test(header)
+    ? 'is not an HTTP header name'
+    : OWNED_HEADERS.includes(lower) || lower.startsWith('x-forwarded-') || lower.startsWith('cf-')
+      ? 'is a header HTTP, a CDN or the API already uses; choose your own, such as X-Nymbal-Origin'
+      : null
+  if (problem !== null) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `security.originLock.header '${header}' ${problem}`,
+    })
+  }
+})
+
 const securityFields = z.object({
   /** `middleware` is the kernel's own; any other resolves as a commerce provider does, `security-<adapter>`. */
   adapter: providerNameSchema('security.adapter'),
@@ -298,6 +343,8 @@ const securityFields = z.object({
         message: 'rate limit keys must start with "/" and use only letters, numbers, -, _, /, *, :',
       }),
       rateLimitRuleSchema,
+      // Zod 4 reports a bad key as "Invalid key in record" and nests the key schema's message; surface that message.
+      { error: (issue) => (issue.code === 'invalid_key' ? issue.issues[0]?.message : undefined) },
     )
     .default({}),
   botProtection: z
@@ -315,8 +362,10 @@ const securityFields = z.object({
       referrerPolicy: z.string().default('strict-origin-when-cross-origin'),
       xFrameOptions: z.enum(['deny', 'sameorigin']).default('deny'),
     })
-    .default({}),
+    .prefault({}),
   csrf: z.boolean().default(true),
+  /** The header a CDN proves a request crossed it in; `NYMBAL_ORIGIN_SECRET` holds the value and turns the lock on. */
+  originLock: z.object({ header: originLockHeaderSchema.default('X-Nymbal-Origin') }).prefault({}),
   auth: z
     .object({
       jwtSecret: z.string().min(16).default(DEFAULT_JWT_SECRET),
@@ -329,7 +378,7 @@ const securityFields = z.object({
         .regex(/^\d+(ms|s|m|h|d)$/, 'TTL must look like "7d"')
         .default('7d'),
     })
-    .default({}),
+    .prefault({}),
   cloudflare: cloudflareSchema.optional(),
   geo: z
     .object({
@@ -419,9 +468,9 @@ export const commerceSchema = z.object({
             .regex(/^\d+(ms|s|m|h|d)$/, 'TTL must look like "30d"')
             .default('30d'),
         })
-        .default({}),
+        .prefault({}),
     })
-    .default({}),
+    .prefault({}),
 })
 
 export const httpSchema = z.object({
@@ -429,12 +478,40 @@ export const httpSchema = z.object({
   port: z.number().int().positive().default(3001),
   host: z.string().default('0.0.0.0'),
   /**
-   * Which `X-Forwarded-For` entries set the client IP the rate limiter keys on. A number trusts that many proxy hops
-   * nearest the server (`1` behind one platform proxy); `0` trusts none. `true` trusts every entry, so a client's own
-   * left-most value wins: spoofable unless your proxy overwrites the header. Left at `false` (explicitly or not),
-   * NYMBAL_TRUST_PROXY_HOPS fills it at run time.
+   * The proxies in front whose `X-Forwarded-For` sets the client address the rate limiter keys on: `loopback`,
+   * `linklocal`, `uniquelocal`, an IP address or a CIDR. Unset, `loopback`; NYMBAL_TRUSTED_PROXIES replaces it.
    */
-  trustProxy: z.union([z.boolean(), z.number().int().min(0)]).default(false),
+  trustedProxies: z
+    .array(
+      z.string().superRefine((entry, ctx) => {
+        const problem = trustedProxyProblem(entry)
+        if (problem !== null) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: trustedProxyMessage(entry, 'http.trustedProxies', problem),
+          })
+        }
+      }),
+    )
+    .optional(),
+  /**
+   * One header a listed proxy sets to the client's address (`True-Client-IP`, `CF-Connecting-IP`), read in place of
+   * `X-Forwarded-For` and only from a listed proxy. NYMBAL_CLIENT_IP_HEADER replaces it.
+   */
+  clientIpHeader: z
+    .string()
+    .superRefine((name, ctx) => {
+      const problem = clientIpHeaderProblem(name)
+      if (problem !== null)
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: `'${name}' ${problem}` })
+    })
+    .optional(),
+  trustProxy: z
+    .never({
+      error:
+        "http.trustProxy was removed: list the proxies in front in http.trustedProxies (or NYMBAL_TRUSTED_PROXIES), such as ['loopback'] or ['uniquelocal']",
+    })
+    .optional(),
   cors: z
     .object({
       allowedOrigins: z
@@ -442,7 +519,7 @@ export const httpSchema = z.object({
         .default(['http://localhost:3000', 'http://localhost:4321']),
       credentials: z.boolean().default(true),
     })
-    .default({}),
+    .prefault({}),
 })
 
 export const deploymentSchema = z.object({
@@ -483,6 +560,139 @@ export const eventsSchema = z
   })
   .strict()
 
+const MCP_WRITES = ['proposal', 'apply'] as const
+
+/**
+ * The AI crawlers `robots.txt` names and allows by default, each as its vendor documents it:
+ * - GPTBot, OAI-SearchBot, ChatGPT-User: https://platform.openai.com/docs/bots
+ * - ClaudeBot, Claude-User, Claude-SearchBot:
+ *   https://support.claude.com/en/articles/8896518-does-anthropic-crawl-data-from-the-web-and-how-can-site-owners-block-the-crawler
+ * - PerplexityBot, Perplexity-User: https://docs.perplexity.ai/guides/bots
+ * - Google-Extended: https://developers.google.com/search/docs/crawling-indexing/google-common-crawlers
+ * - Applebot-Extended: https://support.apple.com/en-us/119829
+ */
+export const DEFAULT_AGENT_CRAWLERS: readonly string[] = Object.freeze([
+  'GPTBot',
+  'OAI-SearchBot',
+  'ChatGPT-User',
+  'ClaudeBot',
+  'Claude-User',
+  'Claude-SearchBot',
+  'PerplexityBot',
+  'Perplexity-User',
+  'Google-Extended',
+  'Applebot-Extended',
+])
+
+const CRAWL_OTHERS = ['allow', 'disallow'] as const
+
+/** The link types the Agentic Commerce Protocol (2026-04-17) names for a session's `links`. */
+export const ACP_LINK_TYPES = [
+  'terms_of_use',
+  'privacy_policy',
+  'return_policy',
+  'shipping_policy',
+  'contact_us',
+  'about_us',
+  'faq',
+  'support',
+] as const
+
+/** The shortest ACP key the store takes, from the config or `NYMBAL_ACP_API_KEY`. */
+export const ACP_KEY_MIN_LENGTH = 32
+
+/**
+ * How agents reach the store. Under `mcp.writes: 'proposal'` an admin command tool's call is kept as a proposal an
+ * admin approves or rejects, unless `autoApprove` lists its command; `'apply'` approves every command at the call.
+ * Either way the proposal is recorded. A command that moves money cannot be listed in `autoApprove`. `ucp` is the
+ * Universal Commerce Protocol profile and its MCP endpoint; `links` are the legal pages a UCP checkout names. `acp`
+ * is the Agentic Commerce Protocol's checkout (beta, off unless enabled), held by a bearer key of at least 32
+ * characters (`apiKey`, else `NYMBAL_ACP_API_KEY`). `crawl` is what `robots.txt`, `llms.txt` and the product feed serve.
+ * `assistant` is what the admin's assistant may send its AI provider.
+ */
+export const agentsSchema = z
+  .object({
+    mcp: z
+      .object({
+        enabled: z.boolean().default(true),
+        writes: z
+          .enum(MCP_WRITES, {
+            error: (issue) =>
+              issue.code === 'invalid_value'
+                ? `must be 'proposal' or 'apply', not ${JSON.stringify(issue.input)}`
+                : undefined,
+          })
+          .default('proposal'),
+      })
+      .strict()
+      .prefault({}),
+    autoApprove: z.array(z.string().min(1)).default([]),
+    ucp: z
+      .object({
+        enabled: z.boolean().default(true),
+        links: z
+          .array(
+            z
+              .object({
+                type: z.string().min(1),
+                url: z.string().url(),
+                title: z.string().optional(),
+              })
+              .strict(),
+          )
+          .default([]),
+      })
+      .strict()
+      .prefault({}),
+    acp: z
+      .object({
+        enabled: z.boolean().default(false),
+        apiKey: z
+          .string()
+          .min(ACP_KEY_MIN_LENGTH, { error: `must be at least ${ACP_KEY_MIN_LENGTH} characters` })
+          .optional(),
+        links: z
+          .array(
+            z
+              .object({
+                type: z.enum(ACP_LINK_TYPES),
+                url: z.string().url(),
+                title: z.string().optional(),
+              })
+              .strict(),
+          )
+          .default([]),
+        merchantId: z.string().min(1).optional(),
+      })
+      .strict()
+      .prefault({}),
+    crawl: z
+      .object({
+        robots: z.boolean().default(true),
+        llms: z.boolean().default(true),
+        feed: z.boolean().default(true),
+        allow: z.array(z.string().min(1)).default(() => [...DEFAULT_AGENT_CRAWLERS]),
+        others: z
+          .enum(CRAWL_OTHERS, {
+            error: (issue) =>
+              issue.code === 'invalid_value'
+                ? `must be 'allow' or 'disallow', not ${JSON.stringify(issue.input)}`
+                : undefined,
+          })
+          .default('allow'),
+      })
+      .strict()
+      .prefault({}),
+    assistant: z
+      .object({
+        /** false keeps every tool that answers a customer's email, phone or address off the admin's assistant. */
+        customerData: z.boolean().default(true),
+      })
+      .strict()
+      .prefault({}),
+  })
+  .strict()
+
 export const nymbalConfigSchema = z
   .object({
     store: storeSchema,
@@ -497,7 +707,8 @@ export const nymbalConfigSchema = z
       heartbeat: false,
       autoUpdates: false,
     }),
-    events: eventsSchema.default({}),
+    events: eventsSchema.prefault({}),
+    agents: agentsSchema.prefault({}),
   })
   .superRefine((cfg, ctx) => {
     const archiveBucket = cfg.events.archive?.bucket

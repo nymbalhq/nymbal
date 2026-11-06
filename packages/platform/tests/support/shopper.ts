@@ -1,9 +1,11 @@
 // A shopper over HTTP (the shape of packages/proof-kit/tests/fixtures/storefront-client.ts): keeps the cookies the
-// store sets (cart, CSRF) and echoes the CSRF cookie in the header the security middleware checks. A jar passed in is
-// shared, so two shoppers on two base URLs are one browser talking to two replicas.
+// store sets (cart, CSRF) and echoes the CSRF cookie in the header the security middleware checks. Before an unsafe
+// call with no CSRF cookie in the jar it fetches `GET /api/csrf`, the one answer that sets it, as the SDK does. A jar
+// passed in is shared, so two shoppers on two base URLs are one browser talking to two replicas.
 
 const CSRF_COOKIE = 'nymbal.csrf'
 const CSRF_HEADER = 'x-csrf-token'
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 
 export type CookieJar = Map<string, string>
 
@@ -23,6 +25,9 @@ export function shopper(baseUrl: string, jar: CookieJar = new Map()) {
     body?: unknown,
     opts: { headers?: Record<string, string> } = {},
   ): Promise<ShopResponse<T>> {
+    if (!SAFE_METHODS.has(method.toUpperCase()) && !jar.has(CSRF_COOKIE)) {
+      await call('GET', '/api/csrf')
+    }
     const headers: Record<string, string> = { accept: 'application/json' }
     if (jar.size > 0) {
       headers.cookie = [...jar].map(([name, value]) => `${name}=${value}`).join('; ')

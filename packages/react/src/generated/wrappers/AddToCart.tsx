@@ -43,36 +43,6 @@ export const AddToCart = /* @__PURE__ */ forwardRef<HTMLElement, AddToCartProps>
 
   useEffect(() => {
     const el = ref.current
-    if (!el) return
-    if (props.variantId !== undefined) {
-      el.setAttribute('variant-id', String(props.variantId))
-    } else {
-      el.removeAttribute('variant-id')
-    }
-  }, [props.variantId])
-
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (props.qty !== undefined) {
-      el.setAttribute('qty', String(props.qty))
-    } else {
-      el.removeAttribute('qty')
-    }
-  }, [props.qty])
-
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (props.disabled) {
-      el.setAttribute('disabled', '')
-    } else {
-      el.removeAttribute('disabled')
-    }
-  }, [props.disabled])
-
-  useEffect(() => {
-    const el = ref.current
     if (!el || !props.onItemAdded) return
     const handler = props.onItemAdded as EventListener
     el.addEventListener('nymbal:cart:item-added', handler)
@@ -82,7 +52,7 @@ export const AddToCart = /* @__PURE__ */ forwardRef<HTMLElement, AddToCartProps>
     useDefine(NymbalAddToCart)
 
     return (
-      <nymbal-add-to-cart ref={ref as React.Ref<HTMLElement>} variant-id={props.variantId} qty={props.qty} disabled={props.disabled ? '' : undefined} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
+      <nymbal-add-to-cart ref={ref as React.Ref<HTMLElement>} {...{ 'variant-id': props.variantId, 'QTY': props.qty, 'DISABLED': props.disabled ? '' : undefined }} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
         // The server render goes on the tag itself: a full load parses its template into the shadow root, which React
         // does not see, and a soft navigation's innerHTML leaves it for the element to upgrade.
         dangerouslySetInnerHTML={props.serverHtml === undefined ? undefined : { __html: props.serverHtml }}

@@ -127,15 +127,22 @@ for (const signal of ['SIGTERM', 'SIGINT']) {
     child.kill(signal)
     if (deadline !== undefined) return
     const sentAt = Date.now()
-    deadline = setTimeout(() => {
+    const expire = () => {
+      // A timer armed from the event loop's cached clock can fire a millisecond before waitMs has passed.
+      const waitedMs = Date.now() - sentAt
+      if (waitedMs < waitMs) {
+        deadline = setTimeout(expire, waitMs - waitedMs)
+        return
+      }
       mkdirSync(dirname(REPORT), { recursive: true })
-      const record = { command: command.join(' '), pid: child.pid, waitedMs: Date.now() - sentAt }
+      const record = { command: command.join(' '), pid: child.pid, waitedMs }
       writeFileSync(REPORT, `${JSON.stringify(record)}\n`)
       process.stderr.write(
         `e2e-server: ${record.command} (pid ${record.pid}) outlived ${signal} by ${record.waitedMs} ms; killed\n`,
       )
       child.kill('SIGKILL')
-    }, waitMs)
+    }
+    deadline = setTimeout(expire, waitMs)
   })
 }
 

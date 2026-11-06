@@ -1,0 +1,18 @@
+# id: I126
+# kind: injected
+# defect: Mailgun's health check never verifies the SMTP relay, so a relay that is down reports healthy while no mail can leave
+# where: packages/adapters/email/mailgun/src/mailgun-adapter.ts:84
+# killed-by: tests/contracts/mailgun-email.test.ts (down: healthCheck() reports down within 6 s)
+# suite: pnpm vitest run --project contracts-native tests/contracts/mailgun-email.test.ts
+diff --git a/packages/adapters/email/mailgun/src/mailgun-adapter.ts b/packages/adapters/email/mailgun/src/mailgun-adapter.ts
+--- a/packages/adapters/email/mailgun/src/mailgun-adapter.ts
++++ b/packages/adapters/email/mailgun/src/mailgun-adapter.ts
+@@ -81,7 +81,7 @@ export function createMailgunEmailAdapter(deps: {
+     },
+     healthCheck: () =>
+       boundedHealthCheck(async () => {
+-        const smtp = await sender.verify()
++        const smtp = { status: 'healthy' as const }
+         const missing = missingLogin(cfg)
+         const problems = [
+           ...(missing.length > 0 ? [`${loginText(missing)}: Mailgun refuses every send`] : []),

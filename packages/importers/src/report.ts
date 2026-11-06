@@ -2,20 +2,45 @@ import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ImportReport, ImportState } from './types.js'
 
+/**
+ * Counts the source records brought over since the last `--fresh`: a customer linked to one the store already had is
+ * imported, though the rollback set holds only the records the import created.
+ */
 export function buildReport(state: ImportState, startMs: number): ImportReport {
+  const count = (map: Record<string, string>) => Object.keys(map).length
   return {
     imported: {
-      categories: state.importedIds.categories.length,
-      products: state.importedIds.products.length,
-      customers: state.importedIds.customers.length,
-      orders: state.importedIds.orders.length,
-      reviews: state.importedIds.reviews.length,
+      categories: count(state.wcToNymbalCategory),
+      products: count(state.wcToNymbalProduct),
+      customers: count(state.wcToNymbalCustomer),
+      orders: count(state.wcToNymbalOrder),
+      reviews: count(state.wcToNymbalReview),
     },
     enriched: { enriched: 0, skipped: 0, failed: 0 },
     errors: state.errors,
+    warnings: state.warnings,
+    updated: { products: state.delta?.updated.products ?? 0 },
+    changedNotUpdated: { orders: state.delta?.changedNotUpdated.orders ?? 0 },
     eventsEmitted: state.eventsEmitted,
     durationMs: Date.now() - startMs,
   }
+}
+
+/** One heading per phase, in the order each first appears, with its count, then a line per item in its order. */
+function byPhase(items: Array<{ phase: string; id?: string; message: string }>): string[] {
+  const groups = new Map<string, typeof items>()
+  for (const item of items) {
+    const group = groups.get(item.phase)
+    if (group === undefined) groups.set(item.phase, [item])
+    else group.push(item)
+  }
+  const lines: string[] = []
+  for (const [phase, group] of groups) {
+    lines.push(`### ${phase.charAt(0).toUpperCase()}${phase.slice(1)} (${group.length})`, '')
+    for (const item of group) lines.push(`- ${item.id ? `**${item.id}**: ` : ''}${item.message}`)
+    lines.push('')
+  }
+  return lines
 }
 
 export function formatReport(report: ImportReport, storeName: string): string {
@@ -50,12 +75,27 @@ export function formatReport(report: ImportReport, storeName: string): string {
     '',
   ]
 
+  if (report.updated.products > 0 || report.changedNotUpdated.orders > 0) {
+    lines.push('## Changes since', '')
+    for (const [entity, since] of Object.entries(report.since ?? {})) {
+      const label = entity.charAt(0).toUpperCase() + entity.slice(1)
+      lines.push(`- ${label}: ${since === null ? 'everything (first pass)' : `since ${since}`}`)
+    }
+    lines.push(
+      `- Updated products: ${report.updated.products}`,
+      `- Changed orders not updated: ${report.changedNotUpdated.orders} (an imported order is never written again)`,
+      '',
+    )
+  }
+
   if (report.errors.length > 0) {
     lines.push('## Errors Requiring Review', '')
-    for (const e of report.errors) {
-      lines.push(`- **${e.phase}**${e.id ? ` (${e.id})` : ''}: ${e.error}`)
-    }
-    lines.push('')
+    lines.push(...byPhase(report.errors.map((e) => ({ ...e, message: e.error }))))
+  }
+
+  if (report.warnings.length > 0) {
+    lines.push('## Review before launch', '')
+    lines.push(...byPhase(report.warnings))
   }
 
   lines.push(
@@ -63,7 +103,7 @@ export function formatReport(report: ImportReport, storeName: string): string {
     '',
     '1. Run `nymbal dev` to preview your imported store',
     '2. Run `nymbal test:visual --update-baselines` to capture visual baselines',
-    '3. Review any items listed under Errors above',
+    '3. Review any items listed under Errors and Review before launch above',
     ...(report.enriched.skipped > 0
       ? ['4. Products with sufficient content were skipped — review originals if needed']
       : []),

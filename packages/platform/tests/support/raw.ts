@@ -37,7 +37,7 @@ export function openRaw(dialect: Dialect, target: string): RawReader {
 
   return {
     rows,
-    async one<T>(sql, params) {
+    async one<T>(sql: string, params?: unknown[]) {
       const [row] = await rows<T>(sql, params)
       if (row === undefined) throw new Error(`no row for: ${sql}`)
       return row

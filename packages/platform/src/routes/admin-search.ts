@@ -68,7 +68,7 @@ export function registerAdminSearchRoute(
           customers: matchedCustomers,
         })
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )

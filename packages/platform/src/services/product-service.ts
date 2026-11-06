@@ -15,6 +15,7 @@ import {
   type ProductSnapshot,
   type Logger,
 } from '@nymbalhq/types'
+import { sanitizeDescription } from './description.js'
 import { audit } from '../audit/audit.js'
 import type { CommandStore, ReadTx } from '../db/command-store.js'
 import type { Repositories } from '../repositories/index.js'
@@ -116,7 +117,9 @@ export function createProductService(deps: CreateProductServiceDeps): ProductSer
           id: productId,
           slug: input.slug,
           name: input.name,
-          ...(input.description !== undefined && { description: input.description }),
+          ...(input.description !== undefined && {
+            description: sanitizeDescription(input.description),
+          }),
           ...(input.shortDescription !== undefined && { shortDescription: input.shortDescription }),
           ...(input.status !== undefined && { status: input.status }),
           ...(input.type !== undefined && { type: input.type }),
@@ -160,9 +163,10 @@ export function createProductService(deps: CreateProductServiceDeps): ProductSer
       return store.transaction(async (tx) => {
         audit.note('product.update', [{ type: 'product', id }])
         const product = await requireProduct(tx, id)
-        // Every listed variant is checked before anything is written, so a refusal changes nothing.
+        // Every listed variant is checked before anything is written, so a refusal changes nothing. The rows are held
+        // so a concurrent update compares and logs against the price this one writes, not the one both read.
         const current = new Map(
-          (await repos.variant.findByProduct(tx, product.id)).map((v) => [v.id, v]),
+          (await repos.variant.lockByProduct(tx, product.id)).map((v) => [v.id, v]),
         )
         for (const item of input.variants ?? []) {
           if (!current.has(item.id)) {
@@ -174,7 +178,9 @@ export function createProductService(deps: CreateProductServiceDeps): ProductSer
         const now = new Date()
         const updateInput: ProductUpdate = {
           ...(input.name !== undefined && { name: input.name }),
-          ...(input.description !== undefined && { description: input.description }),
+          ...(input.description !== undefined && {
+            description: sanitizeDescription(input.description),
+          }),
           ...(input.shortDescription !== undefined && { shortDescription: input.shortDescription }),
           ...(input.status !== undefined && { status: input.status }),
           ...(input.type !== undefined && { type: input.type }),

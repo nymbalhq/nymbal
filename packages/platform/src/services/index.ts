@@ -1,11 +1,17 @@
-import type { EmailAdapter, Logger, PaymentsAdapter, SearchAdapter } from '@nymbalhq/types'
+import type {
+  EmailAdapter,
+  Logger,
+  PaymentsAdapter,
+  ReviewsAdapter,
+  SearchAdapter,
+} from '@nymbalhq/types'
 import type { NymbalConfig } from '@nymbalhq/config'
 import type { CommandStore } from '../db/command-store.js'
 import type { Repositories } from '../repositories/index.js'
 import type { EventPublisher } from '../events/publisher.js'
 import { createProductService, type ProductService } from './product-service.js'
 import { createCategoryService, type CategoryService } from './category-service.js'
-import { createCartService, type CartService } from './cart-service.js'
+import { createCartCatalogue, createCartService, type CartService } from './cart-service.js'
 import { createCustomerService, type CustomerService } from './customer-service.js'
 import { createAuthService, parseDurationToMs, type AuthService } from './auth-service.js'
 import { createOrderService, type OrderService } from './order-service.js'
@@ -22,6 +28,13 @@ import {
   type RecentlyViewedService,
 } from './recently-viewed-service.js'
 import { createAlertService, type AlertService } from './alert-service.js'
+import { createReviewService, type ReviewService } from './review-service.js'
+import {
+  createProposalService,
+  type ProposalService,
+  type ProposalServiceDeps,
+} from './proposal-service.js'
+import { createImportRemovalService, type ImportRemovalService } from './import-removal-service.js'
 
 export * from './product-service.js'
 export * from './category-service.js'
@@ -35,7 +48,11 @@ export * from './search-service.js'
 export * from './refund-service.js'
 export * from './recently-viewed-service.js'
 export * from './alert-service.js'
+export * from './review-service.js'
+export * from './proposal-service.js'
+export * from './import-removal-service.js'
 export { newAlertToken } from './alert-token.js'
+export { sanitizeDescription } from './description.js'
 
 /** A `native` email adapter only logs; any other (`smtp`, a project's own) is taken to reach a mailbox. */
 export function emailDelivers(email: EmailAdapter): boolean {
@@ -55,6 +72,9 @@ export interface ServiceRegistry {
   search: SearchService
   recentlyViewed: RecentlyViewedService
   alert: AlertService
+  review: ReviewService
+  proposals: ProposalService
+  importRemoval: ImportRemovalService
 }
 
 export interface BuildServicesDeps {
@@ -66,13 +86,26 @@ export interface BuildServicesDeps {
   payments: PaymentsAdapter
   searchAdapter: SearchAdapter
   email: EmailAdapter
+  reviews: ReviewsAdapter
   /** The effective JWT secret (`resolveAuthSecret`), not the config's field. */
   jwtSecret: string
+  /** Runs a stored proposal through its route: the tool surface `attachHttp` builds. */
+  executeProposal: ProposalServiceDeps['execute']
 }
 
 export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
-  const { config, store, repos, publisher, logger, payments, searchAdapter, email, jwtSecret } =
-    deps
+  const {
+    config,
+    store,
+    repos,
+    publisher,
+    logger,
+    payments,
+    searchAdapter,
+    email,
+    reviews,
+    jwtSecret,
+  } = deps
   const inventory = createInventoryService({
     store,
     repos,
@@ -93,6 +126,8 @@ export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
     publisher,
     logger: logger.child({ service: 'cart' }),
     currency: config.store.currency,
+    catalogue: createCartCatalogue(repos),
+    pendingOrders: repos.order,
   })
   const checkout = createCheckoutService({
     store,
@@ -159,6 +194,25 @@ export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
       publisher,
       allowedOrigins: config.http.cors.allowedOrigins,
       delivers: () => emailDelivers(email),
+    }),
+    review: createReviewService({
+      store,
+      repos,
+      publisher,
+      reviews,
+      logger: logger.child({ service: 'review' }),
+    }),
+    proposals: createProposalService({
+      store,
+      proposals: repos.proposal,
+      publisher,
+      execute: deps.executeProposal,
+    }),
+    importRemoval: createImportRemovalService({
+      store,
+      repos,
+      publisher,
+      logger: logger.child({ service: 'import-removal' }),
     }),
   }
 }

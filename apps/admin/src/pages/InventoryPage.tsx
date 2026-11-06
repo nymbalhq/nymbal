@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Search, History, Boxes } from 'lucide-react'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Input } from '@/components/ui/input'
@@ -26,7 +27,9 @@ const STATUS_LABEL: Record<StockStatus, string> = {
 }
 
 export function InventoryPage() {
-  const [search, setSearch] = useState('')
+  // The product page links a variant's stock here with its SKU as `q`.
+  const [searchParams] = useSearchParams()
+  const [search, setSearch] = useState(() => searchParams.get('q') ?? '')
   const [statusFilter, setStatusFilter] = useState<StockStatus | 'all'>('all')
   const [historyRow, setHistoryRow] = useState<InventoryRow | null>(null)
 

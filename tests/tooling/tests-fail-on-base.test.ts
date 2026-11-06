@@ -127,7 +127,7 @@ const execFileAsync = promisify(execFile)
 async function run(
   command: string,
   args: string[],
-  options: { cwd: string; timeout?: number },
+  options: { cwd: string; timeout?: number; env?: NodeJS.ProcessEnv },
 ): Promise<{ status: number | null; stdout: string; stderr: string }> {
   try {
     const { stdout, stderr } = await execFileAsync(command, args, { ...options, encoding: 'utf8' })
@@ -459,10 +459,11 @@ describe('AC-15: added test files include uncommitted and untracked ones', () =>
 // AC-22 and AC-23: a dependency change between base and HEAD, and a base that cannot install or build
 // ---------------------------------------------------------------------------------------------------------------
 
-async function runWith(root: string, base: string, extra: string[]) {
+async function runWith(root: string, base: string, extra: string[], env?: NodeJS.ProcessEnv) {
   const result = await run(TSX, [SCRIPT, base, '--root', root, '--suite', SUITE, ...extra], {
     cwd: REPO,
     timeout: 50_000,
+    ...(env === undefined ? {} : { env }),
   })
   return { status: result.status, out: `${result.stdout}\n${result.stderr}` }
 }
@@ -639,6 +640,75 @@ describe('AC-23 (revised): a base that cannot install or build fails the step cl
       // pnpm 9 prints ` ERR_PNPM_X  msg`, 10 and 11 `[ERR_PNPM_X] msg`, 12 `Error: ERR_PNPM_X`.
       expect(linesFor(out, file).join('\n'), out).toMatch(
         /base did not build: (?:\[|Error: )?ERR_PNPM_OUTDATED_LOCKFILE\b/,
+      )
+    }
+    expect(status, out).not.toBe(0)
+    expect(state(root)).toEqual(before)
+  })
+})
+
+// pnpm 12 installs before running a command (`verifyDepsBeforeRun`) unless a pnpm parent turned that off for its
+// children, so the script run straight from a shell got it. In the base worktree, whose node_modules link into
+// HEAD's, that install fails, pnpm warns and the suite runs on regardless.
+describe("a base run through pnpm: pnpm's own install before the run", () => {
+  const MULTIPLY_TEST = 'packages/app/test/multiply.test.js'
+  const ADD_ZERO_TEST = 'packages/app/test/add-zero.test.js'
+
+  /** This environment without what a pnpm parent (this suite's own `pnpm vitest`) sets for its children. */
+  function outsidePnpm(): NodeJS.ProcessEnv {
+    const env = { ...process.env }
+    delete env.pnpm_config_verify_deps_before_run
+    return env
+  }
+
+  /** No dependency change: HEAD only gains multiply, a test needing it and a test the base passes. */
+  async function workspaceRepo(): Promise<{ root: string; base: string }> {
+    const root = emptyRepo()
+    writeWorkspace(root, '@scope-a', BASE_MATH)
+    await expectExit0(root, 'pnpm', ['install', '--offline', '--no-frozen-lockfile'])
+    const base = commitAll(root, 'base')
+    write(root, 'packages/lib/src/index.js', HEAD_MATH)
+    write(root, MULTIPLY_TEST, appTest('multiply', 'assert.equal(multiply(2, 3), 6)'))
+    write(root, ADD_ZERO_TEST, appTest('add', 'assert.equal(add(0, 7), 7)'))
+    commitAll(root, 'head: lib gains multiply')
+    await expectGreenAtHead(root)
+    expect(git(root, 'diff', '--name-only', base, 'HEAD')).not.toContain('pnpm-lock.yaml')
+    return { root, base }
+  }
+
+  it("is not run: a new test fails on base for its own reason, not pnpm's install error", async () => {
+    const { root, base } = await workspaceRepo()
+    const before = state(root)
+
+    const { out } = await runWith(
+      root,
+      base,
+      ['--build', '', '--suite', 'pnpm exec node --test'],
+      outsidePnpm(),
+    )
+
+    expect(verdictsOf(out, MULTIPLY_TEST), out).toEqual(['fails on base'])
+    expect(linesFor(out, MULTIPLY_TEST).join('\n'), out).toMatch(/multiply/)
+    expect(verdictsOf(out, ADD_ZERO_TEST), out).toEqual(['PASSES ON BASE'])
+    expect(out, out).not.toContain('installing dependencies')
+    expect(state(root)).toEqual(before)
+  })
+
+  it('when it runs and fails, the step fails closed naming it, and no file fails on base', async () => {
+    const { root, base } = await workspaceRepo()
+    const before = state(root)
+
+    const { status, out } = await runWith(root, base, [
+      '--build',
+      '',
+      '--suite',
+      'pnpm_config_verify_deps_before_run=install pnpm exec node --test',
+    ])
+
+    for (const file of [MULTIPLY_TEST, ADD_ZERO_TEST]) {
+      expect(verdictsOf(out, file), out).toEqual(['not judged'])
+      expect(linesFor(out, file).join('\n'), out).toContain(
+        'base did not build: Error: × installing dependencies',
       )
     }
     expect(status, out).not.toBe(0)

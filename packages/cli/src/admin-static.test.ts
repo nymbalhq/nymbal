@@ -80,6 +80,12 @@ async function serve(root: string | null): Promise<Served> {
     logger,
     documentStore: {} as DocumentStoreAdapter,
     version: '0.0.0',
+    // No app here: the default block, as createApp resolves it with nothing set.
+    network: {
+      trustedProxies: ['loopback'],
+      trustedProxiesSource: { kind: 'default', name: 'default' },
+      clientIpRequiresLock: false,
+    },
   })
   http.registerRoute('GET', '/api/probe', async () => ({
     status: 200,

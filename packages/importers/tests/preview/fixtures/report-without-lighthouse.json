@@ -1,0 +1,152 @@
+{
+  "report": {
+    "source": {
+      "url": "https://shop.example/store"
+    },
+    "generatedAt": "2026-11-04T12:00:00.000Z",
+    "currency": "GBP",
+    "entities": ["categories", "products", "customers", "orders", "reviews"],
+    "counts": {
+      "categories": {
+        "source": 3,
+        "planned": 3,
+        "imported": 3,
+        "refused": 0,
+        "skipped": 0,
+        "served": 3
+      },
+      "products": {
+        "source": 5,
+        "planned": 5,
+        "imported": 4,
+        "refused": 1,
+        "skipped": 0,
+        "served": 3
+      },
+      "customers": {
+        "source": 2,
+        "planned": 2,
+        "imported": 2,
+        "refused": 0,
+        "skipped": 0,
+        "served": null
+      },
+      "orders": {
+        "source": 4,
+        "planned": 4,
+        "imported": 4,
+        "refused": 0,
+        "skipped": 0,
+        "served": null
+      },
+      "reviews": {
+        "source": 2,
+        "planned": 2,
+        "imported": 1,
+        "refused": 0,
+        "skipped": 1,
+        "served": null
+      }
+    },
+    "errors": [
+      {
+        "phase": "products",
+        "id": "104",
+        "error": "slug taken by product 101"
+      }
+    ],
+    "warnings": [
+      {
+        "phase": "products",
+        "id": "102",
+        "message": "price 4.995 kept as 5.00"
+      },
+      {
+        "phase": "taxes",
+        "message": "tax rates are not imported"
+      }
+    ],
+    "unmapped": {
+      "categories": [],
+      "products": [
+        {
+          "field": "meta_data._custom_badge",
+          "records": 2
+        }
+      ],
+      "customers": [],
+      "orders": [
+        {
+          "field": "fee_lines",
+          "records": 1
+        }
+      ],
+      "reviews": [],
+      "variations": []
+    },
+    "notListed": [
+      {
+        "wcId": 103,
+        "slug": "staff-mug",
+        "name": "Staff mug"
+      }
+    ],
+    "differences": {
+      "byField": {
+        "name": 0,
+        "price": 1,
+        "variants": 0,
+        "images": 1,
+        "categories": 0
+      },
+      "products": [
+        {
+          "wcId": 102,
+          "slug": "tea-sampler",
+          "name": "Tea | sampler",
+          "changes": [
+            {
+              "field": "price",
+              "source": "4.995",
+              "preview": "5.00"
+            }
+          ]
+        },
+        {
+          "wcId": 105,
+          "slug": "canvas-tote",
+          "name": "Canvas tote",
+          "changes": [
+            {
+              "field": "images",
+              "source": "1",
+              "preview": "0"
+            }
+          ]
+        }
+      ]
+    },
+    "redirects": {
+      "rows": 5,
+      "unredirected": [
+        {
+          "kind": "product",
+          "wcId": 103,
+          "reason": "imported as a draft"
+        },
+        {
+          "kind": "product",
+          "wcId": 104,
+          "reason": "refused: slug taken by product 101"
+        }
+      ],
+      "duplicates": [
+        {
+          "from": "/shop/shared-name/",
+          "wcIds": [106]
+        }
+      ]
+    }
+  },
+  "markdown": "# Nymbal Preview Report — Shop\n_Generated 2026-11-04T12:00:00.000Z from https://shop.example/store in GBP. Your store was not changed._\n\n## Counts\n\n| Entity | Source | Planned | Imported | Refused | Skipped | Served |\n|---|---|---|---|---|---|---|\n| categories | 3 | 3 | 3 | 0 | 0 | 3 |\n| products | 5 | 5 | 4 | 1 | 0 | 3 |\n| customers | 2 | 2 | 2 | 0 | 0 | – |\n| orders | 4 | 4 | 4 | 0 | 0 | – |\n| reviews | 2 | 2 | 1 | 0 | 1 | – |\n\n## Review before launch\n\n- **products** (102): price 4.995 kept as 5.00\n- **taxes**: tax rates are not imported\n\n## Errors\n\n- **products** (104): slug taken by product 101\n\n## Differences\n\n### price (1)\n\n| Product | Source | Preview |\n|---|---|---|\n| Tea \\| sampler (`tea-sampler`) | 4.995 | 5.00 |\n\n### images (1)\n\n| Product | Source | Preview |\n|---|---|---|\n| Canvas tote (`canvas-tote`) | 1 | 0 |\n\n\n## Not on the storefront\n\n- Staff mug (`staff-mug`, WooCommerce id 103): imported as a draft\n\n## Redirects\n\n5 rows in `nymbal-redirects.csv`.\n- No redirect for product 103: imported as a draft\n- No redirect for product 104: refused: slug taken by product 101\n- `/shop/shared-name/` is already redirected; not again for WooCommerce ids 106\n\n## Unmapped fields\n\n### products\n\n- `meta_data._custom_badge`: 2 records\n\n### orders\n\n- `fee_lines`: 1 records\n\n"
+}

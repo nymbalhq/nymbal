@@ -252,3 +252,64 @@ describe('AC-6: CheckoutStore keeps the order key', () => {
     )
   })
 })
+
+// The element tells an auth refusal from a payment failure by the error's code, so the store keeps it beside the
+// message: the code of a NymbalApiError, null for any other error, both cleared by a later submit that succeeds.
+describe('the checkout store keeps the code of a refused submit', () => {
+  type Answer =
+    | { kind: 'api'; code: string; message: string; status: number }
+    | { kind: 'error'; message: string }
+    | { kind: 'placed' }
+
+  const answer: fc.Arbitrary<Answer> = fc.oneof(
+    fc.record({
+      kind: fc.constant('api' as const),
+      code: fc.constantFrom(
+        'auth.token_invalid',
+        'checkout.invalid',
+        'checkout.payment_in_progress',
+        'inventory.insufficient',
+      ),
+      message: fc.stringMatching(/^[A-Z][a-z ]{0,29}$/),
+      status: fc.constantFrom(400, 401, 409, 422),
+    }),
+    fc.record({
+      kind: fc.constant('error' as const),
+      message: fc.stringMatching(/^[A-Z][a-z ]{0,29}$/),
+    }),
+    fc.constant({ kind: 'placed' as const }),
+  )
+
+  it('AC-8b: property: over sequences of submits, a NymbalApiError leaves null with error its message and errorCode its code, any other error leaves errorCode null, and a submit that places an order clears both', async () => {
+    await fc.assert(
+      fc.asyncProperty(fc.array(answer, { minLength: 1, maxLength: 6 }), async (answers) => {
+        const create = vi.fn()
+        const store = createCheckoutStore({ checkout: { create } } as unknown as CommerceAdapter)
+        store.setEmail('buyer@example.com')
+        store.setShippingAddress(addr)
+        store.setBillingAddress(addr)
+
+        for (const a of answers) {
+          if (a.kind === 'api') {
+            create.mockRejectedValueOnce(new NymbalApiError(a.code, a.message, a.status))
+          } else if (a.kind === 'error') {
+            create.mockRejectedValueOnce(new TypeError(a.message))
+          } else {
+            create.mockResolvedValueOnce({ ...orderResult, payment: { status: 'succeeded' } })
+          }
+
+          const result = await store.submitPayment()
+
+          const { error, errorCode } = store.getState()
+          const placed = a.kind === 'placed'
+          expect({ placed: result?.orderNumber ?? null, error, errorCode }, a.kind).toEqual({
+            placed: placed ? orderResult.orderNumber : null,
+            error: placed ? null : a.message,
+            errorCode: a.kind === 'api' ? a.code : null,
+          })
+        }
+      }),
+      { numRuns: 50 },
+    )
+  })
+})

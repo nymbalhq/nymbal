@@ -8,7 +8,7 @@ certifies it with `nymbal test:contracts --package`, and builds a status page wi
 
 - **first-party**: in this repository, published as `@nymbalhq/<slot>-<provider>` and released with Nymbal. Their
   contract suites run on every change, so the page says "tested in CI" for each one whose kind has a suite.
-  `@nymbalhq/ai-anthropic` and `@nymbalhq/security-cloudflare` have no suite yet and carry no such claim.
+  `@nymbalhq/security-cloudflare` has no suite yet and carries no such claim.
 - **verified**: a third-party adapter whose listing a Nymbal maintainer has reviewed and which has passed for 30
   days. It is promoted by pull request.
 - **community**: any third-party adapter listed by pull request, with a named maintainer.

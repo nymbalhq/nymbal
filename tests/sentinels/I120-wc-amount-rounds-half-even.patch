@@ -1,0 +1,19 @@
+# id: I120
+# kind: injected
+# defect: a WooCommerce amount one digit past its currency's exponent rounds half to even, so "1.005" GBP imports as 100 minor units and "0.285" GBP as 28, each a penny under the store's price
+# where: packages/importers/src/woocommerce/mappers/money.ts:25
+# killed-by: packages/importers/tests/mappers/money.test.ts AC-1 (one fraction digit more than the currency has rounds half up; "1.005" GBP is 101)
+# suite: pnpm vitest run --project importers-unit packages/importers/tests/mappers/money.test.ts
+diff --git a/packages/importers/src/woocommerce/mappers/money.ts b/packages/importers/src/woocommerce/mappers/money.ts
+--- a/packages/importers/src/woocommerce/mappers/money.ts
++++ b/packages/importers/src/woocommerce/mappers/money.ts
+@@ -22,7 +22,8 @@
+   if (whole === '' && fraction === '') return null
+   const exp = currencyExponent(currency)
+   const kept = fraction.slice(0, exp).padEnd(exp, '0')
+-  const roundsUp = (fraction[exp] ?? '0') >= '5'
++  const next = fraction[exp] ?? '0'
++  const roundsUp = next > '5' || (next === '5' && Number(kept.at(-1) ?? whole.at(-1) ?? '0') % 2 === 1)
+   const magnitude = Number(`${whole}${kept}`) + (roundsUp ? 1 : 0)
+   return m[1] === '-' && magnitude !== 0 ? -magnitude : magnitude
+ }

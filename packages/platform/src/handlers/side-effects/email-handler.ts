@@ -18,6 +18,7 @@ import {
 } from '@nymbalhq/types'
 import { formatMoney } from '../../money.js'
 import { mintOrderKey } from '../../order-access-key.js'
+import { trackingUrl } from '../../tracking-url.js'
 import { withIdempotency } from '../idempotency.js'
 import type { OrderAccessKeyRepository } from '../../repositories/order-access-key.js'
 import type { OrderRepository } from '../../repositories/order.js'
@@ -41,6 +42,32 @@ export interface RegisterEmailHandlerDeps {
 }
 
 const DEFAULT_EMAIL_KEY_LIFETIME_MS = 30 * 24 * 3_600_000
+
+/**
+ * Whether mail to the order's address can arrive: not empty, and not under `nymbal.local`, where the importer puts the
+ * placeholders for addresses it does not have. Other `.local` domains are real on a shop's own network.
+ */
+function canReceiveMail(address: string): boolean {
+  const trimmed = address.trim()
+  if (trimmed === '') return false
+  const domain = trimmed.slice(trimmed.lastIndexOf('@') + 1).toLowerCase()
+  return domain !== 'nymbal.local' && !domain.endsWith('.nymbal.local')
+}
+
+/** The greeting's name: the billing first name, or "there" when it has no character to show. */
+function customerName(order: Order): string {
+  return order.billingAddress.firstName.trim() || 'there'
+}
+
+/** One line per order line, in order; the template has no loops, so the list is passed formatted. */
+function itemsList(order: Order): string {
+  return order.lineItems
+    .map((item) => {
+      const variant = item.variantName.trim() === '' ? '' : ` (${item.variantName})`
+      return `${item.qty} x ${item.productName}${variant}`
+    })
+    .join('\n')
+}
 
 export async function registerEmailHandler(deps: RegisterEmailHandlerDeps): Promise<void> {
   const { eventBus, email, logger, processedEventRepo, orderRepo, orderAccessKeyRepo } = deps
@@ -75,14 +102,23 @@ export async function registerEmailHandler(deps: RegisterEmailHandlerDeps): Prom
     return { orderUrl, orderLink: `\n\nView your order: ${orderUrl}` }
   }
 
+  /** Logs a send skipped for an address no mail reaches; the address itself is never logged. */
+  function skippedNoAddress(order: Order, eventId: string): void {
+    logger.info({ orderId: order.id, eventId }, 'email handler: order has no deliverable address')
+  }
+
   /** The order-placed email, with a link carrying a key minted for this send when the store has a URL. */
-  async function sendOrderPlaced(order: Order): Promise<void> {
+  async function sendOrderPlaced(order: Order, eventId: string): Promise<void> {
+    if (!canReceiveMail(order.email)) {
+      skippedNoAddress(order, eventId)
+      return
+    }
     await email.sendTransactional({
       template: 'order-placed',
       to: order.email,
       vars: {
         orderNumber: order.orderNumber,
-        customerName: order.billingAddress.firstName,
+        customerName: customerName(order),
         totalFormatted: formatMoney(order.totalMinor, order.currency),
         ...(storeUrl !== undefined && (await orderLink(storeUrl, order))),
       },
@@ -100,7 +136,7 @@ export async function registerEmailHandler(deps: RegisterEmailHandlerDeps): Prom
       logger.warn({ orderId, eventId: event.id }, 'email handler: paid order not found')
       return
     }
-    await sendOrderPlaced(order)
+    await sendOrderPlaced(order, event.id)
     await store.transaction((tx) =>
       processedEventRepo.markProcessed(tx, ORDER_PAID_EMAIL, orderId, new Date()),
     )
@@ -116,15 +152,43 @@ export async function registerEmailHandler(deps: RegisterEmailHandlerDeps): Prom
       logger.warn({ orderId, eventId: event.id }, 'email handler: resent order not found')
       return
     }
-    await sendOrderPlaced(order)
+    await sendOrderPlaced(order, event.id)
   }
 
+  // Keyed per event: an order ships once, so one order.shipped per order and one email per shipment.
   const onOrderShipped: EventHandler<OrderShippedV1Payload> = async (event) => {
-    logger.debug({ orderId: event.payload.orderId }, 'email handler: order shipped')
-    // Need to look up customer email; skip in v0.1 (requires order repo).
+    const { orderId, carrier, trackingNumber } = event.payload
+    const order = await orderRepo.store.read((tx) => orderRepo.findById(tx, orderId))
+    if (order === null) {
+      logger.warn({ orderId, eventId: event.id }, 'email handler: shipped order not found')
+      return
+    }
+    if (!canReceiveMail(order.email)) {
+      skippedNoAddress(order, event.id)
+      return
+    }
+    const tracking = trackingUrl(carrier, trackingNumber)
+    await email.sendTransactional({
+      template: 'order-shipped',
+      to: order.email,
+      vars: {
+        orderNumber: order.orderNumber,
+        customerName: customerName(order),
+        carrier,
+        trackingNumber,
+        itemsList: itemsList(order),
+        ...(tracking !== null && {
+          trackingUrl: tracking,
+          trackingLink: `\n\nTrack your parcel: ${tracking}`,
+        }),
+        ...(storeUrl !== undefined && (await orderLink(storeUrl, order))),
+      },
+    })
   }
 
   const onCustomerCreated: EventHandler<CustomerCreatedV1Payload> = async (event) => {
+    // An imported customer was already a customer of the store; the welcome is for one who registered.
+    if (event.payload.origin === 'import') return
     await email.sendTransactional({
       template: 'welcome',
       to: event.payload.email,

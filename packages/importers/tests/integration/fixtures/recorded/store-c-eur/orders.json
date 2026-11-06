@@ -1,0 +1,1837 @@
+[
+  {
+    "id": 144,
+    "parent_id": 0,
+    "status": "completed",
+    "currency": "EUR",
+    "version": "11.2.1",
+    "prices_include_tax": false,
+    "date_created": "2026-11-04T18:29:34",
+    "date_modified": "2026-11-04T18:29:35",
+    "discount_total": "0.00",
+    "discount_tax": "0.00",
+    "shipping_total": "4.95",
+    "shipping_tax": "1.04",
+    "cart_tax": "41.63",
+    "total": "245.87",
+    "total_tax": "42.67",
+    "customer_id": 2,
+    "order_key": "wc_order_nKgSkYPbB51cV",
+    "billing": {
+      "first_name": "Anna",
+      "last_name": "Visser",
+      "company": "",
+      "address_1": "Voorbeeldstraat 1",
+      "address_2": "",
+      "city": "Amsterdam",
+      "state": "",
+      "postcode": "1011 AA",
+      "country": "NL",
+      "email": "anna.visser@example.com",
+      "phone": ""
+    },
+    "shipping": {
+      "first_name": "Anna",
+      "last_name": "Visser",
+      "company": "",
+      "address_1": "Voorbeeldstraat 1",
+      "address_2": "",
+      "city": "Amsterdam",
+      "state": "",
+      "postcode": "1011 AA",
+      "country": "NL",
+      "phone": ""
+    },
+    "payment_method": "bacs",
+    "payment_method_title": "Direct bank transfer",
+    "transaction_id": "",
+    "customer_ip_address": "",
+    "customer_user_agent": "",
+    "created_via": "rest-api",
+    "customer_note": "",
+    "date_completed": "2026-11-04T18:29:35",
+    "date_paid": "2026-11-04T18:29:35",
+    "cart_hash": "",
+    "number": "144",
+    "meta_data": [],
+    "line_items": [
+      {
+        "id": 1,
+        "name": "Oak Pan",
+        "product_id": 13,
+        "variation_id": 0,
+        "quantity": 1,
+        "tax_class": "",
+        "subtotal": "41.25",
+        "subtotal_tax": "8.66",
+        "total": "41.25",
+        "total_tax": "8.66",
+        "taxes": [
+          {
+            "id": 1,
+            "total": "8.66",
+            "subtotal": "8.66"
+          }
+        ],
+        "meta_data": [
+          {
+            "id": 30,
+            "key": "_reduced_stock",
+            "value": "1",
+            "display_key": "_reduced_stock",
+            "display_value": "1"
+          }
+        ],
+        "sku": "EU-001",
+        "global_unique_id": "",
+        "price": 41.25,
+        "image": {
+          "id": "11",
+          "src": "http://localhost:8888/wp-content/uploads/2026/11/swatch-blue.png"
+        },
+        "parent_name": null
+      },
+      {
+        "id": 2,
+        "name": "Oak Plate",
+        "product_id": 14,
+        "variation_id": 0,
+        "quantity": 2,
+        "tax_class": "",
+        "subtotal": "157.00",
+        "subtotal_tax": "32.97",
+        "total": "157.00",
+        "total_tax": "32.97",
+        "taxes": [
+          {
+            "id": 1,
+            "total": "32.97",
+            "subtotal": "32.97"
+          }
+        ],
+        "meta_data": [
+          {
+            "id": 31,
+            "key": "_reduced_stock",
+            "value": "2",
+            "display_key": "_reduced_stock",
+            "display_value": "2"
+          }
+        ],
+        "sku": "EU-002",
+        "global_unique_id": "",
+        "price": 78.5,
+        "image": {
+          "id": "",
+          "src": ""
+        },
+        "parent_name": null
+      }
+    ],
+    "tax_lines": [
+      {
+        "id": 4,
+        "rate_code": "NL-BTW-1",
+        "rate_id": 1,
+        "label": "BTW",
+        "compound": false,
+        "tax_total": "41.63",
+        "shipping_tax_total": "1.04",
+        "rate_percent": 21,
+        "meta_data": []
+      }
+    ],
+    "shipping_lines": [
+      {
+        "id": 3,
+        "method_title": "Flat rate",
+        "method_id": "flat_rate",
+        "instance_id": "",
+        "total": "4.95",
+        "total_tax": "1.04",
+        "taxes": [
+          {
+            "id": 1,
+            "total": "1.04",
+            "subtotal": ""
+          }
+        ],
+        "tax_status": "taxable",
+        "meta_data": []
+      }
+    ],
+    "fee_lines": [],
+    "coupon_lines": [],
+    "refunds": [],
+    "payment_url": "http://localhost:8888/checkout/order-pay/144/?pay_for_order=true&key=wc_order_nKgSkYPbB51cV",
+    "is_editable": false,
+    "needs_payment": false,
+    "needs_processing": true,
+    "date_created_gmt": "2026-11-04T18:29:34",
+    "date_modified_gmt": "2026-11-04T18:29:35",
+    "date_completed_gmt": "2026-11-04T18:29:35",
+    "date_paid_gmt": "2026-11-04T18:29:35",
+    "currency_symbol": "€",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/orders/144",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/orders"
+        }
+      ],
+      "email_templates": [
+        {
+          "embeddable": true,
+          "href": "http://localhost:8888/wp-json/wc/v3/orders/144/actions/email_templates"
+        }
+      ],
+      "customer": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/customers/2"
+        }
+      ]
+    }
+  },
+  {
+    "id": 145,
+    "parent_id": 0,
+    "status": "processing",
+    "currency": "EUR",
+    "version": "11.2.1",
+    "prices_include_tax": false,
+    "date_created": "2026-11-04T18:29:35",
+    "date_modified": "2026-11-04T18:29:35",
+    "discount_total": "0.00",
+    "discount_tax": "0.00",
+    "shipping_total": "4.95",
+    "shipping_tax": "0.45",
+    "cart_tax": "7.90",
+    "total": "101.05",
+    "total_tax": "8.35",
+    "customer_id": 2,
+    "order_key": "wc_order_NsvdzvwUoq8zK",
+    "billing": {
+      "first_name": "Anna",
+      "last_name": "Visser",
+      "company": "",
+      "address_1": "Voorbeeldstraat 1",
+      "address_2": "",
+      "city": "Amsterdam",
+      "state": "",
+      "postcode": "1011 AA",
+      "country": "NL",
+      "email": "anna.visser@example.com",
+      "phone": ""
+    },
+    "shipping": {
+      "first_name": "Anna",
+      "last_name": "Visser",
+      "company": "",
+      "address_1": "Voorbeeldstraat 1",
+      "address_2": "",
+      "city": "Amsterdam",
+      "state": "",
+      "postcode": "1011 AA",
+      "country": "NL",
+      "phone": ""
+    },
+    "payment_method": "bacs",
+    "payment_method_title": "Direct bank transfer",
+    "transaction_id": "",
+    "customer_ip_address": "",
+    "customer_user_agent": "",
+    "created_via": "rest-api",
+    "customer_note": "Please leave it with the neighbours.",
+    "date_completed": null,
+    "date_paid": "2026-11-04T18:29:35",
+    "cart_hash": "",
+    "number": "145",
+    "meta_data": [],
+    "line_items": [
+      {
+        "id": 5,
+        "name": "Oak Notebook",
+        "product_id": 17,
+        "variation_id": 0,
+        "quantity": 3,
+        "tax_class": "reduced-rate",
+        "subtotal": "87.75",
+        "subtotal_tax": "7.90",
+        "total": "87.75",
+        "total_tax": "7.90",
+        "taxes": [
+          {
+            "id": 2,
+            "total": "7.90",
+            "subtotal": "7.90"
+          }
+        ],
+        "meta_data": [
+          {
+            "id": 52,
+            "key": "_reduced_stock",
+            "value": "3",
+            "display_key": "_reduced_stock",
+            "display_value": "3"
+          }
+        ],
+        "sku": "EU-005",
+        "global_unique_id": "",
+        "price": 29.25,
+        "image": {
+          "id": "",
+          "src": ""
+        },
+        "parent_name": null
+      }
+    ],
+    "tax_lines": [
+      {
+        "id": 7,
+        "rate_code": "NL-BTW LAAG-1",
+        "rate_id": 2,
+        "label": "BTW laag",
+        "compound": false,
+        "tax_total": "7.90",
+        "shipping_tax_total": "0.45",
+        "rate_percent": 9,
+        "meta_data": []
+      }
+    ],
+    "shipping_lines": [
+      {
+        "id": 6,
+        "method_title": "Flat rate",
+        "method_id": "flat_rate",
+        "instance_id": "",
+        "total": "4.95",
+        "total_tax": "0.45",
+        "taxes": [
+          {
+            "id": 2,
+            "total": "0.45",
+            "subtotal": ""
+          }
+        ],
+        "tax_status": "taxable",
+        "meta_data": []
+      }
+    ],
+    "fee_lines": [],
+    "coupon_lines": [],
+    "refunds": [],
+    "payment_url": "http://localhost:8888/checkout/order-pay/145/?pay_for_order=true&key=wc_order_NsvdzvwUoq8zK",
+    "is_editable": false,
+    "needs_payment": false,
+    "needs_processing": true,
+    "date_created_gmt": "2026-11-04T18:29:35",
+    "date_modified_gmt": "2026-11-04T18:29:35",
+    "date_completed_gmt": null,
+    "date_paid_gmt": "2026-11-04T18:29:35",
+    "currency_symbol": "€",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/orders/145",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/orders"
+        }
+      ],
+      "email_templates": [
+        {
+          "embeddable": true,
+          "href": "http://localhost:8888/wp-json/wc/v3/orders/145/actions/email_templates"
+        }
+      ],
+      "customer": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/customers/2"
+        }
+      ]
+    }
+  },
+  {
+    "id": 146,
+    "parent_id": 0,
+    "status": "completed",
+    "currency": "EUR",
+    "version": "11.2.1",
+    "prices_include_tax": false,
+    "date_created": "2026-11-04T18:29:35",
+    "date_modified": "2026-11-04T18:29:35",
+    "discount_total": "0.00",
+    "discount_tax": "0.00",
+    "shipping_total": "0.00",
+    "shipping_tax": "0.00",
+    "cart_tax": "15.71",
+    "total": "90.51",
+    "total_tax": "15.71",
+    "customer_id": 3,
+    "order_key": "wc_order_slv5Jg2paLGTb",
+    "billing": {
+      "first_name": "Daan",
+      "last_name": "Bakker",
+      "company": "",
+      "address_1": "Proefweg 12",
+      "address_2": "",
+      "city": "Utrecht",
+      "state": "",
+      "postcode": "3511 AB",
+      "country": "NL",
+      "email": "daan.bakker@example.com",
+      "phone": ""
+    },
+    "shipping": {
+      "first_name": "Daan",
+      "last_name": "Bakker",
+      "company": "",
+      "address_1": "Proefweg 12",
+      "address_2": "",
+      "city": "Utrecht",
+      "state": "",
+      "postcode": "3511 AB",
+      "country": "NL",
+      "phone": ""
+    },
+    "payment_method": "bacs",
+    "payment_method_title": "Direct bank transfer",
+    "transaction_id": "",
+    "customer_ip_address": "",
+    "customer_user_agent": "",
+    "created_via": "rest-api",
+    "customer_note": "",
+    "date_completed": "2026-11-04T18:29:35",
+    "date_paid": "2026-11-04T18:29:35",
+    "cart_hash": "",
+    "number": "146",
+    "meta_data": [],
+    "line_items": [
+      {
+        "id": 8,
+        "name": "Enamel Kettle - Blue",
+        "product_id": 133,
+        "variation_id": 135,
+        "quantity": 1,
+        "tax_class": "",
+        "subtotal": "31.20",
+        "subtotal_tax": "6.55",
+        "total": "31.20",
+        "total_tax": "6.55",
+        "taxes": [
+          {
+            "id": 1,
+            "total": "6.55",
+            "subtotal": "6.55"
+          }
+        ],
+        "meta_data": [
+          {
+            "id": 62,
+            "key": "pa_colour",
+            "value": "blue",
+            "display_key": "Colour",
+            "display_value": "Blue"
+          },
+          {
+            "id": 83,
+            "key": "_reduced_stock",
+            "value": "1",
+            "display_key": "_reduced_stock",
+            "display_value": "1"
+          }
+        ],
+        "sku": "KETTLE-BLUE",
+        "global_unique_id": "",
+        "price": 31.2,
+        "image": {
+          "id": 11,
+          "src": "http://localhost:8888/wp-content/uploads/2026/11/swatch-blue.png"
+        },
+        "parent_name": "Enamel Kettle"
+      },
+      {
+        "id": 9,
+        "name": "Slate Planter",
+        "product_id": 22,
+        "variation_id": 0,
+        "quantity": 1,
+        "tax_class": "",
+        "subtotal": "43.60",
+        "subtotal_tax": "9.16",
+        "total": "43.60",
+        "total_tax": "9.16",
+        "taxes": [
+          {
+            "id": 1,
+            "total": "9.16",
+            "subtotal": "9.16"
+          }
+        ],
+        "meta_data": [
+          {
+            "id": 84,
+            "key": "_reduced_stock",
+            "value": "1",
+            "display_key": "_reduced_stock",
+            "display_value": "1"
+          }
+        ],
+        "sku": "EU-010",
+        "global_unique_id": "",
+        "price": 43.6,
+        "image": {
+          "id": "",
+          "src": ""
+        },
+        "parent_name": null
+      }
+    ],
+    "tax_lines": [
+      {
+        "id": 11,
+        "rate_code": "NL-BTW-1",
+        "rate_id": 1,
+        "label": "BTW",
+        "compound": false,
+        "tax_total": "15.71",
+        "shipping_tax_total": "0.00",
+        "rate_percent": 21,
+        "meta_data": []
+      }
+    ],
+    "shipping_lines": [
+      {
+        "id": 10,
+        "method_title": "Flat rate",
+        "method_id": "flat_rate",
+        "instance_id": "",
+        "total": "0.00",
+        "total_tax": "0.00",
+        "taxes": [
+          {
+            "id": 1,
+            "total": "0.00",
+            "subtotal": ""
+          }
+        ],
+        "tax_status": "taxable",
+        "meta_data": []
+      }
+    ],
+    "fee_lines": [],
+    "coupon_lines": [],
+    "refunds": [],
+    "payment_url": "http://localhost:8888/checkout/order-pay/146/?pay_for_order=true&key=wc_order_slv5Jg2paLGTb",
+    "is_editable": false,
+    "needs_payment": false,
+    "needs_processing": true,
+    "date_created_gmt": "2026-11-04T18:29:35",
+    "date_modified_gmt": "2026-11-04T18:29:35",
+    "date_completed_gmt": "2026-11-04T18:29:35",
+    "date_paid_gmt": "2026-11-04T18:29:35",
+    "currency_symbol": "€",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/orders/146",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/orders"
+        }
+      ],
+      "email_templates": [
+        {
+          "embeddable": true,
+          "href": "http://localhost:8888/wp-json/wc/v3/orders/146/actions/email_templates"
+        }
+      ],
+      "customer": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/customers/3"
+        }
+      ]
+    }
+  },
+  {
+    "id": 147,
+    "parent_id": 0,
+    "status": "completed",
+    "currency": "EUR",
+    "version": "11.2.1",
+    "prices_include_tax": false,
+    "date_created": "2026-11-04T18:29:35",
+    "date_modified": "2026-11-04T18:29:35",
+    "discount_total": "0.00",
+    "discount_tax": "0.00",
+    "shipping_total": "7.50",
+    "shipping_tax": "0.00",
+    "cart_tax": "12.76",
+    "total": "81.01",
+    "total_tax": "12.76",
+    "customer_id": 4,
+    "order_key": "wc_order_dlxPO59gbensE",
+    "billing": {
+      "first_name": "Lotte",
+      "last_name": "Peeters",
+      "company": "",
+      "address_1": "Voorbeeldlaan 3",
+      "address_2": "",
+      "city": "Antwerpen",
+      "state": "",
+      "postcode": "2000",
+      "country": "BE",
+      "email": "lotte.peeters@example.com",
+      "phone": ""
+    },
+    "shipping": {
+      "first_name": "Lotte",
+      "last_name": "Peeters",
+      "company": "",
+      "address_1": "Voorbeeldlaan 3",
+      "address_2": "",
+      "city": "Antwerpen",
+      "state": "",
+      "postcode": "2000",
+      "country": "BE",
+      "phone": ""
+    },
+    "payment_method": "bacs",
+    "payment_method_title": "Direct bank transfer",
+    "transaction_id": "",
+    "customer_ip_address": "",
+    "customer_user_agent": "",
+    "created_via": "rest-api",
+    "customer_note": "",
+    "date_completed": "2026-11-04T18:29:35",
+    "date_paid": "2026-11-04T18:29:35",
+    "cart_hash": "",
+    "number": "147",
+    "meta_data": [],
+    "line_items": [
+      {
+        "id": 12,
+        "name": "Oak Pruner",
+        "product_id": 15,
+        "variation_id": 0,
+        "quantity": 1,
+        "tax_class": "",
+        "subtotal": "35.75",
+        "subtotal_tax": "7.51",
+        "total": "35.75",
+        "total_tax": "7.51",
+        "taxes": [
+          {
+            "id": 3,
+            "total": "7.51",
+            "subtotal": "7.51"
+          }
+        ],
+        "meta_data": [
+          {
+            "id": 115,
+            "key": "_reduced_stock",
+            "value": "1",
+            "display_key": "_reduced_stock",
+            "display_value": "1"
+          }
+        ],
+        "sku": "EU-003",
+        "global_unique_id": "",
+        "price": 35.75,
+        "image": {
+          "id": "",
+          "src": ""
+        },
+        "parent_name": null
+      },
+      {
+        "id": 13,
+        "name": "Garden Gloves - M",
+        "product_id": 137,
+        "variation_id": 139,
+        "quantity": 2,
+        "tax_class": "",
+        "subtotal": "25.00",
+        "subtotal_tax": "5.25",
+        "total": "25.00",
+        "total_tax": "5.25",
+        "taxes": [
+          {
+            "id": 3,
+            "total": "5.25",
+            "subtotal": "5.25"
+          }
+        ],
+        "meta_data": [
+          {
+            "id": 103,
+            "key": "pa_size",
+            "value": "m",
+            "display_key": "Size",
+            "display_value": "M"
+          },
+          {
+            "id": 116,
+            "key": "_reduced_stock",
+            "value": "2",
+            "display_key": "_reduced_stock",
+            "display_value": "2"
+          }
+        ],
+        "sku": "GLOVES-M",
+        "global_unique_id": "",
+        "price": 12.5,
+        "image": {
+          "id": 12,
+          "src": "http://localhost:8888/wp-content/uploads/2026/11/swatch-green.png"
+        },
+        "parent_name": "Garden Gloves"
+      }
+    ],
+    "tax_lines": [
+      {
+        "id": 15,
+        "rate_code": "BE-TVA-1",
+        "rate_id": 3,
+        "label": "TVA",
+        "compound": false,
+        "tax_total": "12.76",
+        "shipping_tax_total": "0.00",
+        "rate_percent": 21,
+        "meta_data": []
+      }
+    ],
+    "shipping_lines": [
+      {
+        "id": 14,
+        "method_title": "Flat rate",
+        "method_id": "flat_rate",
+        "instance_id": "",
+        "total": "7.50",
+        "total_tax": "0.00",
+        "taxes": [],
+        "tax_status": "taxable",
+        "meta_data": []
+      }
+    ],
+    "fee_lines": [],
+    "coupon_lines": [],
+    "refunds": [],
+    "payment_url": "http://localhost:8888/checkout/order-pay/147/?pay_for_order=true&key=wc_order_dlxPO59gbensE",
+    "is_editable": false,
+    "needs_payment": false,
+    "needs_processing": true,
+    "date_created_gmt": "2026-11-04T18:29:35",
+    "date_modified_gmt": "2026-11-04T18:29:35",
+    "date_completed_gmt": "2026-11-04T18:29:35",
+    "date_paid_gmt": "2026-11-04T18:29:35",
+    "currency_symbol": "€",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/orders/147",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/orders"
+        }
+      ],
+      "email_templates": [
+        {
+          "embeddable": true,
+          "href": "http://localhost:8888/wp-json/wc/v3/orders/147/actions/email_templates"
+        }
+      ],
+      "customer": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/customers/4"
+        }
+      ]
+    }
+  },
+  {
+    "id": 148,
+    "parent_id": 0,
+    "status": "on-hold",
+    "currency": "EUR",
+    "version": "11.2.1",
+    "prices_include_tax": false,
+    "date_created": "2026-11-04T18:29:35",
+    "date_modified": "2026-11-04T18:29:35",
+    "discount_total": "0.00",
+    "discount_tax": "0.00",
+    "shipping_total": "7.50",
+    "shipping_tax": "0.00",
+    "cart_tax": "15.12",
+    "total": "94.62",
+    "total_tax": "15.12",
+    "customer_id": 5,
+    "order_key": "wc_order_vCkYNcCVktPwH",
+    "billing": {
+      "first_name": "Julien",
+      "last_name": "Dubois",
+      "company": "",
+      "address_1": "Rue Exemple 7",
+      "address_2": "",
+      "city": "Bruxelles",
+      "state": "",
+      "postcode": "1000",
+      "country": "BE",
+      "email": "julien.dubois@example.com",
+      "phone": ""
+    },
+    "shipping": {
+      "first_name": "Julien",
+      "last_name": "Dubois",
+      "company": "",
+      "address_1": "Rue Exemple 7",
+      "address_2": "",
+      "city": "Bruxelles",
+      "state": "",
+      "postcode": "1000",
+      "country": "BE",
+      "phone": ""
+    },
+    "payment_method": "bacs",
+    "payment_method_title": "Direct bank transfer",
+    "transaction_id": "",
+    "customer_ip_address": "",
+    "customer_user_agent": "",
+    "created_via": "rest-api",
+    "customer_note": "",
+    "date_completed": null,
+    "date_paid": null,
+    "cart_hash": "",
+    "number": "148",
+    "meta_data": [],
+    "line_items": [
+      {
+        "id": 16,
+        "name": "Oak Planter",
+        "product_id": 16,
+        "variation_id": 0,
+        "quantity": 1,
+        "tax_class": "",
+        "subtotal": "72.00",
+        "subtotal_tax": "15.12",
+        "total": "72.00",
+        "total_tax": "15.12",
+        "taxes": [
+          {
+            "id": 3,
+            "total": "15.12",
+            "subtotal": "15.12"
+          }
+        ],
+        "meta_data": [
+          {
+            "id": 137,
+            "key": "_reduced_stock",
+            "value": "1",
+            "display_key": "_reduced_stock",
+            "display_value": "1"
+          }
+        ],
+        "sku": "EU-004",
+        "global_unique_id": "",
+        "price": 72,
+        "image": {
+          "id": "",
+          "src": ""
+        },
+        "parent_name": null
+      }
+    ],
+    "tax_lines": [
+      {
+        "id": 18,
+        "rate_code": "BE-TVA-1",
+        "rate_id": 3,
+        "label": "TVA",
+        "compound": false,
+        "tax_total": "15.12",
+        "shipping_tax_total": "0.00",
+        "rate_percent": 21,
+        "meta_data": []
+      }
+    ],
+    "shipping_lines": [
+      {
+        "id": 17,
+        "method_title": "Flat rate",
+        "method_id": "flat_rate",
+        "instance_id": "",
+        "total": "7.50",
+        "total_tax": "0.00",
+        "taxes": [],
+        "tax_status": "taxable",
+        "meta_data": []
+      }
+    ],
+    "fee_lines": [],
+    "coupon_lines": [],
+    "refunds": [],
+    "payment_url": "http://localhost:8888/checkout/order-pay/148/?pay_for_order=true&key=wc_order_vCkYNcCVktPwH",
+    "is_editable": true,
+    "needs_payment": false,
+    "needs_processing": true,
+    "date_created_gmt": "2026-11-04T18:29:35",
+    "date_modified_gmt": "2026-11-04T18:29:35",
+    "date_completed_gmt": null,
+    "date_paid_gmt": null,
+    "currency_symbol": "€",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/orders/148",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/orders"
+        }
+      ],
+      "email_templates": [
+        {
+          "embeddable": true,
+          "href": "http://localhost:8888/wp-json/wc/v3/orders/148/actions/email_templates"
+        }
+      ],
+      "customer": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/customers/5"
+        }
+      ]
+    }
+  },
+  {
+    "id": 149,
+    "parent_id": 0,
+    "status": "completed",
+    "currency": "EUR",
+    "version": "11.2.1",
+    "prices_include_tax": false,
+    "date_created": "2026-11-04T18:29:35",
+    "date_modified": "2026-11-04T18:29:35",
+    "discount_total": "0.00",
+    "discount_tax": "0.00",
+    "shipping_total": "9.90",
+    "shipping_tax": "0.00",
+    "cart_tax": "0.00",
+    "total": "46.60",
+    "total_tax": "0.00",
+    "customer_id": 6,
+    "order_key": "wc_order_hGcYGd05BYoyV",
+    "billing": {
+      "first_name": "Lena",
+      "last_name": "Schmidt",
+      "company": "",
+      "address_1": "Beispielstraße 5",
+      "address_2": "",
+      "city": "Berlin",
+      "state": "",
+      "postcode": "10115",
+      "country": "DE",
+      "email": "lena.schmidt@example.com",
+      "phone": ""
+    },
+    "shipping": {
+      "first_name": "Lena",
+      "last_name": "Schmidt",
+      "company": "",
+      "address_1": "Beispielstraße 5",
+      "address_2": "",
+      "city": "Berlin",
+      "state": "",
+      "postcode": "10115",
+      "country": "DE",
+      "phone": ""
+    },
+    "payment_method": "bacs",
+    "payment_method_title": "Direct bank transfer",
+    "transaction_id": "",
+    "customer_ip_address": "",
+    "customer_user_agent": "",
+    "created_via": "rest-api",
+    "customer_note": "",
+    "date_completed": "2026-11-04T18:29:35",
+    "date_paid": "2026-11-04T18:29:35",
+    "cart_hash": "",
+    "number": "149",
+    "meta_data": [],
+    "line_items": [
+      {
+        "id": 19,
+        "name": "Fountain Pen - Red",
+        "product_id": 141,
+        "variation_id": 142,
+        "quantity": 1,
+        "tax_class": "",
+        "subtotal": "24.95",
+        "subtotal_tax": "0.00",
+        "total": "24.95",
+        "total_tax": "0.00",
+        "taxes": [],
+        "meta_data": [
+          {
+            "id": 147,
+            "key": "pa_colour",
+            "value": "red",
+            "display_key": "Colour",
+            "display_value": "Red"
+          },
+          {
+            "id": 162,
+            "key": "_reduced_stock",
+            "value": "1",
+            "display_key": "_reduced_stock",
+            "display_value": "1"
+          }
+        ],
+        "sku": "FOUNTAIN-RED",
+        "global_unique_id": "",
+        "price": 24.95,
+        "image": {
+          "id": 0,
+          "src": ""
+        },
+        "parent_name": "Fountain Pen"
+      },
+      {
+        "id": 20,
+        "name": "Slate Notebook",
+        "product_id": 23,
+        "variation_id": 0,
+        "quantity": 1,
+        "tax_class": "reduced-rate",
+        "subtotal": "11.75",
+        "subtotal_tax": "0.00",
+        "total": "11.75",
+        "total_tax": "0.00",
+        "taxes": [],
+        "meta_data": [
+          {
+            "id": 163,
+            "key": "_reduced_stock",
+            "value": "1",
+            "display_key": "_reduced_stock",
+            "display_value": "1"
+          }
+        ],
+        "sku": "EU-011",
+        "global_unique_id": "",
+        "price": 11.75,
+        "image": {
+          "id": "",
+          "src": ""
+        },
+        "parent_name": null
+      }
+    ],
+    "tax_lines": [],
+    "shipping_lines": [
+      {
+        "id": 21,
+        "method_title": "Flat rate",
+        "method_id": "flat_rate",
+        "instance_id": "",
+        "total": "9.90",
+        "total_tax": "0.00",
+        "taxes": [],
+        "tax_status": "taxable",
+        "meta_data": []
+      }
+    ],
+    "fee_lines": [],
+    "coupon_lines": [],
+    "refunds": [],
+    "payment_url": "http://localhost:8888/checkout/order-pay/149/?pay_for_order=true&key=wc_order_hGcYGd05BYoyV",
+    "is_editable": false,
+    "needs_payment": false,
+    "needs_processing": true,
+    "date_created_gmt": "2026-11-04T18:29:35",
+    "date_modified_gmt": "2026-11-04T18:29:35",
+    "date_completed_gmt": "2026-11-04T18:29:35",
+    "date_paid_gmt": "2026-11-04T18:29:35",
+    "currency_symbol": "€",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/orders/149",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/orders"
+        }
+      ],
+      "email_templates": [
+        {
+          "embeddable": true,
+          "href": "http://localhost:8888/wp-json/wc/v3/orders/149/actions/email_templates"
+        }
+      ],
+      "customer": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/customers/6"
+        }
+      ]
+    }
+  },
+  {
+    "id": 150,
+    "parent_id": 0,
+    "status": "completed",
+    "currency": "EUR",
+    "version": "11.2.1",
+    "prices_include_tax": false,
+    "date_created": "2026-11-04T18:29:36",
+    "date_modified": "2026-11-04T18:29:36",
+    "discount_total": "0.00",
+    "discount_tax": "0.00",
+    "shipping_total": "4.95",
+    "shipping_tax": "1.04",
+    "cart_tax": "19.54",
+    "total": "118.53",
+    "total_tax": "20.58",
+    "customer_id": 0,
+    "order_key": "wc_order_meimLTEOJx2Eu",
+    "billing": {
+      "first_name": "Noor",
+      "last_name": "Janssen",
+      "company": "",
+      "address_1": "Proeflaan 8",
+      "address_2": "",
+      "city": "Rotterdam",
+      "state": "",
+      "postcode": "3011 AD",
+      "country": "NL",
+      "email": "noor.janssen@example.com",
+      "phone": ""
+    },
+    "shipping": {
+      "first_name": "Noor",
+      "last_name": "Janssen",
+      "company": "",
+      "address_1": "Proeflaan 8",
+      "address_2": "",
+      "city": "Rotterdam",
+      "state": "",
+      "postcode": "3011 AD",
+      "country": "NL",
+      "phone": ""
+    },
+    "payment_method": "bacs",
+    "payment_method_title": "Direct bank transfer",
+    "transaction_id": "",
+    "customer_ip_address": "",
+    "customer_user_agent": "",
+    "created_via": "rest-api",
+    "customer_note": "",
+    "date_completed": "2026-11-04T18:29:36",
+    "date_paid": "2026-11-04T18:29:36",
+    "cart_hash": "",
+    "number": "150",
+    "meta_data": [],
+    "line_items": [
+      {
+        "id": 22,
+        "name": "Slate Pen",
+        "product_id": 24,
+        "variation_id": 0,
+        "quantity": 1,
+        "tax_class": "",
+        "subtotal": "48.00",
+        "subtotal_tax": "10.08",
+        "total": "48.00",
+        "total_tax": "10.08",
+        "taxes": [
+          {
+            "id": 1,
+            "total": "10.08",
+            "subtotal": "10.08"
+          }
+        ],
+        "meta_data": [
+          {
+            "id": 199,
+            "key": "_reduced_stock",
+            "value": "1",
+            "display_key": "_reduced_stock",
+            "display_value": "1"
+          }
+        ],
+        "sku": "EU-012",
+        "global_unique_id": "",
+        "price": 48,
+        "image": {
+          "id": "",
+          "src": ""
+        },
+        "parent_name": null
+      },
+      {
+        "id": 23,
+        "name": "Linen Plate",
+        "product_id": 26,
+        "variation_id": 0,
+        "quantity": 1,
+        "tax_class": "",
+        "subtotal": "42.50",
+        "subtotal_tax": "8.93",
+        "total": "42.50",
+        "total_tax": "8.93",
+        "taxes": [
+          {
+            "id": 1,
+            "total": "8.93",
+            "subtotal": "8.93"
+          }
+        ],
+        "meta_data": [
+          {
+            "id": 200,
+            "key": "_reduced_stock",
+            "value": "1",
+            "display_key": "_reduced_stock",
+            "display_value": "1"
+          }
+        ],
+        "sku": "EU-014",
+        "global_unique_id": "",
+        "price": 42.5,
+        "image": {
+          "id": "",
+          "src": ""
+        },
+        "parent_name": null
+      }
+    ],
+    "tax_lines": [
+      {
+        "id": 26,
+        "rate_code": "NL-BTW-1",
+        "rate_id": 1,
+        "label": "BTW",
+        "compound": false,
+        "tax_total": "19.54",
+        "shipping_tax_total": "1.04",
+        "rate_percent": 21,
+        "meta_data": []
+      }
+    ],
+    "shipping_lines": [
+      {
+        "id": 24,
+        "method_title": "Flat rate",
+        "method_id": "flat_rate",
+        "instance_id": "",
+        "total": "4.95",
+        "total_tax": "1.04",
+        "taxes": [
+          {
+            "id": 1,
+            "total": "1.04",
+            "subtotal": ""
+          }
+        ],
+        "tax_status": "taxable",
+        "meta_data": []
+      }
+    ],
+    "fee_lines": [
+      {
+        "id": 25,
+        "name": "Gift wrapping",
+        "tax_class": "",
+        "tax_status": "taxable",
+        "amount": "",
+        "total": "2.50",
+        "total_tax": "0.53",
+        "taxes": [
+          {
+            "id": 1,
+            "total": "0.53",
+            "subtotal": ""
+          }
+        ],
+        "meta_data": []
+      }
+    ],
+    "coupon_lines": [],
+    "refunds": [],
+    "payment_url": "http://localhost:8888/checkout/order-pay/150/?pay_for_order=true&key=wc_order_meimLTEOJx2Eu",
+    "is_editable": false,
+    "needs_payment": false,
+    "needs_processing": true,
+    "date_created_gmt": "2026-11-04T18:29:36",
+    "date_modified_gmt": "2026-11-04T18:29:36",
+    "date_completed_gmt": "2026-11-04T18:29:36",
+    "date_paid_gmt": "2026-11-04T18:29:36",
+    "currency_symbol": "€",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/orders/150",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/orders"
+        }
+      ],
+      "email_templates": [
+        {
+          "embeddable": true,
+          "href": "http://localhost:8888/wp-json/wc/v3/orders/150/actions/email_templates"
+        }
+      ]
+    }
+  },
+  {
+    "id": 151,
+    "parent_id": 0,
+    "status": "cancelled",
+    "currency": "EUR",
+    "version": "11.2.1",
+    "prices_include_tax": false,
+    "date_created": "2026-11-04T18:29:36",
+    "date_modified": "2026-11-04T18:29:36",
+    "discount_total": "0.00",
+    "discount_tax": "0.00",
+    "shipping_total": "7.50",
+    "shipping_tax": "0.00",
+    "cart_tax": "16.75",
+    "total": "104.00",
+    "total_tax": "16.75",
+    "customer_id": 0,
+    "order_key": "wc_order_Ij3JmaUIfk3lU",
+    "billing": {
+      "first_name": "Emma",
+      "last_name": "Claes",
+      "company": "",
+      "address_1": "Voorbeeldplein 2",
+      "address_2": "",
+      "city": "Gent",
+      "state": "",
+      "postcode": "9000",
+      "country": "BE",
+      "email": "emma.claes@example.com",
+      "phone": ""
+    },
+    "shipping": {
+      "first_name": "Emma",
+      "last_name": "Claes",
+      "company": "",
+      "address_1": "Voorbeeldplein 2",
+      "address_2": "",
+      "city": "Gent",
+      "state": "",
+      "postcode": "9000",
+      "country": "BE",
+      "phone": ""
+    },
+    "payment_method": "bacs",
+    "payment_method_title": "Direct bank transfer",
+    "transaction_id": "",
+    "customer_ip_address": "",
+    "customer_user_agent": "",
+    "created_via": "rest-api",
+    "customer_note": "",
+    "date_completed": null,
+    "date_paid": null,
+    "cart_hash": "",
+    "number": "151",
+    "meta_data": [],
+    "line_items": [
+      {
+        "id": 27,
+        "name": "Linen Pruner",
+        "product_id": 27,
+        "variation_id": 0,
+        "quantity": 1,
+        "tax_class": "",
+        "subtotal": "79.75",
+        "subtotal_tax": "16.75",
+        "total": "79.75",
+        "total_tax": "16.75",
+        "taxes": [
+          {
+            "id": 3,
+            "total": "16.75",
+            "subtotal": "16.75"
+          }
+        ],
+        "meta_data": [],
+        "sku": "EU-015",
+        "global_unique_id": "",
+        "price": 79.75,
+        "image": {
+          "id": "",
+          "src": ""
+        },
+        "parent_name": null
+      }
+    ],
+    "tax_lines": [
+      {
+        "id": 29,
+        "rate_code": "BE-TVA-1",
+        "rate_id": 3,
+        "label": "TVA",
+        "compound": false,
+        "tax_total": "16.75",
+        "shipping_tax_total": "0.00",
+        "rate_percent": 21,
+        "meta_data": []
+      }
+    ],
+    "shipping_lines": [
+      {
+        "id": 28,
+        "method_title": "Flat rate",
+        "method_id": "flat_rate",
+        "instance_id": "",
+        "total": "7.50",
+        "total_tax": "0.00",
+        "taxes": [],
+        "tax_status": "taxable",
+        "meta_data": []
+      }
+    ],
+    "fee_lines": [],
+    "coupon_lines": [],
+    "refunds": [],
+    "payment_url": "http://localhost:8888/checkout/order-pay/151/?pay_for_order=true&key=wc_order_Ij3JmaUIfk3lU",
+    "is_editable": false,
+    "needs_payment": false,
+    "needs_processing": true,
+    "date_created_gmt": "2026-11-04T18:29:36",
+    "date_modified_gmt": "2026-11-04T18:29:36",
+    "date_completed_gmt": null,
+    "date_paid_gmt": null,
+    "currency_symbol": "€",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/orders/151",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/orders"
+        }
+      ],
+      "email_templates": [
+        {
+          "embeddable": true,
+          "href": "http://localhost:8888/wp-json/wc/v3/orders/151/actions/email_templates"
+        }
+      ]
+    }
+  },
+  {
+    "id": 152,
+    "parent_id": 0,
+    "status": "completed",
+    "currency": "EUR",
+    "version": "11.2.1",
+    "prices_include_tax": false,
+    "date_created": "2026-11-04T18:29:36",
+    "date_modified": "2026-11-04T18:29:36",
+    "discount_total": "0.00",
+    "discount_tax": "0.00",
+    "shipping_total": "4.95",
+    "shipping_tax": "1.04",
+    "cart_tax": "22.58",
+    "total": "136.07",
+    "total_tax": "23.62",
+    "customer_id": 7,
+    "order_key": "wc_order_epJ2aPYQchV0Y",
+    "billing": {
+      "first_name": "Sem",
+      "last_name": "de Jong",
+      "company": "De Jong Ontwerp",
+      "address_1": "Testkade 40",
+      "address_2": "2e verdieping",
+      "city": "Groningen",
+      "state": "",
+      "postcode": "9711 AC",
+      "country": "NL",
+      "email": "sem.dejong@example.com",
+      "phone": ""
+    },
+    "shipping": {
+      "first_name": "Sem",
+      "last_name": "de Jong",
+      "company": "",
+      "address_1": "Testkade 40",
+      "address_2": "2e verdieping",
+      "city": "Groningen",
+      "state": "",
+      "postcode": "9711 AC",
+      "country": "NL",
+      "phone": ""
+    },
+    "payment_method": "bacs",
+    "payment_method_title": "Direct bank transfer",
+    "transaction_id": "",
+    "customer_ip_address": "",
+    "customer_user_agent": "",
+    "created_via": "rest-api",
+    "customer_note": "",
+    "date_completed": "2026-11-04T18:29:36",
+    "date_paid": "2026-11-04T18:29:36",
+    "cart_hash": "",
+    "number": "152",
+    "meta_data": [],
+    "line_items": [
+      {
+        "id": 30,
+        "name": "Slate Pan",
+        "product_id": 19,
+        "variation_id": 0,
+        "quantity": 2,
+        "tax_class": "",
+        "subtotal": "47.50",
+        "subtotal_tax": "9.98",
+        "total": "47.50",
+        "total_tax": "9.98",
+        "taxes": [
+          {
+            "id": 1,
+            "total": "9.98",
+            "subtotal": "9.98"
+          }
+        ],
+        "meta_data": [
+          {
+            "id": 250,
+            "key": "_reduced_stock",
+            "value": "1",
+            "display_key": "_reduced_stock",
+            "display_value": "1"
+          },
+          {
+            "id": 268,
+            "key": "_restock_refunded_items",
+            "value": "1",
+            "display_key": "_restock_refunded_items",
+            "display_value": "1"
+          }
+        ],
+        "sku": "EU-007",
+        "global_unique_id": "",
+        "price": 23.75,
+        "image": {
+          "id": "",
+          "src": ""
+        },
+        "parent_name": null
+      },
+      {
+        "id": 31,
+        "name": "Slate Plate",
+        "product_id": 20,
+        "variation_id": 0,
+        "quantity": 1,
+        "tax_class": "",
+        "subtotal": "60.00",
+        "subtotal_tax": "12.60",
+        "total": "60.00",
+        "total_tax": "12.60",
+        "taxes": [
+          {
+            "id": 1,
+            "total": "12.60",
+            "subtotal": "12.60"
+          }
+        ],
+        "meta_data": [
+          {
+            "id": 251,
+            "key": "_reduced_stock",
+            "value": "1",
+            "display_key": "_reduced_stock",
+            "display_value": "1"
+          }
+        ],
+        "sku": "EU-008",
+        "global_unique_id": "",
+        "price": 60,
+        "image": {
+          "id": "",
+          "src": ""
+        },
+        "parent_name": null
+      }
+    ],
+    "tax_lines": [
+      {
+        "id": 33,
+        "rate_code": "NL-BTW-1",
+        "rate_id": 1,
+        "label": "BTW",
+        "compound": false,
+        "tax_total": "22.58",
+        "shipping_tax_total": "1.04",
+        "rate_percent": 21,
+        "meta_data": []
+      }
+    ],
+    "shipping_lines": [
+      {
+        "id": 32,
+        "method_title": "Flat rate",
+        "method_id": "flat_rate",
+        "instance_id": "",
+        "total": "4.95",
+        "total_tax": "1.04",
+        "taxes": [
+          {
+            "id": 1,
+            "total": "1.04",
+            "subtotal": ""
+          }
+        ],
+        "tax_status": "taxable",
+        "meta_data": []
+      }
+    ],
+    "fee_lines": [],
+    "coupon_lines": [],
+    "refunds": [
+      {
+        "id": 153,
+        "reason": "One arrived damaged",
+        "total": "-28.74",
+        "total_tax": "-4.99"
+      }
+    ],
+    "payment_url": "http://localhost:8888/checkout/order-pay/152/?pay_for_order=true&key=wc_order_epJ2aPYQchV0Y",
+    "is_editable": false,
+    "needs_payment": false,
+    "needs_processing": true,
+    "date_created_gmt": "2026-11-04T18:29:36",
+    "date_modified_gmt": "2026-11-04T18:29:36",
+    "date_completed_gmt": "2026-11-04T18:29:36",
+    "date_paid_gmt": "2026-11-04T18:29:36",
+    "currency_symbol": "€",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/orders/152",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/orders"
+        }
+      ],
+      "email_templates": [
+        {
+          "embeddable": true,
+          "href": "http://localhost:8888/wp-json/wc/v3/orders/152/actions/email_templates"
+        }
+      ],
+      "customer": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/customers/7"
+        }
+      ]
+    }
+  },
+  {
+    "id": 154,
+    "parent_id": 0,
+    "status": "pending",
+    "currency": "EUR",
+    "version": "11.2.1",
+    "prices_include_tax": false,
+    "date_created": "2026-11-04T18:29:36",
+    "date_modified": "2026-11-04T18:29:36",
+    "discount_total": "0.00",
+    "discount_tax": "0.00",
+    "shipping_total": "4.95",
+    "shipping_tax": "1.04",
+    "cart_tax": "7.56",
+    "total": "49.55",
+    "total_tax": "8.60",
+    "customer_id": 3,
+    "order_key": "wc_order_DcNc7fODXOCbJ",
+    "billing": {
+      "first_name": "Daan",
+      "last_name": "Bakker",
+      "company": "",
+      "address_1": "Proefweg 12",
+      "address_2": "",
+      "city": "Utrecht",
+      "state": "",
+      "postcode": "3511 AB",
+      "country": "NL",
+      "email": "daan.bakker@example.com",
+      "phone": ""
+    },
+    "shipping": {
+      "first_name": "Daan",
+      "last_name": "Bakker",
+      "company": "",
+      "address_1": "Proefweg 12",
+      "address_2": "",
+      "city": "Utrecht",
+      "state": "",
+      "postcode": "3511 AB",
+      "country": "NL",
+      "phone": ""
+    },
+    "payment_method": "bacs",
+    "payment_method_title": "Direct bank transfer",
+    "transaction_id": "",
+    "customer_ip_address": "",
+    "customer_user_agent": "",
+    "created_via": "rest-api",
+    "customer_note": "",
+    "date_completed": null,
+    "date_paid": null,
+    "cart_hash": "",
+    "number": "154",
+    "meta_data": [],
+    "line_items": [
+      {
+        "id": 36,
+        "name": "Linen Planter",
+        "product_id": 28,
+        "variation_id": 0,
+        "quantity": 1,
+        "tax_class": "",
+        "subtotal": "36.00",
+        "subtotal_tax": "7.56",
+        "total": "36.00",
+        "total_tax": "7.56",
+        "taxes": [
+          {
+            "id": 1,
+            "total": "7.56",
+            "subtotal": "7.56"
+          }
+        ],
+        "meta_data": [],
+        "sku": "EU-016",
+        "global_unique_id": "",
+        "price": 36,
+        "image": {
+          "id": "",
+          "src": ""
+        },
+        "parent_name": null
+      }
+    ],
+    "tax_lines": [
+      {
+        "id": 38,
+        "rate_code": "NL-BTW-1",
+        "rate_id": 1,
+        "label": "BTW",
+        "compound": false,
+        "tax_total": "7.56",
+        "shipping_tax_total": "1.04",
+        "rate_percent": 21,
+        "meta_data": []
+      }
+    ],
+    "shipping_lines": [
+      {
+        "id": 37,
+        "method_title": "Flat rate",
+        "method_id": "flat_rate",
+        "instance_id": "",
+        "total": "4.95",
+        "total_tax": "1.04",
+        "taxes": [
+          {
+            "id": 1,
+            "total": "1.04",
+            "subtotal": ""
+          }
+        ],
+        "tax_status": "taxable",
+        "meta_data": []
+      }
+    ],
+    "fee_lines": [],
+    "coupon_lines": [],
+    "refunds": [],
+    "payment_url": "http://localhost:8888/checkout/order-pay/154/?pay_for_order=true&key=wc_order_DcNc7fODXOCbJ",
+    "is_editable": true,
+    "needs_payment": true,
+    "needs_processing": true,
+    "date_created_gmt": "2026-11-04T18:29:36",
+    "date_modified_gmt": "2026-11-04T18:29:36",
+    "date_completed_gmt": null,
+    "date_paid_gmt": null,
+    "currency_symbol": "€",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/orders/154",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/orders"
+        }
+      ],
+      "email_templates": [
+        {
+          "embeddable": true,
+          "href": "http://localhost:8888/wp-json/wc/v3/orders/154/actions/email_templates"
+        }
+      ],
+      "customer": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/customers/3"
+        }
+      ]
+    }
+  }
+]

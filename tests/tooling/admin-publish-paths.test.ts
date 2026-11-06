@@ -1,4 +1,5 @@
-// Reads: package.json, scripts/scaffold-clean.sh, apps/admin/package.json, .github/workflows/release.yml
+// Reads: package.json, scripts/scaffold-clean.sh, scripts/scaffold-image.sh, scripts/quickstart.sh
+// Reads: scripts/local-registry.sh, apps/admin/package.json, .github/workflows/release.yml
 // Reads: .github/workflows/canary.yml
 import { spawnSync } from 'node:child_process'
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -8,8 +9,9 @@ import { fileURLToPath } from 'node:url'
 import { afterAll, describe, expect, it } from 'vitest'
 
 // AC-16: every publish path builds @nymbalhq/admin before it publishes, and the admin refuses to pack without its
-// dist. Release and canary publish after root `pnpm build`, which builds only packages/**, and
-// scripts/scaffold-clean.sh does the same; so without its own build npm would get an admin with no dist.
+// dist. Release and canary publish after root `pnpm build`, which builds only packages/**, and so does the local
+// registry the scaffold scripts publish to (scripts/local-registry.sh); so without its own build npm would get an admin
+// with no dist.
 //
 // A command "builds the admin" when it filters pnpm to @nymbalhq/admin (or apps/admin) and runs build, or when it is
 // a root script (`pnpm build`, `pnpm run <script>`) whose body does. Comment lines are ignored.
@@ -101,13 +103,25 @@ describe('AC-16: every publish path builds the admin', () => {
     expect(missing).toEqual([])
   })
 
-  it('AC-16: scripts/scaffold-clean.sh builds @nymbalhq/admin before it publishes', () => {
-    const script = stripComments(read('scripts/scaffold-clean.sh'))
+  it('AC-16: scripts/local-registry.sh builds @nymbalhq/admin before it publishes, and every scaffold script publishes through it', () => {
+    const script = stripComments(read('scripts/local-registry.sh'))
     const publishAt = script.search(PUBLISH)
     expect(publishAt).toBeGreaterThan(-1)
     const buildAt = adminBuildAt(script)
-    expect(buildAt, 'no @nymbalhq/admin build in scaffold-clean.sh').toBeGreaterThan(-1)
+    expect(buildAt, 'no @nymbalhq/admin build in local-registry.sh').toBeGreaterThan(-1)
     expect(buildAt).toBeLessThan(publishAt)
+
+    const callers = ['scaffold-clean.sh', 'scaffold-image.sh', 'quickstart.sh'].map((name) => {
+      const text = stripComments(read(`scripts/${name}`))
+      const sources = /^\s*\.\s+"\$root\/scripts\/local-registry\.sh"\s*$/m.test(text)
+      return {
+        name,
+        sources,
+        publishesItself: PUBLISH.test(text),
+        publishes: /^\s*registry_publish\s/m.test(text),
+      }
+    })
+    expect(callers.filter((c) => !c.sources || !c.publishes || c.publishesItself)).toEqual([])
   })
 
   it("AC-16: apps/admin's prepack exits non-zero when dist/index.html is missing, and zero when it is there", () => {

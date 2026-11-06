@@ -1,7 +1,11 @@
 import fc from 'fast-check'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { PaymentError, type Logger } from '@nymbalhq/types'
-import { createStripePaymentsAdapter, type StripePaymentsConfig } from './index.js'
+import {
+  createStripePaymentsAdapter,
+  STRIPE_SPT_API_VERSION,
+  type StripePaymentsConfig,
+} from './index.js'
 
 // The package depends on @nymbalhq/types and never on the kernel, so the kernel's logger is replaced by a silent one.
 
@@ -130,7 +134,7 @@ describe('createStripePaymentsAdapter — client configuration', () => {
     const adapter = buildAdapter()
     expect(adapter.kind).toBe('payments')
     expect(adapter.providerName).toBe('stripe')
-    expect(adapter.capabilities()).toEqual(['intent', 'capture', 'refund', 'webhook'])
+    expect(adapter.capabilities()).toEqual(['intent', 'capture', 'refund', 'webhook', 'delegated'])
     await expect(adapter.initialize({})).resolves.toBeUndefined()
   })
 })
@@ -215,6 +219,100 @@ describe('createStripePaymentsAdapter — payment intents', () => {
     expect(error).toBeInstanceOf(PaymentError)
     expect((error as PaymentError).code).toBe('payment.intent_failed')
     expect((error as PaymentError).cause).toBe(cause)
+  })
+})
+
+// AC-13: a delegated token (an ACP Shared Payment Token) is charged server-side in one confirmed PaymentIntent, under
+// Stripe's preview API version on that call alone; a checkout without one sends exactly what it sent before.
+
+describe('AC-13: createPaymentIntent with a delegated token', () => {
+  it("AC-13: the package exports STRIPE_SPT_API_VERSION, the preview version the token's call needs", () => {
+    expect(STRIPE_SPT_API_VERSION).toBe('2026-10-28.preview')
+  })
+
+  // Kills: the token sent at the top level or under the GA version; the delegated call not confirmed, or offered
+  // redirect methods with no return_url; a normal checkout confirmed server-side or sent under the preview version.
+  it('AC-13: property: over amounts, currencies, receipt emails and tokens, the delegated call is the undelegated call plus confirm: true, payment_method_data.shared_payment_granted_token and allow_redirects never, with request options { apiVersion: STRIPE_SPT_API_VERSION }; the undelegated call is one argument, unconfirmed; both answer the intent Stripe returned', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.integer({ min: 1, max: 99_999_999 }),
+        fc.constantFrom('GBP', 'USD', 'EUR', 'JPY'),
+        fc.option(fc.emailAddress(), { nil: undefined }),
+        fc.stringMatching(/^spt_[A-Za-z0-9]{8,24}$/),
+        async (amountMinor, currency, receiptEmail, token) => {
+          stripeStubs.paymentIntentsCreate.mockReset()
+          stripeStubs.paymentIntentsCreate.mockImplementation(
+            async (params: { amount: number; currency: string; confirm?: boolean }) =>
+              stripeIntentResponse({
+                amount: params.amount,
+                currency: params.currency,
+                status: params.confirm === true ? 'succeeded' : 'requires_payment_method',
+              }),
+          )
+          const adapter = buildAdapter()
+          const base = {
+            amountMinor,
+            currency,
+            orderRef: 'order-ac13',
+            metadata: { orderId: 'order-ac13' },
+            ...(receiptEmail !== undefined && { receiptEmail }),
+          }
+
+          const plain = await adapter.createPaymentIntent(base)
+          const delegated = await adapter.createPaymentIntent({ ...base, delegatedToken: token })
+          const [plainCall, delegatedCall] = stripeStubs.paymentIntentsCreate.mock.calls as Array<
+            [Record<string, unknown>, Record<string, unknown>?]
+          >
+
+          expect(plainCall).toHaveLength(1)
+          expect(plainCall![0]).not.toHaveProperty('confirm')
+          expect(delegatedCall).toEqual([
+            {
+              ...plainCall![0],
+              confirm: true,
+              payment_method_data: { shared_payment_granted_token: token },
+              automatic_payment_methods: { enabled: true, allow_redirects: 'never' },
+            },
+            { apiVersion: '2026-10-28.preview' },
+          ])
+          expect(delegatedCall![0]['amount']).toBe(amountMinor)
+          expect(delegatedCall![0]['currency']).toBe(currency.toLowerCase())
+          expect(JSON.stringify(delegatedCall![0]).split(token)).toHaveLength(2)
+          expect({ plain: plain.status, delegated: delegated.status }).toEqual({
+            plain: 'requires_payment_method',
+            delegated: 'succeeded',
+          })
+          expect(delegated.amountMinor).toBe(amountMinor)
+        },
+      ),
+      { numRuns: 50 },
+    )
+  })
+
+  // Kills: a declined token read as anything but a failed intent.
+  it("AC-13: a delegated create that Stripe rejects (a card decline) on the confirmed charge still throws PaymentError intent_failed carrying Stripe's error", async () => {
+    const decline = Object.assign(new Error('Your card was declined.'), {
+      type: 'StripeCardError',
+      code: 'card_declined',
+    })
+    stripeStubs.paymentIntentsCreate.mockRejectedValue(decline)
+
+    const error = await buildAdapter()
+      .createPaymentIntent({ amountMinor: 1000, currency: 'USD', delegatedToken: 'spt_declined' })
+      .then(() => null)
+      .catch((err: unknown) => err)
+
+    expect(error).toBeInstanceOf(PaymentError)
+    expect((error as PaymentError).code).toBe('payment.intent_failed')
+    expect((error as PaymentError).cause).toBe(decline)
+    // The decline came from the confirmed charge of that token, not from an unconfirmed intent.
+    expect(stripeStubs.paymentIntentsCreate.mock.calls[0]).toEqual([
+      expect.objectContaining({
+        confirm: true,
+        payment_method_data: { shared_payment_granted_token: 'spt_declined' },
+      }),
+      { apiVersion: STRIPE_SPT_API_VERSION },
+    ])
   })
 })
 

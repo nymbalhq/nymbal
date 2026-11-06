@@ -2,7 +2,7 @@ import { headers } from 'next/headers'
 import { SiteHeader } from '@/components/client/elements'
 import { fetchCart } from '@/lib/api'
 import { HEADER } from '@/lib/chrome'
-import { canSearch, siteHeader } from '@/lib/header'
+import { canSearch, shopperCanSearch, siteHeader } from '@/lib/header'
 import { renderNymbal } from '@/lib/render'
 
 function HeaderElement({ header }: { header: ReturnType<typeof siteHeader> }) {
@@ -24,7 +24,10 @@ function HeaderElement({ header }: { header: ReturnType<typeof siteHeader> }) {
  */
 export async function Header({ shopper = false }: { shopper?: boolean }) {
   const cookie = shopper ? (await headers()).get('cookie') : null
-  const [search, cart] = await Promise.all([canSearch(), shopper ? fetchCart(cookie) : null])
+  const [search, cart] = await Promise.all([
+    shopper ? shopperCanSearch() : canSearch(),
+    shopper ? fetchCart(cookie) : null,
+  ])
   return <HeaderElement header={siteHeader(search, cart?.itemCount)} />
 }
 

@@ -50,6 +50,31 @@ describe('AC-9: an E2E step whose served output is missing is red before Playwri
     expect(playwright, run.output).toEqual([])
     expect(run.code, run.output).toBe(1)
   })
+
+  // The custom store's alert and resend journeys sign in to the admin its API serves.
+  it.each(['astro-custom', 'nextjs-custom'])(
+    'AC-9: apps/admin/dist without index.html: e2e %s goes red naming the path, and spawns no Playwright',
+    async (target) => {
+      const repo = artefactRepo(false)
+      // External services meet the Mailpit and compose needs, so --only can run the step alone.
+      const args = [
+        ...['--full', '--services', 'external', '--only', `e2e ${target}`],
+        ...['--no-build', '--base', 'HEAD', '--json'],
+      ]
+      const run = await gateCli(repo, args, {
+        NYMBAL_TEST_MAILPIT_URL: 'http://127.0.0.1:9',
+        NYMBAL_TEST_POSTGRES_URL: 'postgres://127.0.0.1:9/none',
+      })
+      const e2e = step(run.steps, `e2e ${target}`)
+      expect(e2e?.status, run.output).toBe('red')
+      expect(run.output).toContain('apps/admin/dist/index.html')
+      expect(
+        repo.calls().filter((call) => /playwright/.test(call)),
+        run.output,
+      ).toEqual([])
+      expect(run.code, run.output).toBe(1)
+    },
+  )
 })
 
 describe('AC-10: the E2E step is red when the server wrapper recorded a hang, and only then', () => {

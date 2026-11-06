@@ -6,14 +6,15 @@ import {
   type ResponseEnvelope,
 } from '@nymbalhq/types'
 import { fail } from './envelope.js'
+import { gateOf, withGate } from './role-middleware.js'
 import { routeSchemas, type RouteSchema } from './schemas.js'
 
-interface Issue {
-  path: Array<string | number>
+export interface Issue {
+  path: PropertyKey[]
   message: string
 }
 
-type Parsed = { ok: true; ctx: RequestContext } | { ok: false; issues: Issue[] }
+export type Parsed = { ok: true; ctx: RequestContext } | { ok: false; issues: Issue[] }
 
 const PARTS = ['params', 'query', 'body'] as const
 
@@ -30,7 +31,7 @@ function schemaFor(method: HttpMethod, path: string): RouteSchema {
 }
 
 /** The context the handler sees: each part parsed by its schema, an undeclared part empty. */
-function parseInput(schema: RouteSchema, ctx: RequestContext): Parsed {
+export function parseInput(schema: RouteSchema, ctx: RequestContext): Parsed {
   const issues: Issue[] = []
   const parsed: { params: unknown; query: unknown; body: unknown } = {
     params: {},
@@ -60,25 +61,29 @@ function parseInput(schema: RouteSchema, ctx: RequestContext): Parsed {
   }
 }
 
-function invalid(issues: Issue[]): ResponseEnvelope {
+export function invalid(issues: Issue[]): ResponseEnvelope {
   return fail('validation.failed', 'The request input is invalid', 400, { issues })
 }
 
 /**
  * The adapter `registerAllRoutes` registers through: a route with no entry in `routeSchemas` stops startup, and
- * every request's params, query and body are parsed after the adapter's guard and middlewares, before the handler.
+ * every request's params, query and body are parsed after the adapter's guard and middlewares and the route's own
+ * auth gate (`requireAuth`, `requireRole`), before the handler.
  */
 export function validatedAdapter(adapter: HttpAdapter): HttpAdapter {
   return {
     registerRoute(method, path, handler, options) {
       const schema = schemaFor(method, path)
+      const gate = gateOf(handler)
       adapter.registerRoute(
         method,
         path,
-        async (ctx) => {
+        withGate(async (ctx) => {
+          const refused = gate?.(ctx)
+          if (refused) return refused
           const input = parseInput(schema, ctx)
           return input.ok ? handler(input.ctx) : invalid(input.issues)
-        },
+        }, gate),
         options,
       )
     },

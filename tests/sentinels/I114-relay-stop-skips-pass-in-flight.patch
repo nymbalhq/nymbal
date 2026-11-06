@@ -1,0 +1,18 @@
+# id: I114
+# kind: injected
+# defect: the relay's stop() resolves at once instead of waiting for the pass in flight, so a shutdown closes the store under a delivery that is still writing
+# where: packages/platform/src/events/relay.ts:249
+# killed-by: packages/platform/src/events/relay-lifecycle.test.ts (stop() resolves only once the pass in flight has delivered its event)
+# suite: pnpm vitest run --project platform-unit packages/platform/src/events/relay-lifecycle.test.ts
+diff --git a/packages/platform/src/events/relay.ts b/packages/platform/src/events/relay.ts
+--- a/packages/platform/src/events/relay.ts
++++ b/packages/platform/src/events/relay.ts
+@@ -246,7 +246,7 @@ export function createRelay(opts: CreateRelayOptions): Relay {
+       timer = undefined
+       // A subscriber that stops the app would otherwise wait on the pass that is waiting on it.
+       if (delivering.getStore() === true) return Promise.resolve()
+-      return idle?.promise ?? Promise.resolve()
++      return Promise.resolve()
+     },
+     asDelivery(handler) {
+       return (event) => delivering.run(true, () => handler(event))

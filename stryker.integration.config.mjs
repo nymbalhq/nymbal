@@ -2,8 +2,9 @@
 // (SQLite). Run with `pnpm mutation:integration`; its scores are held by mutation-ratchet.integration.json, apart from
 // the unit ratchet, since the unit run scores these files lower and would fail against an integration entry.
 //
-// The sandbox keeps every package: the integration tests import the Fastify adapter from packages/http/src. Every run
-// is a full measurement, so there is no incremental file.
+// The sandbox keeps every package: the integration tests import the Fastify adapter from packages/http/src. It keeps
+// the repository's shared test servers too (tests/support): without them order-email-retry fails to load there and
+// kills nothing. Every run is a full measurement, so there is no incremental file.
 /** @type {import('@stryker-mutator/api/core').PartialStrykerOptions} */
 export default {
   testRunner: 'vitest',
@@ -19,6 +20,13 @@ export default {
     'packages/platform/src/repositories/processed-event.ts',
     'packages/platform/src/repositories/email-suppression.ts',
     'packages/platform/src/repositories/order-sequence.ts',
+    'packages/platform/src/services/review-service.ts',
+    'packages/platform/src/repositories/review.ts',
+    'packages/platform/src/services/proposal-service.ts',
+    'packages/platform/src/repositories/proposal.ts',
+    'packages/platform/src/services/import-removal-service.ts',
+    'packages/platform/src/services/description.ts',
+    'packages/platform/src/repositories/audit-entry.ts',
   ],
   ignorePatterns: [
     '/*',
@@ -26,6 +34,9 @@ export default {
     '!/tsconfig*.json',
     '!/vitest.stryker.integration.config.ts',
     '!/packages',
+    '!/tests',
+    '/tests/*',
+    '!/tests/support',
     '/packages/*/dist',
     '/packages/adapters/*/*/dist',
     '**/CLAUDE.md',

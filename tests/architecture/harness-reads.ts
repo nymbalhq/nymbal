@@ -93,8 +93,8 @@ const lineOf = (sf: ts.SourceFile, node: ts.Node): number =>
   sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1
 
 /**
- * `new URL('../..' …, import.meta.url)`, `process.cwd()`, `__dirname`, `import.meta.dirname` or `import.meta.filename`:
- * the checkout's root, or a path in it.
+ * A relative URL on `import.meta.url` (`'../..'`, `'..'`, `'./x'`, a template), `process.cwd()`, `__dirname`,
+ * `import.meta.dirname` or `import.meta.filename`: the checkout's root, or a path in it.
  */
 function isRootExpression(node: ts.Node): boolean {
   if (
@@ -103,10 +103,18 @@ function isRootExpression(node: ts.Node): boolean {
     node.expression.text === 'URL'
   ) {
     const [spec, from] = node.arguments ?? []
+    const text =
+      spec === undefined
+        ? undefined
+        : ts.isStringLiteralLike(spec)
+          ? spec.text
+          : ts.isTemplateExpression(spec)
+            ? spec.head.text
+            : undefined
+    // An absolute URL or path leaves the checkout; any other resolves against the file's own place in it.
     return (
-      spec !== undefined &&
-      ts.isStringLiteralLike(spec) &&
-      spec.text.startsWith('../..') &&
+      text !== undefined &&
+      !/^(?:[a-z][a-z0-9+.-]*:|\/)/i.test(text) &&
       from !== undefined &&
       from.getText().includes('import.meta.url')
     )
@@ -125,7 +133,10 @@ function isRootExpression(node: ts.Node): boolean {
 
 /** A path the process resolves against its working directory, which under Vitest is the checkout's root. */
 const isRelativeLiteral = (node: ts.Node | undefined): boolean =>
-  node !== undefined && ts.isStringLiteralLike(node) && node.text !== '' && !node.text.startsWith('/')
+  node !== undefined &&
+  ts.isStringLiteralLike(node) &&
+  node.text !== '' &&
+  !node.text.startsWith('/')
 
 /** An options object that sets `cwd`, or may (a spread). */
 const setsCwd = (call: ts.CallExpression): boolean =>

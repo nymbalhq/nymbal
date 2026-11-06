@@ -228,7 +228,15 @@ describe('AC-4: the admin sends one Idempotency-Key per intent', () => {
       />,
     )
     await user.click(screen.getByTestId('admin-order-status-select'))
+    // Shipped asks for carrier and tracking number before it posts.
     await user.click(await screen.findByTestId('admin-order-status-option-shipped'))
+    fireEvent.change(await screen.findByTestId('admin-order-ship-carrier'), {
+      target: { value: 'Royal Mail' },
+    })
+    fireEvent.change(screen.getByTestId('admin-order-ship-tracking'), {
+      target: { value: 'RM123456785GB' },
+    })
+    await user.click(screen.getByTestId('admin-order-ship-submit'))
     await waitFor(() => expect(api.callsTo(/\/api\/admin\/orders\/o-1\/ship$/).length).toBe(1))
 
     const keys = api.keysTo(/\/api\/admin\/orders\/o-1\/(process|ship)$/)

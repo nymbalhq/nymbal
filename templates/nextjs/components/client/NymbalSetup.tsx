@@ -10,7 +10,7 @@ import { NymbalMiniCart } from '@nymbalhq/web-components/elements/nymbal-mini-ca
 import { NymbalSearchBar } from '@nymbalhq/web-components/elements/nymbal-search-bar'
 import { NymbalSiteFooter } from '@nymbalhq/web-components/elements/nymbal-site-footer'
 import { NymbalSiteHeader } from '@nymbalhq/web-components/elements/nymbal-site-header'
-import { getNymbalClient, restoreSession } from '@/lib/client'
+import { getNymbalClient } from '@/lib/client'
 
 export function NymbalSetup({ children }: { children: ReactNode }) {
   const client = getNymbalClient()
@@ -29,7 +29,6 @@ export function NymbalSetup({ children }: { children: ReactNode }) {
       NymbalSearchBar.define()
       NymbalMiniCart.define()
       NymbalCartDrawer.define()
-      void restoreSession()
       initialized.current = true
     }
   }, [client])

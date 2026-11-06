@@ -1,5 +1,5 @@
 import { Readable } from 'node:stream'
-import type { AuditOutcome, HttpAdapter, RequestContext } from '@nymbalhq/types'
+import type { AuditOutcome, HttpAdapter, Logger, RequestContext } from '@nymbalhq/types'
 import {
   auditEntriesInOrder,
   type AuditCursor,
@@ -83,8 +83,10 @@ function limitOf(ctx: RequestContext): number {
   return Math.min(n, MAX_LIMIT)
 }
 
-function answerError(err: unknown) {
-  return err instanceof QueryError ? fail('activity.invalid', err.message, 400) : renderError(err)
+function answerError(err: unknown, logger: Logger) {
+  return err instanceof QueryError
+    ? fail('activity.invalid', err.message, 400)
+    : renderError(err, logger)
 }
 
 export function registerAdminActivityRoutes(
@@ -119,7 +121,7 @@ export function registerAdminActivityRoutes(
             : null
         return ok(page, { nextCursor })
       } catch (err) {
-        return answerError(err)
+        return answerError(err, ctx.logger)
       }
     }),
   )
@@ -145,7 +147,7 @@ export function registerAdminActivityRoutes(
           body: Readable.from(lines()),
         }
       } catch (err) {
-        return answerError(err)
+        return answerError(err, ctx.logger)
       }
     }),
   )

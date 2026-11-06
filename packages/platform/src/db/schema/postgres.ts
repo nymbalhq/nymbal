@@ -149,6 +149,12 @@ export const refreshTokens = pgTable(
 
 // --- Orders ----------------------------------------------------------------
 
+/**
+ * Text compared byte by byte under any database locale, so the dashboard's `'agent:' <= source < 'agent;'` range holds
+ * every `agent:` value and nothing else (ICU collations put `;` before `:`).
+ */
+const byteOrderedText = customType<{ data: string }>({ dataType: () => 'text COLLATE "C"' })
+
 export const orders = pgTable(
   'orders',
   {
@@ -190,6 +196,8 @@ export const orders = pgTable(
     /** Σ of the succeeded `order_refunds`, written in the transaction that settles each. */
     refundedMinor: integer('refunded_minor').notNull().default(0),
     captureMethod: text('capture_method', { enum: ['provider', 'manual', 'import'] }),
+    /** `storefront`, `import` or `agent:<name>`: who brought the order. */
+    source: byteOrderedText('source').notNull().default('storefront'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   },
@@ -199,6 +207,8 @@ export const orders = pgTable(
     customerIdx: index('orders_customer_idx').on(t.customerId),
     statusIdx: index('orders_status_idx').on(t.status),
     paymentIntentIdx: index('orders_payment_intent_idx').on(t.paymentIntentId),
+    // The dashboard's agent orders: a range on source, then the window on created_at.
+    sourceCreatedIdx: index('orders_source_created_idx').on(t.source, t.createdAt),
     // One pending order per cart, whatever the checkout's lock does.
     pendingCartUnique: uniqueIndex('orders_pending_cart_unique')
       .on(t.cartToken)
@@ -342,6 +352,8 @@ export const carts = pgTable(
     items: jsonb('items').notNull().default([]),
     lineCount: integer('line_count').notNull().default(0),
     subtotalMinor: integer('subtotal_minor').notNull().default(0),
+    /** `storefront` or `agent:<name>`: who opened the cart. */
+    source: text('source').notNull().default('storefront'),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
@@ -351,6 +363,10 @@ export const carts = pgTable(
   (t) => ({
     expiresIdx: index('carts_expires_idx').on(t.expiresAt),
     updatedIdx: index('carts_updated_idx').on(t.updatedAt),
+    // The sign-in's lookup of a customer's cart; guest carts, most of the table, carry no customer.
+    customerIdx: index('carts_customer_idx')
+      .on(t.customerId)
+      .where(sql`${t.customerId} IS NOT NULL`),
   }),
 )
 
@@ -485,6 +501,8 @@ export const alertSubscriptions = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
     confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
+    /** When its last confirmation was sent; a repeat subscribe within the interval sends none. */
+    confirmationSentAt: timestamp('confirmation_sent_at', { withTimezone: true }),
   },
   (t) => ({
     addressUnique: uniqueIndex('alert_subscriptions_address_unique').on(
@@ -548,6 +566,45 @@ export const orderShipments = pgTable(
   }),
 )
 
+// --- Proposals: agent writes a person or a policy decides ------------------
+
+export const proposals = pgTable(
+  'proposals',
+  {
+    id: text('id').primaryKey(),
+    tool: text('tool').notNull(),
+    command: text('command').notNull(),
+    args: jsonb('args').notNull(),
+    handles: jsonb('handles'),
+    idempotencyKey: text('idempotency_key'),
+    proposerId: text('proposer_id'),
+    agentName: text('agent_name').notNull(),
+    agentVersion: text('agent_version'),
+    correlationId: text('correlation_id').notNull(),
+    status: text('status').notNull(),
+    decidedByKind: text('decided_by_kind'),
+    decidedBy: text('decided_by'),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+    reason: text('reason'),
+    outcomeStatus: integer('outcome_status'),
+    outcomeCode: text('outcome_code'),
+    outcomeMessage: text('outcome_message'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    settledAt: timestamp('settled_at', { withTimezone: true }),
+  },
+  (t) => ({
+    keyUnique: uniqueIndex('proposals_key_unique')
+      .on(t.proposerId, t.tool, t.idempotencyKey)
+      .where(sql`${t.proposerId} IS NOT NULL AND ${t.idempotencyKey} IS NOT NULL`),
+    createdIdx: index('proposals_created_idx').on(t.createdAt, t.id),
+    statusIdx: index('proposals_status_idx').on(t.status, t.createdAt, t.id),
+    statusCheck: check(
+      'proposals_status',
+      sql`${t.status} IN ('pending', 'approved', 'rejected', 'applied', 'failed')`,
+    ),
+  }),
+)
+
 export const schema = {
   categories,
   products,
@@ -570,4 +627,5 @@ export const schema = {
   alertSubscriptions,
   emailSuppressions,
   orderShipments,
+  proposals,
 }

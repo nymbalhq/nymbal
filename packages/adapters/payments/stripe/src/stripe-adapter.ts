@@ -29,6 +29,22 @@ export interface StripePaymentsConfig {
 }
 
 /**
+ * The Stripe API version a Shared Payment Token is charged under: SPTs exist only in preview versions, so this call
+ * alone sends it, and every other call keeps the client's version.
+ */
+export const STRIPE_SPT_API_VERSION = '2026-10-28.preview'
+
+/**
+ * stripe-node 17 predates SPTs: `payment_method_data` carrying only the token, which its type (requiring `type`) does
+ * not describe.
+ */
+function delegatedPaymentMethod(token: string): Stripe.PaymentIntentCreateParams.PaymentMethodData {
+  return {
+    shared_payment_granted_token: token,
+  } as unknown as Stripe.PaymentIntentCreateParams.PaymentMethodData
+}
+
+/**
  * Stripe returns lowercase ISO currency codes (e.g. "gbp"); Nymbal's canonical
  * currency format is uppercase ISO 4217 (e.g. "GBP") everywhere else in the
  * domain, so adapter results are normalised on the way out.
@@ -107,7 +123,7 @@ export function createStripePaymentsAdapter(deps: {
   return {
     kind: 'payments',
     providerName: 'stripe',
-    capabilities: () => ['intent', 'capture', 'refund', 'webhook'],
+    capabilities: () => ['intent', 'capture', 'refund', 'webhook', 'delegated'],
     // Without a key the storefront's stripe driver reports it cannot mount, which keeps Place Order disabled.
     client: () => ({
       driver: 'stripe',
@@ -131,7 +147,7 @@ export function createStripePaymentsAdapter(deps: {
     },
     async createPaymentIntent(params: PaymentIntentParams): Promise<PaymentIntent> {
       try {
-        const intent = await stripeClient.paymentIntents.create({
+        const create: Stripe.PaymentIntentCreateParams = {
           amount: params.amountMinor,
           currency: params.currency.toLowerCase(),
           automatic_payment_methods: { enabled: true },
@@ -141,7 +157,19 @@ export function createStripePaymentsAdapter(deps: {
             ...(params.orderRef !== undefined ? { orderRef: params.orderRef } : {}),
             ...(params.customerId !== undefined ? { customerId: params.customerId } : {}),
           },
-        })
+        }
+        const token = params.delegatedToken
+        if (token === undefined) return toIntent(await stripeClient.paymentIntents.create(create))
+        // Confirmed server-side with no return_url, so a method that redirects the buyer cannot be offered.
+        const intent = await stripeClient.paymentIntents.create(
+          {
+            ...create,
+            confirm: true,
+            payment_method_data: delegatedPaymentMethod(token),
+            automatic_payment_methods: { enabled: true, allow_redirects: 'never' },
+          },
+          { apiVersion: STRIPE_SPT_API_VERSION },
+        )
         return toIntent(intent)
       } catch (err) {
         throw new PaymentError('intent_failed', 'Stripe createPaymentIntent failed', { cause: err })

@@ -33,8 +33,6 @@ export const LoginForm = /* @__PURE__ */ forwardRef<HTMLElement, LoginFormProps>
     const innerRef = useRef<HTMLElement>(null)
     const ref = (forwardedRef ?? innerRef) as React.RefObject<HTMLElement | null>
 
-
-
   useEffect(() => {
     const el = ref.current
     if (!el || !props.onSignedIn) return

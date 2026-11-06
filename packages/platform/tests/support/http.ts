@@ -43,6 +43,7 @@ export async function serveKernel(kernel: Kernel): Promise<ServedKernel> {
       logger: kernel.logger,
       documentStore: kernel.documentStore,
       version: '0.0.0',
+      network: kernel.app.network,
     })
     await kernel.app.attachHttp(http.adapter)
     try {

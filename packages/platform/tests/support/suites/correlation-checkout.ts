@@ -19,7 +19,8 @@ import {
   send,
   type Answer,
 } from '../correlation.js'
-import { address, type Dialect } from '../kernel.js'
+import { address, type Dialect, type Kernel } from '../kernel.js'
+import { adminClient, type AdminClient } from '../money.js'
 import { maxSeq, type EventRow } from '../outbox.js'
 import { stubPaymentWebhook, type TestStore } from '../proof-kit.js'
 import type { RawReader } from '../raw.js'
@@ -29,8 +30,9 @@ import { shopper } from '../shopper.js'
 // the order waits for its webhook), then the stub webhook arrives as a request of its own. AC-1: every event from POST
 // /api/checkout through the webhook's confirm carries the checkout response's x-correlation-id, and the webhook
 // response's own id differs. AC-1b: a failed payment, a capture for the wrong amount, and a webhook for an intent no
-// order holds. Events are read from the `events` table through a second connection, by seq: nothing else publishes
-// on the store while a case runs (no sweeper is due).
+// order holds. AC-12: an admin's mark-paid confirms the order under the checkout's id too, not under its own request's.
+// Events are read from the `events` table through a second connection, by seq: nothing else publishes on the store
+// while a case runs (no sweeper is due).
 
 interface Line {
   priceMinor: number
@@ -237,6 +239,54 @@ export function checkoutCorrelationSuite(
       )
       expect(headerIsValid(c), `checkout x-correlation-id: ${c.correlationId}`).toBe(true)
       expect(hook.correlationId === c.correlationId, 'the webhook has an id of its own').toBe(false)
+    }, 60_000)
+
+    it('AC-12: an admin mark-paid of a pending order confirms it under the checkout’s correlation id: payment.captured, order.paid, each line’s inventory commit and cart.converted carry the checkout response’s x-correlation-id, and the mark-paid response’s own id differs', async () => {
+      // The kit's store is the built kernel: the same store and repositories, typed from dist.
+      const kernel = {
+        store: h.store.app.platform.commandStore,
+        repos: h.store.app.repos,
+      } as unknown as Pick<Kernel, 'store' | 'repos'>
+      const admin: AdminClient = await adminClient(kernel, h.store.baseUrl)
+      const lines = [
+        { priceMinor: 700, qty: 2 },
+        { priceMinor: 1300, qty: 1 },
+      ]
+      const c = await checkout(lines, randomUUID())
+      const orderId = c.placed.orderId
+
+      const res = await admin.call<{ status: string }>(
+        'POST',
+        `/api/admin/orders/${orderId}/mark-paid`,
+        {},
+      )
+
+      expect([res.status, res.body.data?.status], JSON.stringify(res.body)).toEqual([
+        200,
+        'confirmed',
+      ])
+      const fromMarkPaid = await eventsAfter(h.raw, c.afterCheckout)
+      const captured = ofType(fromMarkPaid, EVT_PAYMENT_CAPTURED, { orderId })
+      const paid = ofType(fromMarkPaid, EVT_ORDER_PAID, { orderId })
+      const committed = ofType(fromMarkPaid, EVT_INVENTORY_RELEASED, { reason: 'committed' })
+      const converted = ofType(fromMarkPaid, EVT_CART_CONVERTED, { orderId })
+      expect(
+        [captured, paid, committed, converted].map((rows) => rows.length),
+        'payment.captured, order.paid, a commit per line, cart.converted',
+      ).toEqual([1, 1, lines.length, 1])
+      const confirmed = [...captured, ...paid, ...committed, ...converted]
+      expect(headerIsValid(c), `checkout x-correlation-id: ${c.correlationId}`).toBe(true)
+      expect(correlationIdsOf(confirmed), 'the confirm’s events').toEqual(
+        confirmed.map(() => c.correlationId),
+      )
+      const markPaidId = res.headers.get('x-correlation-id')
+      expect(
+        headerIsValid({ correlationId: markPaidId }),
+        `mark-paid x-correlation-id: ${markPaidId}`,
+      ).toBe(true)
+      expect(markPaidId === c.correlationId, 'the mark-paid request has an id of its own').toBe(
+        false,
+      )
     }, 60_000)
 
     it('AC-1b: a payment-failure webhook for an intent no order holds publishes under the webhook request’s own x-correlation-id', async () => {

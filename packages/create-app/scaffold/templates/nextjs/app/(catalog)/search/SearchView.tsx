@@ -49,7 +49,7 @@ export function SearchView({
     window.history.replaceState(null, '', url.toString())
   }, [])
 
-  const filtered = facets.length > 0 && results.length > 0
+  const filtered = results.length > 0 && facets.some((facet) => facet.values.length > 0)
 
   return (
     <div className={`container ${styles.page}`}>

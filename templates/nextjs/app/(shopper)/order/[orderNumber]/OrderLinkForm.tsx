@@ -1,16 +1,22 @@
 'use client'
 
-import { useRef, useState, type FormEvent } from 'react'
+import { useActionState, useRef, useState, type FormEvent } from 'react'
 import { getNymbalClient } from '@/lib/client'
 import styles from '@/styles/pages/error.module.css'
+import { orderPageAction, type OrderPageState } from './actions'
 
 type State = 'idle' | 'sending' | 'sent' | 'failed'
+
+/** The action state a link form posts to without the page's script, and the action that answers it. */
+export type LinkFormBinding = readonly [OrderPageState | null, (form: FormData) => void]
 
 /**
  * "Send me my order link": the store emails the order's link to the order's own email, and answers the same whatever
  * matched, so the page says the same either way. One request per click: a second submit while one is out is ignored.
+ * Without the script the form posts to `orderPageAction` through `binding`, the expired page's own when it is there.
  */
-export function OrderLinkForm() {
+export function OrderLinkForm({ binding }: { binding: LinkFormBinding }) {
+  const [served, formAction] = binding
   const [state, setState] = useState<State>('idle')
   const inFlight = useRef(false)
 
@@ -33,7 +39,7 @@ export function OrderLinkForm() {
     }
   }
 
-  if (state === 'sent') {
+  if (state === 'sent' || served?.kind === 'link-sent') {
     return (
       <p className={styles.message} data-testid="order-link-sent">
         If that number and email match an order, its link is on its way to that email.
@@ -41,7 +47,8 @@ export function OrderLinkForm() {
     )
   }
   return (
-    <form method="post" className={styles.searchPrompt} onSubmit={onSubmit}>
+    <form action={formAction} className={styles.searchPrompt} onSubmit={onSubmit}>
+      <input type="hidden" name="intent" value="link" />
       <div className={styles.searchPromptInput}>
         <label htmlFor="order-link-number">Order number</label>
         <input id="order-link-number" name="orderNumber" required data-testid="order-link-number" />
@@ -55,6 +62,9 @@ export function OrderLinkForm() {
           data-testid="order-link-email"
         />
       </div>
+      {served?.kind === 'link-limited' && (
+        <p className={styles.message}>Too many tries for now. Please try again in a while.</p>
+      )}
       {state === 'failed' && (
         <p className={styles.message}>We could not send the link just now. Please try again.</p>
       )}
@@ -70,4 +80,10 @@ export function OrderLinkForm() {
       </div>
     </form>
   )
+}
+
+/** The bare not-found page's link form, with an action state of its own. */
+export function OwnOrderLinkForm() {
+  const [served, formAction] = useActionState(orderPageAction, null)
+  return <OrderLinkForm binding={[served, formAction]} />
 }

@@ -15,8 +15,12 @@ export const provider = 'easypost'
 
 export { createEasyPostShippingAdapter, type EasyPostShippingAdapterConfig }
 
-/** The fields the admin's Settings may fill; without the secret the slot runs, degraded, and refuses every post. */
+/**
+ * The fields the admin's Settings may fill. Without the API key the slot only verifies webhooks; without the secret it
+ * runs, degraded, and refuses every post.
+ */
 export const settings: AdapterSetting[] = [
+  { path: 'apiKey', label: 'API key', secret: true, optional: true },
   { path: 'webhookSecret', label: 'Webhook secret', secret: true, optional: true },
 ]
 

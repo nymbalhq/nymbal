@@ -473,5 +473,63 @@ export function adminVariantPriceSuite(
         },
       )
     }, 300_000)
+
+    it('AC-6: property under concurrency: k concurrent PATCHes setting one variant to generated prices (repeats and the current price included) each answer 200 with the price they asked for, the variant’s price events in log order form one chain from the starting price, the stored, admin-read and storefront-read price is the last event’s, and stock is unchanged', async () => {
+      const START = 1000
+      await fc.assert(
+        fc.asyncProperty(
+          fc.array(fc.constantFrom(...PRICES), { minLength: 2, maxLength: 6 }),
+          async (asked: number[]) => {
+            const product = await makeProduct(s, [
+              { priceMinor: START, compareAtPriceMinor: null },
+              { priceMinor: 2000, compareAtPriceMinor: null },
+            ])
+            const [target, other] = product.variantIds as [string, string]
+            const stockBefore = await stocks(s, product.variantIds)
+            const seq = await maxSeq(s.raw)
+            const label = JSON.stringify(asked)
+
+            const answers = await Promise.all(
+              asked.map((priceMinor) =>
+                patch(s, product.id, { variants: [{ id: target, priceMinor }] }),
+              ),
+            )
+            answers.forEach((res, i) => {
+              expect(res.status, `${label}: PATCH ${i}: ${JSON.stringify(res.body)}`).toBe(200)
+              expect(
+                pricesOf(variantsOf(res.body.data!))[target]!.priceMinor,
+                `${label}: PATCH ${i}'s answer carries the price it asked for`,
+              ).toBe(asked[i])
+            })
+
+            const chain = (await eventRows(s.raw, 'seq > ? AND type = ?', [seq, PRICE_CHANGED]))
+              .map((e) => e.envelope.payload as Json)
+              .filter((p) => p['variantId'] === target)
+            let previous = START
+            for (const [n, p] of chain.entries()) {
+              expect(
+                p['previousPriceMinor'],
+                `${label}: event ${n} follows the price before it`,
+              ).toBe(previous)
+              previous = Number(p['priceMinor'])
+            }
+            const last = previous
+
+            const stored = pricesOf(variantsOf(await adminRead(s, product.id)))
+            expect(stored[target]!.priceMinor, `${label}: the admin read`).toBe(last)
+            expect(stored[other]!.priceMinor, `${label}: the other variant`).toBe(2000)
+            expect(
+              (await servedPrices(s, product.slug))[target],
+              `${label}: the storefront read`,
+            ).toBe(last)
+            expect(await stocks(s, product.variantIds), `${label}: stock`).toEqual(stockBefore)
+          },
+        ),
+        {
+          numRuns: Math.max(options.propertyRuns, 8),
+          examples: [[[900, 1000]], [[900, 900, 1500]], [[1000, 2500, 0, 900, 1500, 1000]]],
+        },
+      )
+    }, 300_000)
   })
 }

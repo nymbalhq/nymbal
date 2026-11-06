@@ -46,6 +46,7 @@ function orderWith(capturedMinor: number, refundedMinor: number, totalMinor: num
     capturedAt: capturedMinor > 0 ? '2026-10-19T10:00:00.000Z' : null,
     refundedMinor,
     captureMethod: capturedMinor > 0 ? 'provider' : null,
+    source: 'storefront',
     createdAt: '2026-10-19T09:00:00.000Z',
     updatedAt: '2026-10-19T10:00:00.000Z',
   }

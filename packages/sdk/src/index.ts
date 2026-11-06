@@ -46,6 +46,7 @@ export type { AuthStore } from './store/auth-store.js'
 
 export type { CommerceAdapter } from './adapter/commerce-adapter.js'
 export { createNymbalApiAdapter } from './adapter/nymbal-api-adapter.js'
+export { SESSION_HINT_KEY } from './auth/session.js'
 export { FetchClient, NymbalApiError } from './adapter/fetch-client.js'
 export type { FetchClientOptions } from './adapter/fetch-client.js'
 
@@ -78,8 +79,10 @@ export type {
 export type {
   StoreCapabilities,
   PaymentClient,
+  ProductRating,
   ProductSortKey,
-  ReviewsResult as ReviewsListResult,
+  PublicReview,
+  PublicReviewsResult as ReviewsListResult,
   ReviewResult as ReviewSubmitResult,
   AlertKind,
 } from '@nymbalhq/types'

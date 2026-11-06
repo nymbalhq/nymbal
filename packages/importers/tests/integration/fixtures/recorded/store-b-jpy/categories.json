@@ -1,0 +1,142 @@
+[
+  {
+    "id": 15,
+    "name": "Uncategorized",
+    "slug": "uncategorized",
+    "parent": 0,
+    "description": "",
+    "display": "default",
+    "image": null,
+    "menu_order": 0,
+    "count": 0,
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories/15",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories"
+        }
+      ]
+    }
+  },
+  {
+    "id": 16,
+    "name": "Food",
+    "slug": "food",
+    "parent": 0,
+    "description": "Pantry and tea",
+    "display": "default",
+    "image": null,
+    "menu_order": 0,
+    "count": 5,
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories/16",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories"
+        }
+      ]
+    }
+  },
+  {
+    "id": 17,
+    "name": "Tea",
+    "slug": "tea",
+    "parent": 16,
+    "description": "",
+    "display": "default",
+    "image": null,
+    "menu_order": 0,
+    "count": 5,
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories/17",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories"
+        }
+      ],
+      "up": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories/16"
+        }
+      ]
+    }
+  },
+  {
+    "id": 18,
+    "name": "Matcha",
+    "slug": "matcha",
+    "parent": 17,
+    "description": "",
+    "display": "default",
+    "image": null,
+    "menu_order": 0,
+    "count": 2,
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories/18",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories"
+        }
+      ],
+      "up": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories/17"
+        }
+      ]
+    }
+  },
+  {
+    "id": 19,
+    "name": "Tableware",
+    "slug": "tableware",
+    "parent": 0,
+    "description": "",
+    "display": "default",
+    "image": null,
+    "menu_order": 0,
+    "count": 7,
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories/19",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories"
+        }
+      ]
+    }
+  }
+]

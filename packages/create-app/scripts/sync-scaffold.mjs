@@ -20,6 +20,7 @@ export const NON_SCAFFOLD_PACKAGES = new Set([
   // Provider adapters and primitive packages are not scaffold dependencies: a project installs one (and its SDK) by
   // name only when its config names it, and the kernel imports it from the project.
   '@nymbalhq/ai-anthropic',
+  '@nymbalhq/ai-openai',
   '@nymbalhq/contract-tests',
   '@nymbalhq/document-store-postgres-jsonb',
   '@nymbalhq/document-store-redis',
@@ -33,6 +34,7 @@ export const NON_SCAFFOLD_PACKAGES = new Set([
   '@nymbalhq/proof-kit',
   '@nymbalhq/search-algolia',
   '@nymbalhq/security-cloudflare',
+  '@nymbalhq/shipping-aftership',
   '@nymbalhq/shipping-easypost',
   '@nymbalhq/test-factories',
 ])

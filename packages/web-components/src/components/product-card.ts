@@ -1,7 +1,9 @@
 import { css, html, nothing } from 'lit'
+import type { ProductRating } from '@nymbalhq/types'
 import { baseStyles, NymbalElement, propertiesOf, type ElementSchema } from '../base-element.js'
 import { formatPrice } from '../format.js'
 import { navigateOnClick } from '../navigate.js'
+import { reviewsOf, shownRating, stars } from '../rating.js'
 
 const SCHEMA: ElementSchema = {
   tag: 'nymbal-product-card',
@@ -12,7 +14,7 @@ const SCHEMA: ElementSchema = {
     { name: 'eager', prop: 'eager', type: 'boolean' },
   ],
   events: [],
-  parts: ['card', 'media', 'image', 'body', 'name', 'price'],
+  parts: ['card', 'media', 'image', 'body', 'name', 'price', 'rating'],
   slots: [],
   children: false,
 }
@@ -26,6 +28,8 @@ export interface CardProduct {
   currency?: string | null
   imageUrl?: string | null
   media?: Array<{ url?: string; alt?: string }>
+  /** As the product routes serve it: null when the product has no approved review. */
+  rating?: ProductRating | null
 }
 
 /**
@@ -58,6 +62,7 @@ export function cardProductOf(p: Omit<CardProduct, 'media'> & { media?: unknown 
     priceMinor: p.priceMinor ?? null,
     priceRange: p.priceRange ?? null,
     currency: p.currency ?? null,
+    rating: p.rating ?? null,
     ...image,
   }
 }
@@ -79,7 +84,18 @@ function priceOf(p: CardProduct): string | null {
   return from == null ? null : formatPrice(from, p.currency ?? 'GBP')
 }
 
-/** One product as a link to its page: image, name and price. */
+/** Stars, the average to one decimal and the review count, read aloud as one sentence. */
+function ratingOf(r: ProductRating) {
+  const shown = r.average.toFixed(1)
+  return html`<span
+    part="rating"
+    role="img"
+    aria-label=${`Rated ${shown} out of 5 from ${reviewsOf(r.count)}`}
+    ><span aria-hidden="true">${stars(r.average)}</span> ${shown} (${r.count})</span
+  >`
+}
+
+/** One product as a link to its page: image, name, price and rating. */
 export class NymbalProductCard extends NymbalElement {
   static override schema = SCHEMA
   static override properties = propertiesOf(SCHEMA)
@@ -133,6 +149,14 @@ export class NymbalProductCard extends NymbalElement {
         font-size: var(--nymbal-font-size-sm, 0.875rem);
         font-weight: var(--nymbal-font-weight-bold, 700);
       }
+      [part~='rating'] {
+        font-size: var(--nymbal-font-size-xs, 0.75rem);
+        color: var(--nymbal-color-text-muted, #71717a);
+      }
+      [part~='rating'] > [aria-hidden] {
+        letter-spacing: 0.1em;
+        color: var(--nymbal-color-warning, #d97706);
+      }
     `,
   ]
 
@@ -144,6 +168,7 @@ export class NymbalProductCard extends NymbalElement {
     if (p === null) return nothing
     const image = cardImageOf(p)
     const price = priceOf(p)
+    const rating = shownRating(p.rating)
     return html`
       <a
         part="card"
@@ -165,6 +190,7 @@ export class NymbalProductCard extends NymbalElement {
         <div part="body">
           <span part="name">${p.name}</span>
           ${price === null ? nothing : html`<span part="price">${price}</span>`}
+          ${rating === null ? nothing : ratingOf(rating)}
         </div>
       </a>
     `

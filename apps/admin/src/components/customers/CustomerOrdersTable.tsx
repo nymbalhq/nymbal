@@ -1,10 +1,18 @@
 import { useNavigate } from 'react-router-dom'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
 import { OrderStatusBadge } from '@/components/orders/OrderStatusBadge'
 import { EmptyState } from '@/components/common/EmptyState'
 import { formatMoney } from '@/lib/money'
 import { formatRelative } from '@/lib/dates'
+import { tid } from '@/lib/testid'
 import { ShoppingBag } from 'lucide-react'
 import type { Order } from '@nymbalhq/types'
 
@@ -52,6 +60,7 @@ export function CustomerOrdersTable({ orders, isLoading }: CustomerOrdersTablePr
           {orders.map((order) => (
             <TableRow
               key={order.id}
+              data-testid={tid('customer', 'orders-row', order.id)}
               className="cursor-pointer"
               onClick={() => navigate(`/orders/${order.orderNumber}`)}
             >

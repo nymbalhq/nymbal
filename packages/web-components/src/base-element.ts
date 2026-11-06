@@ -7,7 +7,7 @@ import {
   type PropertyValues,
 } from 'lit'
 import type { NymbalClient } from '@nymbalhq/sdk'
-import { getClient, hasClient, hasSettled } from './registry.js'
+import { awaitClient, getClient, hasClient, hasSettled, stopAwaitingClient } from './registry.js'
 import { define, type NymbalElementClass } from './define.js'
 
 /** How an attribute's value reads: the React wrapper types its prop from this, and JSON travels stringified. */
@@ -115,9 +115,24 @@ export abstract class NymbalElement extends LitElement {
    */
   protected storeSettled(_store: Subscribable): void {}
 
+  /**
+   * Connect work that needs a client: run on each connection once a client is registered, whether it was at connect
+   * or later (an element defined before `registerClient` connects without one).
+   */
+  protected clientConnected(): void {}
+
   override connectedCallback(): void {
     super.connectedCallback()
-    if (!this.hasClient) return
+    if (this.hasClient) this.followClient()
+    else
+      awaitClient(this, () => {
+        this.followClient()
+        this.requestUpdate()
+      })
+  }
+
+  /** Subscribes to the stores, then runs `clientConnected`. */
+  private followClient(): void {
     for (const store of this.stores()) {
       this._unsubs.push(
         store.subscribe(() => {
@@ -128,6 +143,7 @@ export abstract class NymbalElement extends LitElement {
     }
     // A hydrating element keeps the server's properties for its first render (see `update`).
     if (!this._serverRender) this.takeSettledStores()
+    this.clientConnected()
   }
 
   /**
@@ -174,6 +190,7 @@ export abstract class NymbalElement extends LitElement {
 
   override disconnectedCallback(): void {
     super.disconnectedCallback()
+    stopAwaitingClient(this)
     for (const fn of this._unsubs) fn()
     this._unsubs = []
   }

@@ -1,4 +1,4 @@
-import { and, desc, eq, lt, or, type SQL } from 'drizzle-orm'
+import { and, desc, eq, gte, lt, or, sql, type SQL } from 'drizzle-orm'
 import type { Review, ReviewModerationStatus } from '@nymbalhq/types'
 import {
   postgresDb,
@@ -48,6 +48,13 @@ export interface ReviewKey {
 
 export interface ReviewRepository extends StoreRepository {
   findById(tx: ReadTx, id: string): Promise<Review | null>
+  /** The customer's review of the product, whatever its moderation status. */
+  findByProductAndCustomer(tx: ReadTx, productId: string, customerId: string): Promise<Review | null>
+  /**
+   * Holds the (product, customer) pair until the transaction ends, so a find then insert for it runs one at a time:
+   * a Postgres advisory lock; on SQLite the open `BEGIN IMMEDIATE` transaction already holds every write.
+   */
+  lockPair(tx: Tx, productId: string, customerId: string): Promise<void>
   /** Newest first, ties by id descending; `after` is the last review of the previous page. */
   listByProduct(
     tx: ReadTx,
@@ -58,6 +65,9 @@ export interface ReviewRepository extends StoreRepository {
   ): Promise<Review[]>
   listByStatus(tx: ReadTx, status: ReviewModerationStatus, limit?: number): Promise<Review[]>
   insert(tx: Tx, r: ReviewInsert): Promise<void>
+  delete(tx: Tx, id: string): Promise<void>
+  /** Ids of the reviews submitted at or after `since`. */
+  idsSubmittedSince(tx: ReadTx, since: Date): Promise<string[]>
   setModerationStatus(
     tx: Tx,
     id: string,
@@ -92,6 +102,31 @@ export function createReviewRepository(store: CommandStore): ReviewRepository {
         .from(postgresSchema.reviews)
         .where(eq(postgresSchema.reviews.id, id))
       return row ? rowToReview(row as Record<string, unknown>) : null
+    },
+    async findByProductAndCustomer(tx, productId, customerId) {
+      if (tx.kind === 'sqlite') {
+        const t = sqliteSchema.reviews
+        const row = sqliteDb(tx)
+          .select()
+          .from(t)
+          .where(and(eq(t.productId, productId), eq(t.customerId, customerId)))
+          .limit(1)
+          .get()
+        return row ? rowToReview(row as Record<string, unknown>) : null
+      }
+      const t = postgresSchema.reviews
+      const [row] = await postgresDb(tx)
+        .select()
+        .from(t)
+        .where(and(eq(t.productId, productId), eq(t.customerId, customerId)))
+        .limit(1)
+      return row ? rowToReview(row as Record<string, unknown>) : null
+    },
+    async lockPair(tx, productId, customerId) {
+      if (tx.kind === 'sqlite') return
+      await postgresDb(tx).execute(
+        sql`SELECT pg_advisory_xact_lock(hashtext(${productId}::text || ':' || ${customerId}::text))`,
+      )
     },
     async listByProduct(tx, productId, status, limit = 50, after) {
       if (tx.kind === 'sqlite') {
@@ -177,6 +212,27 @@ export function createReviewRepository(store: CommandStore): ReviewRepository {
           moderatedBy: null,
         })
     },
+    async delete(tx, id) {
+      if (tx.kind === 'sqlite') {
+        sqliteDb(tx).delete(sqliteSchema.reviews).where(eq(sqliteSchema.reviews.id, id)).run()
+        return
+      }
+      await postgresDb(tx).delete(postgresSchema.reviews).where(eq(postgresSchema.reviews.id, id))
+    },
+    async idsSubmittedSince(tx, since) {
+      if (tx.kind === 'sqlite') {
+        const t = sqliteSchema.reviews
+        return sqliteDb(tx)
+          .select({ id: t.id })
+          .from(t)
+          .where(gte(t.submittedAt, since.toISOString()))
+          .all()
+          .map((r) => r.id)
+      }
+      const t = postgresSchema.reviews
+      const rows = await postgresDb(tx).select({ id: t.id }).from(t).where(gte(t.submittedAt, since))
+      return rows.map((r) => r.id)
+    },
     async setModerationStatus(tx, id, status, moderatedBy, moderatedAt) {
       if (tx.kind === 'sqlite') {
         sqliteDb(tx)
@@ -196,7 +252,24 @@ export function createReviewRepository(store: CommandStore): ReviewRepository {
         .where(eq(postgresSchema.reviews.id, id))
     },
     async aggregateByProduct(tx, productId) {
-      const approved = await this.listByProduct(tx, productId, 'approved', 1000)
+      // One row per distinct rating among the approved reviews, however many reviews there are.
+      let groups: Array<{ rating: unknown; n: unknown }>
+      if (tx.kind === 'sqlite') {
+        const t = sqliteSchema.reviews
+        groups = sqliteDb(tx)
+          .select({ rating: t.rating, n: sql<number>`count(*)` })
+          .from(t)
+          .where(and(eq(t.productId, productId), eq(t.moderationStatus, 'approved')))
+          .groupBy(t.rating)
+          .all()
+      } else {
+        const t = postgresSchema.reviews
+        groups = await postgresDb(tx)
+          .select({ rating: t.rating, n: sql<string>`count(*)` })
+          .from(t)
+          .where(and(eq(t.productId, productId), eq(t.moderationStatus, 'approved')))
+          .groupBy(t.rating)
+      }
       const histogram: Record<'1' | '2' | '3' | '4' | '5', number> = {
         '1': 0,
         '2': 0,
@@ -205,14 +278,17 @@ export function createReviewRepository(store: CommandStore): ReviewRepository {
         '5': 0,
       }
       let total = 0
-      for (const r of approved) {
+      let count = 0
+      for (const g of groups) {
+        const rating = Number(g.rating)
+        const n = Number(g.n)
         const bucket = String(
-          Math.max(1, Math.min(5, Math.round(r.rating))),
+          Math.max(1, Math.min(5, Math.round(rating))),
         ) as keyof typeof histogram
-        histogram[bucket] += 1
-        total += r.rating
+        histogram[bucket] += n
+        total += rating * n
+        count += n
       }
-      const count = approved.length
       const average = count === 0 ? 0 : total / count
       return { average, count, histogram }
     },

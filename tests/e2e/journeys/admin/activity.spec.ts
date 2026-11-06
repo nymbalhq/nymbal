@@ -108,8 +108,8 @@ async function historyOf(request: APIRequestContext, token: string, product: Own
 }
 
 /**
- * A draft product with one variant at `stock`, listed by the admin inventory before this returns. Draft, because
- * `placeOrder` skips drafts, so no other journey's checkout buys it and moves its stock (the storefront does serve it).
+ * A draft product with one variant at `stock`, listed by the admin inventory before this returns: this journey's own,
+ * so no other journey's checkout buys it and moves its stock.
  */
 async function draftProduct(
   request: APIRequestContext,

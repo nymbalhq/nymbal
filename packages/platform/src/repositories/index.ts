@@ -40,6 +40,7 @@ import {
   type EmailSuppressionRepository,
 } from './email-suppression.js'
 import { createOrderShipmentRepository, type OrderShipmentRepository } from './order-shipment.js'
+import { createProposalRepository, type ProposalRepository } from './proposal.js'
 
 export * from './product.js'
 export * from './variant.js'
@@ -63,6 +64,7 @@ export * from './audit-entry.js'
 export * from './alert-subscription.js'
 export * from './email-suppression.js'
 export * from './order-shipment.js'
+export * from './proposal.js'
 export * from './page.js'
 
 export interface Repositories {
@@ -88,6 +90,7 @@ export interface Repositories {
   alertSubscription: AlertSubscriptionRepository
   emailSuppression: EmailSuppressionRepository
   orderShipment: OrderShipmentRepository
+  proposal: ProposalRepository
 }
 
 export function buildRepositories(
@@ -118,5 +121,6 @@ export function buildRepositories(
     alertSubscription: createAlertSubscriptionRepository(commandStore),
     emailSuppression: createEmailSuppressionRepository(commandStore),
     orderShipment: createOrderShipmentRepository(commandStore),
+    proposal: createProposalRepository(commandStore),
   }
 }

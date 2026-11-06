@@ -34,32 +34,12 @@ export const SiteFooter = /* @__PURE__ */ forwardRef<HTMLElement, SiteFooterProp
     const innerRef = useRef<HTMLElement>(null)
     const ref = (forwardedRef ?? innerRef) as React.RefObject<HTMLElement | null>
 
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (props.columns !== undefined) {
-      el.setAttribute('columns', JSON.stringify(props.columns))
-    } else {
-      el.removeAttribute('columns')
-    }
-  }, [props.columns])
-
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (props.year !== undefined) {
-      el.setAttribute('year', String(props.year))
-    } else {
-      el.removeAttribute('year')
-    }
-  }, [props.year])
-
 
 
     useDefine(NymbalSiteFooter)
 
     return (
-      <nymbal-site-footer ref={ref as React.Ref<HTMLElement>} columns={props.columns === undefined ? undefined : JSON.stringify(props.columns)} year={props.year} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
+      <nymbal-site-footer ref={ref as React.Ref<HTMLElement>} {...{ 'COLUMNS': props.columns === undefined ? undefined : JSON.stringify(props.columns), 'YEAR': props.year }} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
         // The server render goes on the tag itself: a full load parses its template into the shadow root, which React
         // does not see, and a soft navigation's innerHTML leaves it for the element to upgrade.
         dangerouslySetInnerHTML={props.serverHtml === undefined ? undefined : { __html: props.serverHtml }}

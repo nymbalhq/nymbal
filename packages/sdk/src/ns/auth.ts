@@ -1,4 +1,6 @@
 import { defineNamespace } from '../client.js'
 import { createAuthStore } from '../store/auth-store.js'
 
-defineNamespace('auth', ({ adapter, tokenManager }) => createAuthStore(adapter, tokenManager))
+defineNamespace('auth', ({ adapter, tokenManager, restoreSession }) =>
+  createAuthStore(adapter, tokenManager, restoreSession),
+)

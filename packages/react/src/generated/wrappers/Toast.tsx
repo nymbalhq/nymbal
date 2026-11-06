@@ -34,32 +34,12 @@ export const Toast = /* @__PURE__ */ forwardRef<HTMLElement, ToastProps>(
     const innerRef = useRef<HTMLElement>(null)
     const ref = (forwardedRef ?? innerRef) as React.RefObject<HTMLElement | null>
 
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (props.position !== undefined) {
-      el.setAttribute('position', String(props.position))
-    } else {
-      el.removeAttribute('position')
-    }
-  }, [props.position])
-
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (props.durationMs !== undefined) {
-      el.setAttribute('duration-ms', String(props.durationMs))
-    } else {
-      el.removeAttribute('duration-ms')
-    }
-  }, [props.durationMs])
-
 
 
     useDefine(NymbalToast)
 
     return (
-      <nymbal-toast ref={ref as React.Ref<HTMLElement>} position={props.position} duration-ms={props.durationMs} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
+      <nymbal-toast ref={ref as React.Ref<HTMLElement>} {...{ 'POSITION': props.position, 'duration-ms': props.durationMs }} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
         // The server render goes on the tag itself: a full load parses its template into the shadow root, which React
         // does not see, and a soft navigation's innerHTML leaves it for the element to upgrade.
         dangerouslySetInnerHTML={props.serverHtml === undefined ? undefined : { __html: props.serverHtml }}

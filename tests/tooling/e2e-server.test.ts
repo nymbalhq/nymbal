@@ -142,7 +142,13 @@ describe('AC-10: the wrapper records a child that outlives its shutdown, and onl
       const run = await startWrapped(false, { NYMBAL_E2E_SHUTDOWN_MS: '3000' })
       run.wrapper.kill(signal)
       await run.exited
-      expect(readFileSync(join(run.root, 'got'), 'utf8').trim()).toBe(signal)
+      // Under a full gate's load the record has been read as missing right after the wrapper's exit: wait for it.
+      const got = join(run.root, 'got')
+      await until(
+        () => existsSync(got) && readFileSync(got, 'utf8').includes('\n'),
+        'the child to record the signal',
+      )
+      expect(readFileSync(got, 'utf8').trim()).toBe(signal)
       expect(existsSync(shutdownFile(run.root))).toBe(false)
       expect(alive(run.childPid)).toBe(false)
     },

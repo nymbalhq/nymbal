@@ -1,0 +1,368 @@
+[
+  {
+    "id": 2,
+    "date_created": "2026-11-04T18:29:34",
+    "date_created_gmt": "2026-11-04T18:29:34",
+    "date_modified": "2026-11-04T18:29:35",
+    "date_modified_gmt": "2026-11-04T18:29:35",
+    "email": "anna.visser@example.com",
+    "first_name": "Anna",
+    "last_name": "Visser",
+    "role": "customer",
+    "username": "anna.visser",
+    "billing": {
+      "first_name": "Anna",
+      "last_name": "Visser",
+      "company": "",
+      "address_1": "Voorbeeldstraat 1",
+      "address_2": "",
+      "city": "Amsterdam",
+      "postcode": "1011 AA",
+      "country": "NL",
+      "state": "",
+      "email": "anna.visser@example.com",
+      "phone": ""
+    },
+    "shipping": {
+      "first_name": "Anna",
+      "last_name": "Visser",
+      "company": "",
+      "address_1": "Voorbeeldstraat 1",
+      "address_2": "",
+      "city": "Amsterdam",
+      "postcode": "1011 AA",
+      "country": "NL",
+      "state": "",
+      "phone": ""
+    },
+    "is_paying_customer": true,
+    "avatar_url": "https://secure.gravatar.com/avatar/dc4cf2b9a528bfd43ff5f25424e5dc26577e4a2cdc6e0ce02080bc045ef785e2?s=96&d=mm&r=g",
+    "meta_data": [
+      {
+        "id": 33,
+        "key": "default_password_nag",
+        "value": "1"
+      }
+    ],
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/customers/2",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/customers"
+        }
+      ]
+    }
+  },
+  {
+    "id": 3,
+    "date_created": "2026-11-04T18:29:34",
+    "date_created_gmt": "2026-11-04T18:29:34",
+    "date_modified": "2026-11-04T18:29:35",
+    "date_modified_gmt": "2026-11-04T18:29:35",
+    "email": "daan.bakker@example.com",
+    "first_name": "Daan",
+    "last_name": "Bakker",
+    "role": "customer",
+    "username": "daan.bakker",
+    "billing": {
+      "first_name": "Daan",
+      "last_name": "Bakker",
+      "company": "",
+      "address_1": "Proefweg 12",
+      "address_2": "",
+      "city": "Utrecht",
+      "postcode": "3511 AB",
+      "country": "NL",
+      "state": "",
+      "email": "daan.bakker@example.com",
+      "phone": ""
+    },
+    "shipping": {
+      "first_name": "Daan",
+      "last_name": "Bakker",
+      "company": "",
+      "address_1": "Proefweg 12",
+      "address_2": "",
+      "city": "Utrecht",
+      "postcode": "3511 AB",
+      "country": "NL",
+      "state": "",
+      "phone": ""
+    },
+    "is_paying_customer": true,
+    "avatar_url": "https://secure.gravatar.com/avatar/256928063104e336fe8c627da3396cd8553667cfed24cc991ce592aae5ec9e2a?s=96&d=mm&r=g",
+    "meta_data": [
+      {
+        "id": 62,
+        "key": "default_password_nag",
+        "value": "1"
+      }
+    ],
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/customers/3",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/customers"
+        }
+      ]
+    }
+  },
+  {
+    "id": 4,
+    "date_created": "2026-11-04T18:29:34",
+    "date_created_gmt": "2026-11-04T18:29:34",
+    "date_modified": "2026-11-04T18:29:35",
+    "date_modified_gmt": "2026-11-04T18:29:35",
+    "email": "lotte.peeters@example.com",
+    "first_name": "Lotte",
+    "last_name": "Peeters",
+    "role": "customer",
+    "username": "lotte.peeters",
+    "billing": {
+      "first_name": "Lotte",
+      "last_name": "Peeters",
+      "company": "",
+      "address_1": "Voorbeeldlaan 3",
+      "address_2": "",
+      "city": "Antwerpen",
+      "postcode": "2000",
+      "country": "BE",
+      "state": "",
+      "email": "lotte.peeters@example.com",
+      "phone": ""
+    },
+    "shipping": {
+      "first_name": "Lotte",
+      "last_name": "Peeters",
+      "company": "",
+      "address_1": "Voorbeeldlaan 3",
+      "address_2": "",
+      "city": "Antwerpen",
+      "postcode": "2000",
+      "country": "BE",
+      "state": "",
+      "phone": ""
+    },
+    "is_paying_customer": true,
+    "avatar_url": "https://secure.gravatar.com/avatar/7f92ac4615224515419e959a0cf5b98d461ac8223862ffc386432aca09566796?s=96&d=mm&r=g",
+    "meta_data": [
+      {
+        "id": 91,
+        "key": "default_password_nag",
+        "value": "1"
+      }
+    ],
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/customers/4",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/customers"
+        }
+      ]
+    }
+  },
+  {
+    "id": 5,
+    "date_created": "2026-11-04T18:29:34",
+    "date_created_gmt": "2026-11-04T18:29:34",
+    "date_modified": "2026-11-04T18:29:34",
+    "date_modified_gmt": "2026-11-04T18:29:34",
+    "email": "julien.dubois@example.com",
+    "first_name": "Julien",
+    "last_name": "Dubois",
+    "role": "customer",
+    "username": "julien.dubois",
+    "billing": {
+      "first_name": "Julien",
+      "last_name": "Dubois",
+      "company": "",
+      "address_1": "Rue Exemple 7",
+      "address_2": "",
+      "city": "Bruxelles",
+      "postcode": "1000",
+      "country": "BE",
+      "state": "",
+      "email": "julien.dubois@example.com",
+      "phone": ""
+    },
+    "shipping": {
+      "first_name": "Julien",
+      "last_name": "Dubois",
+      "company": "",
+      "address_1": "Rue Exemple 7",
+      "address_2": "",
+      "city": "Bruxelles",
+      "postcode": "1000",
+      "country": "BE",
+      "state": "",
+      "phone": ""
+    },
+    "is_paying_customer": false,
+    "avatar_url": "https://secure.gravatar.com/avatar/6d5c0ce6e99b2d0108145735e6624ee31c914b66795fa842ffc274ca4c563644?s=96&d=mm&r=g",
+    "meta_data": [
+      {
+        "id": 120,
+        "key": "default_password_nag",
+        "value": "1"
+      }
+    ],
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/customers/5",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/customers"
+        }
+      ]
+    }
+  },
+  {
+    "id": 6,
+    "date_created": "2026-11-04T18:29:34",
+    "date_created_gmt": "2026-11-04T18:29:34",
+    "date_modified": "2026-11-04T18:29:35",
+    "date_modified_gmt": "2026-11-04T18:29:35",
+    "email": "lena.schmidt@example.com",
+    "first_name": "Lena",
+    "last_name": "Schmidt",
+    "role": "customer",
+    "username": "lena.schmidt",
+    "billing": {
+      "first_name": "Lena",
+      "last_name": "Schmidt",
+      "company": "",
+      "address_1": "Beispielstraße 5",
+      "address_2": "",
+      "city": "Berlin",
+      "postcode": "10115",
+      "country": "DE",
+      "state": "",
+      "email": "lena.schmidt@example.com",
+      "phone": ""
+    },
+    "shipping": {
+      "first_name": "Lena",
+      "last_name": "Schmidt",
+      "company": "",
+      "address_1": "Beispielstraße 5",
+      "address_2": "",
+      "city": "Berlin",
+      "postcode": "10115",
+      "country": "DE",
+      "state": "",
+      "phone": ""
+    },
+    "is_paying_customer": true,
+    "avatar_url": "https://secure.gravatar.com/avatar/d051fe1cd1640fd8f1b6cc0b9c327c3b8baa898bb393fdd702d0b5083214cae8?s=96&d=mm&r=g",
+    "meta_data": [
+      {
+        "id": 149,
+        "key": "default_password_nag",
+        "value": "1"
+      }
+    ],
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/customers/6",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/customers"
+        }
+      ]
+    }
+  },
+  {
+    "id": 7,
+    "date_created": "2026-11-04T18:29:34",
+    "date_created_gmt": "2026-11-04T18:29:34",
+    "date_modified": "2026-11-04T18:29:36",
+    "date_modified_gmt": "2026-11-04T18:29:36",
+    "email": "sem.dejong@example.com",
+    "first_name": "Sem",
+    "last_name": "de Jong",
+    "role": "customer",
+    "username": "sem.dejong",
+    "billing": {
+      "first_name": "Sem",
+      "last_name": "de Jong",
+      "company": "De Jong Ontwerp",
+      "address_1": "Testkade 40",
+      "address_2": "2e verdieping",
+      "city": "Groningen",
+      "postcode": "9711 AC",
+      "country": "NL",
+      "state": "",
+      "email": "sem.dejong@example.com",
+      "phone": ""
+    },
+    "shipping": {
+      "first_name": "Sem",
+      "last_name": "de Jong",
+      "company": "",
+      "address_1": "Testkade 40",
+      "address_2": "2e verdieping",
+      "city": "Groningen",
+      "postcode": "9711 AC",
+      "country": "NL",
+      "state": "",
+      "phone": ""
+    },
+    "is_paying_customer": true,
+    "avatar_url": "https://secure.gravatar.com/avatar/f22c1d32b72c0552b7991d523fb66e54d5759ece645db042a4248402e616ecd0?s=96&d=mm&r=g",
+    "meta_data": [
+      {
+        "id": 178,
+        "key": "default_password_nag",
+        "value": "1"
+      }
+    ],
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/customers/7",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/customers"
+        }
+      ]
+    }
+  }
+]

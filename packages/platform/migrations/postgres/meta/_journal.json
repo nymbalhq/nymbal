@@ -134,6 +134,34 @@
       "when": 1793344408253,
       "tag": "0018_order_key_expiry",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1793507532518,
+      "tag": "0019_carts_customer_idx",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1793605267195,
+      "tag": "0020_alert_confirmation_sent",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1793740929141,
+      "tag": "0021_proposals",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1793809830713,
+      "tag": "0022_order_source",
+      "breakpoints": true
     }
   ]
 }

@@ -219,18 +219,21 @@ describe('AC-1: changeset-needed sees a nested member', () => {
 })
 
 // scaffold-clean.sh in a scratch copy of the checkout's scripts: a registry is given (no Docker), and `pnpm` is a
-// stand-in that records which files the stamping left modified, then fails the build, so the script stops before it
-// publishes anything and its exit trap restores the backup.
+// stand-in that records which files the stamping left modified, then rewrites the lockfile for the stamped versions as
+// the real one does, and fails the build, so the script stops before it publishes anything and its exit trap restores
+// the backup.
 const RECORDING_PNPM = `#!/usr/bin/env bash
 git -c core.quotepath=false diff --name-only >>"$SCRATCH/stamped.log"
+echo "  /stamped: {}" >>"$SCRATCH/pnpm-lock.yaml"
 echo "stand-in pnpm: $*" >&2
 exit 1
 `
 
 describe('AC-1: scaffold-clean.sh stamps and restores the nested member', () => {
-  it('AC-1: it stamps every public manifest, the nested one included, and its exit trap restores exactly what it stamped', () => {
+  it('AC-1: it stamps every public manifest, the nested one included, and its exit trap restores exactly what it stamped and the lockfile pnpm rewrote', () => {
     const repo = scratchRepo({
       ...WORKSPACE,
+      'pnpm-lock.yaml': "lockfileVersion: '9.0'\n",
       'packages/stack/package.json': json({
         name: '@nymbalhq/stack',
         version: '1.4.0',

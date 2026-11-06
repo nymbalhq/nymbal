@@ -1,13 +1,23 @@
 // Reads: scripts/gate.ts, scripts/sentinels.ts, scripts/stack.ts, scripts/test-census.ts, package.json
 // Reads: vitest.config.ts
 import { execFileSync, spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import fc from 'fast-check'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
+  adminInputsStamp,
   buildInputsStamp,
   buildIsCurrent,
   checkoutInUse,
@@ -23,6 +33,17 @@ import {
   type StepSpec,
 } from '../../scripts/gate'
 import { loadSentinels } from '../../scripts/sentinels'
+import {
+  ARTEFACT,
+  childEnv,
+  cleanupScratch,
+  GATE_PACKAGE_JSON,
+  gateCli,
+  scratchRepo,
+  STRYKER_CONFIG,
+  write as writeIn,
+  type Scratch,
+} from './scratch-gate'
 import { leftOut, listedProjects, vitestFilters } from './vitest-filters'
 
 // What a local run of the full gate leaves to dev CI, and what it refuses to do: the sentinels, Stryker and the
@@ -406,6 +427,33 @@ describe('the tests step runs the projects it means, as Vitest resolves its filt
   }, 60_000)
 })
 
+describe('a rename out of a harness directory keeps the harness projects, as Vitest resolves the filters', () => {
+  // `git mv scripts/x.ts tools/x.ts`: the rename-detected list holds only the new name; `relatedPaths` holds both.
+  const renamed = { changed: ['tools/x.ts'], relatedPaths: ['scripts/x.ts', 'tools/x.ts'] }
+
+  it('the plain gate and gate:full both run tooling and architecture for it', async () => {
+    const commands = [
+      step(plainPlan(renamed.changed, { relatedPaths: renamed.relatedPaths }), 'tests').command,
+      step(fullPlan(renamed), 'tests').command,
+    ]
+    const listed = await Promise.all(
+      commands.map((command) => {
+        const { env, projects, excludes } = vitestFilters(command)
+        return listedProjects(
+          [
+            ...projects.flatMap((name) => ['--project', name]),
+            ...excludes.flatMap((path) => ['--exclude', path]),
+          ],
+          env,
+        )
+      }),
+    )
+    for (const [i, projects] of listed.entries()) {
+      expect(projects, commands[i]).toEqual(expect.arrayContaining([...HARNESS_PROJECTS]))
+    }
+  }, 60_000)
+})
+
 describe('the plain gate builds when the build output is older than HEAD, and every build stamps', () => {
   it('buildStale builds without a changed input, and tests need that build', () => {
     const steps = plainPlan(['packages/platform/src/services/cart-service.test.ts'], {
@@ -424,10 +472,75 @@ describe('the plain gate builds when the build output is older than HEAD, and ev
     expect(idleSkip(build)).toBe(true)
     expect(build.skip).toMatch(/matches HEAD/)
   })
+})
 
-  it("gate:full's build stamps too", () => {
-    expect(step(fullPlan(), 'build').command).toMatch(/gate\.ts build-stamp$/)
-  })
+// The real gate.ts in a scratch repository with a package and an admin, both built and stamped, then both edited.
+// The stand-in pnpm logs each call and exits 1 on the admin build when FAIL_ADMIN_BUILD is set: a build step that
+// stamps only after both builds succeed leaves the stamp as it was.
+describe('a build step stamps the admin only once the admin build succeeds', () => {
+  afterEach(cleanupScratch)
+
+  const STAMP = 'reports/build-stamp.json'
+  const STAND_IN = `#!/usr/bin/env bash
+echo "pnpm $*" >>"$SCRATCH/calls.log"
+if [ -n "$FAIL_ADMIN_BUILD" ] && [ "$*" = "--filter @nymbalhq/admin build" ]; then exit 1; fi
+exit 0
+`
+
+  function bothStale(): Scratch {
+    const repo = scratchRepo({
+      'package.json': GATE_PACKAGE_JSON,
+      'stryker.config.mjs': STRYKER_CONFIG,
+      ...ARTEFACT,
+      'packages/alpha/src/index.ts': 'export const a = 1\n',
+      'apps/admin/package.json': JSON.stringify({ name: '@nymbalhq/admin', scripts: {} }),
+      'apps/admin/src/main.tsx': 'export const page = 1\n',
+    })
+    writeFileSync(join(repo.bin, 'pnpm'), STAND_IN)
+    chmodSync(join(repo.bin, 'pnpm'), 0o755)
+    const stamped = spawnSync(TSX, [GATE, 'build-stamp', '--admin'], {
+      cwd: repo.root,
+      env: childEnv(),
+      encoding: 'utf8',
+    })
+    expect(stamped.status, stamped.stderr).toBe(0)
+    writeIn(repo.root, 'packages/alpha/src/index.ts', 'export const a = 2\n')
+    writeIn(repo.root, 'apps/admin/src/main.tsx', 'export const page = 2\n')
+    expect(buildIsCurrent(repo.root), 'the packages are stale').toBe(false)
+    return repo
+  }
+
+  const stampText = (repo: Scratch): string => readFileSync(join(repo.root, STAMP), 'utf8')
+  const buildCalls = (repo: Scratch): string[] =>
+    repo.calls().filter((call) => /\bbuild\b/.test(call))
+
+  for (const [gate, args] of [
+    ['the full gate', ['--full', '--only', 'build', '--base', 'HEAD', '--json']],
+    ['the plain gate with both builds stale', ['--base', 'HEAD', '--json']],
+  ] as const) {
+    it(`${gate}: a green build stamps the admin inputs it built from`, async () => {
+      const repo = bothStale()
+      const run = await gateCli(repo, [...args])
+      expect(run.steps.find((s) => s.name === 'build')?.status, run.output).toBe('ok')
+      expect(buildCalls(repo), run.output).toEqual([
+        'pnpm build',
+        'pnpm --filter @nymbalhq/admin build',
+      ])
+      const stamp = JSON.parse(stampText(repo)) as { inputs?: string; admin?: string }
+      expect(stamp.admin).toBe(adminInputsStamp(repo.root))
+      expect(stamp.inputs).toBe(buildInputsStamp(repo.root))
+    }, 60_000)
+
+    it(`${gate}: a failed admin build leaves the stamp as it was`, async () => {
+      const repo = bothStale()
+      const before = stampText(repo)
+      const run = await gateCli(repo, [...args], { FAIL_ADMIN_BUILD: '1' })
+      expect(run.steps.find((s) => s.name === 'build')?.status, run.output).toBe('red')
+      expect(buildCalls(repo), run.output).toContain('pnpm --filter @nymbalhq/admin build')
+      expect(stampText(repo), 'the stamp still names the inputs of the last good build').toBe(before)
+      expect(JSON.parse(stampText(repo)).admin).not.toBe(adminInputsStamp(repo.root))
+    }, 60_000)
+  }
 })
 
 // A scratch repository: two packages, one with a build script, committed; the stamp functions read it through git.

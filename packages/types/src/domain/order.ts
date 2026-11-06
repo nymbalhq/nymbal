@@ -59,6 +59,14 @@ export interface OrderLineItem {
   imageUrl: string
 }
 
+/** Where an order came from: the storefront, an import, or the shopping agent that opened its cart. */
+export type OrderSource = 'storefront' | 'import' | `agent:${string}`
+
+/** The source a cart or order opened by the named agent carries. */
+export function agentSource(name: string): `agent:${string}` {
+  return `agent:${name}`
+}
+
 export interface Order {
   id: string
   orderNumber: string
@@ -84,6 +92,7 @@ export interface Order {
   /** Σ of the order's succeeded refunds (or, for an import or a pre-refund-table order, what was refunded then). */
   refundedMinor: number
   captureMethod: CaptureMethod | null
+  source: OrderSource
   createdAt: string
   updatedAt: string
 }
@@ -96,6 +105,12 @@ export const ORDER_KEY_HEADER = 'x-nymbal-order-key'
 
 /** The request header that carries the order's email beside an expired order key. Never a query parameter either. */
 export const ORDER_EMAIL_HEADER = 'x-nymbal-order-email'
+
+/**
+ * The API's attestation of a shopper's address on a page request it forwards to the storefront. The storefront server
+ * echoes it on the API calls it makes for that shopper, so they count against the shopper's address, not its own.
+ */
+export const SHOPPER_ATTESTATION_HEADER = 'x-nymbal-shopper'
 
 /** Who took the money: the payments provider, the merchant recording an offline payment, or an imported history. */
 export type CaptureMethod = 'provider' | 'manual' | 'import'

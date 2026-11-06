@@ -1,5 +1,6 @@
 import type { Customer } from '@nymbalhq/types'
 import type { CommerceAdapter } from '../adapter/commerce-adapter.js'
+import { forgetSession, hasSessionHint, isSessionRefusal, renewSession } from '../auth/session.js'
 import type { TokenManager } from '../auth/token-manager.js'
 import type { AuthState, RegisterParams } from '../types.js'
 import { createStore } from './create-store.js'
@@ -20,12 +21,18 @@ export interface AuthStore {
   refreshToken(): Promise<void>
   updateProfile(updates: Partial<Pick<Customer, 'firstName' | 'lastName' | 'phone'>>): Promise<void>
   loadProfile(): Promise<void>
+  /**
+   * Brings a page load's session back: the profile with a token held; with none, one refresh from the refresh cookie
+   * when this browser has signed in (the session hint), then the profile; a guest's sends nothing. Never throws.
+   */
+  restore(): Promise<void>
   destroy(): void
 }
 
 export function createAuthStore(
   adapter: CommerceAdapter,
   tokenManager: TokenManager,
+  restoreSession: () => Promise<void> = () => renewSession(adapter, tokenManager),
 ): AuthStore {
   const store = createStore<AuthState>(INITIAL_STATE)
 
@@ -68,6 +75,7 @@ export function createAuthStore(
     try {
       await adapter.customers.logout()
       tokenManager.clear()
+      forgetSession()
       store.setState({
         customer: null,
         isAuthenticated: false,
@@ -75,6 +83,7 @@ export function createAuthStore(
       })
     } catch (err) {
       tokenManager.clear()
+      forgetSession()
       store.setState({
         customer: null,
         isAuthenticated: false,
@@ -91,6 +100,7 @@ export function createAuthStore(
     } catch (err) {
       console.error('[AuthStore] token refresh failed, logging out', err)
       tokenManager.clear()
+      if (isSessionRefusal(err)) forgetSession()
       store.setState({
         customer: null,
         isAuthenticated: false,
@@ -131,6 +141,14 @@ export function createAuthStore(
     }
   }
 
+  async function restore(): Promise<void> {
+    if (tokenManager.getAccessToken()) return loadProfile()
+    if (!hasSessionHint()) return
+    await restoreSession()
+    if (tokenManager.getAccessToken()) return loadProfile()
+    store.setState({ customer: null, isAuthenticated: false })
+  }
+
   return {
     getState: store.getState,
     subscribe: store.subscribe,
@@ -140,6 +158,7 @@ export function createAuthStore(
     refreshToken,
     updateProfile,
     loadProfile,
+    restore,
     destroy: store.destroy,
   }
 }

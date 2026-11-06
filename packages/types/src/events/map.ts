@@ -25,6 +25,7 @@ export interface NymbalEventMap {
   [C.EVT_ORDER_PARTIALLY_REFUNDED]: P.OrderPartiallyRefundedV1Payload
   [C.EVT_ORDER_STATUS_CHANGED]: P.OrderStatusChangedV1Payload
   [C.EVT_ORDER_CONFIRMATION_RESEND_REQUESTED]: P.OrderConfirmationResendRequestedV1Payload
+  [C.EVT_ORDER_DELETED]: P.OrderDeletedV1Payload
 
   [C.EVT_INVENTORY_CHANGED]: P.InventoryChangedV1Payload
   [C.EVT_INVENTORY_RESERVED]: P.InventoryReservedV1Payload
@@ -54,6 +55,15 @@ export interface NymbalEventMap {
   [C.EVT_ALERT_CONFIRMED]: P.AlertConfirmedV1Payload
   [C.EVT_ALERT_UNSUBSCRIBED]: P.AlertUnsubscribedV1Payload
   [C.EVT_ALERT_SENT]: P.AlertSentV1Payload
+  [C.EVT_ALERT_CONFIRMATION_SENT]: P.AlertConfirmationSentV1Payload
+
+  [C.EVT_REVIEW_SUBMITTED]: P.ReviewSubmittedV1Payload
+
+  [C.EVT_PROPOSAL_CREATED]: P.ProposalCreatedV1Payload
+  [C.EVT_PROPOSAL_APPROVED]: P.ProposalApprovedV1Payload
+  [C.EVT_PROPOSAL_REJECTED]: P.ProposalRejectedV1Payload
+  [C.EVT_PROPOSAL_APPLIED]: P.ProposalAppliedV1Payload
+  [C.EVT_PROPOSAL_FAILED]: P.ProposalFailedV1Payload
 
   [C.EVT_ADAPTER_ERROR]: P.AdapterErrorV1Payload
   [C.EVT_SETTINGS_CHANGED]: P.SettingsChangedV1Payload

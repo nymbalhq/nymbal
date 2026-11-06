@@ -1,5 +1,5 @@
 import { z, type ZodTypeAny } from 'zod'
-import { PRODUCT_SORT_KEYS } from '@nymbalhq/types'
+import { CART_LINE_MAX_QTY, PRODUCT_SORT_KEYS } from '@nymbalhq/types'
 
 /**
  * The input of one route: what `registerAllRoutes` parses before the handler runs, and what a tool definition is
@@ -22,9 +22,30 @@ export interface RouteSchema {
    * the service commits its own steps around the provider call, so what it holds is committed before money moves.
    */
   provider?: true
+  /**
+   * Kept from agents: the route mints or clears credentials, streams, takes provider-signed bytes, serves files,
+   * records a browser's views or spends the store's AI key.
+   */
+  tool?: false
+  /**
+   * The cookies a route reads its caller's state from, as the tool arguments that carry it instead: argument name to
+   * cookie name. An agent holds no cookie jar, so the cart travels as a `cart` handle.
+   */
+  handles?: Record<string, string>
+  /**
+   * The customer fields a read's answer can carry. The assistant sends a tool's result to the AI provider as it is, so
+   * `agents.assistant.customerData: false` leaves every marked route off the assistant, and the docs list them.
+   */
+  personal?: readonly PersonalField[]
 }
 
+/** A customer field a route's answer can carry. */
+export type PersonalField = 'email' | 'phone' | 'address'
+
+const ALL_PERSONAL = ['email', 'phone', 'address'] as const
+
 const id = z.string().min(1)
+const cartHandle = { cart: 'nymbal.cart' }
 /** A query value as the HTTP layer hands it over: repeated keys arrive as an array. */
 const queryValue = z.union([z.string(), z.array(z.string())]).optional()
 const paging = { limit: queryValue, offset: queryValue }
@@ -86,7 +107,7 @@ const productFields = {
   seoTitle: z.string().optional(),
   seoDescription: z.string().optional(),
   media: z.array(productMedia).optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
   categoryIds: z.array(z.string()).optional(),
 }
 
@@ -98,6 +119,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   // Auth
   'POST /api/auth/register': {
     name: 'auth.register',
+    tool: false,
     command: 'customer.register',
     description: 'Create a customer account and sign it in.',
     body: z.object({
@@ -110,18 +132,21 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'POST /api/auth/login': {
     name: 'auth.login',
+    tool: false,
     command: null,
     description: 'Sign a customer in with email and password.',
     body: z.object({ email: z.string().min(1), password: z.string().min(1) }),
   },
   'POST /api/auth/refresh': {
     name: 'auth.refresh',
+    tool: false,
     command: null,
     description: 'Exchange a refresh token for a new access token.',
     body: optionalRefresh,
   },
   'POST /api/auth/logout': {
     name: 'auth.logout',
+    tool: false,
     command: null,
     description: 'Revoke the refresh token and clear its cookie.',
     body: optionalRefresh,
@@ -131,7 +156,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   'GET /api/capabilities': {
     name: 'capabilities.get',
     description:
-      'What the store can do, for a storefront: payments client half, search capabilities, sort keys and whether email delivers.',
+      'What the store can do, for a storefront: payments client half, search, reviews and shipping capabilities, sort keys and whether email delivers.',
   },
 
   // Catalogue
@@ -168,6 +193,23 @@ export const routeSchemas: Record<string, RouteSchema> = {
     query: z.object({ limit: queryValue, cursor: queryValue }),
   },
 
+  // Reviews
+  'POST /api/reviews': {
+    name: 'reviews.submit',
+    command: 'review.submit',
+    description:
+      'Review a product as the signed-in customer: a rating of 1 to 5, a title and a body. The review waits for moderation, and is marked verified when the customer bought the product.',
+    // Strict: the reviewer, the order and whether it is verified come from the session, never the body.
+    body: z
+      .object({
+        productId: id,
+        rating: z.number().int().min(1).max(5),
+        title: z.string().trim().max(120).default(''),
+        body: z.string().trim().min(1).max(2000),
+      })
+      .strict(),
+  },
+
   // Back-in-stock and price-drop alerts
   'POST /api/alerts/subscribe': {
     name: 'alerts.subscribe',
@@ -196,29 +238,37 @@ export const routeSchemas: Record<string, RouteSchema> = {
   // Cart
   'GET /api/cart': {
     name: 'cart.get',
+    handles: cartHandle,
     description: 'Get the current cart, creating one when there is none.',
   },
   'POST /api/cart/items': {
     name: 'cart.addItem',
+    handles: cartHandle,
     command: null,
     description: 'Add a quantity of a variant to the cart.',
-    body: z.object({ variantId: id, qty: z.number().int().positive().optional() }),
+    // Strict: an unknown key (`quantity`) is refused rather than stripped, which would add 1.
+    body: z
+      .object({ variantId: id, qty: z.number().int().min(1).max(CART_LINE_MAX_QTY).optional() })
+      .strict(),
   },
   'PATCH /api/cart/items/:variantId': {
     name: 'cart.updateItem',
+    handles: cartHandle,
     command: null,
     description: 'Set the quantity of a variant in the cart.',
     params: variantIdParams,
-    body: z.object({ qty: z.number().int().nonnegative() }),
+    body: z.object({ qty: z.number().int().min(0).max(CART_LINE_MAX_QTY) }).strict(),
   },
   'DELETE /api/cart/items/:variantId': {
     name: 'cart.removeItem',
+    handles: cartHandle,
     command: null,
     description: 'Remove a variant from the cart.',
     params: variantIdParams,
   },
   'DELETE /api/cart': {
     name: 'cart.clear',
+    handles: cartHandle,
     command: null,
     description: 'Remove every item from the cart.',
   },
@@ -226,6 +276,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   // Checkout and orders
   'POST /api/checkout': {
     name: 'checkout.begin',
+    handles: cartHandle,
     command: 'checkout.place',
     description: 'Place an order for the cart and start its payment.',
     body: z.object({
@@ -259,12 +310,14 @@ export const routeSchemas: Record<string, RouteSchema> = {
   // Recently viewed: the viewer is the bearer's customer or the visitor cookie's, never one the request names.
   'POST /api/recently-viewed': {
     name: 'recentlyViewed.record',
+    tool: false,
     command: null,
     description: 'Record that the shopper viewed a product.',
     body: z.object({ productId: id }),
   },
   'GET /api/recently-viewed': {
     name: 'recentlyViewed.list',
+    tool: false,
     description: "List the shopper's recently viewed products, newest first.",
   },
 
@@ -316,6 +369,8 @@ export const routeSchemas: Record<string, RouteSchema> = {
   'PUT /api/admin/settings/:slot/:path': {
     name: 'admin.settings.put',
     command: 'settings.put',
+    // A proposal keeps its arguments in plain text, and this value may be a secret.
+    tool: false,
     description:
       'Save a value for a field the config and environment leave unset; it applies at the next start.',
     params: settingParams,
@@ -324,15 +379,19 @@ export const routeSchemas: Record<string, RouteSchema> = {
   'DELETE /api/admin/settings/:slot/:path': {
     name: 'admin.settings.delete',
     command: 'settings.delete',
+    // Like saving a value, clearing one is a person's act in Settings, never an agent's.
+    tool: false,
     description: 'Clear the saved value of a field; it applies at the next start.',
     params: settingParams,
   },
   'GET /api/admin/dashboard': {
     name: 'admin.dashboard',
+    personal: ALL_PERSONAL,
     description: "Today's order figures, recent orders and low stock.",
   },
   'GET /api/admin/search': {
     name: 'admin.search',
+    personal: ALL_PERSONAL,
     description: 'Search orders, products and customers.',
     query: z.object({ q: queryValue }),
   },
@@ -340,6 +399,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   // Admin: orders
   'GET /api/admin/orders': {
     name: 'admin.orders.list',
+    personal: ALL_PERSONAL,
     description: 'List orders, filtered by status, date, customer or text.',
     query: z.object({
       status: queryValue,
@@ -352,6 +412,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'GET /api/admin/orders/:orderNumber': {
     name: 'admin.orders.get',
+    personal: ALL_PERSONAL,
     description:
       'Get one order with its status history; with `at`, the order as the event log folds it at that time.',
     params: orderNumberParams,
@@ -516,12 +577,13 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'POST /api/admin/products/:id/enhance': {
     name: 'admin.products.enhance',
+    tool: false,
     command: null,
     description: 'Suggest copy for one product field with the AI adapter.',
     params: idParams,
     body: z.object({
       field: z.enum(['description', 'alt', 'title', 'seoDescription']),
-      context: z.record(z.string()).optional(),
+      context: z.record(z.string(), z.string()).optional(),
     }),
   },
 
@@ -557,11 +619,13 @@ export const routeSchemas: Record<string, RouteSchema> = {
   // Admin: customers
   'GET /api/admin/customers': {
     name: 'admin.customers.list',
-    description: 'List customers who have ordered, filtered and sorted.',
+    personal: ALL_PERSONAL,
+    description: 'List customers, filtered and sorted.',
     query: z.object({ q: queryValue, sort: queryValue, ...paging }),
   },
   'GET /api/admin/customers/:id': {
     name: 'admin.customers.get',
+    personal: ALL_PERSONAL,
     description:
       'Get one customer with order statistics; with `at`, the customer as the event log folds it at that time.',
     params: idParams,
@@ -569,12 +633,14 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'GET /api/admin/customers/:id/history': {
     name: 'admin.customers.history',
+    personal: ['phone', 'address'],
     description: "List a customer's changes from the event log, newest first.",
     params: idParams,
     query: historyQuery,
   },
   'GET /api/admin/customers/:id/orders': {
     name: 'admin.customers.orders',
+    personal: ALL_PERSONAL,
     description: "List one customer's orders.",
     params: idParams,
   },
@@ -602,12 +668,50 @@ export const routeSchemas: Record<string, RouteSchema> = {
   // Admin: live events
   'POST /api/admin/events/ticket': {
     name: 'admin.events.ticket',
+    tool: false,
     command: null,
     description: 'Issue a one-time ticket for the admin event stream.',
   },
   'GET /api/admin/events': {
     name: 'admin.events.stream',
+    tool: false,
     description: 'Stream order, payment and inventory events to the admin (SSE).',
+    query: z.object({ ticket: queryValue }),
+  },
+
+  // Admin: the assistant, which spends the store's AI key, so no agent calls it
+  'POST /api/admin/assistant/turns': {
+    name: 'admin.assistant.turn',
+    tool: false,
+    command: null,
+    description:
+      'Start an assistant turn: keep the conversation for two minutes and issue the one-time ticket that streams its answer.',
+    body: z.object({
+      messages: z
+        .array(
+          z.object({
+            role: z.enum(['user', 'assistant']),
+            content: z.string().min(1).max(8_000),
+          }),
+        )
+        .min(1)
+        .max(40)
+        .refine((turns) => turns[0]?.role === 'user' && turns.at(-1)?.role === 'user', {
+          message: 'the first and the last turn are the user’s',
+        }),
+      // The admin's own path characters; the prompt names only the route the path matches (assistant/loop.ts).
+      page: z
+        .string()
+        .max(200)
+        .regex(/^\/[A-Za-z0-9/_.-]*$/)
+        .optional(),
+    }),
+  },
+  'GET /api/admin/assistant/turns/:id/stream': {
+    name: 'admin.assistant.stream',
+    tool: false,
+    description: "Stream an assistant turn's answer, its tool steps and its proposals (SSE).",
+    params: idParams,
     query: z.object({ ticket: queryValue }),
   },
 
@@ -629,13 +733,47 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'GET /api/admin/activity/export': {
     name: 'admin.activity.export',
+    tool: false,
     description: 'Export audit entries oldest first as NDJSON.',
     query: z.object({ since: queryValue, until: queryValue, correlation: queryValue }),
+  },
+
+  // Admin: proposals (agent writes a person decides). Agents read them; only a person approves or rejects.
+  'GET /api/admin/proposals': {
+    name: 'admin.proposals.list',
+    personal: ALL_PERSONAL,
+    description:
+      'List agent proposals newest first, a page at a time: status pending, decided or all, and how many are pending.',
+    query: z.object({ status: queryValue, cursor: queryValue, limit: queryValue }),
+  },
+  'GET /api/admin/proposals/:id': {
+    name: 'admin.proposals.get',
+    personal: ALL_PERSONAL,
+    description: 'Get one agent proposal: what it asks, who asked, and how it was decided and ran.',
+    params: idParams,
+  },
+  'POST /api/admin/proposals/:id/approve': {
+    name: 'admin.proposals.approve',
+    command: 'proposal.approve',
+    // Not money: the proposal's own command (a refund among them) must run outside this route's keyed transaction.
+    provider: true,
+    tool: false,
+    description: 'Approve a pending proposal and run its command as the approving admin.',
+    params: idParams,
+  },
+  'POST /api/admin/proposals/:id/reject': {
+    name: 'admin.proposals.reject',
+    command: 'proposal.reject',
+    tool: false,
+    description: 'Reject a pending proposal, with an optional reason.',
+    params: idParams,
+    body: z.object({ reason: z.string().max(500).optional() }),
   },
 
   // Webhooks
   'POST /api/webhooks/:adapter': {
     name: 'webhooks.receive',
+    tool: false,
     // The route opens its own audit command: payment.finalize for a payments delivery, webhook.receive otherwise.
     command: null,
     description:
@@ -648,14 +786,17 @@ export const routeSchemas: Record<string, RouteSchema> = {
   // The admin SPA, served when attachHttp is given an admin root (or NYMBAL_ADMIN_DIST is set)
   'GET /admin': {
     name: 'admin.app.redirect',
+    tool: false,
     description: 'Redirect to the admin app.',
   },
   'GET /admin/': {
     name: 'admin.app.index',
+    tool: false,
     description: 'Serve the admin app.',
   },
   'GET /admin/*': {
     name: 'admin.app.asset',
+    tool: false,
     description: 'Serve the admin app and its assets.',
     params: z.object({ '*': z.string().optional() }),
   },

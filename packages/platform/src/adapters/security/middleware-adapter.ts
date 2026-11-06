@@ -11,9 +11,9 @@ import { noopInitialize, okHealth } from '../base.js'
 /**
  * v0.1 security adapter.
  *
- * Rate limiting, CSRF verification and CSRF cookie minting need the request before
- * any middleware and the response after the handler, so the HTTP adapter runs them
- * itself on every route (`FastifyHttpAdapter`'s guard). This adapter only asserts
+ * Rate limiting and CSRF verification need the request before any middleware, so the
+ * HTTP adapter runs them itself on every route (`FastifyHttpAdapter`'s guard); only
+ * `GET /api/csrf` mints the CSRF cookie. This adapter only asserts
  * static security headers via `HttpAdapter.setDefaultHeaders(...)`. A future
  * WAF-native adapter will replace both layers.
  */

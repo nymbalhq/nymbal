@@ -23,6 +23,7 @@ export function createCart(overrides?: Partial<Cart>): Cart {
     items: [item],
     subtotalMinor: item.priceMinor * item.qty,
     currency: 'GBP',
+    source: 'storefront',
     expiresAt: isoDate(7),
     createdAt: isoDate(),
     updatedAt: isoDate(),

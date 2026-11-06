@@ -11,6 +11,7 @@ import { adminToken, ownProduct, type OwnProduct } from '../support/checkout'
 import { API_URL, csrf } from '../support/csrf'
 import { cardSlugs } from '../support/elements'
 import { expect, test } from '../support/fixtures'
+import { lapseNextBearer } from '../support/lapsed-token'
 import { signIn } from '../support/sign-in'
 
 // Recently viewed on both templates (the astro and nextjs projects run this file), driven through the product only:
@@ -205,11 +206,9 @@ test.describe('Recently viewed', () => {
     await elsewhere.goto('/')
     await expect.poll(() => shown(elsewhere), { timeout: 10_000 }).toEqual([a.slug, b.slug])
 
-    // A stale access token there: B's view lands on the customer, whether it was refused and sent again after the
-    // refresh or sent once the page's other reads had refreshed the token already.
-    await elsewhere.evaluate(() =>
-      localStorage.setItem('nymbal.auth.accessToken', 'stale.invalid.token'),
-    )
+    // A lapsed access token there: B's view goes with it, the API refuses it, and the view lands on the customer once
+    // the page has refreshed and sent it again.
+    const lapse = await lapseNextBearer(elsewhere, 'POST', '/api/recently-viewed')
     const posts: number[] = []
     elsewhere.on('response', (r) => {
       if (r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/recently-viewed') {
@@ -219,6 +218,7 @@ test.describe('Recently viewed', () => {
     await elsewhere.goto(`/product/${b.slug}`)
     await expect.poll(() => posts.at(-1), { timeout: 15_000 }).toBe(204)
     expect(posts.length, `the POSTs answered ${posts.join(', ')}`).toBeLessThanOrEqual(2)
+    expect(lapse.status(), 'the API’s answer to the lapsed token').toBe(401)
     await page.goto('/')
     await expect.poll(() => shown(page), { timeout: 10_000 }).toEqual([b.slug, a.slug])
 

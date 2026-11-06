@@ -1,0 +1,18 @@
+# id: I113
+# kind: injected
+# defect: publishMany builds every event with no options, so an event's own correlation id is dropped and the event is filed under itself
+# where: packages/platform/src/events/publisher.ts:81
+# killed-by: packages/platform/src/events/publisher.test.ts (publishMany logs and delivers every event in order, each with its own correlation id)
+# suite: pnpm vitest run --project platform-unit packages/platform/src/events/publisher.test.ts
+diff --git a/packages/platform/src/events/publisher.ts b/packages/platform/src/events/publisher.ts
+--- a/packages/platform/src/events/publisher.ts
++++ b/packages/platform/src/events/publisher.ts
+@@ -78,7 +78,7 @@ export function createEventPublisher(opts: CreatePublisherOptions): EventPublish
+       return event
+     },
+     async publishMany(events) {
+-      await append(events.map((e) => build(e.type, e.payload, e.options ?? {})))
++      await append(events.map((e) => build(e.type, e.payload, {})))
+     },
+     async publishUntyped(events, options) {
+       const built = events.map((e) => build(e.type, e.payload, options ?? {}))

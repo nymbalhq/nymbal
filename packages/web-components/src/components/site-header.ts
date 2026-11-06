@@ -17,7 +17,7 @@ const SCHEMA: ElementSchema = {
     { name: 'account-href', prop: 'accountHref', type: 'string' },
   ],
   events: [],
-  parts: ['header', 'logo', 'nav', 'link', 'account', 'toggle', 'actions'],
+  parts: ['header', 'logo', 'nav', 'link', 'account', 'toggle', 'actions', 'cart'],
   // The page's own search bar and mini-cart, light-DOM children with `slot="search"` and `slot="cart"`.
   slots: ['search', 'cart'],
   children: true,
@@ -30,7 +30,8 @@ interface Link {
 
 /**
  * The store's header: the logo, the navigation (behind a toggle on a narrow screen, with no script needed), the
- * account link, and the page's search bar and mini-cart in its `search` and `cart` slots.
+ * account link, and the page's search bar and mini-cart in its `search` and `cart` slots. The cart stays outside the
+ * toggled menu, so it is one tap away at any width.
  */
 export class NymbalSiteHeader extends NymbalElement {
   static override schema = SCHEMA
@@ -84,9 +85,13 @@ export class NymbalSiteHeader extends NymbalElement {
         gap: 4px;
         width: 28px;
         height: 28px;
-        margin-left: auto;
         padding: 2px;
         cursor: pointer;
+      }
+      [part~='cart'] {
+        display: flex;
+        align-items: center;
+        margin-left: auto;
       }
       .line {
         display: block;
@@ -180,6 +185,11 @@ export class NymbalSiteHeader extends NymbalElement {
         [part~='nav'] {
           flex-direction: row;
         }
+        /* Last in the row, at the actions' own spacing rather than the row's. */
+        [part~='cart'] {
+          order: 1;
+          margin-left: calc(var(--nymbal-spacing-sm, 0.5rem) - var(--nymbal-spacing-md, 1rem));
+        }
       }
     `,
   ]
@@ -202,6 +212,7 @@ export class NymbalSiteHeader extends NymbalElement {
             class="toggle-input"
             aria-label="Toggle navigation"
           />
+          <div part="cart"><slot name="cart"></slot></div>
           <label part="toggle" for="nav-toggle" aria-hidden="true">
             <span class="line"></span>
             <span class="line"></span>
@@ -241,7 +252,6 @@ export class NymbalSiteHeader extends NymbalElement {
                       <circle cx="12" cy="7" r="4" />
                     </svg>
                   </a>`}
-              <slot name="cart"></slot>
             </div>
           </div>
         </div>

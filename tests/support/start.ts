@@ -107,11 +107,13 @@ export function storeProject(
 
 /**
  * The environment `start` passes its check with, plus `extra` (a key set to `undefined` is removed). Staging, not
- * production: a production app refuses these stores' stub payments and default JWT secret while it is built.
+ * production: a production app refuses these stores' stub payments while it is built. A secret of the store's own:
+ * the default one is refused on these stores' non-loopback host under any NODE_ENV.
  */
 export function startEnv(extra: Record<string, string | undefined> = {}): NodeJS.ProcessEnv {
   return cliEnv({
     NODE_ENV: 'staging',
+    NYMBAL_JWT_SECRET: 'start-suite-jwt-secret-0123456789abcdef',
     NYMBAL_PUBLIC_URL: PUBLIC_URL,
     NYMBAL_SECRETS_KEY: secretsKey(),
     NYMBAL_ADMIN_DIST: ADMIN_DIST_FIXTURE,
@@ -126,6 +128,10 @@ export function startEnv(extra: Record<string, string | undefined> = {}): NodeJS
 export interface UpstreamRequest {
   method: string
   path: string
+  /** Date.now() in the stand-in when the request arrived. */
+  at: number
+  userAgent: string | null
+  accept: string | null
 }
 
 export interface Upstream {
@@ -188,13 +194,22 @@ export async function upstream(dir: string): Promise<Upstream> {
           pid?: number
           path?: string
           method?: string
+          at?: number
+          userAgent?: string | null
+          accept?: string | null
         }
         if (message.event === 'up') {
           count += 1
           ups.push(message.pid!)
         } else if (message.event === 'arrived') arrivals.push(message.path!)
         else if (message.event === 'request') {
-          requests.push({ method: message.method!, path: message.path! })
+          requests.push({
+            method: message.method!,
+            path: message.path!,
+            at: message.at ?? Date.now(),
+            userAgent: message.userAgent ?? null,
+            accept: message.accept ?? null,
+          })
         }
       }
     })

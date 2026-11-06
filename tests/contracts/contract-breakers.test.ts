@@ -23,6 +23,13 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 // The shipping tracking suite runs the same way on the kernel's test shipping provider: one twin mints a delivery id
 // per call, one hands on a numberless copy beside each tracking event, one leaves its tracking type out of
 // producesEvents; each fails only the case named for its defect, and the provider itself passes every case.
+// The shipping suite's words case runs the same way on the kernel's test shipping provider with all three words: each
+// twin declares a word without its method, has a method without its word, declares tracking with no webhook, labels
+// without rates, an unknown word or one twice, and fails only the words case; a twin that buys a new label on a repeated
+// rate id fails only the labels cases; one with no word runs no rates, labels or tracking case at all.
+// The reviews suite's submit case runs the same way: an adapter without submit that stores a review anyway, beside the
+// one that refuses it (seeded through `seed`), and a submit adapter that drops the customer and order beside the
+// control; each fails only the submit case.
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const REPO = resolve(HERE, '..', '..')
@@ -43,10 +50,16 @@ const FEEDBACK_REPLAY = /\breplay:/
 const FEEDBACK_SHAPE = /\bshape:/
 const TRACKING_REPLAY = /\breplay:/
 const TRACKING_SHAPE = /\bshape:/
+const REVIEW_SUBMIT = /\bsubmit:/
+const SHIPPING_WORDS = /\bwords:/
+const SHIPPING_LABELS = /\blabels:/
 
 interface Outcome {
   passed: string[]
   failed: string[]
+  /** The cases' own titles, without the describe blocks around them. */
+  passedTitles: string[]
+  failedTitles: string[]
   /** Why the file failed outside its cases (a collection error), if it did. */
   message: string
 }
@@ -70,7 +83,7 @@ beforeAll(() => {
     testResults: Array<{
       name: string
       message?: string
-      assertionResults: Array<{ fullName: string; status: string }>
+      assertionResults: Array<{ fullName: string; title: string; status: string }>
     }>
   }
   for (const file of parsed.testResults) {
@@ -78,6 +91,8 @@ beforeAll(() => {
     outcomes.set(basename(file.name, '.breaker.ts'), {
       passed: cases.filter((c) => c.status === 'passed').map((c) => c.fullName),
       failed: cases.filter((c) => c.status === 'failed').map((c) => c.fullName),
+      passedTitles: cases.filter((c) => c.status === 'passed').map((c) => c.title),
+      failedTitles: cases.filter((c) => c.status === 'failed').map((c) => c.title),
       message: file.message ?? '',
     })
   }
@@ -155,6 +170,28 @@ describe('the published suites fail an adapter with the defect they exist for', 
 
   it('AC-5: an unreachable dependency that never answers fails the downtime cases within their bound and nothing else', () => {
     const run = compare('media-down-hangs', 'media-down-control', DOWNTIME)
+
+    expect(run.failed.length, run.why).toBeGreaterThan(0)
+    expect(run.offTopic, run.why).toEqual([])
+    expect(run.controlFailed, run.why).toEqual([])
+    expect(run.controlPassed).toBe(run.badTotal)
+  })
+})
+
+describe('the published reviews suite certifies a provider without on-site reviews', () => {
+  // Kills: a suite that only reads what submitReview stored, so a no-submit adapter cannot be certified, or one that
+  // never asks a no-submit adapter to refuse, so one that silently stores passes.
+  it('AC-12: an adapter whose capabilities lack submit yet stores a submitted review fails the submit case and nothing else; the same adapter refusing with ReviewRefusedError reviews.submit_unsupported, seeded through seed, passes every case', () => {
+    const run = compare('reviews-no-submit-stores', 'reviews-read-only', REVIEW_SUBMIT)
+
+    expect(run.failed.length, run.why).toBeGreaterThan(0)
+    expect(run.offTopic, run.why).toEqual([])
+    expect(run.controlFailed, run.why).toEqual([])
+    expect(run.controlPassed).toBe(run.badTotal)
+  })
+
+  it('AC-12: a submit adapter that files the review without the submission’s customerId and orderId fails the submit case and nothing else; the same adapter keeping them passes every case', () => {
+    const run = compare('reviews-drops-identity', 'reviews-control', REVIEW_SUBMIT)
 
     expect(run.failed.length, run.why).toBeGreaterThan(0)
     expect(run.offTopic, run.why).toEqual([])
@@ -296,5 +333,75 @@ describe('the published shipping tracking suite fails a provider with the defect
     expect(run.offTopic, run.why).toEqual([])
     expect(run.controlFailed, run.why).toEqual([])
     expect(run.controlPassed).toBe(run.badTotal)
+  })
+})
+
+/** The word a shipping case is under: the text before its first colon. */
+const wordOf = (title: string): string => title.slice(0, title.indexOf(':'))
+
+/** The twin's failed cases by word, and the cases it ran that its control did not pass. */
+function shippingRun(broken: string, about: RegExp) {
+  const bad = outcome(broken)
+  const good = outcome('shipping-control')
+  return {
+    failedWords: bad.failedTitles.map(wordOf),
+    offTopic: bad.failed.filter((name) => !about.test(name)),
+    ranOffControl: [...bad.passedTitles, ...bad.failedTitles].filter(
+      (title) => !good.passedTitles.includes(title),
+    ),
+    controlFailed: good.failed,
+    why: `${broken}: ${bad.message} ${bad.failed.join(' | ')} shipping-control: ${good.message}`,
+  }
+}
+
+describe('the published shipping suite fails an adapter whose words and methods disagree', () => {
+  // Kills: a suite that trusts the list, so a shipping adapter ships a rejecting stub, or a word the kernel acts on with
+  // no method behind it.
+  it.each([
+    ['declares rates without a rate method', 'shipping-rates-no-method'],
+    ['declares labels without a createLabel method', 'shipping-labels-no-method'],
+    ['declares tracking without a startTracking method', 'shipping-tracking-no-method'],
+    ['has rate without declaring rates', 'shipping-rate-undeclared'],
+    ['has createLabel without declaring labels', 'shipping-label-undeclared'],
+    ['has startTracking without declaring tracking', 'shipping-start-tracking-undeclared'],
+    ['declares tracking without receiveWebhook', 'shipping-tracking-no-webhook'],
+    ['declares labels without rates', 'shipping-labels-without-rates'],
+    ['declares a word the slot does not have', 'shipping-unknown-word'],
+    ['declares a word twice', 'shipping-word-twice'],
+  ])(
+    'AC-1: a shipping adapter that %s (%s) fails the words case and nothing else; the test shipping provider with all three words passes every case',
+    (_defect, broken) => {
+      const run = shippingRun(broken, SHIPPING_WORDS)
+
+      expect(run.failedWords, run.why).toEqual(['words'])
+      expect(run.offTopic, run.why).toEqual([])
+      expect(run.ranOffControl, run.why).toEqual([])
+      expect(run.controlFailed, run.why).toEqual([])
+    },
+  )
+
+  // Kills: a retried label buy (its answer lost on the way back) charging the store for a second label.
+  it('AC-2: a shipping adapter that answers a new tracking number each time one rate id is bought fails the labels cases and nothing else; the test shipping provider passes every case', () => {
+    const run = shippingRun('shipping-label-buys-again', SHIPPING_LABELS)
+
+    expect(run.failedWords, run.why).toEqual(['labels'])
+    expect(run.offTopic, run.why).toEqual([])
+    expect(run.ranOffControl, run.why).toEqual([])
+    expect(run.controlFailed, run.why).toEqual([])
+  })
+
+  it('AC-2: on a shipping adapter with no word and none of the methods, no rates, labels or tracking case runs and none fails: the words and health cases are all it runs', () => {
+    const none = outcome('shipping-no-words')
+
+    expect(none.failed, none.message).toEqual([])
+    expect(none.passedTitles.map(wordOf).sort()).toEqual(['health', 'words'])
+    expect(outcome('shipping-control').passedTitles.map(wordOf).sort()).toEqual([
+      'health',
+      'labels',
+      'labels',
+      'rates',
+      'tracking',
+      'words',
+    ])
   })
 })

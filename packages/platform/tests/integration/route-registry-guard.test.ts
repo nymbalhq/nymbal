@@ -3,14 +3,16 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { routeSchemas } from '../../src/routes/schemas.js'
 import { serveKernel, type ServedKernel } from '../support/http.js'
 import { createKernel, type Kernel } from '../support/kernel.js'
+import { adminClient } from '../support/money.js'
 import { openRaw, type RawReader } from '../support/raw.js'
 import { primedShopper } from '../support/security.js'
 
 // AC-1 and AC-15 as properties over the schema registry, against a served kernel (SQLite). AC-1: every
 // state-changing route but the inbound webhook refuses a request without a CSRF pair with 403, before auth (admin
 // routes answer 403, not 401) and before anything is written. AC-15: every route with a body schema answers a body
-// it rejects with 400 `validation.failed`, never 500. And every signed-in customer route refuses a request with no
-// token, so a customer route registered without its auth guard is caught. AC-8: the inbound webhook is one route,
+// it rejects with 400 `validation.failed`, never 500, to a caller its auth gate admits (an admin passes every gate:
+// the gate answers first). And every signed-in customer route refuses a request with no token, so a customer route
+// registered without its auth guard is caught. AC-8: the inbound webhook is one route,
 // `POST /api/webhooks/:adapter`, and the guard leaves out that route and the alert links and nothing else.
 
 const UNSAFE = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
@@ -171,7 +173,7 @@ describe('the guard and the parser over every registered route', () => {
 
   it('AC-15: every route with a body schema answers a body its schema rejects with 400 validation.failed and a non-empty issues list, a body it accepts with 2xx/401/403/404, and never 500', async () => {
     expect(bodyKeys).toContain('POST /api/cart/items')
-    const shop = await primedShopper(served.baseUrl)
+    const shop = await adminClient(k, served.baseUrl)
 
     for (const key of bodyKeys) {
       const { method, path } = split(key)

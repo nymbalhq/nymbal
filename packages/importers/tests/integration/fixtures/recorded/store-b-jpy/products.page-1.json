@@ -1,0 +1,1441 @@
+[
+  {
+    "id": 10,
+    "name": "Ceremonial Matcha Tin",
+    "slug": "ceremonial-matcha-tin",
+    "permalink": "http://localhost:8888/product/ceremonial-matcha-tin/",
+    "date_created": "2026-11-04T14:51:51",
+    "date_created_gmt": "2026-11-04T14:51:51",
+    "date_modified": "2026-11-04T14:51:51",
+    "date_modified_gmt": "2026-11-04T14:51:51",
+    "type": "simple",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "<p>Stone-ground matcha, 30 g.</p>\n",
+    "short_description": "",
+    "sku": "MATCHA-C30",
+    "price": "1500",
+    "regular_price": "1500",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": true,
+    "stock_quantity": 24,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": 3,
+    "sold_individually": false,
+    "weight": "0.25",
+    "dimensions": {
+      "length": "3",
+      "width": "3",
+      "height": "4"
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 18,
+        "name": "Matcha",
+        "slug": "matcha"
+      }
+    ],
+    "brands": [],
+    "tags": [
+      {
+        "id": 21,
+        "name": "Limited",
+        "slug": "limited"
+      }
+    ],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\"><bdi><span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&yen;</span>1,500</bdi></span>",
+    "related_ids": [22, 13],
+    "meta_data": [
+      {
+        "id": 28,
+        "key": "origin",
+        "value": "Uji"
+      },
+      {
+        "id": 29,
+        "key": "_wc_internal_note",
+        "value": "reorder in spring"
+      }
+    ],
+    "stock_status": "instock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/10",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 11,
+    "name": "Hojicha Bag",
+    "slug": "hojicha-bag",
+    "permalink": "http://localhost:8888/product/hojicha-bag/",
+    "date_created": "2026-11-04T14:51:51",
+    "date_created_gmt": "2026-11-04T14:51:51",
+    "date_modified": "2026-11-04T14:51:51",
+    "date_modified_gmt": "2026-11-04T14:51:51",
+    "type": "simple",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "",
+    "short_description": "",
+    "sku": "HOJI-100",
+    "price": "780",
+    "regular_price": "980",
+    "sale_price": "780",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": true,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": true,
+    "stock_quantity": 60,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "0.22",
+    "dimensions": {
+      "length": "6",
+      "width": "2",
+      "height": "9"
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 17,
+        "name": "Tea",
+        "slug": "tea"
+      }
+    ],
+    "brands": [],
+    "tags": [],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<del aria-hidden=\"true\"><span class=\"woocommerce-Price-amount amount\"><bdi><span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&yen;</span>980</bdi></span></del> <span class=\"screen-reader-text\">Original price was: &yen;980.</span><ins aria-hidden=\"true\"><span class=\"woocommerce-Price-amount amount\"><bdi><span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&yen;</span>780</bdi></span></ins><span class=\"screen-reader-text\">Current price is: &yen;780.</span>",
+    "related_ids": [12, 13],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/11",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 12,
+    "name": "Sencha Sampler",
+    "slug": "sencha-sampler",
+    "permalink": "http://localhost:8888/product/sencha-sampler/",
+    "date_created": "2026-11-04T14:51:51",
+    "date_created_gmt": "2026-11-04T14:51:51",
+    "date_modified": "2026-11-04T14:51:51",
+    "date_modified_gmt": "2026-11-04T14:51:51",
+    "type": "simple",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "",
+    "short_description": "",
+    "sku": "SENCHA-S",
+    "price": "1000",
+    "regular_price": "1200",
+    "sale_price": "1000",
+    "date_on_sale_from": "2026-11-01T00:00:00",
+    "date_on_sale_from_gmt": "2026-11-01T00:00:00",
+    "date_on_sale_to": "2026-11-30T23:59:59",
+    "date_on_sale_to_gmt": "2026-11-30T23:59:59",
+    "on_sale": true,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": true,
+    "stock_quantity": 15,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "",
+    "dimensions": {
+      "length": "",
+      "width": "",
+      "height": ""
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 17,
+        "name": "Tea",
+        "slug": "tea"
+      }
+    ],
+    "brands": [],
+    "tags": [
+      {
+        "id": 20,
+        "name": "Seasonal",
+        "slug": "seasonal"
+      }
+    ],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<del aria-hidden=\"true\"><span class=\"woocommerce-Price-amount amount\"><bdi><span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&yen;</span>1,200</bdi></span></del> <span class=\"screen-reader-text\">Original price was: &yen;1,200.</span><ins aria-hidden=\"true\"><span class=\"woocommerce-Price-amount amount\"><bdi><span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&yen;</span>1,000</bdi></span></ins><span class=\"screen-reader-text\">Current price is: &yen;1,000.</span>",
+    "related_ids": [11, 17, 13],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/12",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 13,
+    "name": "Gyokuro",
+    "slug": "gyokuro",
+    "permalink": "http://localhost:8888/product/gyokuro/",
+    "date_created": "2026-11-04T14:51:52",
+    "date_created_gmt": "2026-11-04T14:51:52",
+    "date_modified": "2026-11-04T14:51:52",
+    "date_modified_gmt": "2026-11-04T14:51:52",
+    "type": "simple",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "",
+    "short_description": "",
+    "sku": "GYOKURO-50",
+    "price": "3800",
+    "regular_price": "3800",
+    "sale_price": "3200",
+    "date_on_sale_from": "2027-02-01T00:00:00",
+    "date_on_sale_from_gmt": "2027-02-01T00:00:00",
+    "date_on_sale_to": "2027-02-28T23:59:59",
+    "date_on_sale_to_gmt": "2027-02-28T23:59:59",
+    "on_sale": false,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": true,
+    "stock_quantity": 8,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "",
+    "dimensions": {
+      "length": "",
+      "width": "",
+      "height": ""
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 17,
+        "name": "Tea",
+        "slug": "tea"
+      }
+    ],
+    "brands": [],
+    "tags": [
+      {
+        "id": 21,
+        "name": "Limited",
+        "slug": "limited"
+      },
+      {
+        "id": 20,
+        "name": "Seasonal",
+        "slug": "seasonal"
+      }
+    ],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\"><bdi><span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&yen;</span>3,800</bdi></span>",
+    "related_ids": [12, 11, 10, 22, 17],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/13",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 14,
+    "name": "Tea Bowl",
+    "slug": "tea-bowl",
+    "permalink": "http://localhost:8888/product/tea-bowl/",
+    "date_created": "2026-11-04T14:51:53",
+    "date_created_gmt": "2026-11-04T14:51:53",
+    "date_modified": "2026-11-04T14:51:53",
+    "date_modified_gmt": "2026-11-04T14:51:53",
+    "type": "simple",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "",
+    "short_description": "",
+    "sku": "CHAWAN-01",
+    "price": "4500",
+    "regular_price": "4500",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": false,
+    "stock_quantity": null,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "1.2",
+    "dimensions": {
+      "length": "4.7",
+      "width": "4.7",
+      "height": "3.1"
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "fragile",
+    "shipping_class_id": 22,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 19,
+        "name": "Tableware",
+        "slug": "tableware"
+      }
+    ],
+    "brands": [],
+    "tags": [],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\"><bdi><span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&yen;</span>4,500</bdi></span>",
+    "related_ids": [17, 19, 27, 18, 16],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/14",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 15,
+    "name": "Bamboo Whisk",
+    "slug": "bamboo-whisk",
+    "permalink": "http://localhost:8888/product/bamboo-whisk/",
+    "date_created": "2026-11-04T14:51:53",
+    "date_created_gmt": "2026-11-04T14:51:53",
+    "date_modified": "2026-11-04T14:51:53",
+    "date_modified_gmt": "2026-11-04T14:51:53",
+    "type": "simple",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "",
+    "short_description": "",
+    "sku": "CHASEN-01",
+    "price": "2200",
+    "regular_price": "2200",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": true,
+    "stock_quantity": -2,
+    "backorders": "yes",
+    "backorders_allowed": true,
+    "backordered": true,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "0.1",
+    "dimensions": {
+      "length": "",
+      "width": "",
+      "height": ""
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 19,
+        "name": "Tableware",
+        "slug": "tableware"
+      }
+    ],
+    "brands": [],
+    "tags": [],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\"><bdi><span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&yen;</span>2,200</bdi></span>",
+    "related_ids": [14, 16, 18, 19, 27],
+    "meta_data": [],
+    "stock_status": "onbackorder",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/15",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 16,
+    "name": "Tea Scoop",
+    "slug": "tea-scoop",
+    "permalink": "http://localhost:8888/product/tea-scoop/",
+    "date_created": "2026-11-04T14:51:53",
+    "date_created_gmt": "2026-11-04T14:51:53",
+    "date_modified": "2026-11-04T14:51:53",
+    "date_modified_gmt": "2026-11-04T14:51:53",
+    "type": "simple",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "",
+    "short_description": "",
+    "sku": "CHASHAKU-01",
+    "price": "0",
+    "regular_price": "0",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": true,
+    "stock_quantity": 200,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "",
+    "dimensions": {
+      "length": "",
+      "width": "",
+      "height": ""
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 19,
+        "name": "Tableware",
+        "slug": "tableware"
+      }
+    ],
+    "brands": [],
+    "tags": [],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\"><bdi><span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&yen;</span>0</bdi></span>",
+    "related_ids": [19, 17, 14, 27, 18],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/16",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 17,
+    "name": "Gift Box",
+    "slug": "gift-box",
+    "permalink": "http://localhost:8888/product/gift-box/",
+    "date_created": "2026-11-04T14:51:54",
+    "date_created_gmt": "2026-11-04T14:51:54",
+    "date_modified": "2026-11-04T14:51:54",
+    "date_modified_gmt": "2026-11-04T14:51:54",
+    "type": "grouped",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "",
+    "short_description": "",
+    "sku": "GIFT-01",
+    "price": "1500",
+    "regular_price": "",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "purchasable": false,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": false,
+    "stock_quantity": null,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "",
+    "dimensions": {
+      "length": "",
+      "width": "",
+      "height": ""
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 19,
+        "name": "Tableware",
+        "slug": "tableware"
+      }
+    ],
+    "brands": [],
+    "tags": [
+      {
+        "id": 20,
+        "name": "Seasonal",
+        "slug": "seasonal"
+      }
+    ],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [10, 14],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\" aria-hidden=\"true\"><bdi><span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&yen;</span>1,500</bdi></span> <span aria-hidden=\"true\">&ndash;</span> <span class=\"woocommerce-Price-amount amount\" aria-hidden=\"true\"><bdi><span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&yen;</span>4,500</bdi></span><span class=\"screen-reader-text\">Price range: &yen;1,500 through &yen;4,500</span>",
+    "related_ids": [12, 14, 13, 15, 16],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/17",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 18,
+    "name": "Kyusu Teapot",
+    "slug": "kyusu-teapot",
+    "permalink": "http://localhost:8888/product/kyusu-teapot/",
+    "date_created": "2026-11-04T14:51:54",
+    "date_created_gmt": "2026-11-04T14:51:54",
+    "date_modified": "2026-11-04T14:51:54",
+    "date_modified_gmt": "2026-11-04T14:51:54",
+    "type": "external",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "",
+    "short_description": "",
+    "sku": "KYUSU-EXT",
+    "price": "6120",
+    "regular_price": "6800",
+    "sale_price": "6120",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": true,
+    "purchasable": false,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "https://example.com/partner/kyusu",
+    "button_text": "Buy from the maker",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": false,
+    "stock_quantity": null,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "",
+    "dimensions": {
+      "length": "",
+      "width": "",
+      "height": ""
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 19,
+        "name": "Tableware",
+        "slug": "tableware"
+      }
+    ],
+    "brands": [],
+    "tags": [],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<del aria-hidden=\"true\"><span class=\"woocommerce-Price-amount amount\"><bdi><span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&yen;</span>6,800</bdi></span></del> <span class=\"screen-reader-text\">Original price was: &yen;6,800.</span><ins aria-hidden=\"true\"><span class=\"woocommerce-Price-amount amount\"><bdi><span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&yen;</span>6,120</bdi></span></ins><span class=\"screen-reader-text\">Current price is: &yen;6,120.</span>",
+    "related_ids": [16, 27, 14, 15, 17],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/18",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 19,
+    "name": "Tea Towel",
+    "slug": "tea-towel",
+    "permalink": "http://localhost:8888/product/tea-towel/",
+    "date_created": "2026-11-04T14:51:54",
+    "date_created_gmt": "2026-11-04T14:51:54",
+    "date_modified": "2026-11-04T14:51:54",
+    "date_modified_gmt": "2026-11-04T14:51:54",
+    "type": "simple",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "",
+    "short_description": "",
+    "sku": "TOWEL-01",
+    "price": "",
+    "regular_price": "",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "purchasable": false,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": true,
+    "stock_quantity": 10,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "",
+    "dimensions": {
+      "length": "",
+      "width": "",
+      "height": ""
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 19,
+        "name": "Tableware",
+        "slug": "tableware"
+      }
+    ],
+    "brands": [],
+    "tags": [],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "",
+    "related_ids": [17, 14, 16, 18, 15],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/19",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 20,
+    "name": "Ceramic Coaster",
+    "slug": "ceramic-coaster",
+    "permalink": "http://localhost:8888/?post_type=product&p=20",
+    "date_created": "2026-11-04T14:51:55",
+    "date_created_gmt": "2026-11-04T14:51:55",
+    "date_modified": "2026-11-04T14:51:55",
+    "date_modified_gmt": "2026-11-04T14:51:55",
+    "type": "simple",
+    "status": "pending",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "",
+    "short_description": "",
+    "sku": "COASTER-01",
+    "price": "600",
+    "regular_price": "600",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": true,
+    "stock_quantity": 5,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "",
+    "dimensions": {
+      "length": "",
+      "width": "",
+      "height": ""
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 19,
+        "name": "Tableware",
+        "slug": "tableware"
+      }
+    ],
+    "brands": [],
+    "tags": [],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\"><bdi><span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&yen;</span>600</bdi></span>",
+    "related_ids": [15, 19, 14, 17, 16],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/20",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 21,
+    "name": "Staff Mug",
+    "slug": "staff-mug",
+    "permalink": "http://localhost:8888/product/staff-mug/",
+    "date_created": "2026-11-04T14:51:55",
+    "date_created_gmt": "2026-11-04T14:51:55",
+    "date_modified": "2026-11-04T14:51:55",
+    "date_modified_gmt": "2026-11-04T14:51:55",
+    "type": "simple",
+    "status": "private",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "",
+    "short_description": "",
+    "sku": "STAFFMUG-01",
+    "price": "1000",
+    "regular_price": "1000",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": true,
+    "stock_quantity": 3,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "",
+    "dimensions": {
+      "length": "",
+      "width": "",
+      "height": ""
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 19,
+        "name": "Tableware",
+        "slug": "tableware"
+      }
+    ],
+    "brands": [],
+    "tags": [],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\"><bdi><span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&yen;</span>1,000</bdi></span>",
+    "related_ids": [16, 18, 14, 17, 15],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/21",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 22,
+    "name": "Matcha",
+    "slug": "matcha",
+    "permalink": "http://localhost:8888/product/matcha/",
+    "date_created": "2026-11-04T14:51:55",
+    "date_created_gmt": "2026-11-04T14:51:55",
+    "date_modified": "2026-11-04T14:51:57",
+    "date_modified_gmt": "2026-11-04T14:51:57",
+    "type": "variable",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "<p>Matcha by grade and pack size.</p>\n",
+    "short_description": "",
+    "sku": "MATCHA",
+    "price": "900",
+    "regular_price": "",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": true,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "reduced-rate",
+    "manage_stock": true,
+    "stock_quantity": 50,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "0.25",
+    "dimensions": {
+      "length": "3",
+      "width": "3",
+      "height": "4"
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 18,
+        "name": "Matcha",
+        "slug": "matcha"
+      }
+    ],
+    "brands": [],
+    "tags": [
+      {
+        "id": 21,
+        "name": "Limited",
+        "slug": "limited"
+      }
+    ],
+    "images": [],
+    "attributes": [
+      {
+        "id": 1,
+        "name": "Grade",
+        "slug": "pa_grade",
+        "position": 0,
+        "visible": true,
+        "variation": true,
+        "options": ["Ceremonial", "Culinary"]
+      },
+      {
+        "id": 0,
+        "name": "Pack",
+        "slug": "Pack",
+        "position": 0,
+        "visible": true,
+        "variation": true,
+        "options": ["30g", "100g"]
+      }
+    ],
+    "default_attributes": [],
+    "variations": [23, 24, 25, 26],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\" aria-hidden=\"true\"><bdi><span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&yen;</span>900</bdi></span> <span aria-hidden=\"true\">&ndash;</span> <span class=\"woocommerce-Price-amount amount\" aria-hidden=\"true\"><bdi><span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&yen;</span>4,680</bdi></span><span class=\"screen-reader-text\">Price range: &yen;900 through &yen;4,680</span>",
+    "related_ids": [10, 13],
+    "meta_data": [
+      {
+        "id": 267,
+        "key": "harvest",
+        "value": "first flush"
+      }
+    ],
+    "stock_status": "instock",
+    "has_options": true,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/22",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 27,
+    "name": "Incense Set",
+    "slug": "incense-set",
+    "permalink": "http://localhost:8888/product/incense-set/",
+    "date_created": "2026-11-04T14:51:57",
+    "date_created_gmt": "2026-11-04T14:51:57",
+    "date_modified": "2026-11-04T14:51:58",
+    "date_modified_gmt": "2026-11-04T14:51:58",
+    "type": "variable",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "",
+    "short_description": "",
+    "sku": "INCENSE",
+    "price": "1100",
+    "regular_price": "",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": false,
+    "stock_quantity": null,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": true,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "",
+    "dimensions": {
+      "length": "",
+      "width": "",
+      "height": ""
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 19,
+        "name": "Tableware",
+        "slug": "tableware"
+      }
+    ],
+    "brands": [],
+    "tags": [],
+    "images": [],
+    "attributes": [
+      {
+        "id": 0,
+        "name": "Scent",
+        "slug": "Scent",
+        "position": 0,
+        "visible": true,
+        "variation": true,
+        "options": ["Sandalwood", "Cedar"]
+      }
+    ],
+    "default_attributes": [],
+    "variations": [28, 29],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\"><bdi><span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&yen;</span>1,100</bdi></span>",
+    "related_ids": [17, 16, 19, 18, 15],
+    "meta_data": [],
+    "stock_status": "onbackorder",
+    "has_options": true,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/27",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  }
+]

@@ -6,7 +6,7 @@ import { NymbalReviewList } from '@nymbalhq/web-components/elements/nymbal-revie
 declare module 'react' {
   namespace JSX {
     interface IntrinsicElements {
-      'nymbal-review-list': Omit<React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>, 'reviews'> & { 'reviews'?: string | undefined }
+      'nymbal-review-list': Omit<React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>, 'reviews' | 'rating'> & { 'reviews'?: string | undefined; 'rating'?: string | undefined }
     }
   }
 }
@@ -20,6 +20,7 @@ function useDefine(element: { define(): void }): void {
 
 export interface ReviewListProps {
   reviews?: unknown
+  rating?: unknown
   className?: string
   style?: React.CSSProperties
   slot?: string
@@ -33,22 +34,12 @@ export const ReviewList = /* @__PURE__ */ forwardRef<HTMLElement, ReviewListProp
     const innerRef = useRef<HTMLElement>(null)
     const ref = (forwardedRef ?? innerRef) as React.RefObject<HTMLElement | null>
 
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (props.reviews !== undefined) {
-      el.setAttribute('reviews', JSON.stringify(props.reviews))
-    } else {
-      el.removeAttribute('reviews')
-    }
-  }, [props.reviews])
-
 
 
     useDefine(NymbalReviewList)
 
     return (
-      <nymbal-review-list ref={ref as React.Ref<HTMLElement>} reviews={props.reviews === undefined ? undefined : JSON.stringify(props.reviews)} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
+      <nymbal-review-list ref={ref as React.Ref<HTMLElement>} {...{ 'REVIEWS': props.reviews === undefined ? undefined : JSON.stringify(props.reviews), 'RATING': props.rating === undefined ? undefined : JSON.stringify(props.rating) }} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
         // The server render goes on the tag itself: a full load parses its template into the shadow root, which React
         // does not see, and a soft navigation's innerHTML leaves it for the element to upgrade.
         dangerouslySetInnerHTML={props.serverHtml === undefined ? undefined : { __html: props.serverHtml }}

@@ -19,12 +19,14 @@ import {
 import type { Repositories } from '../../repositories/index.js'
 import {
   buildProductDoc,
+  listedSnapshot,
   productByCategoryKey,
   productWrites,
   PRODUCTS,
   PRODUCTS_BY_CATEGORY,
   type DenormalisedProduct,
 } from '../../read-models/builders.js'
+import { settle } from '../../read-models/settle.js'
 import { loadProduct } from '../../read-models/sources.js'
 import { subscribeDerived, type DerivedHandler } from '../derived.js'
 
@@ -43,7 +45,10 @@ export interface RegisterProductProjectionDeps extends ProductProjectionDeps {
 }
 
 export interface ProductReprojector {
-  /** Rebuilds the product's documents from its rows as they are now; a product that is gone is left to its delete. */
+  /**
+   * Rebuilds the product's documents from its rows as they are now, reading them again until they hold still, or
+   * removes them when it is not listed; a product already gone at the first read is left to its delete.
+   */
   reproject(productId: string): Promise<void>
   /** Removes the product's documents, by slug. */
   remove(slug: string): Promise<void>
@@ -62,25 +67,40 @@ export function productReprojector(deps: ProductProjectionDeps): ProductReprojec
     return (existing?.categories ?? []).map((c) => productByCategoryKey(c.slug, slug))
   }
 
+  async function remove(slug: string): Promise<void> {
+    for (const key of await filedUnder(slug)) {
+      await documentStore.delete(PRODUCTS_BY_CATEGORY, key)
+    }
+    await documentStore.delete(PRODUCTS, slug)
+    logger.debug({ slug }, 'product projection deleted')
+  }
+
   return {
     async reproject(productId) {
-      const loaded = await repos.product.store.read((tx) => loadProduct(tx, repos, productId))
-      if (!loaded) return
-      const doc = buildProductDoc(loaded.snapshot, loaded.categories, { storeId, currency, logger })
-      const writes = productWrites(doc)
-      const kept = new Set(writes.map((w) => w.key))
-      const stale = (await filedUnder(doc.slug)).filter((key) => !kept.has(key))
-      for (const w of writes) await documentStore.put(w.collection, w.key, w.doc)
-      for (const key of stale) await documentStore.delete(PRODUCTS_BY_CATEGORY, key)
-      logger.debug({ slug: doc.slug }, 'product projected')
+      await settle(documentStore, `product ${productId}`, async () => {
+        const loaded = await repos.product.store.read((tx) => loadProduct(tx, repos, productId))
+        if (!loaded) return { puts: [] }
+        const listed = listedSnapshot(loaded.snapshot)
+        if (!listed) {
+          const slug = loaded.snapshot.slug
+          return {
+            puts: [],
+            deletes: async () => [
+              ...(await filedUnder(slug)).map((key) => ({ collection: PRODUCTS_BY_CATEGORY, key })),
+              { collection: PRODUCTS, key: slug },
+            ],
+          }
+        }
+        const doc = buildProductDoc(listed, loaded.categories, { storeId, currency, logger })
+        return {
+          puts: productWrites(doc),
+          deletes: async () =>
+            (await filedUnder(doc.slug)).map((key) => ({ collection: PRODUCTS_BY_CATEGORY, key })),
+        }
+      })
+      logger.debug({ productId }, 'product projected')
     },
-    async remove(slug) {
-      for (const key of await filedUnder(slug)) {
-        await documentStore.delete(PRODUCTS_BY_CATEGORY, key)
-      }
-      await documentStore.delete(PRODUCTS, slug)
-      logger.debug({ slug }, 'product projection deleted')
-    },
+    remove,
   }
 }
 

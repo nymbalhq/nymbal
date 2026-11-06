@@ -1,0 +1,374 @@
+[
+  {
+    "id": 31,
+    "type": "variation",
+    "date_created": "2026-11-04T14:48:39",
+    "date_created_gmt": "2026-11-04T14:48:39",
+    "date_modified": "2026-11-04T14:48:39",
+    "date_modified_gmt": "2026-11-04T14:48:39",
+    "description": "",
+    "permalink": "http://localhost:8888/product/organic-t-shirt/?attribute_pa_colour=red&attribute_pa_size=s",
+    "sku": "TSHIRT-RED-S",
+    "global_unique_id": "",
+    "price": "18.00",
+    "regular_price": "18.00",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "status": "publish",
+    "purchasable": true,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": true,
+    "stock_quantity": 10,
+    "stock_status": "instock",
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "weight": "0.2",
+    "dimensions": {
+      "length": "70",
+      "width": "50",
+      "height": "1"
+    },
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "image": {
+      "id": 10,
+      "date_created": "2026-11-04T14:48:12",
+      "date_created_gmt": "2026-11-04T14:48:12",
+      "date_modified": "2026-11-04T14:48:12",
+      "date_modified_gmt": "2026-11-04T14:48:12",
+      "src": "http://localhost:8888/wp-content/uploads/2026/11/swatch-red.png",
+      "name": "Red swatch",
+      "alt": ""
+    },
+    "gallery_image_ids": [],
+    "attributes": [
+      {
+        "id": 1,
+        "name": "Colour",
+        "slug": "pa_colour",
+        "option": "Red"
+      },
+      {
+        "id": 2,
+        "name": "Size",
+        "slug": "pa_size",
+        "option": "S"
+      }
+    ],
+    "menu_order": 0,
+    "meta_data": [],
+    "name": "Red, S",
+    "parent_id": 30,
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/30/variations/31",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/30/variations"
+        }
+      ],
+      "up": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/30"
+        }
+      ]
+    }
+  },
+  {
+    "id": 32,
+    "type": "variation",
+    "date_created": "2026-11-04T14:48:39",
+    "date_created_gmt": "2026-11-04T14:48:39",
+    "date_modified": "2026-11-04T14:48:39",
+    "date_modified_gmt": "2026-11-04T14:48:39",
+    "description": "",
+    "permalink": "http://localhost:8888/product/organic-t-shirt/?attribute_pa_colour=red&attribute_pa_size=m",
+    "sku": "TSHIRT-RED-M",
+    "global_unique_id": "",
+    "price": "14.40",
+    "regular_price": "18.00",
+    "sale_price": "14.40",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": true,
+    "status": "publish",
+    "purchasable": true,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": true,
+    "stock_quantity": 0,
+    "stock_status": "outofstock",
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "weight": "0.2",
+    "dimensions": {
+      "length": "70",
+      "width": "50",
+      "height": "1"
+    },
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "image": {
+      "id": 10,
+      "date_created": "2026-11-04T14:48:12",
+      "date_created_gmt": "2026-11-04T14:48:12",
+      "date_modified": "2026-11-04T14:48:12",
+      "date_modified_gmt": "2026-11-04T14:48:12",
+      "src": "http://localhost:8888/wp-content/uploads/2026/11/swatch-red.png",
+      "name": "Red swatch",
+      "alt": ""
+    },
+    "gallery_image_ids": [],
+    "attributes": [
+      {
+        "id": 1,
+        "name": "Colour",
+        "slug": "pa_colour",
+        "option": "Red"
+      },
+      {
+        "id": 2,
+        "name": "Size",
+        "slug": "pa_size",
+        "option": "M"
+      }
+    ],
+    "menu_order": 0,
+    "meta_data": [],
+    "name": "Red, M",
+    "parent_id": 30,
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/30/variations/32",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/30/variations"
+        }
+      ],
+      "up": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/30"
+        }
+      ]
+    }
+  },
+  {
+    "id": 33,
+    "type": "variation",
+    "date_created": "2026-11-04T14:48:40",
+    "date_created_gmt": "2026-11-04T14:48:40",
+    "date_modified": "2026-11-04T14:48:40",
+    "date_modified_gmt": "2026-11-04T14:48:40",
+    "description": "",
+    "permalink": "http://localhost:8888/product/organic-t-shirt/?attribute_pa_colour=blue&attribute_pa_size=s",
+    "sku": "TSHIRT-BLUE-S",
+    "global_unique_id": "",
+    "price": "18.00",
+    "regular_price": "18.00",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "status": "publish",
+    "purchasable": true,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": false,
+    "stock_quantity": null,
+    "stock_status": "instock",
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "weight": "0.2",
+    "dimensions": {
+      "length": "70",
+      "width": "50",
+      "height": "1"
+    },
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "image": {
+      "id": 10,
+      "date_created": "2026-11-04T14:48:12",
+      "date_created_gmt": "2026-11-04T14:48:12",
+      "date_modified": "2026-11-04T14:48:12",
+      "date_modified_gmt": "2026-11-04T14:48:12",
+      "src": "http://localhost:8888/wp-content/uploads/2026/11/swatch-red.png",
+      "name": "Red swatch",
+      "alt": ""
+    },
+    "gallery_image_ids": [],
+    "attributes": [
+      {
+        "id": 1,
+        "name": "Colour",
+        "slug": "pa_colour",
+        "option": "Blue"
+      },
+      {
+        "id": 2,
+        "name": "Size",
+        "slug": "pa_size",
+        "option": "S"
+      }
+    ],
+    "menu_order": 0,
+    "meta_data": [],
+    "name": "Blue, S",
+    "parent_id": 30,
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/30/variations/33",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/30/variations"
+        }
+      ],
+      "up": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/30"
+        }
+      ]
+    }
+  },
+  {
+    "id": 34,
+    "type": "variation",
+    "date_created": "2026-11-04T14:48:40",
+    "date_created_gmt": "2026-11-04T14:48:40",
+    "date_modified": "2026-11-04T14:48:40",
+    "date_modified_gmt": "2026-11-04T14:48:40",
+    "description": "",
+    "permalink": "http://localhost:8888/product/organic-t-shirt/?attribute_pa_colour=blue&attribute_pa_size=m",
+    "sku": "TSHIRT-BLUE-M",
+    "global_unique_id": "",
+    "price": "19.00",
+    "regular_price": "19.00",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "status": "publish",
+    "purchasable": true,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "tax_status": "taxable",
+    "tax_class": "reduced-rate",
+    "manage_stock": true,
+    "stock_quantity": 7,
+    "stock_status": "instock",
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": 2,
+    "weight": "0.25",
+    "dimensions": {
+      "length": "72",
+      "width": "52",
+      "height": "1"
+    },
+    "shipping_class": "letter",
+    "shipping_class_id": 25,
+    "image": {
+      "id": 11,
+      "date_created": "2026-11-04T14:48:15",
+      "date_created_gmt": "2026-11-04T14:48:15",
+      "date_modified": "2026-11-04T14:48:15",
+      "date_modified_gmt": "2026-11-04T14:48:15",
+      "src": "http://localhost:8888/wp-content/uploads/2026/11/swatch-blue.png",
+      "name": "Blue swatch",
+      "alt": ""
+    },
+    "gallery_image_ids": [],
+    "attributes": [
+      {
+        "id": 1,
+        "name": "Colour",
+        "slug": "pa_colour",
+        "option": "Blue"
+      },
+      {
+        "id": 2,
+        "name": "Size",
+        "slug": "pa_size",
+        "option": "M"
+      }
+    ],
+    "menu_order": 0,
+    "meta_data": [],
+    "name": "Blue, M",
+    "parent_id": 30,
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/30/variations/34",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/30/variations"
+        }
+      ],
+      "up": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/30"
+        }
+      ]
+    }
+  }
+]

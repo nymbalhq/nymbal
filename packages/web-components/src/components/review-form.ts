@@ -1,3 +1,4 @@
+import '@nymbalhq/sdk/ns/auth'
 import { css, html, nothing } from 'lit'
 import { baseStyles, propertiesOf, type ElementSchema } from '../base-element.js'
 import { NymbalFormElement } from '../form-element.js'
@@ -14,9 +15,18 @@ const SCHEMA: ElementSchema = {
       detail: '{ reviewId: string }',
     },
   ],
-  parts: ['form', 'rating', 'title', 'body', 'submit', 'error'],
+  parts: ['form', 'rating', 'title', 'body', 'submit', 'error', 'sign-in'],
   slots: [],
   children: false,
+}
+
+const GENERIC_FAILURE = 'Something went wrong. Please try again.'
+
+/** The code of an SDK `NymbalApiError`, read by its shape so the element carries none of the SDK's runtime. */
+function apiErrorCode(err: unknown): string | undefined {
+  if (!(err instanceof Error) || err.name !== 'NymbalApiError') return undefined
+  const { code } = err as Error & { code?: unknown }
+  return typeof code === 'string' ? code : undefined
 }
 
 const RATINGS: Array<[string, string]> = [
@@ -27,7 +37,11 @@ const RATINGS: Array<[string, string]> = [
   ['1', '1 - Poor'],
 ]
 
-/** A review of one product: one submission per click, the form cleared once the store has it. */
+/**
+ * A review of one product by the signed-in shopper: one submission per click, the form cleared once the store has it.
+ * A shopper known to be signed out gets a link to sign in and come back instead; until the session is known (a server
+ * render, the profile still loading) it is the form.
+ */
 export class NymbalReviewForm extends NymbalFormElement {
   static override schema = SCHEMA
   static override properties = propertiesOf(SCHEMA)
@@ -68,6 +82,10 @@ export class NymbalReviewForm extends NymbalFormElement {
       [part~='body'] {
         resize: vertical;
       }
+      [part~='sign-in'] {
+        font-weight: var(--nymbal-font-weight-medium, 500);
+        color: var(--nymbal-color-primary, #18181b);
+      }
       .notice {
         margin-top: var(--nymbal-spacing-md, 1rem);
         font-size: var(--nymbal-font-size-sm, 0.875rem);
@@ -78,26 +96,68 @@ export class NymbalReviewForm extends NymbalFormElement {
 
   declare productId: string | undefined
 
+  /** The session restore this element asked for: the shopper is known to be signed out only once it has settled. */
+  private profile: 'unasked' | 'loading' | 'loaded' = 'unasked'
+  /** The store refused a submission for want of a session. */
+  private sessionEnded = false
+
+  protected override stores() {
+    return [this.client.auth]
+  }
+
+  protected override clientConnected(): void {
+    if (this.profile !== 'unasked' || this.client.auth.getState().isAuthenticated) return
+    this.profile = 'loading'
+    void this.client.auth.restore().then(() => {
+      this.profile = 'loaded'
+      this.requestUpdate()
+    })
+  }
+
+  private get signedOut(): boolean {
+    if (!this.readsStores) return false
+    if (this.sessionEnded) return true
+    return this.profile === 'loaded' && !this.client.auth.getState().isAuthenticated
+  }
+
   protected override async send(): Promise<void> {
     const answer: { review?: { id: string } | null } | null | undefined =
-      await this.client.adapter.reviews.submit({
-        productId: this.productId ?? '',
-        rating: Number(this.value('rating')),
-        title: this.value('title'),
-        body: this.value('body'),
-      })
+      await this.client.adapter.reviews
+        .submit({
+          productId: this.productId ?? '',
+          rating: Number(this.value('rating')),
+          title: this.value('title'),
+          body: this.value('body'),
+        })
+        .catch((err: unknown) => {
+          // The session ended: the shopper signs in again rather than submitting again.
+          if (apiErrorCode(err) === 'auth.unauthorized') this.sessionEnded = true
+          throw err
+        })
     this.renderRoot.querySelector('form')?.reset()
-    this.notice = 'Thank you for your review!'
+    this.notice = 'Thank you! Your review will appear once it is approved.'
     // A 2xx answer is the store's acceptance; without a review in it there is no id to announce.
     const reviewId = answer?.review?.id
     if (reviewId !== undefined) this.emit('nymbal:review:submitted', { reviewId })
   }
 
-  protected override failureText(): string {
-    return 'Something went wrong. Please try again.'
+  /** The store's own words for a refusal of the review or the session; anything else (the network) is generic. */
+  protected override failureText(err: unknown): string {
+    const code = apiErrorCode(err)
+    const own = code !== undefined && (code.startsWith('reviews.') || code.startsWith('auth.'))
+    return own && err instanceof Error && err.message !== '' ? err.message : GENERIC_FAILURE
   }
 
   protected override render() {
+    if (this.signedOut) {
+      const redirect = encodeURIComponent(location.pathname)
+      return html`
+        ${this.renderError()}
+        <a part="sign-in" data-testid="review-sign-in" href=${`/account/login?redirect=${redirect}`}
+          >Sign in to write a review</a
+        >
+      `
+    }
     return html`
       ${this.renderError()}
       <form part="form" data-testid="review-form" @submit=${this.onSubmit}>

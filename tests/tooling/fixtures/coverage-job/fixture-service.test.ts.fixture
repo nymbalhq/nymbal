@@ -1,6 +1,0 @@
-import { expect, it } from 'vitest'
-import { covered } from './fixture-service'
-
-it('covers half of the service', () => {
-  expect(covered(1)).toBe(2)
-})

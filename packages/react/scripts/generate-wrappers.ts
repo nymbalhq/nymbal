@@ -29,7 +29,9 @@ function generatePropInterface(schema: ElementSchema): string {
   lines.push(`  slot?: string`)
   lines.push(`  'data-testid'?: string`)
   if (!schema.children) {
-    lines.push(`  /** The element's server render, \`renderNymbal(tag, …).__html\` from \`@nymbalhq/react/server\`. */`)
+    lines.push(
+      `  /** The element's server render, \`renderNymbal(tag, …).__html\` from \`@nymbalhq/react/server\`. */`,
+    )
     lines.push(`  serverHtml?: string`)
     return `export interface ${schema.reactName}Props {\n${lines.join('\n')}\n}`
   }
@@ -45,8 +47,11 @@ export type ${schema.reactName}Props = ${schema.reactName}OwnProps &
 }
 
 /**
- * The attribute as the JSX renders it, so a wrapper rendered on the server ships it: a JSON value stringified, a
- * boolean present (empty) or absent. The effects below keep it current after the element upgrades.
+ * The attribute as the JSX renders it, so a wrapper rendered on the server ships it and the element has it when it
+ * connects: a JSON value stringified, a boolean present (empty) or absent. Once the tag is defined, React sets a prop
+ * named as one of the element's properties (`qty`, `client`; a dashed name never is) as that property, which the element
+ * does not reflect to the attribute it reads as it connects. In upper case the name is no property, so React sets the
+ * attribute, and HTML lower-cases it (`getAttribute`, selectors and hydration ignore case).
  */
 function generateJsxAttribute(attr: AttributeDef): string {
   const value =
@@ -55,32 +60,8 @@ function generateJsxAttribute(attr: AttributeDef): string {
       : attr.type === 'json'
         ? `props.${attr.prop} === undefined ? undefined : JSON.stringify(props.${attr.prop})`
         : `props.${attr.prop}`
-  return `${attr.name}={${value}}`
-}
-
-function generateAttrEffect(attr: AttributeDef): string {
-  if (attr.type === 'boolean') {
-    return `  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (props.${attr.prop}) {
-      el.setAttribute('${attr.name}', '')
-    } else {
-      el.removeAttribute('${attr.name}')
-    }
-  }, [props.${attr.prop}])`
-  }
-  const value =
-    attr.type === 'json' ? `JSON.stringify(props.${attr.prop})` : `String(props.${attr.prop})`
-  return `  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (props.${attr.prop} !== undefined) {
-      el.setAttribute('${attr.name}', ${value})
-    } else {
-      el.removeAttribute('${attr.name}')
-    }
-  }, [props.${attr.prop}])`
+  const name = attr.name.includes('-') ? attr.name : attr.name.toUpperCase()
+  return `'${name}': ${value}`
 }
 
 function generateEventEffect(evt: EventDef): string {
@@ -94,10 +75,12 @@ function generateEventEffect(evt: EventDef): string {
 }
 
 function generateComponent(schema: ElementSchema): string {
-  const attrEffects = schema.attributes.map(generateAttrEffect).join('\n\n')
   const eventEffects = schema.events.map(generateEventEffect).join('\n\n')
   const childSlot = schema.children ? `{props.children}` : ''
-  const attributes = schema.attributes.map((a) => ` ${generateJsxAttribute(a)}`).join('')
+  const attributes =
+    schema.attributes.length === 0
+      ? ''
+      : ` {...{ ${schema.attributes.map(generateJsxAttribute).join(', ')} }}`
 
   return `${generatePropInterface(schema)}
 
@@ -105,8 +88,6 @@ export const ${schema.reactName} = /* @__PURE__ */ forwardRef<HTMLElement, ${sch
   function ${schema.reactName}(props, forwardedRef) {
     const innerRef = useRef<HTMLElement>(null)
     const ref = (forwardedRef ?? innerRef) as React.RefObject<HTMLElement | null>
-
-${attrEffects}
 
 ${eventEffects}
 
@@ -156,8 +137,8 @@ function elementClass(schema: ElementSchema): string {
 }
 
 // The wrapper is what imports its element, and it is annotated pure, so a bundle that leaves a wrapper out leaves its
-// element out too. The element is defined after the wrapper's attribute effects, so it upgrades with its attributes
-// set, and a project that defined the tag first keeps its own element.
+// element out too. The element is defined after the commit that set its attributes, so it upgrades with them, and a
+// project that defined the tag first keeps its own element.
 const USE_DEFINE = `/** Defines the wrapped element, and those it renders, once the wrapper mounts. */
 function useDefine(element: { define(): void }): void {
   useEffect(() => {

@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process'
 import { existsSync, realpathSync } from 'node:fs'
-import { mkdir, mkdtemp, readdir, readFile, rm, symlink } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -9,11 +9,14 @@ import fc from 'fast-check'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ADAPTER_NAMES } from '../../../tests/architecture/adapter-table.js'
 import { loadConfig } from '../../config/src/index.js'
+import { cliEnv, doctorJson, runCli, type DoctorJsonCheck } from '../../../tests/support/doctor.js'
+import { install, workspace } from '../../../tests/support/project.js'
 import { main, parseCliFlags, scaffold } from '../src/index.js'
 
 // Scaffold from a clean machine, AC-1 to AC-6. AC-1's type half lives in tests/scaffold/scaffold-answers.test-d.ts
-// (root typecheck); AC-6's `nymbal dev` half and AC-7 to AC-10 are in the cli project. The scaffold is read from
-// scaffold/templates, so run `pnpm build` first.
+// (root typecheck); AC-6's `nymbal dev` half and AC-7 to AC-10 are in the cli project. AC-11 (trusted proxies): the
+// scaffold documents NYMBAL_TRUSTED_PROXIES in a form the project's `nymbal doctor` reads. The scaffold is read from scaffold/templates,
+// and doctor is the built CLI, so run `pnpm build` first.
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const PKG_ROOT = resolve(HERE, '..')
@@ -71,9 +74,10 @@ vi.mock('@clack/prompts', async (importOriginal) => {
     outro: () => {},
     note: () => {},
     cancel: () => {},
-    text: async (opts: { message: string }) => {
+    text: async (opts: { message: string; initialValue?: string }) => {
       clack.asked.push({ kind: 'text', message: opts.message })
-      return 'Shop'
+      // The admin email keeps the address the prompt offers; every other text prompt is the store name.
+      return /email/i.test(opts.message) ? (opts.initialValue ?? 'admin@shop.example') : 'Shop'
     },
     select: async (opts: {
       message: string
@@ -147,13 +151,14 @@ describe('create-nymbal-app main(argv, { run })', () => {
     else process.env['npm_config_user_agent'] = originalUa
   })
 
-  it('AC-1: the interactive prompts are exactly name, currency, template, demo content, install; no mobile prompt', async () => {
+  it('AC-1: the interactive prompts are exactly name, admin email, currency, template, demo content, install; no mobile prompt', async () => {
     process.chdir(await tempDir('interactive'))
     await main(argv(), { run })
 
     expect(clack.asked.map((p) => p.message).filter((m) => /mobile/i.test(m))).toEqual([])
     const expected: Array<[string, RegExp]> = [
       ['text', /name/i],
+      ['text', /admin email/i],
       ['select', /currency/i],
       ['select', /template/i],
       ['confirm', /demo/i],
@@ -404,3 +409,81 @@ async function importedNymbalPackages(root: string): Promise<Set<string>> {
   await walk(root)
   return names
 }
+
+// ─── AC-11: the trusted proxy list, documented where a store developer reads it ────────────────────────────────
+
+const LIST_VARIABLE = 'NYMBAL_TRUSTED_PROXIES'
+const PUBLIC_URL = 'https://shop.example'
+
+/** The README section whose heading names a proxy: its heading line to the next heading of any level. */
+function proxySection(readme: string): string {
+  const lines = readme.split('\n')
+  const start = lines.findIndex((line) => /^#{1,6}\s.*\bproxy\b/i.test(line))
+  if (start < 0) return ''
+  const end = lines.findIndex((line, i) => i > start && /^#{1,6}\s/.test(line))
+  return lines.slice(start, end < 0 ? undefined : end).join('\n')
+}
+
+describe('AC-11: the scaffold documents the trusted proxy list', () => {
+  const originalCwd = process.cwd()
+  const originalUa = process.env['npm_config_user_agent']
+  afterEach(() => {
+    process.chdir(originalCwd)
+    if (originalUa === undefined) delete process.env['npm_config_user_agent']
+    else process.env['npm_config_user_agent'] = originalUa
+  })
+
+  for (const template of TEMPLATES) {
+    it(`AC-11: in a --yes ${template} scaffold, .env.example has # ${LIST_VARIABLE}=loopback, which uncommented into .env makes nymbal doctor report trust proxy ok naming loopback from ${LIST_VARIABLE}; without it and with a public URL doctor reports degraded naming it; the README's proxy section names it and nymbal deploy nginx, and neither file names the hop count`, async () => {
+      const cwd = await tempDir(`proxy-${template}`)
+      process.chdir(cwd)
+      process.env['npm_config_user_agent'] = 'pnpm/9.12.3 npm/? node/v22.23.3 darwin arm64'
+      await main(
+        ['node', 'create-nymbal-app', 'shop', '--yes', '--no-install', '--template', template],
+        {
+          run: async () => {},
+        },
+      )
+      const dir = join(cwd, 'shop')
+      install(dir, workspace('@nymbalhq/config'))
+      const example = await readFile(join(dir, '.env.example'), 'utf8')
+      const readme = await readFile(join(dir, 'README.md'), 'utf8')
+      const commented = example
+        .split('\n')
+        .find((line) => new RegExp(`^#\\s*${LIST_VARIABLE}=`).test(line))
+      const dotEnv = await readFile(join(dir, '.env'), 'utf8')
+      const env = cliEnv({
+        [LIST_VARIABLE]: undefined,
+        NYMBAL_CLIENT_IP_HEADER: undefined,
+        NYMBAL_TRUST_PROXY_HOPS: undefined,
+        NYMBAL_PUBLIC_URL: PUBLIC_URL,
+        NODE_ENV: undefined,
+      })
+      const configStatus: string[] = []
+      const trustProxy = async (): Promise<DoctorJsonCheck | undefined> => {
+        const run = await runCli(['doctor', '--json'], { cwd: dir, env })
+        const { checks } = doctorJson(run.stdout)
+        configStatus.push(checks.find((check) => check.name === 'config')?.status ?? 'missing')
+        return checks.find((check) => check.name === 'trust proxy')
+      }
+
+      await writeFile(join(dir, '.env'), `${dotEnv}\n${(commented ?? '').replace(/^#\s*/, '')}\n`)
+      const withLine = await trustProxy()
+      await writeFile(join(dir, '.env'), dotEnv)
+      const withoutLine = await trustProxy()
+
+      // doctor read the scaffold's own config both times, so its checks are about this project.
+      expect(configStatus).toEqual(['ok', 'ok'])
+      expect(commented ?? '', `.env.example:\n${example}`).toBe(`# ${LIST_VARIABLE}=loopback`)
+      expect(proxySection(readme)).toContain(LIST_VARIABLE)
+      expect(proxySection(readme)).toContain('nymbal deploy nginx')
+      expect(
+        [example, readme].filter((text) => /NYMBAL_TRUST_PROXY_HOPS|trustProxy\b/.test(text)),
+      ).toEqual([])
+      expect(withLine?.status).toBe('ok')
+      expect(withLine?.detail).toContain(`loopback from ${LIST_VARIABLE}`)
+      expect(withoutLine?.status).toBe('degraded')
+      expect(withoutLine?.detail).toContain(LIST_VARIABLE)
+    }, 120_000)
+  }
+})

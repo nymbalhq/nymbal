@@ -1,0 +1,338 @@
+[
+  {
+    "id": 23,
+    "type": "variation",
+    "date_created": "2026-11-04T14:51:56",
+    "date_created_gmt": "2026-11-04T14:51:56",
+    "date_modified": "2026-11-04T14:51:56",
+    "date_modified_gmt": "2026-11-04T14:51:56",
+    "description": "",
+    "permalink": "http://localhost:8888/product/matcha/?attribute_pa_grade=ceremonial&attribute_pack=30g",
+    "sku": "MATCHA-CER-30",
+    "global_unique_id": "",
+    "price": "1800",
+    "regular_price": "1800",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "status": "publish",
+    "purchasable": true,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "tax_status": "taxable",
+    "tax_class": "reduced-rate",
+    "manage_stock": "parent",
+    "stock_quantity": 50,
+    "stock_status": "instock",
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "weight": "0.25",
+    "dimensions": {
+      "length": "3",
+      "width": "3",
+      "height": "4"
+    },
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "image": null,
+    "gallery_image_ids": [],
+    "attributes": [
+      {
+        "id": 1,
+        "name": "Grade",
+        "slug": "pa_grade",
+        "option": "Ceremonial"
+      },
+      {
+        "id": 0,
+        "name": "Pack",
+        "slug": "pack",
+        "option": "30g"
+      }
+    ],
+    "menu_order": 0,
+    "meta_data": [],
+    "name": "Ceremonial, 30g",
+    "parent_id": 22,
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/22/variations/23",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/22/variations"
+        }
+      ],
+      "up": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/22"
+        }
+      ]
+    }
+  },
+  {
+    "id": 24,
+    "type": "variation",
+    "date_created": "2026-11-04T14:51:56",
+    "date_created_gmt": "2026-11-04T14:51:56",
+    "date_modified": "2026-11-04T14:51:56",
+    "date_modified_gmt": "2026-11-04T14:51:56",
+    "description": "",
+    "permalink": "http://localhost:8888/product/matcha/?attribute_pa_grade=ceremonial&attribute_pack=100g",
+    "sku": "MATCHA-CER-100",
+    "global_unique_id": "",
+    "price": "4680",
+    "regular_price": "5200",
+    "sale_price": "4680",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": true,
+    "status": "publish",
+    "purchasable": true,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "tax_status": "taxable",
+    "tax_class": "reduced-rate",
+    "manage_stock": "parent",
+    "stock_quantity": 50,
+    "stock_status": "instock",
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "weight": "0.25",
+    "dimensions": {
+      "length": "3",
+      "width": "3",
+      "height": "4"
+    },
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "image": null,
+    "gallery_image_ids": [],
+    "attributes": [
+      {
+        "id": 1,
+        "name": "Grade",
+        "slug": "pa_grade",
+        "option": "Ceremonial"
+      },
+      {
+        "id": 0,
+        "name": "Pack",
+        "slug": "pack",
+        "option": "100g"
+      }
+    ],
+    "menu_order": 0,
+    "meta_data": [],
+    "name": "Ceremonial, 100g",
+    "parent_id": 22,
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/22/variations/24",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/22/variations"
+        }
+      ],
+      "up": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/22"
+        }
+      ]
+    }
+  },
+  {
+    "id": 25,
+    "type": "variation",
+    "date_created": "2026-11-04T14:51:56",
+    "date_created_gmt": "2026-11-04T14:51:56",
+    "date_modified": "2026-11-04T14:51:56",
+    "date_modified_gmt": "2026-11-04T14:51:56",
+    "description": "",
+    "permalink": "http://localhost:8888/product/matcha/?attribute_pa_grade=culinary&attribute_pack=30g",
+    "sku": "MATCHA-CUL-30",
+    "global_unique_id": "",
+    "price": "900",
+    "regular_price": "900",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "status": "publish",
+    "purchasable": true,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "tax_status": "taxable",
+    "tax_class": "zero-rate",
+    "manage_stock": "parent",
+    "stock_quantity": 50,
+    "stock_status": "instock",
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "weight": "0.3",
+    "dimensions": {
+      "length": "3",
+      "width": "3",
+      "height": "4"
+    },
+    "shipping_class": "fragile",
+    "shipping_class_id": 22,
+    "image": null,
+    "gallery_image_ids": [],
+    "attributes": [
+      {
+        "id": 1,
+        "name": "Grade",
+        "slug": "pa_grade",
+        "option": "Culinary"
+      },
+      {
+        "id": 0,
+        "name": "Pack",
+        "slug": "pack",
+        "option": "30g"
+      }
+    ],
+    "menu_order": 0,
+    "meta_data": [],
+    "name": "Culinary, 30g",
+    "parent_id": 22,
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/22/variations/25",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/22/variations"
+        }
+      ],
+      "up": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/22"
+        }
+      ]
+    }
+  },
+  {
+    "id": 26,
+    "type": "variation",
+    "date_created": "2026-11-04T14:51:57",
+    "date_created_gmt": "2026-11-04T14:51:57",
+    "date_modified": "2026-11-04T14:51:57",
+    "date_modified_gmt": "2026-11-04T14:51:57",
+    "description": "",
+    "permalink": "http://localhost:8888/product/matcha/?attribute_pa_grade=culinary&attribute_pack=100g",
+    "sku": "MATCHA-CUL-100",
+    "global_unique_id": "",
+    "price": "2600",
+    "regular_price": "2600",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "status": "publish",
+    "purchasable": true,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "tax_status": "taxable",
+    "tax_class": "reduced-rate",
+    "manage_stock": true,
+    "stock_quantity": 12,
+    "stock_status": "instock",
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": 5,
+    "weight": "0.25",
+    "dimensions": {
+      "length": "3",
+      "width": "3",
+      "height": "4"
+    },
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "image": null,
+    "gallery_image_ids": [],
+    "attributes": [
+      {
+        "id": 1,
+        "name": "Grade",
+        "slug": "pa_grade",
+        "option": "Culinary"
+      },
+      {
+        "id": 0,
+        "name": "Pack",
+        "slug": "pack",
+        "option": "100g"
+      }
+    ],
+    "menu_order": 0,
+    "meta_data": [],
+    "name": "Culinary, 100g",
+    "parent_id": 22,
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/22/variations/26",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/22/variations"
+        }
+      ],
+      "up": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/22"
+        }
+      ]
+    }
+  }
+]

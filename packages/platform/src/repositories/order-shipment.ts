@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { eq, gte } from 'drizzle-orm'
 import { normaliseTrackingNumber } from '@nymbalhq/types'
 import {
   postgresDb,
@@ -23,6 +23,9 @@ export interface OrderShipmentRepository extends StoreRepository {
   record(tx: Tx, input: OrderShipmentInput): Promise<void>
   /** The ids of every order shipped under the number, in no particular order. */
   ordersByTrackingNumber(tx: ReadTx, trackingNumber: string): Promise<string[]>
+  deleteByOrder(tx: Tx, orderId: string): Promise<void>
+  /** The orders shipped at or after `since`. */
+  orderIdsSince(tx: ReadTx, since: Date): Promise<string[]>
 }
 
 export function createOrderShipmentRepository(store: CommandStore): OrderShipmentRepository {
@@ -57,6 +60,28 @@ export function createOrderShipmentRepository(store: CommandStore): OrderShipmen
         .select({ orderId: p.orderId })
         .from(p)
         .where(eq(p.trackingNumber, key))
+      return rows.map((r) => r.orderId)
+    },
+    async deleteByOrder(tx, orderId) {
+      if (tx.kind === 'sqlite') {
+        sqliteDb(tx).delete(s).where(eq(s.orderId, orderId)).run()
+        return
+      }
+      await postgresDb(tx).delete(p).where(eq(p.orderId, orderId))
+    },
+    async orderIdsSince(tx, since) {
+      if (tx.kind === 'sqlite') {
+        return sqliteDb(tx)
+          .select({ orderId: s.orderId })
+          .from(s)
+          .where(gte(s.createdAt, since.toISOString()))
+          .all()
+          .map((r) => r.orderId)
+      }
+      const rows = await postgresDb(tx)
+        .select({ orderId: p.orderId })
+        .from(p)
+        .where(gte(p.createdAt, since))
       return rows.map((r) => r.orderId)
     },
   }

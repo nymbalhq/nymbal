@@ -25,14 +25,17 @@ const ADAPTERS = FIRST_PARTY_ADAPTERS.map((a) => ({
   ]?.sdk,
 }))
 
+/** The first nodemailer release with every published security fix, so no install resolves a vulnerable one. */
+const NODEMAILER = '^10.1.4'
+
 /** The exact SDK range an adapter peers, where it is pinned, by package. */
 const SDK_RANGES: Readonly<Record<string, string>> = {
   '@nymbalhq/payments-stripe': '^17.4.0',
   '@nymbalhq/ai-anthropic': '^0.39.0',
-  '@nymbalhq/email-smtp': '^6.9.16',
-  '@nymbalhq/email-mailgun': '^6.9.16',
-  '@nymbalhq/email-resend': '^6.9.16',
-  '@nymbalhq/email-ses': '^6.9.16',
+  '@nymbalhq/email-smtp': NODEMAILER,
+  '@nymbalhq/email-mailgun': NODEMAILER,
+  '@nymbalhq/email-resend': NODEMAILER,
+  '@nymbalhq/email-ses': NODEMAILER,
 }
 
 /** The commerce adapters' SDKs, which no kernel or stack install may pull in (the kernel's own Postgres store peers pg). */

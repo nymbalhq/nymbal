@@ -324,14 +324,15 @@ describe('AC-8: a checkout through the container', () => {
 })
 
 describe('AC-10: the image runs in production', () => {
-  it("AC-10: the container runs with NODE_ENV=production, the scaffold .env's NYMBAL_JWT_SECRET, NYMBAL_TRUST_PROXY_HOPS=1 and the Stripe keys as run-time environment, answers /ready 200, and names stripe as its payments client", async () => {
+  it("AC-10: the container runs with NODE_ENV=production, the scaffold .env's NYMBAL_JWT_SECRET, NYMBAL_TRUSTED_PROXIES=uniquelocal (and no NYMBAL_TRUST_PROXY_HOPS) and the Stripe keys as run-time environment, answers /ready 200, and names stripe as its payments client", async () => {
     const env = containerEnv()
     const jwtSecret = dotEnv('NYMBAL_JWT_SECRET')
 
     expect(env['NODE_ENV']).toBe('production')
     expect(jwtSecret).toMatch(/^[A-Za-z0-9_-]{43}$/)
     expect(env['NYMBAL_JWT_SECRET']).toBe(jwtSecret)
-    expect(env['NYMBAL_TRUST_PROXY_HOPS']).toBe('1')
+    expect(env['NYMBAL_TRUSTED_PROXIES']).toBe('uniquelocal')
+    expect(Object.keys(env)).not.toContain('NYMBAL_TRUST_PROXY_HOPS')
     expect(
       ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET'].filter((name) => (env[name] ?? '') === ''),
     ).toEqual([])

@@ -1,0 +1,52 @@
+[
+  {
+    "id": 0,
+    "name": "Locations not covered by your other zones",
+    "order": 0,
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/shipping/zones/0",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/shipping/zones"
+        }
+      ],
+      "describedby": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/shipping/zones/0/locations"
+        }
+      ]
+    }
+  },
+  {
+    "id": 1,
+    "name": "Benelux",
+    "order": 0,
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/shipping/zones/1",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/shipping/zones"
+        }
+      ],
+      "describedby": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/shipping/zones/1/locations"
+        }
+      ]
+    }
+  }
+]

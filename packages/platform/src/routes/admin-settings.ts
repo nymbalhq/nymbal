@@ -28,7 +28,8 @@ export interface RegisterAdminSettingsRoutesDeps {
 
 /**
  * The admin's Settings: a listing of each declared field and where it is set from, never a secret's
- * value; a write for a field the config and environment leave unset, which applies at the next start.
+ * value; a save for a field the config and environment leave unset, and a delete of any field's saved value, each
+ * applied at the next start.
  */
 export function registerAdminSettingsRoutes(
   adapter: HttpAdapter,
@@ -63,8 +64,8 @@ export function registerAdminSettingsRoutes(
     return field
   }
 
-  /** The declared field, or the 404 / 409 answer that refuses a write to it. */
-  function writable(ctx: RequestContext) {
+  /** The declared field and the source that sets it besides Settings, or the 404 for a field none declares. */
+  function declared(ctx: RequestContext) {
     const { slot, path } = ctx.params as { slot: string; path: string }
     const owner = slots.find((s) => s.slot === slot)
     const decl = owner?.declared.find((d) => d.path === path)
@@ -77,24 +78,27 @@ export function registerAdminSettingsRoutes(
         ),
       }
     }
-    const source = sourceOf(blockOf(owner.slot), decl, process.env, false)
-    if (source !== null) {
-      const where = source === 'env' ? decl.env! : 'nymbal.config.ts'
-      return {
-        refused: fail(
-          'settings.set_by_environment',
-          `${slot}.${path} is set by ${where}; change it there`,
-          409,
-        ),
-      }
+    return { owner, decl, shadow: sourceOf(blockOf(owner.slot), decl, process.env, false) }
+  }
+
+  /** The declared field, or the 404 / 409 answer that refuses a write to it. */
+  function writable(ctx: RequestContext) {
+    const target = declared(ctx)
+    if (target.refused !== undefined || target.shadow === null) return target
+    const where = target.shadow === 'env' ? target.decl.env! : 'nymbal.config.ts'
+    return {
+      refused: fail(
+        'settings.set_by_environment',
+        `${target.owner.slot}.${target.decl.path} is set by ${where}; change it there`,
+        409,
+      ),
     }
-    return { owner, decl }
   }
 
   adapter.registerRoute(
     'GET',
     '/api/admin/settings',
-    requireRole('admin', async () => {
+    requireRole('admin', async (ctx) => {
       try {
         const rows = await listStoredSettings(store)
         return ok<SettingsListing>({
@@ -111,7 +115,7 @@ export function registerAdminSettingsRoutes(
           })),
         })
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )
@@ -173,7 +177,7 @@ export function registerAdminSettingsRoutes(
           restartRequired: true,
         })
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )
@@ -181,29 +185,30 @@ export function registerAdminSettingsRoutes(
   adapter.registerRoute(
     'DELETE',
     '/api/admin/settings/:slot/:path',
+    // A row the config or environment shadows is never read, so deleting it is allowed: the field stays set by them.
     requireRole('admin', async (ctx) => {
       try {
-        const target = writable(ctx)
+        const target = declared(ctx)
         if (target.refused !== undefined) return target.refused
-        const { owner, decl } = target
+        const { owner, decl, shadow } = target
         await store.transaction(async (tx) => {
           audit.note('settings.delete', [{ type: 'setting', id: `${owner.slot}.${decl.path}` }])
           await settings.delete(tx, owner.slot, decl.path)
           await publisher.publish(EVT_SETTINGS_CHANGED, {
             slot: owner.slot,
             path: decl.path,
-            source: null,
+            source: shadow,
           })
         })
         return ok<SettingWriteResult>({
           slot: owner.slot,
           path: decl.path,
-          state: 'unset',
-          source: null,
+          state: shadow === null ? 'unset' : 'set',
+          source: shadow,
           restartRequired: true,
         })
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )

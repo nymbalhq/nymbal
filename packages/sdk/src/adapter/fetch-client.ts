@@ -27,6 +27,11 @@ export interface RequestOptions {
    * 10 s with the original 401.
    */
   authRefresh?: boolean
+  /**
+   * Sent with a customer's bearer, never sent again without one: when the 401's refresh leaves no token, the 401 is
+   * thrown. For a request the API would otherwise answer as a guest (a checkout begin).
+   */
+  keepIdentity?: boolean
 }
 
 /**
@@ -54,6 +59,8 @@ export class FetchClient {
   private refreshing: Promise<void> | null = null
   /** The token `GET /api/csrf` answered: the API's `nymbal.csrf` cookie, which this origin may not be able to read. */
   private csrfToken: Promise<string> | null = null
+  /** A session restore's refresh, which every request sent meanwhile waits on so that none goes out as a guest. */
+  private held: Promise<void> | null = null
 
   constructor(options: FetchClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/+$/, '')
@@ -61,6 +68,29 @@ export class FetchClient {
     this.getAccessToken = options.getAccessToken ?? (() => null)
     this.getCartToken = options.getCartToken
     this.onUnauthorized = options.onUnauthorized
+  }
+
+  /** Starts the session's refresh, or joins the one in flight: a client sends one refresh at a time. */
+  refreshSession(): Promise<void> {
+    if (this.onUnauthorized === undefined) return Promise.resolve()
+    return this.refreshing ?? this.refresh(this.onUnauthorized)
+  }
+
+  /**
+   * As `refreshSession`, and every other request sent until the refresh settles waits for it, at most
+   * `REFRESH_WAIT_MS`. Held from this call on, before any await: a page's first requests go in the same tick.
+   */
+  restoreSession(): Promise<void> {
+    // A failed or unanswered refresh releases the held requests as well; they go with whatever token there is.
+    const held = this.waitFor(this.refreshSession()).then(
+      () => undefined,
+      () => undefined,
+    )
+    this.held = held
+    void held.then(() => {
+      if (this.held === held) this.held = null
+    })
+    return held
   }
 
   async request<T>(
@@ -79,7 +109,8 @@ export class FetchClient {
     body?: unknown,
     options: RequestOptions = {},
   ): Promise<{ data: T; meta: Record<string, unknown> }> {
-    // Read before the first await: the refresh, if any, in flight when this request was sent.
+    if (this.held !== null && options.authRefresh !== true) await this.held
+    // Read before the send's first await: the refresh, if any, in flight when this request was sent.
     const sentDuring = this.refreshing
     let { response, bearer } = await this.doFetch(method, path, body, options)
 
@@ -91,8 +122,13 @@ export class FetchClient {
 
     if (response.status === 401 && this.onUnauthorized && options.authRefresh !== true) {
       const pending = this.refreshing
-      const retry = async () =>
-        this.parseResponse<T>((await this.doFetch(method, path, body, options)).response)
+      const retry = async () => {
+        // Sent as a customer, and the refresh left no token: sent again it would act as a guest.
+        if (options.keepIdentity === true && bearer !== null && this.getAccessToken() === null) {
+          return this.parseResponse<T>(response)
+        }
+        return this.parseResponse<T>((await this.doFetch(method, path, body, options)).response)
+      }
       if (pending === null && this.getAccessToken() !== bearer) {
         // A refresh that ended after this was sent has replaced its token already.
         return retry()

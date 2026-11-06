@@ -183,6 +183,28 @@ const hasTwoDecimals = (x: number): boolean => Math.abs(x * 100 - Math.round(x *
 
 // ---------------------------------------------------------------------------------------------------------------
 
+describe('run through a symlinked scripts/ (a linked worktree)', () => {
+  it('answers as it does from its real path: a usage error exits 2, never a silent 0', async () => {
+    const dir = scratch()
+    execFileSync('ln', ['-s', join(REPO, 'scripts'), join(dir, 'scripts')])
+    const [linked, direct] = await Promise.all([
+      new Promise<{ code: number | null; stderr: string }>((resolve) => {
+        execFile(
+          TSX,
+          [join(dir, 'scripts/mutation-ratchet.ts')],
+          { cwd: REPO },
+          (error, _o, stderr) =>
+            resolve({ code: error === null ? 0 : (error.code as number), stderr }),
+        )
+      }),
+      cli([]),
+    ])
+    expect(direct.code).toBe(2)
+    expect(linked.code, linked.stderr).toBe(direct.code)
+    expect(linked.stderr).toMatch(/^usage: mutation-ratchet\.ts/m)
+  })
+})
+
 describe('AC-1: scoreByFile', () => {
   it('AC-1: property: each file scores (killed+timeout)/(killed+timeout+survived+noCoverage)x100 to two decimals, other statuses ignored, no valid mutants means absent; timeouts with no kill score 0', async () => {
     const { scoreByFile } = await ratchetModule()
@@ -884,5 +906,44 @@ describe('check --static: unit test files beside the mutate set', () => {
     touch(dir, X)
     const r = await cliIn(dir, ['check', '--static'])
     expect(r.code, r.output).toBe(0)
+  })
+
+  // CI exports GATE_BASE, the pushed branch's previous tip, to every step, and the plain gate runs its tests with it.
+  // In a scratch repository that sha names no commit: a script reading it for another config went red only in CI.
+  it('GATE_BASE is the base of the unit ratchet alone: a sha that does not resolve fails the default config naming it, and leaves another config’s run as it is without it', async () => {
+    const dir = gitScratch(ENTRIES)
+    writeFileSync(
+      join(dir, 'stryker.integration.config.mjs'),
+      readFileSync(join(dir, 'stryker.config.mjs'), 'utf8'),
+    )
+    writeFileSync(
+      join(dir, 'mutation-ratchet.integration.json'),
+      readFileSync(join(dir, 'mutation-ratchet.json'), 'utf8'),
+    )
+    const missing = 'f'.repeat(40)
+    const integration = [
+      'check',
+      '--static',
+      '--config',
+      'stryker.integration.config.mjs',
+      '--ratchet',
+      'mutation-ratchet.integration.json',
+    ]
+
+    const unit = await cliIn(dir, ['check', '--static'], { GATE_BASE: missing })
+    const other = await cliIn(dir, integration, { GATE_BASE: missing })
+    const otherWithout = await cliIn(dir, integration)
+
+    expect(unit.code, unit.output).toBe(2)
+    expect(unit.output).toContain(`--base ${missing} does not resolve`)
+    expect(other.code, other.output).toBe(0)
+    expect(other.output).not.toContain(missing)
+    // Node's own warnings carry the process id: the script's lines are compared.
+    const said = (output: string): string[] =>
+      output.split('\n').filter((l) => !/^\(node:\d+\)|^\(Use `node /.test(l))
+    expect({ code: other.code, said: said(other.output) }).toEqual({
+      code: otherWithout.code,
+      said: said(otherWithout.output),
+    })
   })
 })

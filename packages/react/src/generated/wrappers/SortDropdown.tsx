@@ -38,36 +38,6 @@ export const SortDropdown = /* @__PURE__ */ forwardRef<HTMLElement, SortDropdown
 
   useEffect(() => {
     const el = ref.current
-    if (!el) return
-    if (props.sortKeys !== undefined) {
-      el.setAttribute('sort-keys', JSON.stringify(props.sortKeys))
-    } else {
-      el.removeAttribute('sort-keys')
-    }
-  }, [props.sortKeys])
-
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (props.value !== undefined) {
-      el.setAttribute('value', String(props.value))
-    } else {
-      el.removeAttribute('value')
-    }
-  }, [props.value])
-
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (props.defaultSort !== undefined) {
-      el.setAttribute('default-sort', String(props.defaultSort))
-    } else {
-      el.removeAttribute('default-sort')
-    }
-  }, [props.defaultSort])
-
-  useEffect(() => {
-    const el = ref.current
     if (!el || !props.onSortChange) return
     const handler = props.onSortChange as EventListener
     el.addEventListener('nymbal:sort:changed', handler)
@@ -77,7 +47,7 @@ export const SortDropdown = /* @__PURE__ */ forwardRef<HTMLElement, SortDropdown
     useDefine(NymbalSortDropdown)
 
     return (
-      <nymbal-sort-dropdown ref={ref as React.Ref<HTMLElement>} sort-keys={props.sortKeys === undefined ? undefined : JSON.stringify(props.sortKeys)} value={props.value} default-sort={props.defaultSort} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
+      <nymbal-sort-dropdown ref={ref as React.Ref<HTMLElement>} {...{ 'sort-keys': props.sortKeys === undefined ? undefined : JSON.stringify(props.sortKeys), 'VALUE': props.value, 'default-sort': props.defaultSort }} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
         // The server render goes on the tag itself: a full load parses its template into the shadow root, which React
         // does not see, and a soft navigation's innerHTML leaves it for the element to upgrade.
         dangerouslySetInnerHTML={props.serverHtml === undefined ? undefined : { __html: props.serverHtml }}

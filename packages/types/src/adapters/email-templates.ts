@@ -28,7 +28,8 @@ const TEMPLATES: Record<string, { subject: string; body: string }> = {
   },
   'order-shipped': {
     subject: 'Order {{orderNumber}} is on its way',
-    body: `Hi {{customerName}},\n\nYour order {{orderNumber}} has shipped via {{carrier}}.\nTracking: {{trackingNumber}}`,
+    // `trackingLink` and `orderLink` are whole paragraphs, absent for an unknown carrier or a store with no URL.
+    body: `Hi {{customerName}},\n\nYour order {{orderNumber}} has shipped via {{carrier}}.\nTracking: {{trackingNumber}}{{trackingLink}}\n\nIn this parcel:\n{{itemsList}}{{orderLink}}`,
   },
   welcome: {
     subject: 'Welcome to {{storeName}}',

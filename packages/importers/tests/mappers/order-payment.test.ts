@@ -97,6 +97,7 @@ function asOrder(mapped: ReturnType<typeof mapOrder>): Order {
     capturedAt: null,
     refundedMinor: mapped.refundedMinor ?? 0,
     captureMethod: mapped.captureMethod ?? null,
+    source: 'import',
     createdAt: mapped.createdAt.toISOString(),
     updatedAt: mapped.createdAt.toISOString(),
   }

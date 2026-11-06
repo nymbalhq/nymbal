@@ -1,4 +1,4 @@
-// Reads: scripts/gate.ts, scripts/sentinels.ts, scripts/stack.ts, scripts/test-census.ts
+// Reads: scripts/gate.ts, scripts/mutation-ratchet.ts, scripts/sentinels.ts, scripts/stack.ts, scripts/test-census.ts
 import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import fc from 'fast-check'
@@ -19,7 +19,9 @@ import {
 // `files` entry was added or changed. When the ratchet differs from the base, the gate adds those files to the files
 // Stryker mutates, and the stryker step drops their mutants from reports/mutation/stryker-incremental.json before
 // Stryker runs, so they are measured fresh while every other file keeps its cached statuses. With identical ratchets
-// the plan is unchanged.
+// the plan is unchanged. A moved entry the cached report already scores at or above keeps its statuses: a ratchet raised
+// from a full run moved 31 entries, and dropping all their statuses measured 3,931 of 4,657 mutants cold, past the
+// mutation job's 45 minutes, on every push until a nightly reseeded the cache.
 // The CLI runs in a scratch repository; `pnpm` is a stand-in that logs its calls and, when called to run Stryker,
 // copies the incremental report as Stryker would find it. `pnpm exec tsx` goes to the real tsx.
 
@@ -108,11 +110,11 @@ const INCREMENTAL_REPORT: Incremental = {
   },
 }
 
-function strykerRepo(): Scratch {
+function strykerRepo(base: Record<string, number> = { [A]: 50, [B]: 60 }): Scratch {
   const repo = scratchRepo({
     'package.json': GATE_PACKAGE_JSON,
     'stryker.config.mjs': STRYKER_CONFIG,
-    'mutation-ratchet.json': ratchet({ [A]: 50, [B]: 60 }),
+    'mutation-ratchet.json': ratchet(base),
     'packages/platform/package.json': JSON.stringify({ name: '@nymbalhq/platform' }),
     [A]: 'export const a = 1\n',
     [B]: 'export const b = 1\n',
@@ -158,6 +160,35 @@ describe('AC-2: the stryker step after a ratchet change', () => {
     if (typeof report === 'string') return
     expect(report.files[A]?.mutants ?? []).toEqual([])
     expect(report.files[B]).toEqual(INCREMENTAL_REPORT.files[B])
+  })
+
+  it("a raised entry the cached report already meets keeps its statuses; one the report falls short of is measured fresh", async () => {
+    const repo = strykerRepo({ [A]: 50, [B]: 30 })
+    const killedA: Incremental = {
+      files: {
+        ...INCREMENTAL_REPORT.files,
+        [A]: {
+          language: 'typescript',
+          source: 'export const a = 1\n',
+          mutants: mutants('a').map((m) => ({ ...m, status: 'Killed' })),
+        },
+      },
+    }
+    write(repo.root, INCREMENTAL, `${JSON.stringify(killedA)}\n`)
+    // A's report scores 100 and B's 33.33. B's 33.33 sits between its base entry (30) and its head entry (90), so only
+    // a comparison against the head's entries measures B fresh; one against the base's would keep B's statuses.
+    write(
+      repo.root,
+      'mutation-ratchet.json',
+      ratchet({ [A]: 100, [B]: 90 }, '2026-10-19T09:00:00.000Z'),
+    )
+    const run = await gateCli(repo, ARGS)
+    expect(mutateArgs(repo), run.output).toEqual([[A, B]])
+    const report = atRun(repo)
+    expect(report, run.output).not.toBe('absent')
+    if (typeof report === 'string') return
+    expect(report.files[A]).toEqual(killedA.files[A])
+    expect(report.files[B]?.mutants ?? []).toEqual([])
   })
 
   it("AC-2: with identical ratchets, a change to A's source mutates A alone and leaves the report as the cache restored it", async () => {

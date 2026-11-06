@@ -216,7 +216,22 @@ test.describe('Browse catalog', () => {
     expect(facets.length > 0, JSON.stringify(caps.search)).toBe(
       caps.search.capabilities.includes('facet'),
     )
-    await page.waitForLoadState('networkidle')
-    await expect.poll(() => shownFilter(page), { timeout: 10000 }).toEqual(expectedFilter(facets))
+    if (facets.length === 0) {
+      // Nothing to poll for: read once every filter host the page carries is defined and has rendered, so a filter
+      // that renders late is still seen. Both templates server-render the host, and Next defines it only when it mounts.
+      await page.evaluate(async () => {
+        for (const host of Array.from(document.querySelectorAll('nymbal-product-filter'))) {
+          await customElements.whenDefined(host.localName)
+          const element = host as unknown as { updateComplete: Promise<boolean> }
+          // `false`: another update was requested during the last one, so wait for that one too.
+          while (!(await element.updateComplete));
+        }
+      })
+      expect(await shownFilter(page)).toEqual([])
+      return
+    }
+    // The filter renders from the listing response openListing awaited: polled until it shows what that response
+    // carried, with no wait for the network to go quiet (a dev server's chunks can keep it busy past any budget).
+    await expect.poll(() => shownFilter(page), { timeout: 15000 }).toEqual(expectedFilter(facets))
   })
 })

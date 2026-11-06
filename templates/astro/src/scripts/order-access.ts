@@ -1,4 +1,5 @@
 import { NymbalApiError } from '@nymbalhq/sdk/core'
+import '@nymbalhq/sdk/ns/auth'
 import type { ShopperAddress, ShopperOrder } from '@nymbalhq/types'
 import { client } from '../lib/client.js'
 import { isPaid, orderHeading } from '../lib/order-status.js'
@@ -7,7 +8,7 @@ import { submitOnce } from '../lib/submit-once.js'
 // The order page's two forms, each sent once per click from the browser. The expired key's email prompt reads the
 // order with the email in a header and shows it on this page: read by the storefront's server instead, every shopper's
 // tries would count against the API's per-address limit as one. "Send me my order link" asks the API, which answers
-// the same whatever matched.
+// the same whatever matched. Without this script the forms post to the page, whose server answers them.
 
 const byId = (id: string): HTMLElement | null => document.getElementById(id)
 
@@ -152,3 +153,29 @@ submitOnce(linkForm, async () => {
   const sent = document.querySelector<HTMLElement>('[data-testid="order-link-sent"]')
   if (sent) sent.hidden = false
 })
+
+/**
+ * A signed-in shopper who opens their own order here without a working key is sent to it in their account. The
+ * session is restored first, which refreshes a lapsed token: the API reads a lapsed bearer as a guest's. Only the
+ * owner's read answering moves the page, so anyone else's order stays this page's not-found state and the page says
+ * nothing about whether it exists. Replacing the entry keeps Back from returning here.
+ */
+async function sendOwnerToAccount(orderNumber: string): Promise<void> {
+  await client.auth.restore()
+  if (!client.auth.getState().isAuthenticated) return
+  try {
+    await client.customer.orders.get(orderNumber)
+  } catch (err) {
+    if (err instanceof NymbalApiError && err.status === 404) return
+    throw err
+  }
+  window.location.replace(`/account/orders/${encodeURIComponent(orderNumber)}`)
+}
+
+// The not-found state is on the page, shown or behind the expired key's prompt: the key did not open the order.
+const notFound = byId('order-not-found')
+if (notFound?.dataset.orderNumber) {
+  sendOwnerToAccount(notFound.dataset.orderNumber).catch((err: unknown) => {
+    console.error('The signed-in order check failed', err)
+  })
+}

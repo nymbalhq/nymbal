@@ -1,0 +1,385 @@
+[
+  {
+    "id": 15,
+    "name": "Uncategorized",
+    "slug": "uncategorized",
+    "parent": 0,
+    "description": "",
+    "display": "default",
+    "image": null,
+    "menu_order": 0,
+    "count": 0,
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories/15",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories"
+        }
+      ]
+    }
+  },
+  {
+    "id": 16,
+    "name": "Kitchen",
+    "slug": "kitchen",
+    "parent": 0,
+    "description": "Cooking and serving",
+    "display": "default",
+    "image": null,
+    "menu_order": 0,
+    "count": 41,
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories/16",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories"
+        }
+      ]
+    }
+  },
+  {
+    "id": 17,
+    "name": "Cookware",
+    "slug": "cookware",
+    "parent": 16,
+    "description": "",
+    "display": "default",
+    "image": null,
+    "menu_order": 0,
+    "count": 21,
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories/17",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories"
+        }
+      ],
+      "up": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories/16"
+        }
+      ]
+    }
+  },
+  {
+    "id": 18,
+    "name": "Pans",
+    "slug": "pans",
+    "parent": 17,
+    "description": "",
+    "display": "default",
+    "image": null,
+    "menu_order": 0,
+    "count": 20,
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories/18",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories"
+        }
+      ],
+      "up": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories/17"
+        }
+      ]
+    }
+  },
+  {
+    "id": 19,
+    "name": "Tableware",
+    "slug": "tableware",
+    "parent": 16,
+    "description": "",
+    "display": "default",
+    "image": null,
+    "menu_order": 0,
+    "count": 20,
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories/19",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories"
+        }
+      ],
+      "up": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories/16"
+        }
+      ]
+    }
+  },
+  {
+    "id": 20,
+    "name": "Garden",
+    "slug": "garden",
+    "parent": 0,
+    "description": "",
+    "display": "default",
+    "image": null,
+    "menu_order": 0,
+    "count": 41,
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories/20",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories"
+        }
+      ]
+    }
+  },
+  {
+    "id": 21,
+    "name": "Tools",
+    "slug": "garden-tools",
+    "parent": 20,
+    "description": "",
+    "display": "default",
+    "image": null,
+    "menu_order": 0,
+    "count": 21,
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories/21",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories"
+        }
+      ],
+      "up": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories/20"
+        }
+      ]
+    }
+  },
+  {
+    "id": 22,
+    "name": "Pruners",
+    "slug": "pruners",
+    "parent": 21,
+    "description": "Secateurs and loppers",
+    "display": "default",
+    "image": null,
+    "menu_order": 0,
+    "count": 20,
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories/22",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories"
+        }
+      ],
+      "up": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories/21"
+        }
+      ]
+    }
+  },
+  {
+    "id": 23,
+    "name": "Planters",
+    "slug": "planters",
+    "parent": 20,
+    "description": "",
+    "display": "default",
+    "image": null,
+    "menu_order": 0,
+    "count": 20,
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories/23",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories"
+        }
+      ],
+      "up": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories/20"
+        }
+      ]
+    }
+  },
+  {
+    "id": 24,
+    "name": "Stationery",
+    "slug": "stationery",
+    "parent": 0,
+    "description": "",
+    "display": "default",
+    "image": null,
+    "menu_order": 0,
+    "count": 40,
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories/24",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories"
+        }
+      ]
+    }
+  },
+  {
+    "id": 25,
+    "name": "Paper",
+    "slug": "paper",
+    "parent": 24,
+    "description": "",
+    "display": "default",
+    "image": null,
+    "menu_order": 0,
+    "count": 20,
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories/25",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories"
+        }
+      ],
+      "up": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories/24"
+        }
+      ]
+    }
+  },
+  {
+    "id": 26,
+    "name": "Notebooks",
+    "slug": "notebooks",
+    "parent": 25,
+    "description": "",
+    "display": "default",
+    "image": null,
+    "menu_order": 0,
+    "count": 20,
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories/26",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories"
+        }
+      ],
+      "up": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories/25"
+        }
+      ]
+    }
+  },
+  {
+    "id": 27,
+    "name": "Pens",
+    "slug": "pens",
+    "parent": 24,
+    "description": "",
+    "display": "default",
+    "image": null,
+    "menu_order": 0,
+    "count": 20,
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories/27",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories"
+        }
+      ],
+      "up": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/categories/24"
+        }
+      ]
+    }
+  }
+]

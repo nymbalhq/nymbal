@@ -3,7 +3,7 @@ import type {
   Cart,
   Customer,
   CustomerAddress,
-  ReviewsResult,
+  PublicReviewsResult,
   ReviewResult,
   ShopperOrder,
   StoreCapabilities,
@@ -76,7 +76,7 @@ export interface CommerceAdapter {
     getForProduct(
       productId: string,
       params?: { limit?: number; cursor?: string },
-    ): Promise<ReviewsResult>
+    ): Promise<PublicReviewsResult>
     submit(review: {
       productId: string
       rating: number

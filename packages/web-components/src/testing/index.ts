@@ -78,6 +78,7 @@ export function createMockClient(): NymbalClient {
       refreshToken: async () => {},
       updateProfile: async () => {},
       loadProfile: async () => {},
+      restore: async () => {},
     },
     checkout: {
       ...checkoutStore,

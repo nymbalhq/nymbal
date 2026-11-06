@@ -1,0 +1,371 @@
+{
+  "store": "store-c-eur",
+  "recordedAt": "2026-11-04",
+  "versions": {
+    "wordpress": "7.1.4",
+    "woocommerce": "11.2.1",
+    "php": "8.3.36",
+    "database": "12.3.3-MariaDB-ubu2404",
+    "wpEnv": "@wordpress/env 12.1.0"
+  },
+  "wpEnvConfig": {
+    "core": "https://wordpress.org/wordpress-7.1.4.zip",
+    "plugins": ["https://downloads.wordpress.org/plugin/woocommerce.11.2.1.zip"],
+    "port": 8888,
+    "testsEnvironment": false,
+    "config": {
+      "WP_DEBUG": false
+    }
+  },
+  "homeUrl": "http://localhost:8888",
+  "settings": {
+    "woocommerce_currency": "EUR",
+    "woocommerce_currency_pos": "right_space",
+    "woocommerce_price_thousand_sep": ".",
+    "woocommerce_price_decimal_sep": ",",
+    "woocommerce_price_num_decimals": "2",
+    "woocommerce_weight_unit": "kg",
+    "woocommerce_dimension_unit": "cm",
+    "woocommerce_notify_low_stock_amount": "2",
+    "woocommerce_default_country": "NL",
+    "woocommerce_calc_taxes": "yes",
+    "woocommerce_prices_include_tax": "no",
+    "woocommerce_tax_based_on": "shipping",
+    "woocommerce_manage_stock": "yes"
+  },
+  "hpos": {
+    "enabled": true,
+    "by": "wp wc hpos enable, before any order existed",
+    "recorded": "system_status.json settings.HPOS_enabled true, HPOS_sync_enabled false, order_datastore OrdersTableDataStore"
+  },
+  "build": {
+    "run": "On the host, in an empty directory holding wpEnvConfig as .wp-env.json: the 'host' commands. Then the 'cli' commands in order in one bash shell inside the cli container (npx @wordpress/env@12.1.0 run cli -- bash, or the lines saved as a file and run with bash); later commands use the ids earlier ones print.",
+    "host": ["npx @wordpress/env@12.1.0 start"],
+    "cli": [
+      "set -euo pipefail",
+      "WP_APP_PASSWORD=$(wp user application-password create admin store-builder --porcelain)",
+      "api() { curl -sS --fail-with-body -u \"admin:$WP_APP_PASSWORD\" -H 'Host: localhost:8888' -H 'Content-Type: application/json' -X \"$1\" \"http://wordpress/wp-json/wc/v3$2\" ${3:+--data \"$3\"}; }",
+      "id() { php -r 'echo json_decode(stream_get_contents(STDIN))->id;'; }",
+      "wp option update woocommerce_currency EUR",
+      "wp option update woocommerce_currency_pos right_space",
+      "wp option update woocommerce_price_thousand_sep .",
+      "wp option update woocommerce_price_decimal_sep ,",
+      "wp option update woocommerce_price_num_decimals 2",
+      "wp option update woocommerce_weight_unit kg",
+      "wp option update woocommerce_dimension_unit cm",
+      "wp option update woocommerce_notify_low_stock_amount 2",
+      "wp option update woocommerce_default_country NL",
+      "wp option update woocommerce_calc_taxes yes",
+      "wp option update woocommerce_prices_include_tax no",
+      "wp option update woocommerce_tax_based_on shipping",
+      "wp option update woocommerce_manage_stock yes",
+      "wp wc hpos enable",
+      "api POST /taxes '{\"country\":\"NL\",\"rate\":\"21.0000\",\"name\":\"BTW\",\"priority\":1,\"compound\":false,\"shipping\":true,\"class\":\"standard\"}' | id",
+      "api POST /taxes '{\"country\":\"NL\",\"rate\":\"9.0000\",\"name\":\"BTW laag\",\"priority\":1,\"compound\":false,\"shipping\":true,\"class\":\"reduced-rate\"}' | id",
+      "api POST /taxes '{\"country\":\"BE\",\"rate\":\"21.0000\",\"name\":\"TVA\",\"priority\":1,\"compound\":false,\"shipping\":false,\"class\":\"standard\"}' | id",
+      "ZONE=$(api POST /shipping/zones '{\"name\":\"Benelux\"}' | id)",
+      "api PUT /shipping/zones/$ZONE/locations '[{\"code\":\"NL\",\"type\":\"country\"},{\"code\":\"BE\",\"type\":\"country\"}]' > /dev/null",
+      "api POST /shipping/zones/$ZONE/methods '{\"method_id\":\"flat_rate\",\"settings\":{\"title\":\"Flat rate\",\"cost\":\"4.95\",\"tax_status\":\"taxable\"}}' | id",
+      "CAT_KITCHEN=$(wp wc product_cat create --name=Kitchen --slug=kitchen --description='Cooking and serving' --user=admin --porcelain)",
+      "CAT_COOKWARE=$(wp wc product_cat create --name=Cookware --slug=cookware --parent=$CAT_KITCHEN --user=admin --porcelain)",
+      "CAT_PANS=$(wp wc product_cat create --name=Pans --slug=pans --parent=$CAT_COOKWARE --user=admin --porcelain)",
+      "CAT_TABLEWARE=$(wp wc product_cat create --name=Tableware --slug=tableware --parent=$CAT_KITCHEN --user=admin --porcelain)",
+      "CAT_GARDEN=$(wp wc product_cat create --name=Garden --slug=garden --user=admin --porcelain)",
+      "CAT_TOOLS=$(wp wc product_cat create --name=Tools --slug=garden-tools --parent=$CAT_GARDEN --user=admin --porcelain)",
+      "CAT_PRUNERS=$(wp wc product_cat create --name=Pruners --slug=pruners --parent=$CAT_TOOLS --description='Secateurs and loppers' --user=admin --porcelain)",
+      "CAT_PLANTERS=$(wp wc product_cat create --name=Planters --slug=planters --parent=$CAT_GARDEN --user=admin --porcelain)",
+      "CAT_STATIONERY=$(wp wc product_cat create --name=Stationery --slug=stationery --user=admin --porcelain)",
+      "CAT_PAPER=$(wp wc product_cat create --name=Paper --slug=paper --parent=$CAT_STATIONERY --user=admin --porcelain)",
+      "CAT_NOTEBOOKS=$(wp wc product_cat create --name=Notebooks --slug=notebooks --parent=$CAT_PAPER --user=admin --porcelain)",
+      "CAT_PENS=$(wp wc product_cat create --name=Pens --slug=pens --parent=$CAT_STATIONERY --user=admin --porcelain)",
+      "TAG_NEW=$(wp wc product_tag create --name=New --slug=new --user=admin --porcelain)",
+      "TAG_GIFT=$(wp wc product_tag create --name=Gift --slug=gift --user=admin --porcelain)",
+      "ATTR_COLOUR=$(wp wc product_attribute create --name=Colour --slug=colour --user=admin --porcelain)",
+      "ATTR_SIZE=$(wp wc product_attribute create --name=Size --slug=size --user=admin --porcelain)",
+      "for t in Red Blue Green; do wp wc product_attribute_term create $ATTR_COLOUR --name=$t --user=admin --porcelain; done",
+      "for t in S M L; do wp wc product_attribute_term create $ATTR_SIZE --name=$t --user=admin --porcelain; done",
+      "php -r 'foreach ([\"red\"=>[200,40,40],\"blue\"=>[40,70,200],\"green\"=>[40,160,80]] as $n=>$c) { $i=imagecreatetruecolor(64,64); imagefill($i,0,0,imagecolorallocate($i,$c[0],$c[1],$c[2])); imagepng($i,\"/tmp/swatch-$n.png\"); }'",
+      "IMG_RED=$(wp media import /tmp/swatch-red.png --title='Red swatch' --user=admin --porcelain)",
+      "IMG_BLUE=$(wp media import /tmp/swatch-blue.png --title='Blue swatch' --user=admin --porcelain)",
+      "IMG_GREEN=$(wp media import /tmp/swatch-green.png --title='Green swatch' --user=admin --porcelain)",
+      "php -r '[, $cats, $imgs, $tags] = $argv; $cats = explode(\",\", $cats); $imgs = explode(\",\", $imgs); $tags = explode(\",\", $tags); $adj = [\"Oak\",\"Slate\",\"Linen\",\"Copper\",\"Moss\",\"Amber\",\"Ivory\",\"Cobalt\",\"Sage\",\"Rust\",\"Pine\",\"Coral\",\"Flint\",\"Heather\",\"Juniper\",\"Maple\",\"Pebble\",\"Saffron\",\"Teal\",\"Willow\"]; $noun = [\"Pan\",\"Plate\",\"Pruner\",\"Planter\",\"Notebook\",\"Pen\"]; for ($i = 1; $i <= 120; $i++) { $c = ($i - 1) % 6; $name = $adj[intdiv($i - 1, 6)] . \" \" . $noun[$c]; $cents = (4 + ($i * 37) % 80) * 100 + ($i * 25) % 100; $p = [\"name\" => $name, \"slug\" => strtolower(str_replace(\" \", \"-\", $name)), \"type\" => \"simple\", \"status\" => $i == 60 ? \"draft\" : \"publish\", \"sku\" => sprintf(\"EU-%03d\", $i), \"description\" => \"<p>\" . $name . \" from the synthetic catalogue.</p>\", \"short_description\" => $name . \".\", \"regular_price\" => sprintf(\"%d.%02d\", intdiv($cents, 100), $cents % 100), \"manage_stock\" => true, \"stock_quantity\" => ($i * 7) % 45, \"weight\" => sprintf(\"%.2f\", 0.1 + ($i % 9) * 0.15), \"dimensions\" => [\"length\" => (string) (10 + $i % 30), \"width\" => (string) (5 + $i % 20), \"height\" => (string) (1 + $i % 10)], \"categories\" => [[\"id\" => (int) $cats[$c]]]]; if ($i % 10 == 0) { $s = intdiv($cents * 8, 10); $p[\"sale_price\"] = sprintf(\"%d.%02d\", intdiv($s, 100), $s % 100); } if ($c == 4) $p[\"tax_class\"] = \"reduced-rate\"; if ($i % 20 == 1) $p[\"images\"] = [[\"id\" => (int) $imgs[$i % count($imgs)]]]; if ($i % 25 == 0) $p[\"tags\"] = [[\"id\" => (int) $tags[$i % count($tags)]]]; echo json_encode($p, JSON_UNESCAPED_SLASHES), \"\\n\"; }' \"$CAT_PANS,$CAT_TABLEWARE,$CAT_PRUNERS,$CAT_PLANTERS,$CAT_NOTEBOOKS,$CAT_PENS\" \"$IMG_RED,$IMG_BLUE,$IMG_GREEN\" \"$TAG_NEW,$TAG_GIFT\" > /tmp/products.jsonl",
+      "PID=(); while IFS= read -r BODY; do PID+=(\"$(api POST /products \"$BODY\" | id)\"); done < /tmp/products.jsonl; echo \"${#PID[@]} simple products, ids ${PID[0]}..${PID[119]}\"",
+      "P_KETTLE=$(api POST /products '{\"name\":\"Enamel Kettle\",\"slug\":\"enamel-kettle\",\"type\":\"variable\",\"sku\":\"KETTLE\",\"description\":\"<p>A stovetop kettle in three colours.</p>\",\"manage_stock\":false,\"weight\":\"0.90\",\"dimensions\":{\"length\":\"22\",\"width\":\"18\",\"height\":\"20\"},\"categories\":[{\"id\":'$CAT_COOKWARE'}],\"tags\":[{\"id\":'$TAG_NEW'}],\"images\":[{\"id\":'$IMG_RED'}],\"attributes\":[{\"id\":'$ATTR_COLOUR',\"options\":[\"Red\",\"Blue\",\"Green\"],\"visible\":true,\"variation\":true},{\"name\":\"Capacity\",\"options\":[\"1.5 l\"],\"visible\":true,\"variation\":false}]}' | id)",
+      "V_KETTLE_RED=$(api POST /products/$P_KETTLE/variations '{\"sku\":\"KETTLE-RED\",\"regular_price\":\"39.00\",\"manage_stock\":true,\"stock_quantity\":8,\"image\":{\"id\":'$IMG_RED'},\"attributes\":[{\"id\":'$ATTR_COLOUR',\"option\":\"Red\"}]}' | id)",
+      "V_KETTLE_BLUE=$(api POST /products/$P_KETTLE/variations '{\"sku\":\"KETTLE-BLUE\",\"regular_price\":\"39.00\",\"sale_price\":\"31.20\",\"manage_stock\":true,\"stock_quantity\":5,\"image\":{\"id\":'$IMG_BLUE'},\"attributes\":[{\"id\":'$ATTR_COLOUR',\"option\":\"Blue\"}]}' | id)",
+      "V_KETTLE_GREEN=$(api POST /products/$P_KETTLE/variations '{\"sku\":\"KETTLE-GREEN\",\"regular_price\":\"41.00\",\"manage_stock\":true,\"stock_quantity\":0,\"attributes\":[{\"id\":'$ATTR_COLOUR',\"option\":\"Green\"}]}' | id)",
+      "P_GLOVES=$(api POST /products '{\"name\":\"Garden Gloves\",\"slug\":\"garden-gloves\",\"type\":\"variable\",\"sku\":\"GLOVES\",\"manage_stock\":true,\"stock_quantity\":30,\"weight\":\"0.15\",\"categories\":[{\"id\":'$CAT_TOOLS'}],\"images\":[{\"id\":'$IMG_GREEN'}],\"attributes\":[{\"id\":'$ATTR_SIZE',\"options\":[\"S\",\"M\",\"L\"],\"visible\":true,\"variation\":true}]}' | id)",
+      "V_GLOVES_S=$(api POST /products/$P_GLOVES/variations '{\"sku\":\"GLOVES-S\",\"regular_price\":\"12.50\",\"attributes\":[{\"id\":'$ATTR_SIZE',\"option\":\"S\"}]}' | id)",
+      "V_GLOVES_M=$(api POST /products/$P_GLOVES/variations '{\"sku\":\"GLOVES-M\",\"regular_price\":\"12.50\",\"attributes\":[{\"id\":'$ATTR_SIZE',\"option\":\"M\"}]}' | id)",
+      "V_GLOVES_L=$(api POST /products/$P_GLOVES/variations '{\"sku\":\"GLOVES-L\",\"regular_price\":\"13.50\",\"attributes\":[{\"id\":'$ATTR_SIZE',\"option\":\"L\"}]}' | id)",
+      "P_FOUNTAIN=$(api POST /products '{\"name\":\"Fountain Pen\",\"slug\":\"fountain-pen\",\"type\":\"variable\",\"sku\":\"FOUNTAIN\",\"manage_stock\":false,\"weight\":\"0.03\",\"categories\":[{\"id\":'$CAT_PENS'}],\"tags\":[{\"id\":'$TAG_GIFT'}],\"attributes\":[{\"id\":'$ATTR_COLOUR',\"options\":[\"Red\",\"Blue\"],\"visible\":true,\"variation\":true}]}' | id)",
+      "V_FOUNTAIN_RED=$(api POST /products/$P_FOUNTAIN/variations '{\"sku\":\"FOUNTAIN-RED\",\"regular_price\":\"24.95\",\"manage_stock\":true,\"stock_quantity\":15,\"attributes\":[{\"id\":'$ATTR_COLOUR',\"option\":\"Red\"}]}' | id)",
+      "V_FOUNTAIN_BLUE=$(api POST /products/$P_FOUNTAIN/variations '{\"sku\":\"FOUNTAIN-BLUE\",\"regular_price\":\"24.95\",\"manage_stock\":true,\"stock_quantity\":12,\"attributes\":[{\"id\":'$ATTR_COLOUR',\"option\":\"Blue\"}]}' | id)",
+      "A_ANNA='\"first_name\":\"Anna\",\"last_name\":\"Visser\",\"address_1\":\"Voorbeeldstraat 1\",\"city\":\"Amsterdam\",\"postcode\":\"1011 AA\",\"country\":\"NL\"'",
+      "A_DAAN='\"first_name\":\"Daan\",\"last_name\":\"Bakker\",\"address_1\":\"Proefweg 12\",\"city\":\"Utrecht\",\"postcode\":\"3511 AB\",\"country\":\"NL\"'",
+      "A_LOTTE='\"first_name\":\"Lotte\",\"last_name\":\"Peeters\",\"address_1\":\"Voorbeeldlaan 3\",\"city\":\"Antwerpen\",\"postcode\":\"2000\",\"country\":\"BE\"'",
+      "A_JULIEN='\"first_name\":\"Julien\",\"last_name\":\"Dubois\",\"address_1\":\"Rue Exemple 7\",\"city\":\"Bruxelles\",\"postcode\":\"1000\",\"country\":\"BE\"'",
+      "A_LENA='\"first_name\":\"Lena\",\"last_name\":\"Schmidt\",\"address_1\":\"Beispielstraße 5\",\"city\":\"Berlin\",\"postcode\":\"10115\",\"country\":\"DE\"'",
+      "A_SEM='\"first_name\":\"Sem\",\"last_name\":\"de Jong\",\"address_1\":\"Testkade 40\",\"address_2\":\"2e verdieping\",\"city\":\"Groningen\",\"postcode\":\"9711 AC\",\"country\":\"NL\"'",
+      "A_NOOR='\"first_name\":\"Noor\",\"last_name\":\"Janssen\",\"address_1\":\"Proeflaan 8\",\"city\":\"Rotterdam\",\"postcode\":\"3011 AD\",\"country\":\"NL\"'",
+      "A_EMMA='\"first_name\":\"Emma\",\"last_name\":\"Claes\",\"address_1\":\"Voorbeeldplein 2\",\"city\":\"Gent\",\"postcode\":\"9000\",\"country\":\"BE\"'",
+      "C_ANNA=$(api POST /customers '{\"email\":\"anna.visser@example.com\",\"first_name\":\"Anna\",\"last_name\":\"Visser\",\"billing\":{'\"$A_ANNA\"',\"email\":\"anna.visser@example.com\"},\"shipping\":{'\"$A_ANNA\"'}}' | id)",
+      "C_DAAN=$(api POST /customers '{\"email\":\"daan.bakker@example.com\",\"first_name\":\"Daan\",\"last_name\":\"Bakker\",\"billing\":{'\"$A_DAAN\"',\"email\":\"daan.bakker@example.com\"},\"shipping\":{'\"$A_DAAN\"'}}' | id)",
+      "C_LOTTE=$(api POST /customers '{\"email\":\"lotte.peeters@example.com\",\"first_name\":\"Lotte\",\"last_name\":\"Peeters\",\"billing\":{'\"$A_LOTTE\"',\"email\":\"lotte.peeters@example.com\"},\"shipping\":{'\"$A_LOTTE\"'}}' | id)",
+      "C_JULIEN=$(api POST /customers '{\"email\":\"julien.dubois@example.com\",\"first_name\":\"Julien\",\"last_name\":\"Dubois\",\"billing\":{'\"$A_JULIEN\"',\"email\":\"julien.dubois@example.com\"},\"shipping\":{'\"$A_JULIEN\"'}}' | id)",
+      "C_LENA=$(api POST /customers '{\"email\":\"lena.schmidt@example.com\",\"first_name\":\"Lena\",\"last_name\":\"Schmidt\",\"billing\":{'\"$A_LENA\"',\"email\":\"lena.schmidt@example.com\"},\"shipping\":{'\"$A_LENA\"'}}' | id)",
+      "C_SEM=$(api POST /customers '{\"email\":\"sem.dejong@example.com\",\"first_name\":\"Sem\",\"last_name\":\"de Jong\",\"billing\":{'\"$A_SEM\"',\"company\":\"De Jong Ontwerp\",\"email\":\"sem.dejong@example.com\"},\"shipping\":{'\"$A_SEM\"'}}' | id)",
+      "PAID='\"payment_method\":\"bacs\",\"payment_method_title\":\"Direct bank transfer\"'",
+      "SHIP() { echo '[{\"method_id\":\"flat_rate\",\"method_title\":\"Flat rate\",\"total\":\"'$1'\"}]'; }",
+      "O1=$(api POST /orders '{'\"$PAID\"',\"set_paid\":true,\"customer_id\":'$C_ANNA',\"billing\":{'\"$A_ANNA\"',\"email\":\"anna.visser@example.com\"},\"shipping\":{'\"$A_ANNA\"'},\"line_items\":[{\"product_id\":'${PID[0]}',\"quantity\":1},{\"product_id\":'${PID[1]}',\"quantity\":2}],\"shipping_lines\":'\"$(SHIP 4.95)\"'}' | id)",
+      "api PUT /orders/$O1 '{\"status\":\"completed\"}' | id",
+      "O2=$(api POST /orders '{'\"$PAID\"',\"set_paid\":true,\"customer_id\":'$C_ANNA',\"billing\":{'\"$A_ANNA\"',\"email\":\"anna.visser@example.com\"},\"shipping\":{'\"$A_ANNA\"'},\"line_items\":[{\"product_id\":'${PID[4]}',\"quantity\":3}],\"shipping_lines\":'\"$(SHIP 4.95)\"',\"customer_note\":\"Please leave it with the neighbours.\"}' | id)",
+      "O3=$(api POST /orders '{'\"$PAID\"',\"set_paid\":true,\"customer_id\":'$C_DAAN',\"billing\":{'\"$A_DAAN\"',\"email\":\"daan.bakker@example.com\"},\"shipping\":{'\"$A_DAAN\"'},\"line_items\":[{\"product_id\":'$P_KETTLE',\"variation_id\":'$V_KETTLE_BLUE',\"quantity\":1},{\"product_id\":'${PID[9]}',\"quantity\":1}],\"shipping_lines\":'\"$(SHIP 0.00)\"'}' | id)",
+      "api PUT /orders/$O3 '{\"status\":\"completed\"}' | id",
+      "O4=$(api POST /orders '{'\"$PAID\"',\"set_paid\":true,\"customer_id\":'$C_LOTTE',\"billing\":{'\"$A_LOTTE\"',\"email\":\"lotte.peeters@example.com\"},\"shipping\":{'\"$A_LOTTE\"'},\"line_items\":[{\"product_id\":'${PID[2]}',\"quantity\":1},{\"product_id\":'$P_GLOVES',\"variation_id\":'$V_GLOVES_M',\"quantity\":2}],\"shipping_lines\":'\"$(SHIP 7.50)\"'}' | id)",
+      "api PUT /orders/$O4 '{\"status\":\"completed\"}' | id",
+      "O5=$(api POST /orders '{'\"$PAID\"',\"status\":\"on-hold\",\"customer_id\":'$C_JULIEN',\"billing\":{'\"$A_JULIEN\"',\"email\":\"julien.dubois@example.com\"},\"shipping\":{'\"$A_JULIEN\"'},\"line_items\":[{\"product_id\":'${PID[3]}',\"quantity\":1}],\"shipping_lines\":'\"$(SHIP 7.50)\"'}' | id)",
+      "O6=$(api POST /orders '{'\"$PAID\"',\"set_paid\":true,\"customer_id\":'$C_LENA',\"billing\":{'\"$A_LENA\"',\"email\":\"lena.schmidt@example.com\"},\"shipping\":{'\"$A_LENA\"'},\"line_items\":[{\"product_id\":'$P_FOUNTAIN',\"variation_id\":'$V_FOUNTAIN_RED',\"quantity\":1},{\"product_id\":'${PID[10]}',\"quantity\":1}],\"shipping_lines\":'\"$(SHIP 9.90)\"'}' | id)",
+      "api PUT /orders/$O6 '{\"status\":\"completed\"}' | id",
+      "O7=$(api POST /orders '{'\"$PAID\"',\"set_paid\":true,\"billing\":{'\"$A_NOOR\"',\"email\":\"noor.janssen@example.com\"},\"shipping\":{'\"$A_NOOR\"'},\"line_items\":[{\"product_id\":'${PID[11]}',\"quantity\":1},{\"product_id\":'${PID[13]}',\"quantity\":1}],\"shipping_lines\":'\"$(SHIP 4.95)\"',\"fee_lines\":[{\"name\":\"Gift wrapping\",\"total\":\"2.50\",\"tax_status\":\"taxable\",\"tax_class\":\"\"}]}' | id)",
+      "api PUT /orders/$O7 '{\"status\":\"completed\"}' | id",
+      "O8=$(api POST /orders '{'\"$PAID\"',\"billing\":{'\"$A_EMMA\"',\"email\":\"emma.claes@example.com\"},\"shipping\":{'\"$A_EMMA\"'},\"line_items\":[{\"product_id\":'${PID[14]}',\"quantity\":1}],\"shipping_lines\":'\"$(SHIP 7.50)\"'}' | id)",
+      "api PUT /orders/$O8 '{\"status\":\"cancelled\"}' | id",
+      "O9=$(api POST /orders '{'\"$PAID\"',\"set_paid\":true,\"customer_id\":'$C_SEM',\"billing\":{'\"$A_SEM\"',\"company\":\"De Jong Ontwerp\",\"email\":\"sem.dejong@example.com\"},\"shipping\":{'\"$A_SEM\"'},\"line_items\":[{\"product_id\":'${PID[6]}',\"quantity\":2},{\"product_id\":'${PID[7]}',\"quantity\":1}],\"shipping_lines\":'\"$(SHIP 4.95)\"'}' | id)",
+      "api PUT /orders/$O9 '{\"status\":\"completed\"}' | id",
+      "REFUND=$(api GET /orders/$O9 | php -r '$o = json_decode(stream_get_contents(STDIN), true); $li = $o[\"line_items\"][0]; $t = round($li[\"total\"] / $li[\"quantity\"], 2); $tx = round($li[\"taxes\"][0][\"total\"] / $li[\"quantity\"], 2); echo json_encode([\"amount\" => number_format($t + $tx, 2, \".\", \"\"), \"reason\" => \"One arrived damaged\", \"api_refund\" => false, \"line_items\" => [[\"id\" => $li[\"id\"], \"quantity\" => 1, \"refund_total\" => $t, \"refund_tax\" => [[\"id\" => $li[\"taxes\"][0][\"id\"], \"refund_total\" => $tx]]]]]);')",
+      "api POST /orders/$O9/refunds \"$REFUND\" | id",
+      "O10=$(api POST /orders '{'\"$PAID\"',\"customer_id\":'$C_DAAN',\"billing\":{'\"$A_DAAN\"',\"email\":\"daan.bakker@example.com\"},\"shipping\":{'\"$A_DAAN\"'},\"line_items\":[{\"product_id\":'${PID[15]}',\"quantity\":1}],\"shipping_lines\":'\"$(SHIP 4.95)\"'}' | id)",
+      "api POST /products/reviews '{\"product_id\":'${PID[0]}',\"review\":\"Heats evenly and cleans up easily.\",\"reviewer\":\"Anna Visser\",\"reviewer_email\":\"anna.visser@example.com\",\"rating\":5,\"status\":\"approved\"}' | id",
+      "api POST /products/reviews '{\"product_id\":'$P_GLOVES',\"review\":\"Good fit, a little stiff at first.\",\"reviewer\":\"Lotte Peeters\",\"reviewer_email\":\"lotte.peeters@example.com\",\"rating\":4,\"status\":\"approved\"}' | id",
+      "api POST /products/reviews '{\"product_id\":'$P_FOUNTAIN',\"review\":\"Writes well but the ink runs out quickly.\",\"reviewer\":\"Lena Schmidt\",\"reviewer_email\":\"lena.schmidt@example.com\",\"rating\":3,\"status\":\"approved\"}' | id",
+      "api POST /products/reviews '{\"product_id\":'${PID[11]}',\"review\":\"Arrived beautifully wrapped.\",\"reviewer\":\"Noor Janssen\",\"reviewer_email\":\"noor.janssen@example.com\",\"rating\":5,\"status\":\"approved\"}' | id",
+      "api POST /products/reviews '{\"product_id\":'${PID[20]}',\"review\":\"Smaller than I expected.\",\"reviewer\":\"Daan Bakker\",\"reviewer_email\":\"daan.bakker@example.com\",\"rating\":2,\"status\":\"approved\"}' | id"
+    ]
+  },
+  "record": {
+    "key": "WC_CREDS=$(npx @wordpress/env@12.1.0 run cli -- wp eval '$k=\"ck_\".wc_rand_hash(); $s=\"cs_\".wc_rand_hash(); global $wpdb; $wpdb->insert($wpdb->prefix.\"woocommerce_api_keys\", [\"user_id\"=>1,\"description\"=>\"recorder\",\"permissions\"=>\"read\",\"consumer_key\"=>wc_api_hash($k),\"consumer_secret\"=>$s,\"truncated_key\"=>substr($k,-7)]); echo \"$k:$s\";'); WC_KEY=${WC_CREDS%%:*}; WC_SECRET=${WC_CREDS#*:}",
+    "auth": "OAuth 1.0a one-legged with $WC_KEY:$WC_SECRET (a read-only WooCommerce REST key): HMAC-SHA256 over 'GET&' + rawurlencode(url without query) + '&' + the sorted, rawurlencoded query and oauth_* pairs joined by %26, signing key $WC_SECRET + '&', sent as query parameters. WooCommerce takes the key as HTTP Basic only over HTTPS, and wp-env serves http://localhost:8888",
+    "base": "http://localhost:8888/wp-json/wc/v3",
+    "answers": [
+      {
+        "file": "system_status.json",
+        "request": "GET /wp-json/wc/v3/system_status",
+        "status": 200,
+        "X-WP-Total": null,
+        "X-WP-TotalPages": null
+      },
+      {
+        "file": "settings-general.json",
+        "request": "GET /wp-json/wc/v3/settings/general",
+        "status": 200,
+        "X-WP-Total": null,
+        "X-WP-TotalPages": null
+      },
+      {
+        "file": "settings-products.json",
+        "request": "GET /wp-json/wc/v3/settings/products",
+        "status": 200,
+        "X-WP-Total": null,
+        "X-WP-TotalPages": null
+      },
+      {
+        "file": "categories.json",
+        "request": "GET /wp-json/wc/v3/products/categories?per_page=100&page=1&orderby=id&order=asc",
+        "status": 200,
+        "X-WP-Total": "13",
+        "X-WP-TotalPages": "1"
+      },
+      {
+        "file": "products.page-1.json",
+        "request": "GET /wp-json/wc/v3/products?per_page=100&page=1&orderby=id&order=asc",
+        "status": 200,
+        "X-WP-Total": "123",
+        "X-WP-TotalPages": "2"
+      },
+      {
+        "file": "products.page-2.json",
+        "request": "GET /wp-json/wc/v3/products?per_page=100&page=2&orderby=id&order=asc",
+        "status": 200,
+        "X-WP-Total": "123",
+        "X-WP-TotalPages": "2"
+      },
+      {
+        "file": "products-133-variations.json",
+        "request": "GET /wp-json/wc/v3/products/133/variations?per_page=100&page=1&orderby=id&order=asc",
+        "status": 200,
+        "X-WP-Total": "3",
+        "X-WP-TotalPages": "1"
+      },
+      {
+        "file": "products-137-variations.json",
+        "request": "GET /wp-json/wc/v3/products/137/variations?per_page=100&page=1&orderby=id&order=asc",
+        "status": 200,
+        "X-WP-Total": "3",
+        "X-WP-TotalPages": "1"
+      },
+      {
+        "file": "products-141-variations.json",
+        "request": "GET /wp-json/wc/v3/products/141/variations?per_page=100&page=1&orderby=id&order=asc",
+        "status": 200,
+        "X-WP-Total": "2",
+        "X-WP-TotalPages": "1"
+      },
+      {
+        "file": "customers.json",
+        "request": "GET /wp-json/wc/v3/customers?per_page=100&page=1&orderby=id&order=asc",
+        "status": 200,
+        "X-WP-Total": "6",
+        "X-WP-TotalPages": "1"
+      },
+      {
+        "file": "orders.json",
+        "request": "GET /wp-json/wc/v3/orders?per_page=100&page=1&orderby=id&order=asc",
+        "status": 200,
+        "X-WP-Total": "10",
+        "X-WP-TotalPages": "1"
+      },
+      {
+        "file": "reviews.json",
+        "request": "GET /wp-json/wc/v3/products/reviews?per_page=100&page=1&orderby=id&order=asc",
+        "status": 200,
+        "X-WP-Total": "5",
+        "X-WP-TotalPages": "1"
+      },
+      {
+        "file": "coupons.json",
+        "request": "GET /wp-json/wc/v3/coupons?per_page=100&page=1&orderby=id&order=asc",
+        "status": 200,
+        "X-WP-Total": "0",
+        "X-WP-TotalPages": "0"
+      },
+      {
+        "file": "taxes.json",
+        "request": "GET /wp-json/wc/v3/taxes?per_page=100&page=1&orderby=id&order=asc",
+        "status": 200,
+        "X-WP-Total": "3",
+        "X-WP-TotalPages": "1"
+      },
+      {
+        "file": "shipping-zones.json",
+        "request": "GET /wp-json/wc/v3/shipping/zones",
+        "status": 200,
+        "X-WP-Total": "2",
+        "X-WP-TotalPages": "1"
+      }
+    ]
+  },
+  "covers": {
+    "two products pages at per_page=100 (123 products: 100 + 23)": [
+      "products.page-1.json",
+      "products.page-2.json"
+    ],
+    "products made by one loop (120 simple, EU-001..EU-120, ids 13..132) plus three variable": [
+      "KETTLE (133)",
+      "GLOVES (137)",
+      "FOUNTAIN (141)"
+    ],
+    "categories three deep (13 with Uncategorized)": [
+      "Kitchen > Cookware > Pans",
+      "Kitchen > Tableware",
+      "Garden > Tools (slug garden-tools) > Pruners",
+      "Garden > Planters",
+      "Stationery > Paper > Notebooks",
+      "Stationery > Pens",
+      "Uncategorized (WooCommerce default, empty)"
+    ],
+    "sale price without dates (80% of regular, every tenth)": [
+      "EU-010",
+      "EU-020",
+      "EU-030",
+      "EU-040",
+      "EU-050",
+      "EU-060",
+      "EU-070",
+      "EU-080",
+      "EU-090",
+      "EU-100",
+      "EU-110",
+      "EU-120",
+      "KETTLE-BLUE"
+    ],
+    "managed stock at 0, outofstock": ["EU-045", "EU-090", "KETTLE-GREEN"],
+    "draft status (permalink ?post_type=product&p=72)": ["EU-060"],
+    "tax_class reduced-rate (every Notebook)": ["EU-005", "EU-011", "… every sixth from EU-005"],
+    "manage_stock 'parent' pool of 30, 28 after order 147": ["GLOVES-S", "GLOVES-M", "GLOVES-L"],
+    "global attributes (variation) and a local attribute (not for variations)": [
+      "KETTLE (Colour; Capacity)",
+      "GLOVES (Size)",
+      "FOUNTAIN (Colour)"
+    ],
+    "tags": ["EU-025", "EU-050", "EU-075", "EU-100", "KETTLE", "FOUNTAIN"],
+    "images (generated 64x64 solid-colour PNGs, bytes not committed)": [
+      "EU-001",
+      "EU-021",
+      "EU-041",
+      "EU-061",
+      "EU-081",
+      "EU-101",
+      "KETTLE",
+      "KETTLE-RED",
+      "KETTLE-BLUE",
+      "GLOVES"
+    ],
+    "customers at example.com (ids 2..7: NL x3, BE x2, DE x1; one with billing company and address_2; one with no paid order)": [
+      "anna.visser",
+      "daan.bakker",
+      "lotte.peeters",
+      "julien.dubois (on-hold order only, is_paying_customer false)",
+      "lena.schmidt",
+      "sem.dejong"
+    ],
+    "orders, registered and guest (10; ids 144..152 and 154, 153 is the refund)": [
+      "completed 144 146 147 149 150 152",
+      "processing 145",
+      "on-hold 148",
+      "pending 154",
+      "cancelled 151",
+      "guest 150 151"
+    ],
+    "partial refund of one line item with its tax (order stays completed)": [
+      "152: refund 153, -28.74 of which tax -4.99, one of two EU-007"
+    ],
+    "fee line, taxable": ["150: Gift wrapping 2.50 + 0.53 tax"],
+    "shipping with tax (NL 21%, and 9% when the cart is all reduced-rate)": [
+      "144 146(free, 0.00) 150 152 154: 4.95 + 1.04",
+      "145: 4.95 + 0.45"
+    ],
+    "shipping without tax (BE rate has shipping off; DE has no rate)": [
+      "147 148 151 (BE)",
+      "149 (DE, no tax at all)"
+    ],
+    "variation line items": ["146 KETTLE-BLUE", "147 GLOVES-M", "149 FOUNTAIN-RED"],
+    "customer note": ["145"],
+    "approved reviews (5), verified by WooCommerce from purchases": [
+      "50 EU-001 5 verified",
+      "51 GLOVES 4 verified",
+      "52 FOUNTAIN 3 verified",
+      "53 EU-012 5 verified (guest buyer, by email)",
+      "54 EU-021 2 not verified"
+    ],
+    "what the plan probes but the import does not migrate": [
+      "coupons.json (none)",
+      "taxes.json (3 rates)",
+      "shipping-zones.json (Benelux flat rate, and zone 0)"
+    ]
+  },
+  "notes": [
+    "Every product, category, tag, attribute, image, customer, order, review, tax rate, shipping zone and setting is synthetic, created by the commands below on an empty WooCommerce. No WooCommerce sample data was imported.",
+    "Answers are WooCommerce's JSON bodies parsed and written back with 2-space indent; no value is changed. List requests are exactly the ones the importer sends (per_page=100, orderby=id, order=asc); every page is recorded with its X-WP-Total and X-WP-TotalPages.",
+    "A list that fits one page is <name>.json (categories, customers, orders, reviews, coupons, taxes); products, which take two pages, are products.page-<n>.json.",
+    "coupons, taxes and shipping zones are the plan's own probes (count only, per_page=1 for coupons and taxes, /shipping/zones unpaginated); coupons and taxes are recorded at per_page=100 so a server can answer either size. An empty coupons list answers X-WP-TotalPages 0.",
+    "HPOS is on: wp wc hpos enable made the orders tables before any order existed, so orders are authoritative in them with sync off. An order id and a post id share one sequence, so order ids skip 153, the refund.",
+    "Orders were created through REST with set_paid (status processing, stock reduced) and then set to completed, so recorded product stock is after the orders. WooCommerce computed every tax and total; each order total equals its lines, shipping and fees with their taxes.",
+    "The shipping line's tax class follows the cart: order 145 holds only reduced-rate items, so its shipping tax is 9%.",
+    "The store formats prices with a decimal comma (woocommerce_price_decimal_sep \",\"), but REST prices and totals are always strings with a decimal point.",
+    "A review's verified flag is computed by WooCommerce from the reviewer email's purchases; the reviews list answers only approved reviews by default.",
+    "Customers' usernames are WooCommerce's, made from the email; passwords were generated by WooCommerce and are not readable. avatar_url values are Gravatar URLs of example.com addresses.",
+    "A variation with manage_stock 'parent' reports the parent's stock_quantity.",
+    "home_url is wp-env's http://localhost:8888; every email address is at example.com (customers, order billing, reviews, and wp-env's admin wordpress@example.com). system_status.environment.store_id is a random id made at install. Dates are the container's clock at build time."
+  ]
+}

@@ -1,4 +1,4 @@
-import { createHmac, randomBytes } from 'node:crypto'
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import {
   type DocumentStoreAdapter,
   type EventBusAdapter,
@@ -9,7 +9,32 @@ import { ok, fail, renderError } from './envelope.js'
 import { requireRole } from './role-middleware.js'
 
 const TICKET_TTL_SECONDS = 60
+/** Outlives the ticket, so a nonce is never forgotten while its ticket could still be opened. */
+const NONCE_TTL_SECONDS = 120
 const NONCE_COLLECTION = 'sse-ticket-nonces'
+
+interface NonceRecord {
+  used: boolean
+}
+
+/**
+ * Flips the nonce the ticket route wrote from unused to used, in one conditional write, so of any opens that race one
+ * ticket exactly one wins. False when it was used already, has expired, or was never issued on this store.
+ */
+async function consumeNonce(store: DocumentStoreAdapter, key: string): Promise<boolean> {
+  try {
+    await store.put<NonceRecord>(
+      NONCE_COLLECTION,
+      key,
+      { used: true },
+      { ttl: NONCE_TTL_SECONDS, conditionKey: 'used', conditionValue: false },
+    )
+    return true
+  } catch (err) {
+    if ((err as { code?: unknown } | null)?.code === 'adapter.condition-failed') return false
+    throw err
+  }
+}
 
 interface TicketPayload {
   uid: string
@@ -27,8 +52,10 @@ function sign(payload: TicketPayload, secret: string): string {
 function verify(token: string, secret: string): TicketPayload | null {
   const [body, sig] = token.split('.')
   if (!body || !sig) return null
-  const expected = createHmac('sha256', secret).update(body).digest('base64url')
-  if (expected !== sig) return null
+  const expected = Buffer.from(createHmac('sha256', secret).update(body).digest('base64url'))
+  const given = Buffer.from(sig)
+  // timingSafeEqual throws on unequal lengths; a length differs only for a forged ticket, so it may return early.
+  if (given.length !== expected.length || !timingSafeEqual(given, expected)) return null
   try {
     return JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as TicketPayload
   } catch {
@@ -48,7 +75,7 @@ export function registerEventsSseRoute(adapter: HttpAdapter, deps: RegisterEvent
   adapter.registerRoute(
     'POST',
     '/api/admin/events/ticket',
-    requireRole('admin', (ctx) => {
+    requireRole('admin', async (ctx) => {
       try {
         const nonce = randomBytes(12).toString('base64url')
         const payload: TicketPayload = {
@@ -57,10 +84,16 @@ export function registerEventsSseRoute(adapter: HttpAdapter, deps: RegisterEvent
           iat: Math.floor(Date.now() / 1000),
           nonce,
         }
+        await documentStore.put<NonceRecord>(
+          NONCE_COLLECTION,
+          `${payload.uid}:${nonce}`,
+          { used: false },
+          { ttl: NONCE_TTL_SECONDS },
+        )
         const token = sign(payload, ticketSecret)
         return ok({ ticket: token, expiresIn: TICKET_TTL_SECONDS })
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )
@@ -84,15 +117,11 @@ export function registerEventsSseRoute(adapter: HttpAdapter, deps: RegisterEvent
       stream.close()
       return
     }
-    // One-time nonce enforcement
-    const nonceKey = `${payload.uid}:${payload.nonce}`
-    const seen = await documentStore.get<{ seen: true }>(NONCE_COLLECTION, nonceKey)
-    if (seen) {
+    if (!(await consumeNonce(documentStore, `${payload.uid}:${payload.nonce}`))) {
       stream.send({ event: 'error', data: { code: 'ticket.replayed' } })
       stream.close()
       return
     }
-    await documentStore.put(NONCE_COLLECTION, nonceKey, { seen: true }, { ttl: 120 })
     if (!payload.roles.includes('admin')) {
       stream.send({ event: 'error', data: { code: 'ticket.forbidden' } })
       stream.close()
@@ -102,7 +131,7 @@ export function registerEventsSseRoute(adapter: HttpAdapter, deps: RegisterEvent
     // Unnamed: every open tab, on every instance, receives every event. A shared name would make the tabs consumers
     // of one group on a shared bus, each event reaching one of them.
     const subscription = await eventBus.subscribe(
-      ['order.*', 'payment.*', 'inventory.*', 'adapter.*'],
+      ['order.*', 'payment.*', 'inventory.*', 'adapter.*', 'proposal.*'],
       (event) => {
         stream.send({
           id: event.id,

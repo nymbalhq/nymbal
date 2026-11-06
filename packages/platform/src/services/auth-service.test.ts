@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { AuthError, EVT_CUSTOMER_CREATED, ValidationError } from '@nymbalhq/types'
 import { SignJWT } from 'jose'
 import { InMemoryDocumentStore } from '../document-store/in-memory.js'
@@ -61,6 +61,21 @@ describe('AuthService', () => {
     expect(tokens.accessToken).toBeTruthy()
     expect(tokens.refreshToken).toBeTruthy()
     expect(events).toHaveLength(1)
+    await commandStore.close()
+  })
+
+  it("customer.created carries origin 'import' for an imported customer and no origin for a registered one", async () => {
+    const { auth, eventBus, commandStore } = await setup()
+    const events: Array<{ email: string; origin?: string }> = []
+    await eventBus.subscribe(EVT_CUSTOMER_CREATED, (e) => {
+      events.push(e.payload as { email: string; origin?: string })
+    })
+    await auth.register({ email: 'shopper@example.com', password: 'password123' })
+    await auth.importCustomer({ email: 'migrated@example.com' })
+    expect(events.map((p) => [p.email, p.origin])).toEqual([
+      ['shopper@example.com', undefined],
+      ['migrated@example.com', 'import'],
+    ])
     await commandStore.close()
   })
 
@@ -146,12 +161,19 @@ describe('AuthService', () => {
     await commandStore.close()
   })
 
-  it('refresh rejects already-refreshed (rotated) token', async () => {
-    const { auth, commandStore } = await setup()
-    const { tokens } = await auth.register({ email: 'rotate@test.com', password: 'password123' })
-    await auth.refresh(tokens.refreshToken)
-    await expect(auth.refresh(tokens.refreshToken)).rejects.toThrow(AuthError)
-    await commandStore.close()
+  // Within 30 s of its rotation a rotated token is a concurrent refresh and is answered (refresh-reuse.test.ts).
+  it('refresh rejects a rotated token replayed after the reuse window', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.now() })
+    try {
+      const { auth, commandStore } = await setup()
+      const { tokens } = await auth.register({ email: 'rotate@test.com', password: 'password123' })
+      await auth.refresh(tokens.refreshToken)
+      vi.setSystemTime(Date.now() + 31_000)
+      await expect(auth.refresh(tokens.refreshToken)).rejects.toThrow(AuthError)
+      await commandStore.close()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('logout revokes refresh token', async () => {

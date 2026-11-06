@@ -33,22 +33,12 @@ export const AddressForm = /* @__PURE__ */ forwardRef<HTMLElement, AddressFormPr
     const innerRef = useRef<HTMLElement>(null)
     const ref = (forwardedRef ?? innerRef) as React.RefObject<HTMLElement | null>
 
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (props.idPrefix !== undefined) {
-      el.setAttribute('id-prefix', String(props.idPrefix))
-    } else {
-      el.removeAttribute('id-prefix')
-    }
-  }, [props.idPrefix])
-
 
 
     useDefine(NymbalAddressForm)
 
     return (
-      <nymbal-address-form ref={ref as React.Ref<HTMLElement>} id-prefix={props.idPrefix} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
+      <nymbal-address-form ref={ref as React.Ref<HTMLElement>} {...{ 'id-prefix': props.idPrefix }} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
         // The server render goes on the tag itself: a full load parses its template into the shadow root, which React
         // does not see, and a soft navigation's innerHTML leaves it for the element to upgrade.
         dangerouslySetInnerHTML={props.serverHtml === undefined ? undefined : { __html: props.serverHtml }}

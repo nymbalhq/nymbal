@@ -115,12 +115,17 @@ const REPORTERS = /\s--reporter[= ]\S+|\s--outputFile(?:\.json)?[= ]\S+/g
 /**
  * The test files a tests command's Vitest run (its first command) selects in `cwd`: the command itself, its reporters
  * replaced by a JSON report and its tests filtered by a name none has, so Vitest collects the files and runs no test.
+ * Vitest picks the files before it loads any, so running them without isolation selects the same set; it lets a
+ * worker load the shared imports once rather than once per file, which was most of each run's time.
  */
 export async function selectedFiles(cwd: string, command: string): Promise<string[]> {
   const out = join(mkdtempSync(join(tmpdir(), 'nymbal-selected-')), 'report.json')
   created.push(dirname(out))
   const first = (command.split(' && ')[0] ?? '').replace(REPORTERS, '')
-  const run = await shell(cwd, `${first} -t ${NO_TEST} --reporter=json --outputFile.json=${out}`)
+  const run = await shell(
+    cwd,
+    `${first} -t ${NO_TEST} --no-isolate --reporter=json --outputFile.json=${out}`,
+  )
   if (!existsSync(out)) {
     throw new Error(`no Vitest report from: ${first}\n${run.output.slice(-3000)}`)
   }

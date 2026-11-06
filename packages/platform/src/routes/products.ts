@@ -6,11 +6,15 @@ import {
   type QueryParams,
   type Facet,
   type HttpAdapter,
+  type PublicReview,
+  type PublicReviewsResult,
+  type Review,
   type ReviewsAdapter,
   type SearchAdapter,
 } from '@nymbalhq/types'
 import type { SearchService } from '../services/search-service.js'
 import { ok, renderError, fail } from './envelope.js'
+import { withRatings } from './product-ratings.js'
 
 const ORDER_BY: Record<ProductSortKey, NonNullable<QueryParams['orderBy']>> = {
   newest: { field: 'createdAt', direction: 'desc' },
@@ -18,6 +22,19 @@ const ORDER_BY: Record<ProductSortKey, NonNullable<QueryParams['orderBy']>> = {
   'price-desc': { field: 'priceRange.minMinor', direction: 'desc', nulls: 'last' },
   'name-asc': { field: 'name', direction: 'asc' },
   'name-desc': { field: 'name', direction: 'desc' },
+}
+
+/** A review as the public list shows it: whether a purchase verified it, never who wrote it or which order. */
+function publicReview(review: Review): PublicReview {
+  return {
+    id: review.id,
+    productId: review.productId,
+    rating: review.rating,
+    title: review.title,
+    body: review.body,
+    verified: review.orderId !== null,
+    submittedAt: review.submittedAt,
+  }
 }
 
 function buildCategoryFacet(products: Array<Record<string, unknown>>): Facet {
@@ -44,32 +61,21 @@ function buildCategoryFacet(products: Array<Record<string, unknown>>): Facet {
   }
 }
 
+/** A category's facet fields, by id; an id with no category is absent. */
+export type CategoriesById = (
+  ids: readonly string[],
+) => Promise<ReadonlyMap<string, { id: string; slug: string; name: string }>>
+
 /** The search's category counts in the listing's facet shape: field `category`, slug values, name labels. */
 async function searchCategoryFacet(
   facet: SearchAdapter['facet'],
-  documentStore: DocumentStoreAdapter,
-  storeName: string,
+  categoriesById: CategoriesById,
   query: string,
   filters: Record<string, unknown> | undefined,
 ): Promise<Facet> {
   const counts = await facet('categoryIds', { query, ...(filters !== undefined && { filters }) })
-  // Categories are keyed by slug, so the facet's ids are found by walking the store's pages until each is seen.
-  const wanted = new Set(counts.values.map((v) => v.value))
-  const byId = new Map<string, { id: string; slug: string; name: string }>()
-  let cursor: string | undefined
-  while (byId.size < wanted.size) {
-    const page = await documentStore.query<{ id: string; slug: string; name: string }>(
-      'categories',
-      {
-        partitionKey: { field: 'storeId', value: storeName },
-        limit: 500,
-        ...(cursor !== undefined && { cursor }),
-      },
-    )
-    for (const c of page.items) if (wanted.has(c.id)) byId.set(c.id, c)
-    if (page.nextCursor === null) break
-    cursor = page.nextCursor
-  }
+  // One lookup by id, whatever the store's size: the index may hold the id of a category since deleted.
+  const byId = await categoriesById(counts.values.map((v) => v.value))
   return {
     field: 'category',
     label: 'Category',
@@ -98,6 +104,8 @@ export function registerProductRoutes(
   canFacet: () => boolean = () => true,
   /** The search adapter's facet, for the search route's category counts within the query. */
   searchFacet?: SearchAdapter['facet'],
+  /** The categories the search facet's ids name. */
+  categoriesById?: CategoriesById,
 ): void {
   adapter.registerRoute('GET', '/api/products/search', async (ctx) => {
     try {
@@ -129,14 +137,17 @@ export function registerProductRoutes(
         .filter(Boolean)
       const products = await Promise.all(slugs.map((slug) => documentStore.get('products', slug)))
       // A hit whose product is gone is dropped from the page; the total is the index's.
-      const items = products.filter(Boolean)
+      const items = await withRatings(reviewsAdapter, products.filter(Boolean), ctx.logger)
       const facets =
-        canFacet() && searchFacet !== undefined && searchResult.total > 0
-          ? [await searchCategoryFacet(searchFacet, documentStore, storeName, q, filters)]
+        canFacet() &&
+        searchFacet !== undefined &&
+        categoriesById !== undefined &&
+        searchResult.total > 0
+          ? [await searchCategoryFacet(searchFacet, categoriesById, q, filters)]
           : []
       return ok({ items, nextCursor: searchResult.nextCursor, total: searchResult.total, facets })
     } catch (err) {
-      return renderError(err)
+      return renderError(err, ctx.logger)
     }
   })
 
@@ -169,7 +180,8 @@ export function registerProductRoutes(
             ...(cursor !== undefined && { cursor }),
           }))
 
-      if (!canFacet()) return ok({ items: result.items, nextCursor: result.nextCursor })
+      const items = await withRatings(reviewsAdapter, result.items, ctx.logger)
+      if (!canFacet()) return ok({ items, nextCursor: result.nextCursor })
       // Facets come from the full catalogue, never the page: a page holds only some of each category (the newest
       // products lead the default order), so its counts would understate what a filter returns.
       const allResult = await documentStore.query('products', {
@@ -177,9 +189,9 @@ export function registerProductRoutes(
         limit: 1000,
       })
       const categoryFacet = buildCategoryFacet(allResult.items as Array<Record<string, unknown>>)
-      return ok({ items: result.items, nextCursor: result.nextCursor, facets: [categoryFacet] })
+      return ok({ items, nextCursor: result.nextCursor, facets: [categoryFacet] })
     } catch (err) {
-      return renderError(err)
+      return renderError(err, ctx.logger)
     }
   })
 
@@ -189,9 +201,10 @@ export function registerProductRoutes(
       if (!slug) return fail('products.slug_required', 'slug param required', 400)
       const doc = await documentStore.get('products', slug)
       if (!doc) throw new NotFoundError('product', slug)
-      return ok(doc)
+      const [rated] = await withRatings(reviewsAdapter, [doc], ctx.logger)
+      return ok(rated)
     } catch (err) {
-      return renderError(err)
+      return renderError(err, ctx.logger)
     }
   })
 
@@ -199,7 +212,7 @@ export function registerProductRoutes(
     try {
       const id = ctx.params.id
       if (!id) return fail('products.id_required', 'id param required', 400)
-      if (!reviewsAdapter) return ok({ items: [], nextCursor: null })
+      if (!reviewsAdapter) return ok<PublicReviewsResult>({ items: [], nextCursor: null })
       const rawLimit = ctx.query.limit
       const limit = rawLimit
         ? Math.min(100, Math.max(1, Number(Array.isArray(rawLimit) ? rawLimit[0] : rawLimit) || 20))
@@ -210,9 +223,12 @@ export function registerProductRoutes(
         limit,
         ...(cursor && { cursor }),
       })
-      return ok(result)
+      return ok<PublicReviewsResult>({
+        items: result.items.map(publicReview),
+        nextCursor: result.nextCursor,
+      })
     } catch (err) {
-      return renderError(err)
+      return renderError(err, ctx.logger)
     }
   })
 }

@@ -10,12 +10,14 @@ const NESTED_VITEST_RUNS = [
 
 // Each runs the real Vitest over copies of the work tree, or the registry run in Docker (Linux only): the plain gate
 // never runs them (scripts/gate.ts), gate:full and dev CI do.
+//
+// Slow, not flaky: a case too costly for every push runs only under NYMBAL_SLOW_CASES=1, in its home project, behind
+// `it.runIf(process.env['NYMBAL_SLOW_CASES'])`. The nightly's harness-tests job sets it, so a red there fails the run
+// (harness-input-selection, new-adapter-scaffold and mutation-integration-selection hold such cases).
 const SLOW_TOOLING = [
   'tests/tooling/harness-input-selection.test.ts',
-  'tests/tooling/gate-base-env.test.ts',
   'tests/tooling/registry-run.test.ts',
   'tests/tooling/new-adapter-scaffold.test.ts',
-  'tests/tooling/adapter-list.test.ts',
 ]
 
 // Timing-bound: each asserts wall-clock bounds, so each is a project of its own that the gate runs under the quiet lock
@@ -52,6 +54,56 @@ const scaffoldImage = process.env['NYMBAL_IMAGE']
     ]
   : []
 
+// The quickstart page's store in its container: the project exists only when `scripts/quickstart.sh <astro|nextjs>`
+// has started it (NYMBAL_CONTAINER and the rest; the file throws at collection without them).
+const quickstart = process.env['NYMBAL_CONTAINER']
+  ? [
+      {
+        test: {
+          name: 'quickstart',
+          environment: 'node' as const,
+          include: ['tests/quickstart/**/*.test.ts'],
+        },
+      },
+    ]
+  : []
+
+// The live Stripe test-mode proof of agentic checkout (real PaymentIntents, on the test keys scripts/stripe-live.sh
+// finds): the project exists only when that script has set NYMBAL_STRIPE_LIVE=1, never because a Stripe key is in the
+// environment, so `pnpm test`, coverage and tests-fail-on-base cannot select it.
+const stripeLive =
+  process.env['NYMBAL_STRIPE_LIVE'] === '1'
+    ? [
+        {
+          test: {
+            name: 'stripe-live',
+            environment: 'node' as const,
+            include: ['packages/platform/tests/live/**/*.test.ts'],
+            testTimeout: 120000,
+            hookTimeout: 120000,
+          },
+        },
+      ]
+    : []
+
+// The origin lock on a real Cloudflare zone and a deployed app: the project exists only when
+// `scripts/cloudflare-live.sh` sets NYMBAL_CLOUDFLARE_LIVE=1 (the file throws at collection without its inputs), so no
+// CI job, `pnpm test` or gate run can select it. Its calls cross the internet, and a Fly secret change restarts the app.
+const cloudflareLive =
+  process.env['NYMBAL_CLOUDFLARE_LIVE'] === '1'
+    ? [
+        {
+          test: {
+            name: 'cloudflare-live',
+            environment: 'node' as const,
+            include: ['packages/adapters/security/cloudflare/tests/live/**/*.test.ts'],
+            testTimeout: 300_000,
+            hookTimeout: 300_000,
+          },
+        },
+      ]
+    : []
+
 // Quarantined: each went red then green with no code change in a gate or CI. It runs in the `nightly` project
 // (NYMBAL_NIGHTLY=1; .github/workflows/nightly.yml) until it is fixed, and its home project leaves it out: through
 // that project's own `exclude` when it has one (cli), else behind `describe.runIf(process.env.NYMBAL_NIGHTLY)` in the
@@ -61,8 +113,6 @@ const scaffoldImage = process.env['NYMBAL_IMAGE']
 const NIGHTLY = [
   // CLI spawns time out under load.
   'packages/cli/src/commands/add.test.ts',
-  // The built CLI against MinIO times out under a parallel gate:full.
-  'tests/stores/s3-import-cli.test.ts',
 ]
 const nightly = process.env['NYMBAL_NIGHTLY']
   ? [
@@ -85,7 +135,7 @@ if (sharedWorkers !== undefined && !/^[1-9]\d*$/.test(sharedWorkers)) {
   throw new Error(`NYMBAL_VITEST_MAX_WORKERS must be a positive integer; got "${sharedWorkers}"`)
 }
 
-// Set by the coverage job (ci.yml), whose instrumented runs are three to four times slower than the gate's: each
+// Set by the sentinel runs (scripts/sentinels.ts), which run nearly the whole suite at once under load: each
 // project's own timeouts, or Vitest's defaults where it sets none, are multiplied. A CLI --testTimeout would replace
 // the longer budgets some projects set instead.
 const timeoutScale = Number(process.env['NYMBAL_TEST_TIMEOUT_SCALE'] ?? 1)
@@ -124,7 +174,12 @@ function kept(project: Named, index: number, all: Named[]): boolean {
 
 export default defineConfig({
   test: {
+    // Every run is one-off; watching many worktrees fills the disk. `pnpm test:watch` asks for it explicitly.
+    watch: false,
     ...(sharedWorkers === undefined ? {} : { maxWorkers: Number(sharedWorkers) }),
+    // The scaffold's files one at a time (a root option, not a project one): the preview's file walks the project and
+    // runs its own store beside dev, while others rewrite the config (clean-machine) or add a product (mcp-agent).
+    ...(process.env['NYMBAL_SCAFFOLD_DIR'] ? { fileParallelism: false } : {}),
     // Node 25+ defines a global `localStorage` that is undefined without --localstorage-file, and it shadows the one
     // jsdom and happy-dom install; without Node's, the test environment's is the only one.
     poolOptions: { forks: { execArgv: ['--no-experimental-webstorage'] } },
@@ -324,6 +379,8 @@ export default defineConfig({
             'packages/importers/tests/mappers/**/*.test.ts',
             'packages/importers/tests/client.test.ts',
             'packages/importers/tests/enrichment.test.ts',
+            'packages/importers/tests/report.test.ts',
+            'packages/importers/tests/preview/**/*.test.ts',
           ],
         },
       },
@@ -348,6 +405,9 @@ export default defineConfig({
       },
       ...scaffoldClean,
       ...scaffoldImage,
+      ...quickstart,
+      ...stripeLive,
+      ...cloudflareLive,
       ...nightly,
       {
         test: {
@@ -357,6 +417,9 @@ export default defineConfig({
         },
       },
       {
+        // These tests import modules they write under the OS temp directory, outside the workspace root that Vite
+        // serves from by default.
+        server: { fs: { strict: false } },
         test: {
           name: 'tooling',
           environment: 'node',
@@ -366,6 +429,7 @@ export default defineConfig({
         },
       },
       {
+        server: { fs: { strict: false } },
         test: {
           name: 'tooling-slow',
           environment: 'node',

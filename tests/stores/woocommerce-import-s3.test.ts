@@ -8,6 +8,7 @@ import {
   buildImportEnv,
   importedMedia,
   importOptions,
+  offlineLookup,
   sourceCatalogue,
   wooFetch,
 } from '../../packages/importers/tests/integration/support/import-env.js'
@@ -53,6 +54,7 @@ describe('AC-4: an import into the S3 storage leaves every image in the bucket',
         repos: env.repos,
         adapters: env.adapters,
         media,
+        lookup: offlineLookup,
       })
 
       expect(report.errors).toEqual([])

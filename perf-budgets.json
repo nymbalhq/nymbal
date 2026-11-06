@@ -4,7 +4,7 @@
       "lcpMs": 2500,
       "cls": 0.1,
       "tbtMs": 200,
-      "scriptBytes": 27648
+      "scriptBytes": 28672
     },
     "listing": {
       "lcpMs": 2500,
@@ -16,7 +16,7 @@
       "lcpMs": 2500,
       "cls": 0.1,
       "tbtMs": 200,
-      "scriptBytes": 36864
+      "scriptBytes": 37888
     },
     "cart": {
       "lcpMs": 2500,

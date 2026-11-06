@@ -1,0 +1,1 @@
+CREATE INDEX IF NOT EXISTS "carts_customer_idx" ON "carts" USING btree ("customer_id") WHERE "carts"."customer_id" IS NOT NULL;

@@ -1,4 +1,7 @@
 import type { DenormalisedProduct } from '@nymbalhq/sdk'
+import { descriptionText } from '@nymbalhq/web-components/ssr'
+
+export { descriptionText, serializeJsonLd } from '@nymbalhq/web-components/ssr'
 
 export function productJsonLd(product: DenormalisedProduct, baseUrl: string) {
   // The SDK types `media` as unknown: the projection stores either URLs or `{ url }` objects.
@@ -22,7 +25,7 @@ export function productJsonLd(product: DenormalisedProduct, baseUrl: string) {
     '@context': 'https://schema.org',
     '@type': 'Product',
     name: product.name,
-    description: product.description,
+    description: descriptionText(product.description),
     image: images,
     sku,
     url: `${baseUrl}/product/${product.slug}`,
@@ -36,6 +39,16 @@ export function productJsonLd(product: DenormalisedProduct, baseUrl: string) {
         : 'https://schema.org/OutOfStock',
       offerCount: product.variants?.length ?? 1,
     },
+    // None without an approved review: a zero-count aggregateRating is invalid structured data.
+    ...(product.rating?.count && {
+      aggregateRating: {
+        '@type': 'AggregateRating',
+        ratingValue: product.rating.average,
+        reviewCount: product.rating.count,
+        bestRating: 5,
+        worstRating: 1,
+      },
+    }),
   }
 }
 

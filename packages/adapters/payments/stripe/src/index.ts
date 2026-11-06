@@ -4,13 +4,17 @@ import {
   type AdapterSetting,
   type PaymentsAdapter,
 } from '@nymbalhq/types'
-import { createStripePaymentsAdapter, type StripePaymentsConfig } from './stripe-adapter.js'
+import {
+  createStripePaymentsAdapter,
+  STRIPE_SPT_API_VERSION,
+  type StripePaymentsConfig,
+} from './stripe-adapter.js'
 
 /** What this package serves: the kernel refuses it on any other slot or provider. */
 export const slot = 'payments'
 export const provider = 'stripe'
 
-export { createStripePaymentsAdapter, type StripePaymentsConfig }
+export { createStripePaymentsAdapter, STRIPE_SPT_API_VERSION, type StripePaymentsConfig }
 
 /** The fields the admin's Settings may fill when the config and these variables leave them unset. */
 export const settings: AdapterSetting[] = [

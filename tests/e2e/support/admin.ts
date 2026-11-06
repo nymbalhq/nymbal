@@ -1,5 +1,6 @@
-import type { APIRequestContext, Page } from '@playwright/test'
+import { request as playwrightRequest, type APIRequestContext, type Page } from '@playwright/test'
 import { expect } from './fixtures'
+import { adminToken, ownProduct } from './checkout'
 import { API_URL, csrf } from './csrf'
 
 // Helpers for the admin journeys that `nymbal dev --api-only` serves at <api>/admin/ (one origin with /api).
@@ -19,38 +20,28 @@ export const SHIPPING_ADDRESS = {
 }
 
 /**
- * A real pending order through the API: a seeded in-stock variant into a cart, then checkout (native-stub). The email's
- * `+stub-pending` keeps the order pending; without it the stub pays inline.
+ * A real pending order through the API: a product of its own into a cart, then checkout (native-stub). The product is
+ * the order's own, so this never moves the stock of a product another journey asserts on. The email's `+stub-pending`
+ * keeps the order pending; without it the stub pays inline.
  */
 export async function placeOrder(
   request: APIRequestContext,
   email = `e2e-admin-${Date.now()}-${Math.floor(Math.random() * 1e6)}+stub-pending@nymbal.dev`,
 ): Promise<{ orderId: string; orderNumber: string }> {
-  const productsRes = await request.get(`${API_URL}/api/products?limit=50`)
-  expect(productsRes.ok(), 'GET /api/products').toBe(true)
-  const products = (
-    (await productsRes.json()) as {
-      data: {
-        items: Array<{ status?: string; variants?: Array<{ id: string; stock?: number }> }>
-      }
-    }
-  ).data.items
-  let added = false
-  for (const product of products) {
-    // The storefront lists drafts too: a draft is a journey's own fixture, whose stock no other journey may move.
-    if (product.status === 'draft') continue
-    const variant = product.variants?.find((v) => (v.stock ?? 1) > 0)
-    if (!variant) continue
-    const addRes = await request.post(`${API_URL}/api/cart/items`, {
-      headers: await csrf(request),
-      data: { variantId: variant.id, qty: 1 },
-    })
-    if (addRes.ok()) {
-      added = true
-      break
-    }
+  // The admin signs in on a context of its own, so the checkout below stays the caller's (a guest's).
+  const admin = await playwrightRequest.newContext()
+  let variantId: string
+  try {
+    variantId = (await ownProduct(admin, await adminToken(admin), 1)).variantId
+  } finally {
+    await admin.dispose()
   }
-  expect(added, 'a seeded in-stock variant added to the cart').toBe(true)
+
+  const addRes = await request.post(`${API_URL}/api/cart/items`, {
+    headers: await csrf(request),
+    data: { variantId, qty: 1 },
+  })
+  expect(addRes.ok(), `POST /api/cart/items: ${await addRes.text()}`).toBe(true)
 
   const checkoutRes = await request.post(`${API_URL}/api/checkout`, {
     headers: await csrf(request),

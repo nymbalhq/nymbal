@@ -18,6 +18,9 @@ html {
   -moz-text-size-adjust: 100%;
   text-size-adjust: 100%;
   scroll-behavior: smooth;
+  /* What is scrolled to the top edge (a fragment, scrollIntoView, keyboard focus) lands below the sticky site header:
+     at least its height at every width, with room for a phone header that also holds the mini-cart. */
+  scroll-padding-top: 5.5rem;
 }
 
 body {

@@ -1,0 +1,263 @@
+[
+  {
+    "id": 134,
+    "type": "variation",
+    "date_created": "2026-11-04T18:29:33",
+    "date_created_gmt": "2026-11-04T18:29:33",
+    "date_modified": "2026-11-04T18:29:33",
+    "date_modified_gmt": "2026-11-04T18:29:33",
+    "description": "",
+    "permalink": "http://localhost:8888/product/enamel-kettle/?attribute_pa_colour=red",
+    "sku": "KETTLE-RED",
+    "global_unique_id": "",
+    "price": "39.00",
+    "regular_price": "39.00",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "status": "publish",
+    "purchasable": true,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": true,
+    "stock_quantity": 8,
+    "stock_status": "instock",
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "weight": "0.90",
+    "dimensions": {
+      "length": "22",
+      "width": "18",
+      "height": "20"
+    },
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "image": {
+      "id": 10,
+      "date_created": "2026-11-04T18:29:24",
+      "date_created_gmt": "2026-11-04T18:29:24",
+      "date_modified": "2026-11-04T18:29:24",
+      "date_modified_gmt": "2026-11-04T18:29:24",
+      "src": "http://localhost:8888/wp-content/uploads/2026/11/swatch-red.png",
+      "name": "Red swatch",
+      "alt": ""
+    },
+    "gallery_image_ids": [],
+    "attributes": [
+      {
+        "id": 1,
+        "name": "Colour",
+        "slug": "pa_colour",
+        "option": "Red"
+      }
+    ],
+    "menu_order": 0,
+    "meta_data": [],
+    "name": "Red",
+    "parent_id": 133,
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/133/variations/134",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/133/variations"
+        }
+      ],
+      "up": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/133"
+        }
+      ]
+    }
+  },
+  {
+    "id": 135,
+    "type": "variation",
+    "date_created": "2026-11-04T18:29:33",
+    "date_created_gmt": "2026-11-04T18:29:33",
+    "date_modified": "2026-11-04T18:29:35",
+    "date_modified_gmt": "2026-11-04T18:29:35",
+    "description": "",
+    "permalink": "http://localhost:8888/product/enamel-kettle/?attribute_pa_colour=blue",
+    "sku": "KETTLE-BLUE",
+    "global_unique_id": "",
+    "price": "31.20",
+    "regular_price": "39.00",
+    "sale_price": "31.20",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": true,
+    "status": "publish",
+    "purchasable": true,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": true,
+    "stock_quantity": 4,
+    "stock_status": "instock",
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "weight": "0.90",
+    "dimensions": {
+      "length": "22",
+      "width": "18",
+      "height": "20"
+    },
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "image": {
+      "id": 11,
+      "date_created": "2026-11-04T18:29:24",
+      "date_created_gmt": "2026-11-04T18:29:24",
+      "date_modified": "2026-11-04T18:29:24",
+      "date_modified_gmt": "2026-11-04T18:29:24",
+      "src": "http://localhost:8888/wp-content/uploads/2026/11/swatch-blue.png",
+      "name": "Blue swatch",
+      "alt": ""
+    },
+    "gallery_image_ids": [],
+    "attributes": [
+      {
+        "id": 1,
+        "name": "Colour",
+        "slug": "pa_colour",
+        "option": "Blue"
+      }
+    ],
+    "menu_order": 0,
+    "meta_data": [],
+    "name": "Blue",
+    "parent_id": 133,
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/133/variations/135",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/133/variations"
+        }
+      ],
+      "up": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/133"
+        }
+      ]
+    }
+  },
+  {
+    "id": 136,
+    "type": "variation",
+    "date_created": "2026-11-04T18:29:33",
+    "date_created_gmt": "2026-11-04T18:29:33",
+    "date_modified": "2026-11-04T18:29:33",
+    "date_modified_gmt": "2026-11-04T18:29:33",
+    "description": "",
+    "permalink": "http://localhost:8888/product/enamel-kettle/?attribute_pa_colour=green",
+    "sku": "KETTLE-GREEN",
+    "global_unique_id": "",
+    "price": "41.00",
+    "regular_price": "41.00",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "status": "publish",
+    "purchasable": true,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": true,
+    "stock_quantity": 0,
+    "stock_status": "outofstock",
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "weight": "0.90",
+    "dimensions": {
+      "length": "22",
+      "width": "18",
+      "height": "20"
+    },
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "image": {
+      "id": 10,
+      "date_created": "2026-11-04T18:29:24",
+      "date_created_gmt": "2026-11-04T18:29:24",
+      "date_modified": "2026-11-04T18:29:24",
+      "date_modified_gmt": "2026-11-04T18:29:24",
+      "src": "http://localhost:8888/wp-content/uploads/2026/11/swatch-red.png",
+      "name": "Red swatch",
+      "alt": ""
+    },
+    "gallery_image_ids": [],
+    "attributes": [
+      {
+        "id": 1,
+        "name": "Colour",
+        "slug": "pa_colour",
+        "option": "Green"
+      }
+    ],
+    "menu_order": 0,
+    "meta_data": [],
+    "name": "Green",
+    "parent_id": 133,
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/133/variations/136",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/133/variations"
+        }
+      ],
+      "up": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/133"
+        }
+      ]
+    }
+  }
+]

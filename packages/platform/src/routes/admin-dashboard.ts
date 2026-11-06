@@ -1,5 +1,8 @@
 import type { HttpAdapter } from '@nymbalhq/types'
 import type { NymbalConfig } from '@nymbalhq/config'
+import { UCP_PROFILE_PATH } from '../agents/profile.js'
+import { ACP_CAPABILITIES } from '../agents/acp/constants.js'
+import { UCP_CAPABILITIES } from '../agents/ucp-surface.js'
 import type { Repositories } from '../repositories/index.js'
 import { ok, renderError } from './envelope.js'
 import { requireRole } from './role-middleware.js'
@@ -14,6 +17,10 @@ export interface InventoryRow {
   status: 'low_stock' | 'out_of_stock'
 }
 
+/** The agents tile's window, and how many agents it lists by name. */
+const AGENT_WINDOW_MS = 30 * 86_400_000
+const AGENT_SOURCES_SHOWN = 5
+
 export interface RegisterAdminDashboardRouteDeps {
   repos: Repositories
   config: NymbalConfig
@@ -23,13 +30,13 @@ export function registerAdminDashboardRoute(
   adapter: HttpAdapter,
   deps: RegisterAdminDashboardRouteDeps,
 ): void {
-  const { repos } = deps
+  const { repos, config } = deps
   const { store } = repos.order
 
   adapter.registerRoute(
     'GET',
     '/api/admin/dashboard',
-    requireRole('admin', async () => {
+    requireRole('admin', async (ctx) => {
       try {
         const startOfToday = new Date(new Date().setHours(0, 0, 0, 0))
 
@@ -78,6 +85,13 @@ export function registerAdminDashboardRoute(
           }
         }
 
+        // From config, not `app.agents`: routes are registered before the agent surfaces exist.
+        const ucpOn = config.agents.ucp.enabled
+        const since = new Date(Date.now() - AGENT_WINDOW_MS)
+        const agentOrders = await store.read((tx) =>
+          repos.order.agentTotals(tx, since, AGENT_SOURCES_SHOWN),
+        )
+
         return ok({
           today: {
             orderCount: todayOrderCount,
@@ -86,9 +100,23 @@ export function registerAdminDashboardRoute(
           },
           recentOrders,
           lowStock,
+          agents: {
+            since: since.toISOString(),
+            currency: config.store.currency,
+            surfaces: [
+              ...(ucpOn ? [{ name: 'ucp', capabilities: { ...UCP_CAPABILITIES } }] : []),
+              ...(config.agents.acp.enabled
+                ? [{ name: 'acp', capabilities: { ...ACP_CAPABILITIES } }]
+                : []),
+            ],
+            mcp: { enabled: config.agents.mcp.enabled, writes: config.agents.mcp.writes },
+            profilePath: ucpOn ? UCP_PROFILE_PATH : null,
+            orders: { count: agentOrders.count, revenueMinor: agentOrders.revenueMinor },
+            bySource: agentOrders.bySource,
+          },
         })
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )

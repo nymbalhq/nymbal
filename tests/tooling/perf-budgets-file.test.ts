@@ -1,6 +1,7 @@
-// Reads: perf-budgets.json
+// Reads: perf-budgets.json, scripts/perf-budgets-check.ts, tests/perf/fixtures/*.json
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import { SCRIPT_REFERENCES, type ScriptReference } from '../../scripts/perf-budgets-check'
 
 type Budgets = Record<
   string,
@@ -59,5 +60,29 @@ describe('AC-6: the reservations are gone', () => {
       )
     })
     expect(reservations).toEqual([])
+  })
+})
+
+// AC-7: the release's perf suite lifts a page with a reference to between that reference and its budget, and a
+// script smaller than a few hundred bytes cannot be built; a re-pin that closes the gap would pass every gate and fail
+// only at the release.
+describe('AC-7: every script reference sits under its budget with room to lift', () => {
+  const ROOM_BYTES = 256
+
+  it('AC-7: each reference names a budgeted page whose scriptBytes budget exceeds the reference by at least 256 B', () => {
+    const budgets = JSON.parse(
+      readFileSync(new URL('../../perf-budgets.json', import.meta.url), 'utf8'),
+    ) as Budgets
+    expect(SCRIPT_REFERENCES.length).toBeGreaterThanOrEqual(1)
+    for (const path of SCRIPT_REFERENCES) {
+      const ref = JSON.parse(
+        readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8'),
+      ) as ScriptReference
+      const budget = budgets[ref.template]?.[ref.page]?.scriptBytes ?? Number.NaN
+      expect(
+        budget - ref.scriptBytes,
+        `${path}: budget ${budget}, reference ${ref.scriptBytes}`,
+      ).toBeGreaterThanOrEqual(ROOM_BYTES)
+    }
   })
 })

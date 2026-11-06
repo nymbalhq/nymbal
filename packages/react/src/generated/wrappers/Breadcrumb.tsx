@@ -33,22 +33,12 @@ export const Breadcrumb = /* @__PURE__ */ forwardRef<HTMLElement, BreadcrumbProp
     const innerRef = useRef<HTMLElement>(null)
     const ref = (forwardedRef ?? innerRef) as React.RefObject<HTMLElement | null>
 
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (props.items !== undefined) {
-      el.setAttribute('items', JSON.stringify(props.items))
-    } else {
-      el.removeAttribute('items')
-    }
-  }, [props.items])
-
 
 
     useDefine(NymbalBreadcrumb)
 
     return (
-      <nymbal-breadcrumb ref={ref as React.Ref<HTMLElement>} items={props.items === undefined ? undefined : JSON.stringify(props.items)} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
+      <nymbal-breadcrumb ref={ref as React.Ref<HTMLElement>} {...{ 'ITEMS': props.items === undefined ? undefined : JSON.stringify(props.items) }} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
         // The server render goes on the tag itself: a full load parses its template into the shadow root, which React
         // does not see, and a soft navigation's innerHTML leaves it for the element to upgrade.
         dangerouslySetInnerHTML={props.serverHtml === undefined ? undefined : { __html: props.serverHtml }}

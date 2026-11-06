@@ -34,8 +34,11 @@ export class ConfigError extends NymbalError {
 }
 
 export class ValidationError extends NymbalError {
-  constructor(message: string, options: { cause?: unknown; context?: ErrorContext } = {}) {
-    super('validation.failed', message, options)
+  constructor(
+    message: string,
+    options: { cause?: unknown; context?: ErrorContext; code?: string } = {},
+  ) {
+    super(options.code ?? 'validation.failed', message, options)
   }
 }
 
@@ -137,6 +140,38 @@ export class CheckoutError extends NymbalError {
     options: { cause?: unknown; context?: ErrorContext } = {},
   ) {
     super(`checkout.${code}`, message, options)
+  }
+}
+
+/** A cart command that would take a line above `max`; `onCart` is what the line held before it. */
+export class CartLimitError extends NymbalError {
+  constructor(variantId: string, max: number, onCart: number) {
+    super('cart.qty_limit', `a cart line holds at most ${max}`, {
+      context: { variantId, max, onCart },
+    })
+  }
+}
+
+/** Why a review was not taken. `not_a_buyer` is reserved: any signed-in customer may review. */
+export type ReviewRefusal = 'submit_unsupported' | 'already_reviewed' | 'not_a_buyer' | 'rejected'
+
+const REVIEW_REFUSAL_MESSAGES: Record<ReviewRefusal, string> = {
+  submit_unsupported: 'This store does not take reviews on its site.',
+  already_reviewed: 'You have already reviewed this product.',
+  not_a_buyer: 'Only a customer who bought this product can review it.',
+  rejected: 'The review was not accepted.',
+}
+
+export class ReviewRefusedError extends NymbalError {
+  readonly refusal: ReviewRefusal
+
+  constructor(
+    refusal: ReviewRefusal,
+    message: string = REVIEW_REFUSAL_MESSAGES[refusal],
+    options: { cause?: unknown; context?: ErrorContext } = {},
+  ) {
+    super(`reviews.${refusal}`, message, options)
+    this.refusal = refusal
   }
 }
 

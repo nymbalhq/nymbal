@@ -98,7 +98,7 @@ export function registerAdminInventoryRoutes(
         const page = rows.slice(offset, offset + limit)
         return ok(page)
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )
@@ -123,7 +123,7 @@ export function registerAdminInventoryRoutes(
         )
         return ok({ newQty: result.newQty, variantId })
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )
@@ -141,7 +141,7 @@ export function registerAdminInventoryRoutes(
         )
         return ok(history)
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )

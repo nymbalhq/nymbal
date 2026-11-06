@@ -179,6 +179,11 @@ export class NymbalCartDrawer extends NymbalElement {
     this.toggle()
   }
 
+  /** The open drawer's overlay covers the page: Escape closes it, wherever focus is, through `hide()`. */
+  private readonly handleKeydown = (event: KeyboardEvent): void => {
+    if (event.key === 'Escape' && this.hasAttribute('open')) this.hide()
+  }
+
   declare cart: unknown
 
   protected override stores() {
@@ -193,12 +198,14 @@ export class NymbalCartDrawer extends NymbalElement {
     super.connectedCallback()
     document.addEventListener('nymbal:cart:item-added', this.handleItemAdded)
     document.addEventListener('nymbal:mini-cart:clicked', this.handleMiniCartClicked)
+    document.addEventListener('keydown', this.handleKeydown)
   }
 
   override disconnectedCallback(): void {
     super.disconnectedCallback()
     document.removeEventListener('nymbal:cart:item-added', this.handleItemAdded)
     document.removeEventListener('nymbal:mini-cart:clicked', this.handleMiniCartClicked)
+    document.removeEventListener('keydown', this.handleKeydown)
   }
 
   /** Opens the drawer (the `open` attribute and property say whether it is). */

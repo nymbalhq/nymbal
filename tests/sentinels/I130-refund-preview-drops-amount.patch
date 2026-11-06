@@ -1,0 +1,18 @@
+# id: I130
+# kind: injected
+# defect: the refund preview shows what is refunded after as what is refunded now, dropping the amount the proposal would refund, so an admin approves a refund without seeing its size
+# where: packages/platform/src/services/proposal-preview.ts:160
+# killed-by: packages/platform/src/services/proposal-preview.test.ts (a refund shows what is refunded now and after, in the order’s currency, not the store’s)
+# suite: pnpm vitest run --project platform-unit packages/platform/src/services/proposal-preview.test.ts
+diff --git a/packages/platform/src/services/proposal-preview.ts b/packages/platform/src/services/proposal-preview.ts
+--- a/packages/platform/src/services/proposal-preview.ts
++++ b/packages/platform/src/services/proposal-preview.ts
+@@ -157,7 +157,7 @@ export async function previewOf(
+           label: 'Refunded',
+           kind: 'money',
+           current: order.refundedMinor,
+-          proposed: order.refundedMinor + numberOf(args['amountMinor']),
++          proposed: order.refundedMinor,
+         }
+       : { label: 'Status', kind: 'value', current: order.status, proposed: 'cancelled' }
+   return { target, changes: [change], currency: order.currency }

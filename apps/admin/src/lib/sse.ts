@@ -11,6 +11,8 @@ export interface SseClient {
 export interface SseClientOptions {
   /** Runs on each `connected` frame, which the server sends once its subscription is live. */
   onConnected?: () => void
+  /** Runs once each time the stream is lost or a ticket is refused, before the reconnect is scheduled. */
+  onDisconnected?: () => void
 }
 
 export type SseEventHandler = <K extends keyof NymbalEventMap>(
@@ -82,9 +84,13 @@ export function createSseClient(
       es.onerror = () => {
         es?.close()
         es = null
+        if (stopped) return
+        options.onDisconnected?.()
         scheduleReconnect()
       }
     } catch {
+      if (stopped) return
+      options.onDisconnected?.()
       scheduleReconnect()
     }
   }

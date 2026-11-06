@@ -36,6 +36,7 @@ type OwnerOrStoreField =
   | 'notes'
   | 'metadata'
   | 'paymentIntentId'
+  | 'source'
   | 'updatedAt'
 
 /**

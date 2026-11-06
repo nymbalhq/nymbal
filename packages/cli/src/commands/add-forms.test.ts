@@ -93,12 +93,6 @@ function projectFrom(label: string, omit: string[] = []): string {
   return dir
 }
 
-/** The project's `.env.example` without the scaffold's `# <name>=` line: a commented variable counts as listed. */
-function unlist(dir: string, name: string): void {
-  const path = join(dir, '.env.example')
-  writeFileSync(path, readFileSync(path, 'utf8').replace(new RegExp(`^# ${name}=\\n`, 'm'), ''))
-}
-
 /** `name` in the project's node_modules as a link to the fixture package directory. */
 function linkFixture(dir: string, name: string, fixture: string): void {
   const at = join(dir, 'node_modules', ...name.split('/'))
@@ -337,7 +331,6 @@ describe(
 
     it("AC-3: `add ai anthropic --no-install` sets commerce.ai to { provider: 'anthropic' } alone, appends one ANTHROPIC_API_KEY line under its label, and names the setting with no env in Next: as set in the admin's Settings", async () => {
       const dir = projectFrom('ai-run')
-      unlist(dir, 'ANTHROPIC_API_KEY')
       const before = listing(dir)
       const exampleBefore = read(dir, '.env.example')
       const commerceBefore = await commerceOf(dir)
@@ -502,7 +495,6 @@ describe('AC-5: every form is idempotent and refuses a conflict', { timeout: 30_
     'AC-5: a second identical run of the $form form prints `already added: nothing changed` and changes no file',
     async ({ form, args }) => {
       const dir = projectFrom(`again-${form.replace(/\s+/g, '-')}`)
-      unlist(dir, 'ANTHROPIC_API_KEY')
       linkFixture(dir, SEARCH_X, 'third-party-search-x')
       const before = listing(dir)
 
@@ -568,6 +560,41 @@ describe('AC-5: every form is idempotent and refuses a conflict', { timeout: 30_
       expect(changedPaths(before, listing(dir))).toEqual([])
     },
   )
+})
+
+describe('AC-4: nymbal add', { timeout: 30_000 }, () => {
+  it('AC-4: with a field read from process.env, not env(), and an invalid value in .env, `nymbal add postgres` exits 1 and leaves the config byte-identical; the same value unset exits 0; neither run leaves the value in process.env', async () => {
+    const VAR = 'RECIPES_X_FRAME_OPTIONS'
+    const readsProcessEnv = (dir: string) => {
+      const path = join(dir, 'nymbal.config.ts')
+      const original = readFileSync(path, 'utf8')
+      const edited = original.replace(
+        "xFrameOptions: 'deny'",
+        `xFrameOptions: process.env['${VAR}'] ?? 'deny'`,
+      )
+      expect(edited, 'the field now reads process.env').not.toBe(original)
+      writeFileSync(path, edited)
+      return { path, edited }
+    }
+    expect(process.env[VAR]).toBeUndefined()
+
+    const invalid = projectFrom('process-env-dotenv')
+    const { path, edited } = readsProcessEnv(invalid)
+    writeFileSync(join(invalid, '.env'), `${VAR}=not-a-frame-option\n`)
+    const before = listing(invalid)
+    const refused = await nymbalAdd(invalid, ['postgres'], { install: false })
+    expect(refused.code, refused.out).toBe(1)
+    expect(refused.out).toContain('xFrameOptions')
+    expect(readFileSync(path, 'utf8')).toBe(edited)
+    expect(changedPaths(before, listing(invalid))).toHaveLength(0)
+    expect(process.env[VAR]).toBeUndefined()
+
+    const unset = projectFrom('process-env-unset')
+    readsProcessEnv(unset)
+    const accepted = await nymbalAdd(unset, ['postgres'], { install: false })
+    expect(accepted.code, accepted.out).toBe(0)
+    expect(process.env[VAR]).toBeUndefined()
+  })
 })
 
 describe('AC-7: nymbal add with no argument', () => {

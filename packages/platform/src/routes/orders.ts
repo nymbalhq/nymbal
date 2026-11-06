@@ -84,7 +84,7 @@ export function registerOrderRoutes(
         })
         return ok(result.items.map(ownerOrder), { nextCursor: result.nextCursor })
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )
@@ -122,7 +122,7 @@ export function registerOrderRoutes(
       }
       throw new NotFoundError('order', orderNumber)
     } catch (err) {
-      return renderError(err)
+      return renderError(err, ctx.logger)
     }
   }
 
@@ -138,7 +138,7 @@ export function registerOrderRoutes(
       await orders.requestLink(orderNumber, email)
       return ok(LINK_ANSWER, undefined, 202)
     } catch (err) {
-      return renderError(err)
+      return renderError(err, ctx.logger)
     }
   })
 }

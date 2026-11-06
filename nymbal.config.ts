@@ -1,4 +1,4 @@
-import { env } from '@nymbalhq/config'
+import { env, envOptional } from '@nymbalhq/config'
 
 // The stores come from the environment so that one E2E suite runs on every store set (scripts/gate.ts --stores, the
 // nightly matrix); unset, they are SQLite, in-memory and in-process. The Redis URL is REDIS_URL.
@@ -19,14 +19,15 @@ export default {
   },
   security: {
     adapter: 'middleware',
-    // The E2E suite registers, logs in and views products many times from 127.0.0.1; the built-in limits would
-    // refuse it.
+    // The E2E suite registers, logs in, views and reviews products many times from 127.0.0.1; the built-in limits
+    // would refuse it.
     rateLimit: {
       '/api/auth/login': { requests: 1000, window: '1m', action: 'block' },
       '/api/auth/register': { requests: 1000, window: '1m', action: 'block' },
       '/api/recently-viewed': { requests: 1000, window: '1m', action: 'block' },
       '/api/checkout': { requests: 1000, window: '1m', action: 'block' },
       '/api/orders/link': { requests: 1000, window: '1m', action: 'block' },
+      '/api/reviews': { requests: 1000, window: '1m', action: 'block' },
       // Order reads that carry the order's email beside an expired key; key-only reads are never limited.
       '/api/orders/*': {
         requests: 1000,
@@ -66,5 +67,9 @@ export default {
   },
   deployment: {
     strategy: 'standard',
+  },
+  // Agentic checkout (beta) is on when its key is set: the E2E harness sets one, and attachHttp reads it from there.
+  agents: {
+    acp: { enabled: envOptional('NYMBAL_ACP_API_KEY') !== undefined },
   },
 }

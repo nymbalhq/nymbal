@@ -2,8 +2,8 @@ import type { Page } from '@playwright/test'
 
 /**
  * Resolves once the page's `tag` element is defined and has no update pending. A storefront form is server-rendered,
- * so its fields take input before the element upgrades (on Next, in a React effect after `load`), and the upgrade's
- * first render empties a field filled before it.
+ * so its fields take input before the element upgrades (on Next, in a React effect after `load`), but only the
+ * defined element, once it has rendered, sends the submit to the API.
  */
 export async function formReady(page: Page, tag: string): Promise<void> {
   await page.locator(tag).evaluate(async (el) => {

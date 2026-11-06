@@ -3,7 +3,8 @@ import '../../styles/pages/confirmation.css'
 import '../../styles/pages/error.css'
 import BaseLayout from '../../layouts/BaseLayout.astro'
 import NymbalElement from '@nymbalhq/web-components/astro'
-import { fetchOrder } from '../../lib/api'
+import type { ShopperOrder } from '@nymbalhq/types'
+import { fetchOrder, openExpiredOrder, requestOrderLink, shopperHeaders } from '../../lib/api'
 import { isPaid, orderHeading } from '../../lib/order-status'
 
 // The URL carries the order's key (`?key=`), so nothing this page links to or loads may be told the URL: a header,
@@ -13,14 +14,43 @@ Astro.response.headers.set('Cache-Control', 'no-store')
 
 const { orderNumber } = Astro.params
 const key = Astro.url.searchParams.get('key') ?? undefined
-// Rejects when the API fails, so a failed read is a 500 and never a not-found page for an order the shopper has. A POST
-// here (a form sent before its script ran) is answered as the plain page: its body is never read.
-const read = await fetchOrder(orderNumber!, key)
+
+// A POST is one of the page's two forms sent without its script (the script sends both from the browser): this server
+// answers it, the email in the form's body, never in a URL.
+const form = Astro.request.method === 'POST' ? await Astro.request.formData() : null
+const posted = (name: string): string => String(form?.get(name) ?? '').trim()
+const intent = posted('intent')
+
+// Every read rejects when the API fails, so a failed read is a 500 and never a not-found page for an order the shopper
+// has.
+let read: ShopperOrder | 'expired' | null
+let emailLimited = false
+let link: 'idle' | 'sent' | 'limited' = 'idle'
+if (intent === 'link') {
+  link = await requestOrderLink(
+    posted('orderNumber'),
+    posted('email'),
+    shopperHeaders(Astro.request.headers),
+  )
+  read = null
+} else if (intent === 'open' && key !== undefined) {
+  const opened = await openExpiredOrder(
+    orderNumber!,
+    key,
+    posted('email'),
+    shopperHeaders(Astro.request.headers),
+  )
+  emailLimited = opened === 'limited'
+  read = opened === 'limited' ? 'expired' : opened === 'not-found' ? null : opened
+} else {
+  read = await fetchOrder(orderNumber!, key)
+}
 const order = read === 'expired' ? null : read
 const canonical = new URL(Astro.url.pathname, Astro.url).href
 
 // The order page's own not-found state, which offers a fresh link; the site-wide 404 would drop the headers above.
 if (read === null) Astro.response.status = 404
+if (emailLimited || link === 'limited') Astro.response.status = 429
 
 const summary = order && {
   items: JSON.stringify(
@@ -49,13 +79,14 @@ const paid = order ? isPaid(order.status) : false
   {read === 'expired' && (
     <div class="container section" id="order-email-prompt">
       <form method="post" class="error-page" id="order-email-form" data-order-number={orderNumber}>
+        <input type="hidden" name="intent" value="open" />
         <h1 class="error-title">Open your order</h1>
         <p class="error-message">This order link has expired. Enter the email you gave at checkout to open the order.</p>
         <div class="form-group">
           <label for="order-email">Email</label>
           <input id="order-email" type="email" name="email" autocomplete="email" required data-testid="order-email-input" />
         </div>
-        <p class="error-message" data-testid="order-email-limited" hidden>
+        <p class="error-message" data-testid="order-email-limited" hidden={!emailLimited}>
           Too many tries for now. Please try again in a while.
         </p>
         <p class="error-message" id="order-email-failed" hidden>We could not open the order just now. Please try again.</p>
@@ -102,7 +133,7 @@ const paid = order ? isPaid(order.status) : false
     </div>
   )}
   {(read === 'expired' || read === null) && (
-    <div class="container section" id="order-not-found" hidden={read === 'expired'}>
+    <div class="container section" id="order-not-found" data-order-number={orderNumber} hidden={read === 'expired'}>
       <div class="error-page">
         <span class="error-code">404</span>
         <h1 class="error-title">Order not found</h1>
@@ -110,7 +141,8 @@ const paid = order ? isPaid(order.status) : false
           This link does not open an order. Give its order number and the email you gave at checkout, and we'll email
           you a fresh link if they match.
         </p>
-        <form method="post" id="order-link-form">
+        <form method="post" id="order-link-form" hidden={link === 'sent'}>
+          <input type="hidden" name="intent" value="link" />
           <div class="form-group">
             <label for="order-link-number">Order number</label>
             <input id="order-link-number" name="orderNumber" required data-testid="order-link-number" />
@@ -119,11 +151,12 @@ const paid = order ? isPaid(order.status) : false
             <label for="order-link-email">Email</label>
             <input id="order-link-email" type="email" name="email" autocomplete="email" required data-testid="order-link-email" />
           </div>
+          {link === 'limited' && <p class="error-message">Too many tries for now. Please try again in a while.</p>}
           <div class="error-actions">
             <button type="submit" class="btn btn-primary" data-testid="order-link-submit">Send me my order link</button>
           </div>
         </form>
-        <p class="error-message" data-testid="order-link-sent" hidden>
+        <p class="error-message" data-testid="order-link-sent" hidden={link !== 'sent'}>
           If that number and email match an order, its link is on its way to that email.
         </p>
         <p class="error-message" id="order-link-failed" hidden>We could not send the link just now. Please try again.</p>

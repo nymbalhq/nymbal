@@ -1,6 +1,7 @@
 import { Mail, Phone, Calendar, ShoppingBag, TrendingUp } from 'lucide-react'
 import { formatMoney } from '@/lib/money'
 import { formatDate, formatRelative } from '@/lib/dates'
+import { tid } from '@/lib/testid'
 import type { Customer } from '@nymbalhq/types'
 import type { CustomerStats } from '@/types'
 
@@ -56,12 +57,14 @@ export function CustomerProfileCard({ customer, stats }: CustomerProfileCardProp
         <StatCard
           icon={<TrendingUp className="h-4 w-4 text-green-500" />}
           label="Lifetime Value"
+          data-testid={tid('customer', 'stat', 'lifetime-value')}
           value={formatMoney(stats.lifetimeRevenueMinor, 'GBP')}
           mono
         />
         <StatCard
           icon={<TrendingUp className="h-4 w-4 text-indigo-500" />}
           label="Avg Order"
+          data-testid={tid('customer', 'stat', 'avg-order')}
           value={formatMoney(stats.avgOrderValueMinor, 'GBP')}
           mono
         />
@@ -79,14 +82,16 @@ function StatCard({
   label,
   value,
   mono,
+  'data-testid': testId,
 }: {
   icon: React.ReactNode
   label: string
   value: string
   mono?: boolean
+  'data-testid'?: string
 }) {
   return (
-    <div className="rounded-md border border-zinc-200 bg-white p-3">
+    <div className="rounded-md border border-zinc-200 bg-white p-3" data-testid={testId}>
       <div className="flex items-center gap-2 mb-1">
         {icon}
         <span className="text-xs text-zinc-500">{label}</span>

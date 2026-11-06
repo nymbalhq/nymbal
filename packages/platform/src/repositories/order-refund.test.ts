@@ -197,4 +197,66 @@ describe('OrderRefundRepository', () => {
     expect(await listOf(env, silent)).toEqual([])
     await env.store.close()
   })
+
+  // Defect: the empty-page guard is dropped, so an admin orders page with no orders still queries refunds. A handle
+  // whose read has settled refuses any query, so only a call that queries nothing answers on it.
+  it('listByOrders of no orders answers an empty map without querying', async () => {
+    const env = await setup()
+    const orderId = await order(env)
+    await insert(env, row(orderId))
+    const settled = await env.store.read(async (tx) => tx)
+
+    await expect(env.repo.listByOrders(settled, [orderId])).rejects.toThrow(/after its read/)
+    await expect(env.repo.listByOrders(settled, [])).resolves.toEqual(new Map())
+    await env.store.close()
+  })
+
+  // Defect: the delete loses its order condition (rolling one imported order back takes every order's refunds with
+  // it) or deletes nothing (the removed order leaves refunds behind).
+  it('deleteByOrder removes the refunds of that order and leaves those of every other order as they were', async () => {
+    const env = await setup()
+    const [gone, kept] = [await order(env), await order(env)]
+    for (const at of [0, 1, 2]) {
+      await insert(env, row(gone, { createdAt: new Date(Date.UTC(2026, 9, 1, 10, 0, at)) }))
+    }
+    for (const at of [0, 3]) {
+      await insert(env, row(kept, { createdAt: new Date(Date.UTC(2026, 9, 1, 10, 0, at)) }))
+    }
+    const keptBefore = await listOf(env, kept)
+
+    await env.store.transaction((tx) => env.repo.deleteByOrder(tx, gone))
+
+    expect(await listOf(env, gone)).toEqual([])
+    expect(await listOf(env, kept)).toEqual(keptBefore)
+    await env.store.close()
+  })
+
+  // Defect: the bound is strict or reversed (a refund made the instant the import ran, or one made before it, is
+  // counted the wrong way), the filter is dropped, or ids are collapsed so an order refunded twice counts once.
+  it('orderIdsSince answers the order of each refund made at or after the time, none before', async () => {
+    const env = await setup()
+    const base = Date.UTC(2026, 9, 1, 10, 0, 0)
+    await fc.assert(
+      fc.asyncProperty(
+        fc.array(
+          fc.record({ which: fc.integer({ min: 0, max: 2 }), at: fc.integer({ min: -3, max: 3 }) }),
+          { maxLength: 6 },
+        ),
+        fc.integer({ min: -3, max: 3 }),
+        async (specs, sinceAt) => {
+          // Fresh orders each run, so earlier runs' rows are told apart and a counterexample replays alone.
+          const orders = [await order(env), await order(env), await order(env)]
+          for (const s of specs) {
+            await insert(env, row(orders[s.which]!, { createdAt: new Date(base + s.at * 1000) }))
+          }
+          const since = new Date(base + sinceAt * 1000)
+          const got = await env.store.read((tx) => env.repo.orderIdsSince(tx, since))
+          const expected = specs.filter((s) => s.at >= sinceAt).map((s) => orders[s.which]!)
+          expect(got.filter((id) => orders.includes(id)).sort()).toEqual(expected.sort())
+        },
+      ),
+      { numRuns: 20 },
+    )
+    await env.store.close()
+  })
 })

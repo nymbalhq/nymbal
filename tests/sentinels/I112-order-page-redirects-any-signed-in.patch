@@ -1,0 +1,22 @@
+# id: I112
+# kind: injected
+# defect: the order page's signed-in check sends the browser to /account/orders/<n> whenever the session restores, without the owner's read answering
+# where: templates/astro/src/scripts/order-access.ts:163-173
+# killed-by: tests/e2e/journeys/order-owner-link.spec.ts (AC-9)
+# suite: CI=1 NYMBAL_E2E_TARGET=astro pnpm --filter @nymbalhq/e2e exec playwright test tests/e2e/journeys/order-owner-link.spec.ts --project astro --retries 0
+diff --git a/templates/astro/src/scripts/order-access.ts b/templates/astro/src/scripts/order-access.ts
+--- a/templates/astro/src/scripts/order-access.ts
++++ b/templates/astro/src/scripts/order-access.ts
+@@ -163,12 +163,6 @@ submitOnce(linkForm, async () => {
+ async function sendOwnerToAccount(orderNumber: string): Promise<void> {
+   await client.auth.restore()
+   if (!client.auth.getState().isAuthenticated) return
+-  try {
+-    await client.customer.orders.get(orderNumber)
+-  } catch (err) {
+-    if (err instanceof NymbalApiError && err.status === 404) return
+-    throw err
+-  }
+   window.location.replace(`/account/orders/${encodeURIComponent(orderNumber)}`)
+ }
+ 

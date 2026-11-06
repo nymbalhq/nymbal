@@ -1,5 +1,7 @@
 import httpProxy from '@fastify/http-proxy'
 import type { HTTPMethods } from 'fastify'
+import { securitySchema, type NymbalConfig } from '@nymbalhq/config'
+import { SHOPPER_ATTESTATION_HEADER } from '@nymbalhq/types'
 import type { FastifyHttpAdapter } from './fastify-adapter.js'
 
 export interface StorefrontForwardOptions {
@@ -7,6 +9,8 @@ export interface StorefrontForwardOptions {
   port: number
   /** The store's public origin: the storefront sees its host and scheme, whatever the client sent. */
   publicUrl: string
+  /** The security headers a page answer gets where the storefront set none; absent, the config's defaults. */
+  headers?: Pick<NymbalConfig['security']['headers'], 'hsts' | 'referrerPolicy' | 'xFrameOptions'>
 }
 
 export interface StorefrontForward {
@@ -18,12 +22,39 @@ export interface StorefrontForward {
   drained(timeoutMs: number): Promise<boolean>
 }
 
+/**
+ * The page security headers, each sent only where the storefront's answer has none of its own. The policy is a floor
+ * a storefront's own replaces: it does not know the API origin or the payment scripts a page loads.
+ */
+function pageHeaders(
+  origin: URL,
+  {
+    hsts,
+    referrerPolicy,
+    xFrameOptions,
+  }: NonNullable<StorefrontForwardOptions['headers']> = securitySchema.parse({
+    adapter: 'middleware',
+  }).headers,
+): Record<string, string> {
+  return {
+    ...(hsts &&
+      origin.protocol === 'https:' && {
+        'strict-transport-security': 'max-age=31536000; includeSubDomains',
+      }),
+    'content-security-policy': "frame-ancestors 'none'; object-src 'none'; base-uri 'self'",
+    'x-content-type-options': 'nosniff',
+    'x-frame-options': xFrameOptions === 'deny' ? 'DENY' : 'SAMEORIGIN',
+    'referrer-policy': referrerPolicy,
+  }
+}
+
 /** OPTIONS stays the API's: CORS answers a preflight on any path. */
 const FORWARDED_METHODS: HTTPMethods[] = ['DELETE', 'GET', 'HEAD', 'PATCH', 'POST', 'PUT']
 
 /**
  * Forwards every request the API does not route to the storefront on its internal port, body and headers unchanged
- * both ways. A path under /api/ keeps the API's not-found answer and never reaches the storefront. Call before
+ * both ways but for the forwarding headers and `x-nymbal-shopper`, the shopper's address attested by this API. A path
+ * under /api/ keeps the API's not-found answer and never reaches the storefront. Call before
  * `adapter.start`.
  */
 export function forwardToStorefront(
@@ -32,6 +63,7 @@ export function forwardToStorefront(
 ): StorefrontForward {
   const origin = new URL(options.publicUrl)
   const proto = origin.protocol.slice(0, -1)
+  const filled = pageHeaders(origin, options.headers)
   let inFlight = 0
   let refusing = false
   const waiters = new Set<() => void>()
@@ -79,8 +111,11 @@ export function forwardToStorefront(
             'x-forwarded-host': origin.host,
             'x-forwarded-proto': proto,
             'x-forwarded-for': [prior, peer].flat().filter(Boolean).join(', '),
+            // Replaces whatever the client sent: only this API's own attestation of the address it resolved.
+            [SHOPPER_ATTESTATION_HEADER]: adapter.attestShopper(req.clientIp),
           }
         },
+        rewriteHeaders: (headers) => ({ ...filled, ...headers }),
         // A forward is never retried: a page POST may not be idempotent, and a 503 is the storefront's answer.
         retryDelay: () => null,
         onError: (reply) => {

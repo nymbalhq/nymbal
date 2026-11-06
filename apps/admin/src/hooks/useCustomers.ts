@@ -13,7 +13,10 @@ export function useCustomers(filters: CustomerFilters = {}) {
   return useQuery({
     queryKey: ['customers', 'list', filters],
     queryFn: async () => {
-      const result = await api.get<{ customers: Customer[] }>('/api/admin/customers', filters as Record<string, string | number | boolean | undefined | null>)
+      const result = await api.get<{ customers: Customer[] }>(
+        '/api/admin/customers',
+        filters as Record<string, string | number | boolean | undefined | null>,
+      )
       return result.customers
     },
   })
@@ -31,10 +34,7 @@ export function useCustomer(id: string) {
 export function useCustomerOrders(id: string) {
   return useQuery({
     queryKey: ['customers', 'orders', id],
-    queryFn: async () => {
-      const result = await api.get<{ orders: Order[] }>(`/api/admin/customers/${id}/orders`)
-      return result.orders
-    },
+    queryFn: () => api.get<Order[]>(`/api/admin/customers/${id}/orders`),
     enabled: !!id,
   })
 }

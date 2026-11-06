@@ -1,5 +1,6 @@
 import { v7 as uuidv7 } from 'uuid'
 import {
+  EVT_ALERT_CONFIRMATION_SENT,
   EVT_ALERT_CONFIRMED,
   EVT_ALERT_REPEATED,
   EVT_ALERT_REQUESTED,
@@ -19,6 +20,17 @@ import type { AlertSubscription } from '../repositories/alert-subscription.js'
 import type { Repositories } from '../repositories/index.js'
 import { newAlertToken } from './alert-token.js'
 
+/** A pending row is sent its confirmation again only once this long has passed since the last one. */
+export const ALERT_CONFIRMATION_INTERVAL_MS = 600_000
+
+/** Whether a row's last confirmation, if any, was sent at least the interval before `now`. */
+export function confirmationDue(row: AlertSubscription, now: Date): boolean {
+  return (
+    row.confirmationSentAt === null ||
+    now.getTime() - row.confirmationSentAt.getTime() >= ALERT_CONFIRMATION_INTERVAL_MS
+  )
+}
+
 export interface AlertSubscribeInput {
   email: string
   variantId: string
@@ -36,16 +48,29 @@ export interface AlertConfirmed {
 export interface AlertService {
   /**
    * Answers `pending` whatever the address's account or subscription, so the answer reveals neither; every accepted
-   * request writes the row once. Only a row that is not `active` is (re)sent its confirmation.
+   * request writes the row once. A new or reissued row is sent its confirmation; a row already pending only once the
+   * interval has passed since its last one.
    */
   subscribe(input: AlertSubscribeInput): Promise<{ status: 'pending' }>
   confirm(token: string): Promise<AlertConfirmed>
   unsubscribe(token: string): Promise<{ status: 'unsubscribed' }>
   /**
    * In the transaction that marks an alert's send: a back-in-stock row is `fired`, a price-drop row stays `active` with
-   * the trigger's price as its baseline; `alert.sent.v1` names the trigger.
+   * the trigger's price as its baseline; `alert.sent.v1` names the trigger. A row no longer `active` is left as it is,
+   * with no event: answers whether the row moved.
    */
-  recordSent(tx: Tx, subscription: AlertSubscription, trigger: NymbalEvent<unknown>): Promise<void>
+  recordSent(
+    tx: Tx,
+    subscription: AlertSubscription,
+    trigger: NymbalEvent<unknown>,
+  ): Promise<boolean>
+  /** In the transaction that marks a confirmation's send: the row's interval starts at `at`. */
+  recordConfirmationSent(
+    tx: Tx,
+    subscription: AlertSubscription,
+    request: NymbalEvent<unknown>,
+    at: Date,
+  ): Promise<void>
 }
 
 export interface CreateAlertServiceDeps {
@@ -95,6 +120,7 @@ export function createAlertService(deps: CreateAlertServiceDeps): AlertService {
             code: 'alerts.variant_not_found',
           })
         }
+        const at = new Date()
         const row = await repos.alertSubscription.upsertPending(tx, {
           id: uuidv7(),
           email: normaliseEmail(email),
@@ -105,11 +131,14 @@ export function createAlertService(deps: CreateAlertServiceDeps): AlertService {
           unsubscribeToken: newAlertToken(),
           origin,
           baselinePriceMinor: kind === 'price_drop' ? variant.priceMinor : null,
-          at: new Date(),
+          at,
         })
-        // A pending row owes a confirmation; an active one stands as it was, only its updated_at moved.
+        // A pending row owes a confirmation unless one went within the interval, whose link still confirms; an active
+        // one stands as it was, only its updated_at moved.
         await publisher.publish(
-          row.status === 'pending' ? EVT_ALERT_REQUESTED : EVT_ALERT_REPEATED,
+          row.status === 'pending' && confirmationDue(row, at)
+            ? EVT_ALERT_REQUESTED
+            : EVT_ALERT_REPEATED,
           {
             subscriptionId: row.id,
             kind,
@@ -169,7 +198,7 @@ export function createAlertService(deps: CreateAlertServiceDeps): AlertService {
 
     async recordSent(tx, subscription, trigger) {
       const updatedAt = new Date()
-      await repos.alertSubscription.update(
+      const moved = await repos.alertSubscription.update(
         tx,
         subscription.id,
         subscription.kind === 'price_drop'
@@ -182,10 +211,21 @@ export function createAlertService(deps: CreateAlertServiceDeps): AlertService {
           : { status: 'fired', updatedAt },
         ['active'],
       )
+      if (moved === null) return false
       await publisher.publish(EVT_ALERT_SENT, {
         subscriptionId: subscription.id,
         kind: subscription.kind,
         triggerEventId: trigger.id,
+      })
+      return true
+    },
+
+    async recordConfirmationSent(tx, subscription, request, at) {
+      await repos.alertSubscription.markConfirmationSent(tx, subscription.id, at)
+      await publisher.publish(EVT_ALERT_CONFIRMATION_SENT, {
+        subscriptionId: subscription.id,
+        kind: subscription.kind,
+        requestEventId: request.id,
       })
     },
   }

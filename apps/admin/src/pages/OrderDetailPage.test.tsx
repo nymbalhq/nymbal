@@ -68,6 +68,7 @@ function orderIn(status: OrderStatus) {
     capturedAt: paid ? AT : null,
     refundedMinor,
     captureMethod: paid ? 'provider' : null,
+    source: 'storefront',
     createdAt: AT,
     updatedAt: AT,
     payment: {

@@ -8,6 +8,9 @@ import {
   firstErrorLine,
   installBase,
   isDependencyLayoutPath,
+  type Judgement,
+  render,
+  type Verdict,
 } from '../../scripts/tests-fail-on-base'
 
 // AC-25 to AC-27: the pure decisions inside tests-fail-on-base.
@@ -606,6 +609,62 @@ describe('AC-6: the failure line is the error that failed the run, not a stack f
         (lines) => {
           const output = lines.join('\n')
           expect(failureLine(output)).toBe(firstErrorLine(output))
+        },
+      ),
+    )
+  })
+})
+
+// A CI log is often read from its last lines: what fails the step (the base's failure, each PASSES ON BASE file) sits
+// just above the count, which is the last line.
+describe('the report ends with what fails the step: the base failure, then each violation, then the count', () => {
+  const VERDICTS: Verdict[] = [
+    'fails on base',
+    'PASSES ON BASE',
+    'fails under sentinel',
+    'not judged',
+  ]
+  const judgement = fc
+    .record({
+      path: fc.stringMatching(/^tests\/[a-z]{1,8}\.test\.ts$/),
+      verdict: fc.constantFrom(...VERDICTS),
+    })
+    .map(
+      ({ path, verdict }): Judgement => ({
+        path,
+        verdict,
+        ...(verdict === 'not judged' ? { note: 'needs a running server' } : {}),
+        ...(verdict === 'fails under sentinel' ? { sentinel: 'S001' } : {}),
+      }),
+    )
+  const tail = fc.array(fc.constantFrom('src/index.ts(1,1): error TS1005', 'Found 1 error.'), {
+    maxLength: 4,
+  })
+
+  it('the last line is the count, the PASSES ON BASE lines sit just above it in order, a base failure just above those, and every file has one line (property)', () => {
+    fc.assert(
+      fc.property(
+        fc.uniqueArray(judgement, { minLength: 1, selector: (j) => j.path }),
+        fc.option(tail, { nil: undefined }),
+        (results, baseTail) => {
+          const reason = 'error TS2307: Cannot find module'
+          const out = render({
+            results,
+            ...(baseTail === undefined ? {} : { baseFailure: { reason, tail: baseTail } }),
+          }).split('\n')
+          const violations = results
+            .filter((r) => r.verdict === 'PASSES ON BASE')
+            .map((r) => `PASSES ON BASE: ${r.path}`)
+          const failed = baseTail === undefined ? [] : [`failed: base did not build: ${reason}`]
+          const last = [...failed, ...violations]
+          const notJudged = results.filter((r) => r.verdict === 'not judged').length
+          expect(out.at(-1)).toBe(
+            `tests-fail-on-base: ${results.length} added, ${violations.length} violation(s), ${notJudged} not judged`,
+          )
+          expect(out.slice(-1 - last.length, -1)).toEqual(last)
+          expect(results.map((r) => out.filter((l) => l.includes(`: ${r.path}`)).length)).toEqual(
+            results.map(() => 1),
+          )
         },
       ),
     )

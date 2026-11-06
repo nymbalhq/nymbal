@@ -1,5 +1,12 @@
-import { and, asc, desc, eq, gt, notInArray } from 'drizzle-orm'
-import type { Address, CaptureMethod, Order, OrderLineItem, OrderStatus } from '@nymbalhq/types'
+import { and, asc, desc, eq, gt, gte, inArray, lt, notInArray, or, sql } from 'drizzle-orm'
+import type {
+  Address,
+  CaptureMethod,
+  Order,
+  OrderLineItem,
+  OrderSource,
+  OrderStatus,
+} from '@nymbalhq/types'
 import {
   postgresDb,
   sqliteDb,
@@ -12,6 +19,35 @@ import * as sqliteSchema from '../db/schema/sqlite.js'
 import * as postgresSchema from '../db/schema/postgres.js'
 import type { KeysetPage } from './page.js'
 import { parseJson, fromTimestamp } from './json.js'
+
+export interface CustomerOrderTotals {
+  orderCount: number
+  /** Σ (captured − refunded): the money the store kept. */
+  keptMinor: number
+  /** Orders that captured any money. */
+  capturedCount: number
+  firstAt: string | null
+  lastAt: string | null
+}
+
+/** One agent's orders in a window: how many, and Σ (captured − refunded). */
+export interface AgentSourceTotals {
+  source: `agent:${string}`
+  count: number
+  revenueMinor: number
+}
+
+/** Every agent order in a window, and the agents that brought the most money. */
+export interface AgentTotals {
+  count: number
+  revenueMinor: number
+  /** At most `top` sources: revenue descending, then count descending, then source ascending. */
+  bySource: AgentSourceTotals[]
+}
+
+// Every `agent:<name>` and nothing else, as a range a (source, created_at) btree serves; ';' follows ':' in byte order.
+const AGENT_FROM = 'agent:'
+const AGENT_TO = 'agent;'
 
 export interface OrderInsert {
   id: string
@@ -36,6 +72,8 @@ export interface OrderInsert {
   cartToken?: string | null
   /** An imported order's money; a checkout order starts with nothing captured. */
   capture?: OrderCapture & { refundedMinor: number }
+  /** Who brought the order; `storefront` when not given. */
+  source?: OrderSource
   createdAt: Date
   updatedAt: Date
 }
@@ -70,6 +108,7 @@ function rowToOrder(store: CommandStore['kind'], row: Record<string, unknown>): 
     capturedAt: row.capturedAt == null ? null : fromTimestamp(row.capturedAt),
     refundedMinor: Number(row.refundedMinor ?? 0),
     captureMethod: (row.captureMethod as CaptureMethod | null) ?? null,
+    source: String(row.source) as OrderSource,
     createdAt: fromTimestamp(row.createdAt),
     updatedAt: fromTimestamp(row.updatedAt),
   }
@@ -87,6 +126,20 @@ export interface OrderRepository extends StoreRepository {
   /** The newest order the cart became: neither pending nor cancelled. */
   findLastConvertedByCartToken(tx: ReadTx, cartToken: string): Promise<Order | null>
   listByCustomer(tx: ReadTx, customerId: string, limit?: number): Promise<Order[]>
+  /**
+   * The customer's newest order (by `createdAt`, then id) in one of `statuses` whose line items hold the product, or
+   * null: their orders are read newest first a page at a time until one does.
+   */
+  newestHolding(
+    tx: ReadTx,
+    customerId: string,
+    productId: string,
+    statuses: readonly OrderStatus[],
+  ): Promise<Order | null>
+  /** Totals over every order the customer has, however many. */
+  totalsByCustomer(tx: ReadTx, customerId: string): Promise<CustomerOrderTotals>
+  /** The `agent:` orders created at or after `since`, any status, and the `top` agents among them. */
+  agentTotals(tx: ReadTx, since: Date, top: number): Promise<AgentTotals>
   list(
     tx: ReadTx,
     opts?: { status?: OrderStatus; limit?: number; offset?: number },
@@ -108,6 +161,61 @@ export interface OrderRepository extends StoreRepository {
   recordCapture(tx: Tx, id: string, capture: OrderCapture): Promise<void>
   setRefunded(tx: Tx, id: string, refundedMinor: number, updatedAt: Date): Promise<void>
   setNotes(tx: Tx, id: string, notes: string, updatedAt: Date): Promise<void>
+  /** Deletes the order's row alone: the rows that reference it go first. */
+  delete(tx: Tx, id: string): Promise<void>
+  /** Ids of the orders created at or after `since`. */
+  idsCreatedSince(tx: ReadTx, since: Date): Promise<string[]>
+}
+
+const HOLDING_PAGE = 50
+
+/** One page of the customer's orders in `statuses`, newest first (ties by id descending), after `after`. */
+async function customerOrdersPage(
+  tx: ReadTx,
+  customerId: string,
+  statuses: readonly OrderStatus[],
+  after: { createdAt: string; id: string } | undefined,
+): Promise<Order[]> {
+  if (tx.kind === 'sqlite') {
+    const t = sqliteSchema.orders
+    const key =
+      after === undefined
+        ? undefined
+        : { at: new Date(after.createdAt).toISOString(), id: after.id }
+    const rows = sqliteDb(tx)
+      .select()
+      .from(t)
+      .where(
+        and(
+          eq(t.customerId, customerId),
+          inArray(t.status, [...statuses]),
+          key === undefined
+            ? undefined
+            : or(lt(t.createdAt, key.at), and(eq(t.createdAt, key.at), lt(t.id, key.id))),
+        ),
+      )
+      .orderBy(desc(t.createdAt), desc(t.id))
+      .limit(HOLDING_PAGE)
+      .all()
+    return rows.map((r) => rowToOrder('sqlite', r as Record<string, unknown>))
+  }
+  const t = postgresSchema.orders
+  const key = after === undefined ? undefined : { at: new Date(after.createdAt), id: after.id }
+  const rows = await postgresDb(tx)
+    .select()
+    .from(t)
+    .where(
+      and(
+        eq(t.customerId, customerId),
+        inArray(t.status, [...statuses]),
+        key === undefined
+          ? undefined
+          : or(lt(t.createdAt, key.at), and(eq(t.createdAt, key.at), lt(t.id, key.id))),
+      ),
+    )
+    .orderBy(desc(t.createdAt), desc(t.id))
+    .limit(HOLDING_PAGE)
+  return rows.map((r) => rowToOrder('postgres', r as Record<string, unknown>))
 }
 
 export function createOrderRepository(store: CommandStore): OrderRepository {
@@ -233,6 +341,95 @@ export function createOrderRepository(store: CommandStore): OrderRepository {
         .limit(limit)
       return rows.map((r) => rowToOrder('postgres', r as Record<string, unknown>))
     },
+    async newestHolding(tx, customerId, productId, statuses) {
+      if (statuses.length === 0) return null
+      let after: { createdAt: string; id: string } | undefined
+      for (;;) {
+        const page = await customerOrdersPage(tx, customerId, statuses, after)
+        const holding = page.find((o) => o.lineItems.some((line) => line.productId === productId))
+        if (holding !== undefined) return holding
+        const last = page[page.length - 1]
+        if (page.length < HOLDING_PAGE || last === undefined) return null
+        after = { createdAt: last.createdAt, id: last.id }
+      }
+    },
+    async totalsByCustomer(tx, customerId) {
+      const o = tx.kind === 'sqlite' ? sqliteSchema.orders : postgresSchema.orders
+      const columns = {
+        orderCount: sql<number | string>`count(*)`,
+        keptMinor: sql<number | string | null>`sum(${o.capturedMinor} - ${o.refundedMinor})`,
+        capturedCount: sql<
+          number | string | null
+        >`sum(case when ${o.capturedMinor} > 0 then 1 else 0 end)`,
+        // Decoded as the column is: node-postgres under drizzle answers timestamps as raw text.
+        firstAt: sql`min(${o.createdAt})`.mapWith(o.createdAt),
+        lastAt: sql`max(${o.createdAt})`.mapWith(o.createdAt),
+      }
+      const row =
+        tx.kind === 'sqlite'
+          ? sqliteDb(tx)
+              .select(columns)
+              .from(sqliteSchema.orders)
+              .where(eq(sqliteSchema.orders.customerId, customerId))
+              .get()
+          : (
+              await postgresDb(tx)
+                .select(columns)
+                .from(postgresSchema.orders)
+                .where(eq(postgresSchema.orders.customerId, customerId))
+            )[0]
+      return {
+        orderCount: Number(row?.orderCount ?? 0),
+        keptMinor: Number(row?.keptMinor ?? 0),
+        capturedCount: Number(row?.capturedCount ?? 0),
+        firstAt: row?.firstAt == null ? null : fromTimestamp(row.firstAt),
+        lastAt: row?.lastAt == null ? null : fromTimestamp(row.lastAt),
+      }
+    },
+    async agentTotals(tx, since, top) {
+      const o = tx.kind === 'sqlite' ? sqliteSchema.orders : postgresSchema.orders
+      const count = sql<number | string>`count(*)`
+      const revenue = sql<number | string | null>`sum(${o.capturedMinor} - ${o.refundedMinor})`
+      const window = and(
+        gte(o.source, AGENT_FROM),
+        lt(o.source, AGENT_TO),
+        gte(o.createdAt, tx.kind === 'sqlite' ? since.toISOString() : since),
+      )
+      const order = [desc(revenue), desc(count), asc(o.source)]
+      let totals: { count: number | string; revenue: number | string | null } | undefined
+      let groups: Array<{ source: string; count: number | string; revenue: number | string | null }>
+      if (tx.kind === 'sqlite') {
+        const db = sqliteDb(tx)
+        totals = db.select({ count, revenue }).from(sqliteSchema.orders).where(window).get()
+        groups = db
+          .select({ source: sqliteSchema.orders.source, count, revenue })
+          .from(sqliteSchema.orders)
+          .where(window)
+          .groupBy(sqliteSchema.orders.source)
+          .orderBy(...order)
+          .limit(top)
+          .all()
+      } else {
+        const db = postgresDb(tx)
+        totals = (await db.select({ count, revenue }).from(postgresSchema.orders).where(window))[0]
+        groups = await db
+          .select({ source: postgresSchema.orders.source, count, revenue })
+          .from(postgresSchema.orders)
+          .where(window)
+          .groupBy(postgresSchema.orders.source)
+          .orderBy(...order)
+          .limit(top)
+      }
+      return {
+        count: Number(totals?.count ?? 0),
+        revenueMinor: Number(totals?.revenue ?? 0),
+        bySource: groups.map((g) => ({
+          source: g.source as `agent:${string}`,
+          count: Number(g.count),
+          revenueMinor: Number(g.revenue ?? 0),
+        })),
+      }
+    },
     async listPage(tx, page) {
       if (tx.kind === 'sqlite') {
         const t = sqliteSchema.orders
@@ -299,6 +496,7 @@ export function createOrderRepository(store: CommandStore): OrderRepository {
         capturedMinor: o.capture?.amountMinor ?? 0,
         refundedMinor: o.capture?.refundedMinor ?? 0,
         captureMethod: o.capture?.method ?? null,
+        source: o.source ?? 'storefront',
       }
       if (tx.kind === 'sqlite') {
         sqliteDb(tx)
@@ -420,6 +618,27 @@ export function createOrderRepository(store: CommandStore): OrderRepository {
         .update(postgresSchema.orders)
         .set({ notes, updatedAt })
         .where(eq(postgresSchema.orders.id, id))
+    },
+    async delete(tx, id) {
+      if (tx.kind === 'sqlite') {
+        sqliteDb(tx).delete(sqliteSchema.orders).where(eq(sqliteSchema.orders.id, id)).run()
+        return
+      }
+      await postgresDb(tx).delete(postgresSchema.orders).where(eq(postgresSchema.orders.id, id))
+    },
+    async idsCreatedSince(tx, since) {
+      if (tx.kind === 'sqlite') {
+        const t = sqliteSchema.orders
+        return sqliteDb(tx)
+          .select({ id: t.id })
+          .from(t)
+          .where(gte(t.createdAt, since.toISOString()))
+          .all()
+          .map((r) => r.id)
+      }
+      const t = postgresSchema.orders
+      const rows = await postgresDb(tx).select({ id: t.id }).from(t).where(gte(t.createdAt, since))
+      return rows.map((r) => r.id)
     },
   }
 }

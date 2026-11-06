@@ -1,0 +1,18 @@
+# id: I122
+# kind: injected
+# defect: a WooCommerce review rated 0 or below imports with that rating, outside the 1 to 5 every review is stored and averaged in
+# where: packages/importers/src/woocommerce/mappers/review.ts:14
+# killed-by: packages/importers/tests/mappers/review.test.ts (rates inside 1 to 5: a rating in range is kept, one outside lands on the nearer bound)
+# suite: pnpm vitest run --project importers-unit packages/importers/tests/mappers/review.test.ts
+diff --git a/packages/importers/src/woocommerce/mappers/review.ts b/packages/importers/src/woocommerce/mappers/review.ts
+--- a/packages/importers/src/woocommerce/mappers/review.ts
++++ b/packages/importers/src/woocommerce/mappers/review.ts
+@@ -11,7 +11,7 @@ export function mapReview(
+     customerId: nymbalCustomerId,
+     orderId: null,
+     author: null,
+-    rating: Math.min(5, Math.max(1, wc.rating)),
++    rating: Math.min(5, wc.rating),
+     title: '',
+     body: wc.review.replace(/<[^>]+>/g, '').trim(),
+   }

@@ -152,7 +152,7 @@ export const TEXT_STATUS: Record<DoctorJsonCheck['status'], LineStatus> = {
 
 export const PRIMITIVES = ['documentStore', 'eventBus', 'media'] as const
 
-/** The check order: config, packages, command store, migrations, slots, primitives, the event log. */
+/** The check order: config, packages, command store, migrations, slots, primitives, the event log, agents. */
 export function categoryOf(name: string): number {
   if (name === 'config') return 0
   if (name.startsWith('package ')) return 1
@@ -161,6 +161,7 @@ export function categoryOf(name: string): number {
   if (name.startsWith('slot ')) return 4
   if (name.startsWith('primitive ')) return 5
   if (name === 'events') return 6
+  if (name === 'agents') return 7
   return 99
 }
 
@@ -179,11 +180,13 @@ function hasPackage(slot: Slot, provider: string): boolean {
  * The check names a config gives, as a sorted set: `config`, `package <slot>` for every slot or primitive whose
  * provider resolves to a package (neither `custom` nor a built-in), `command store`, `migrations`, `slot <name>` per
  * commerce slot, `slot security` (with `package security` when `security.adapter` is not `middleware`),
- * `primitive <name>` per primitive, and `events` (the event log's dead and retrying events). A slot is named as its
+ * `primitive <name>` per primitive, `events` (the event log's dead and retrying events), `agents` (how ready the agent
+ * surfaces are), `trust proxy` (the proxy list, and client-address header, the server reads client addresses through) and
+ * `origin lock` (whether requests must carry the CDN's secret, and whether the zone sends it). A slot is named as its
  * folder is (`document-store`), never by its config key.
  */
 export function expectedCheckNames(config: NymbalConfig): string[] {
-  const names = ['config', 'command store', 'migrations', 'events']
+  const names = ['config', 'command store', 'migrations', 'events', 'agents']
   for (const { slot, provider } of commerceSlots(config)) {
     names.push(`slot ${slot}`)
     if (hasPackage(slot as Slot, provider)) names.push(`package ${slotFolder(slot as Slot)}`)
@@ -200,6 +203,7 @@ export function expectedCheckNames(config: NymbalConfig): string[] {
     if (provider !== undefined && hasPackage(primitive, provider))
       names.push(`package ${slotFolder(primitive)}`)
   }
+  names.push('trust proxy', 'origin lock')
   return names.sort()
 }
 

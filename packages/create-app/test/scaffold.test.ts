@@ -312,6 +312,13 @@ describe('scaffold() output', () => {
         expect(existsSync(resolve(outDir, '.env.example'))).toBe(true)
         expect(existsSync(resolve(outDir, '_dot.env.example'))).toBe(false)
       })
+
+      it('AC-1: with the AI slot off in nymbal.config.ts, .env.example names no AI key', async () => {
+        const config = await readFile(resolve(outDir, 'nymbal.config.ts'), 'utf8')
+        const example = await readFile(resolve(outDir, '.env.example'), 'utf8')
+        expect(config).toContain("ai: { provider: 'none' }")
+        expect(example).not.toMatch(/ANTHROPIC/)
+      })
     })
   }
 })
@@ -467,12 +474,11 @@ describe('override resolution (project layer wins)', () => {
   })
 
   // The project layer's homepage renders the featured grid and the category nav as the elements
-  // (`nymbal-product-grid`, whose cards keep the `product-card-` test id the smoke check greps for, and
+  // (`nymbal-product-grid`, whose cards keep the `product-card-` test id the E2E journeys find, and
   // `nymbal-category-nav`) and imports no deleted component: an import of one fails the scaffolded project's build.
   it('AC-6: override homepage keeps the smoke-check and E2E markers intact: the hero, the featured grid as nymbal-product-grid and the category nav as nymbal-category-nav, and every component it imports exists in the scaffolded project', async () => {
     const index = await readFile(resolve(outDir, 'src', 'pages', 'index.astro'), 'utf8')
-    // tools/scaffold-smoke-check.mjs greps served HTML for "hero-section" and
-    // "product-card-" — the override must keep rendering the hero and the grid's cards.
+    // The E2E journeys find "hero-section" and "product-card-" in served HTML: the override must keep rendering the hero and the grid's cards.
     expect(index).toContain('<HeroSection')
     expect(index).toContain('nymbal-product-grid')
     expect(index).toContain('nymbal-category-nav')

@@ -4,6 +4,7 @@ export const PHASES = [
   'http_request_firewall_custom',
   'http_request_firewall_managed',
   'http_request_cache_settings',
+  'http_request_late_transform',
 ] as const
 export type Phase = (typeof PHASES)[number]
 
@@ -70,7 +71,26 @@ export interface EdgeRulesConfig {
   geo?: { block?: string[] }
   customRules?: CustomRule[]
   managedRulesets?: string[]
+  /** The header the edge sends the origin secret in; absent, `X-Nymbal-Origin`. */
+  originLock?: { header: string }
 }
+
+/** The rules by phase; a phase the result leaves out has none. */
+export type DesiredRules = Record<Exclude<Phase, 'http_request_late_transform'>, Rule[]> &
+  Partial<Record<'http_request_late_transform', Rule[]>>
+
+export const ORIGIN_LOCK_REF = `${NYMBAL_REF_PREFIX}origin-lock`
+export const DEFAULT_ORIGIN_LOCK_HEADER = 'X-Nymbal-Origin'
+
+/** Sets the lock header to the origin secret on every request the edge passes on, so the origin can tell it crossed. */
+const originLockRule = (header: string, secret: string): Rule => ({
+  ref: ORIGIN_LOCK_REF,
+  description: `${NYMBAL_REF_PREFIX} origin lock`,
+  expression: 'true',
+  action: 'rewrite',
+  action_parameters: { headers: { [header]: { operation: 'set', value: secret } } },
+  enabled: true,
+})
 
 const quoted = (text: string): string => `"${text.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
 
@@ -134,9 +154,10 @@ const fragmentCacheRule = (): Rule => ({
 /**
  * The rules the config puts on the zone, by phase, every one carrying a `nymbal:` ref. Rate limits follow their keys'
  * sorted order and custom rules their config order, so the same config always gives the same rules. A key that is not
- * a path, or a window with no Cloudflare period, gives no rule: `validate` reports both.
+ * a path, or a window with no Cloudflare period, gives no rule: `validate` reports both. The transform phase is present
+ * only with `originSecret`, holding the origin-lock rule.
  */
-export function desiredRules(config: EdgeRulesConfig): Record<Phase, Rule[]> {
+export function desiredRules(config: EdgeRulesConfig, originSecret?: string): DesiredRules {
   const rateLimits = Object.entries(config.rateLimit ?? {})
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .flatMap(([key, entry]) => rateLimitRule(key, entry) ?? [])
@@ -180,5 +201,10 @@ export function desiredRules(config: EdgeRulesConfig): Record<Phase, Rule[]> {
     http_request_firewall_custom: custom,
     http_request_firewall_managed: managed,
     http_request_cache_settings: [fragmentCacheRule()],
+    ...(originSecret !== undefined && {
+      http_request_late_transform: [
+        originLockRule(config.originLock?.header ?? DEFAULT_ORIGIN_LOCK_HEADER, originSecret),
+      ],
+    }),
   }
 }

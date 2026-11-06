@@ -23,6 +23,7 @@ export default defineConfig({
     'src/register-components.ts',
     ...inDir('src/elements'),
     'src/hydrate-support.ts',
+    'src/payment-sources.ts',
     'src/ssr/index.ts',
   ]),
   format: ['esm'],

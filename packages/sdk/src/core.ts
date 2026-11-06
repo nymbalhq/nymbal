@@ -1,5 +1,5 @@
 // The client without its store namespaces: a page imports the `@nymbalhq/sdk/ns/<module>` of each store it reads.
-export { createNymbalClient, onStoreBuilt } from './client.js'
+export { createNymbalClient, onStoreBuilt, resumeSession } from './client.js'
 export type {
   NymbalClient,
   NymbalClientOptions,
@@ -16,4 +16,5 @@ export type {
   PaymentConfirmContext,
 } from './payment-drivers.js'
 
+export { SESSION_HINT_KEY } from './auth/session.js'
 export { NymbalApiError } from './adapter/fetch-client.js'

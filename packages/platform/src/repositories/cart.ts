@@ -1,5 +1,5 @@
-import { and, asc, eq, gt, isNull, lt, lte, sql } from 'drizzle-orm'
-import type { Cart, CartItem } from '@nymbalhq/types'
+import { and, asc, desc, eq, gt, isNull, lt, lte, sql } from 'drizzle-orm'
+import type { Cart, CartItem, CartSource } from '@nymbalhq/types'
 import {
   postgresDb,
   sqliteDb,
@@ -30,6 +30,8 @@ export interface CartRepository extends StoreRepository {
   /** `findByToken`, holding the row for the rest of the transaction so concurrent commands on the cart queue behind
    *  this one (Postgres `FOR UPDATE`; SQLite's `BEGIN IMMEDIATE` already holds the database). */
   lock(tx: Tx, token: string): Promise<Cart | null>
+  /** The customer's most recently written cart that is still live at `at`; holds nothing. */
+  findLiveByCustomer(tx: ReadTx, customerId: string, at: Date): Promise<Cart | null>
   /** Inserts the cart, or replaces an expired row on its token. A live row on the token is left as it is and
    *  returned with `created: false`. */
   create(tx: Tx, cart: Cart): Promise<{ cart: Cart; created: boolean }>
@@ -59,6 +61,7 @@ function rowToCart(store: 'sqlite' | 'postgres', row: Record<string, unknown>): 
     items: parseJson<CartItem[]>(store, row.items, []),
     subtotalMinor: Number(row.subtotalMinor),
     currency: String(row.currency),
+    source: String(row.source) as CartSource,
     expiresAt: fromTimestamp(row.expiresAt),
     createdAt: fromTimestamp(row.createdAt),
     updatedAt: fromTimestamp(row.updatedAt),
@@ -73,6 +76,7 @@ function sqliteValues(cart: Cart) {
     items: JSON.stringify(cart.items),
     lineCount: cart.items.length,
     subtotalMinor: cart.subtotalMinor,
+    source: cart.source,
     expiresAt: cart.expiresAt,
     createdAt: cart.createdAt,
     updatedAt: cart.updatedAt,
@@ -88,6 +92,7 @@ function postgresValues(cart: Cart) {
     items: cart.items,
     lineCount: cart.items.length,
     subtotalMinor: cart.subtotalMinor,
+    source: cart.source,
     expiresAt: new Date(cart.expiresAt),
     createdAt: new Date(cart.createdAt),
     updatedAt: new Date(cart.updatedAt),
@@ -102,6 +107,7 @@ const fromExcluded = {
   items: sql`excluded.items`,
   lineCount: sql`excluded.line_count`,
   subtotalMinor: sql`excluded.subtotal_minor`,
+  source: sql`excluded.source`,
   expiresAt: sql`excluded.expires_at`,
   createdAt: sql`excluded.created_at`,
   updatedAt: sql`excluded.updated_at`,
@@ -159,6 +165,27 @@ export function createCartRepository(store: CommandStore): CartRepository {
     store,
     findByToken,
     lock,
+    async findLiveByCustomer(tx, customerId, at) {
+      if (tx.kind === 'sqlite') {
+        const t = sqliteSchema.carts
+        const row = sqliteDb(tx)
+          .select()
+          .from(t)
+          .where(and(eq(t.customerId, customerId), gt(t.expiresAt, at.toISOString())))
+          .orderBy(desc(t.updatedAt))
+          .limit(1)
+          .get()
+        return row ? rowToCart('sqlite', row as Record<string, unknown>) : null
+      }
+      const t = postgresSchema.carts
+      const [row] = await postgresDb(tx)
+        .select()
+        .from(t)
+        .where(and(eq(t.customerId, customerId), gt(t.expiresAt, at)))
+        .orderBy(desc(t.updatedAt))
+        .limit(1)
+      return row ? rowToCart('postgres', row as Record<string, unknown>) : null
+    },
     async create(tx, cart) {
       let inserted: Record<string, unknown> | undefined
       if (tx.kind === 'sqlite') {

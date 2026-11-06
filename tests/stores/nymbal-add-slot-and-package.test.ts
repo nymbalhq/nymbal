@@ -8,8 +8,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { cliEnv, doctorLines } from '../support/doctor'
 import { holdWorkspace } from '../support/workspace-lock'
 
-// AC-6: each new form of `nymbal add` leaves a store that `nymbal doctor` passes. A fresh Astro scaffold, made the
-// scaffold-smoke way (in the checkout as smoke-astro, a workspace member, with --no-install, then `pnpm install`):
+// AC-6: each new form of `nymbal add` leaves a store that `nymbal doctor` passes. A fresh Astro scaffold, made
+// in the checkout (as smoke-astro, a workspace member, with --no-install, then `pnpm install`):
 // - `nymbal add payments stripe`, then the payments block pointed at a Stripe stand-in this test serves (GET /v1/balance
 //   answers 200) and the three STRIPE_* variables exported, then `nymbal migrate`: `nymbal doctor` exits 0, its payments
 //   slot ok on stripe, its health read from the stand-in.

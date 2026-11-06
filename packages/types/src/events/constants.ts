@@ -26,6 +26,8 @@ export const EVT_ORDER_REFUNDED = 'order.refunded.v1'
 export const EVT_ORDER_PARTIALLY_REFUNDED = 'order.partially_refunded.v1'
 export const EVT_ORDER_STATUS_CHANGED = 'order.status_changed.v1'
 export const EVT_ORDER_CONFIRMATION_RESEND_REQUESTED = 'order.confirmation_resend_requested.v1'
+/** An imported order taken back out of the store, with every row it owned. */
+export const EVT_ORDER_DELETED = 'order.deleted.v1'
 
 // Inventory
 export const EVT_INVENTORY_CHANGED = 'inventory.changed.v1'
@@ -65,6 +67,19 @@ export const EVT_ALERT_REPEATED = 'alert.repeated.v1'
 export const EVT_ALERT_CONFIRMED = 'alert.confirmed.v1'
 export const EVT_ALERT_UNSUBSCRIBED = 'alert.unsubscribed.v1'
 export const EVT_ALERT_SENT = 'alert.sent.v1'
+/** A pending subscription's confirmation was sent; another goes only once the confirmation interval has passed. */
+export const EVT_ALERT_CONFIRMATION_SENT = 'alert.confirmation_sent.v1'
+
+// Reviews
+/** A review the reviews adapter took for the store; the kernel resolved its reviewer and the order it is verified by. */
+export const EVT_REVIEW_SUBMITTED = 'review.submitted.v1'
+
+// Proposals: an agent's write a person or a policy decides
+export const EVT_PROPOSAL_CREATED = 'proposal.created.v1'
+export const EVT_PROPOSAL_APPROVED = 'proposal.approved.v1'
+export const EVT_PROPOSAL_REJECTED = 'proposal.rejected.v1'
+export const EVT_PROPOSAL_APPLIED = 'proposal.applied.v1'
+export const EVT_PROPOSAL_FAILED = 'proposal.failed.v1'
 
 // System
 export const EVT_ADAPTER_ERROR = 'adapter.error.v1'
@@ -92,6 +107,7 @@ export const STANDARD_EVENT_TYPES = [
   EVT_ORDER_PARTIALLY_REFUNDED,
   EVT_ORDER_STATUS_CHANGED,
   EVT_ORDER_CONFIRMATION_RESEND_REQUESTED,
+  EVT_ORDER_DELETED,
   EVT_INVENTORY_CHANGED,
   EVT_INVENTORY_RESERVED,
   EVT_INVENTORY_RELEASED,
@@ -116,6 +132,13 @@ export const STANDARD_EVENT_TYPES = [
   EVT_ALERT_CONFIRMED,
   EVT_ALERT_UNSUBSCRIBED,
   EVT_ALERT_SENT,
+  EVT_ALERT_CONFIRMATION_SENT,
+  EVT_REVIEW_SUBMITTED,
+  EVT_PROPOSAL_CREATED,
+  EVT_PROPOSAL_APPROVED,
+  EVT_PROPOSAL_REJECTED,
+  EVT_PROPOSAL_APPLIED,
+  EVT_PROPOSAL_FAILED,
   EVT_ADAPTER_ERROR,
   EVT_SETTINGS_CHANGED,
 ] as const

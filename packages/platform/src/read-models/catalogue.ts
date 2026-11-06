@@ -8,6 +8,7 @@ import {
   buildCategoryDoc,
   buildProductDoc,
   CATEGORIES,
+  listedSnapshot,
   productWrites,
   PRODUCTS,
   PRODUCTS_BY_CATEGORY,
@@ -44,7 +45,8 @@ export const catalogue: ReadModel = {
     const context = { storeId, currency: config.store.currency, logger }
     for await (const page of ctx.pages('products', snapshotsOf(ctx.deps))) {
       for (const snapshot of page) {
-        yield* productWrites(buildProductDoc(snapshot, categories, context))
+        const listed = listedSnapshot(snapshot)
+        if (listed) yield* productWrites(buildProductDoc(listed, categories, context))
       }
     }
   },

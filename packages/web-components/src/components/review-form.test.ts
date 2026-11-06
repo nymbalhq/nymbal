@@ -1,8 +1,9 @@
 import fc from 'fast-check'
 import { describe, expect, it, vi } from 'vitest'
+import { NymbalApiError } from '@nymbalhq/sdk'
 import { setupMockClient } from '../testing/index.js'
 
-// AC-5: `nymbal-review-form` submits once per click through `client.adapter.reviews.submit`. The shopper fills the
+// AC-5: `nymbal-review-form` submits once per click through `client.adapter.reviews.submit`. The signed-in shopper fills the
 // form and clicks submit, then the form is submitted k - 1 more times (`requestSubmit()`, which fires `submit` even
 // while the button is disabled) while the first call is held. Exactly one call is made, with `{ productId, rating,
 // title, body }`; `submit` is disabled while it is held; on success one `nymbal:review:submitted` fires with the
@@ -72,6 +73,22 @@ function type(el: Element, id: string, value: string): void {
 
 const text = fc.stringMatching(/^[A-Z][a-z]{2,12}( [a-z]{2,8}){0,3}$/)
 
+interface AuthStore {
+  setState(partial: Record<string, unknown>): void
+  restore: () => Promise<void>
+}
+
+const authOf = (client: Record<string, unknown>): AuthStore => client['auth'] as AuthStore
+
+/** The mock client's auth store holding a signed-in customer, as after a sign-in or a profile load. */
+function signIn(client: Record<string, unknown>): void {
+  authOf(client).setState({
+    customer: { id: 'cus-review', email: 'ada@reviews.test', firstName: 'Ada', lastName: 'Lovelace' },
+    isAuthenticated: true,
+    loading: false,
+  })
+}
+
 describe('AC-5: the review form submits once per click', () => {
   it('AC-5: property: k = 1-5 submits while the first call is held make one reviews.submit call with the form’s fields; submit is disabled while held; success fires nymbal:review:submitted once with the review id, resets the form and re-enables submit; a refusal shows the error part, re-enables submit and fires nothing', async () => {
     expect(customElements.get(TAG), `${TAG} is defined by registerComponents()`).toBeDefined()
@@ -88,6 +105,7 @@ describe('AC-5: the review form submits once per click', () => {
           document.body.innerHTML = ''
           const held = deferred()
           const client = setupMockClient() as unknown as Record<string, unknown>
+          signIn(client)
           const reviewId = `rev-${productId}`
           const submit = vi.fn(async (review: Record<string, unknown>) => {
             await held.promise
@@ -156,5 +174,190 @@ describe('AC-5: the review form submits once per click', () => {
       ),
       { numRuns: 25 },
     )
+  })
+})
+
+// AC-11: the form follows the auth store. While the shopper is not known to be signed out (a session restore in flight)
+// it is the form, as the server rendered it; once the restore settles signed out it is only a sign-in link back
+// to this page; signed in it is the form. A refusal shows the store's own words when they are about the review or the
+// session, and an ended session turns the form into the sign-in link; anything else shows the generic text.
+
+const FORM_PARTS = ['body', 'form', 'rating', 'submit', 'title']
+const GENERIC = 'Something went wrong. Please try again.'
+
+type Auth = 'loading' | 'signed-out' | 'signed-in'
+
+/** A client whose session restore is held (`loading`), settles signed out, or finds the customer signed in already. */
+function clientIn(auth: Auth): { client: Record<string, unknown>; release: () => void; loads: () => number } {
+  const client = setupMockClient() as unknown as Record<string, unknown>
+  const store = authOf(client)
+  const held = deferred()
+  let loads = 0
+  if (auth === 'signed-in') signIn(client)
+  if (auth === 'loading') store.setState({ loading: true })
+  store.restore = async () => {
+    loads += 1
+    if (auth === 'loading') await held.promise
+    store.setState({ loading: false })
+  }
+  return {
+    client,
+    release: () => held.resolve(),
+    loads: () => loads,
+  }
+}
+
+async function mounted(productId = 'p1'): Promise<HTMLElement> {
+  const el = document.createElement(TAG)
+  el.setAttribute('product-id', productId)
+  document.body.append(el)
+  await flush(el)
+  return el
+}
+
+/** Every part token the element renders, sorted, each once. */
+function renderedParts(el: Element): string[] {
+  const all = [...(el.shadowRoot?.querySelectorAll('[part]') ?? [])].flatMap((n) =>
+    (n.getAttribute('part') ?? '').split(/\s+/).filter((p) => p !== ''),
+  )
+  return [...new Set(all)].sort()
+}
+
+const signInLink = (el: Element): HTMLAnchorElement | null =>
+  el.shadowRoot?.querySelector<HTMLAnchorElement>('[data-testid="review-sign-in"]') ?? null
+
+/** Fills and submits the form, with `reviews.submit` refusing with `error`. */
+async function refusedWith(error: Error): Promise<HTMLElement> {
+  const { client } = clientIn('signed-in')
+  client['adapter'] = {
+    reviews: {
+      submit: async () => {
+        throw error
+      },
+      getForProduct: async () => ({ items: [], nextCursor: null }),
+    },
+  }
+  const el = await mounted()
+  type(el, 'review-rating', '4')
+  type(el, 'review-title', 'Solid')
+  type(el, 'review-body', 'It works.')
+  await flush(el)
+  byTestId<HTMLButtonElement>(el, 'review-submit').click()
+  await flush(el)
+  return el
+}
+
+describe('AC-11: the review form follows the shopper’s session', () => {
+  // Kills: no prompt (a guest gets a form whose every submit fails 401), or a prompt shown while auth is unknown.
+  it('AC-11: the parts it renders follow auth: a session restore in flight renders the five form parts, the restore settling signed out leaves only sign-in, a signed-in shopper gets the five form parts', async () => {
+    const shown: Record<Auth, string[]> = { loading: [], 'signed-out': [], 'signed-in': [] }
+    for (const auth of ['loading', 'signed-out', 'signed-in'] as const) {
+      document.body.innerHTML = ''
+      clientIn(auth)
+      shown[auth] = renderedParts(await mounted())
+    }
+
+    expect(shown).toEqual({
+      loading: FORM_PARTS,
+      'signed-out': ['sign-in'],
+      'signed-in': FORM_PARTS,
+    })
+  })
+
+  it('AC-11: a restore held while the element renders shows the form; once it settles signed out the form is gone and the sign-in link shows, and the session was restored once', async () => {
+    const { release, loads } = clientIn('loading')
+    const el = await mounted()
+    const before = renderedParts(el)
+
+    release()
+    await flush(el)
+
+    expect(before).toEqual(FORM_PARTS)
+    expect(renderedParts(el)).toEqual(['sign-in'])
+    expect(el.shadowRoot?.querySelector('[data-testid="review-form"]') ?? null).toBeNull()
+    expect(loads()).toBe(1)
+  })
+
+  // Kills: a sign-in link that does not come back to the product (no redirect, or the path unencoded).
+  it('AC-11: property: signed out on generated product paths, the sign-in link reads "Sign in to write a review" and its href is /account/login?redirect= the encoded location.pathname', async () => {
+    await fc.assert(
+      fc.asyncProperty(fc.stringMatching(/^[a-z0-9][a-z0-9 &=+-]{0,15}$/), async (slug) => {
+        document.body.innerHTML = ''
+        history.replaceState(null, '', `/product/${slug}`)
+        clientIn('signed-out')
+        const el = await mounted()
+
+        const link = signInLink(el)
+
+        expect(link?.getAttribute('href') ?? null, slug).toBe(
+          `/account/login?redirect=${encodeURIComponent(location.pathname)}`,
+        )
+        expect(link?.getAttribute('part') ?? null).toBe('sign-in')
+        expect((link?.textContent ?? '').trim()).toBe('Sign in to write a review')
+      }),
+      { numRuns: 15, examples: [['blue-mug']] },
+    )
+    history.replaceState(null, '', '/')
+  })
+
+  // Kills: the constant failure text (the refusal hidden behind "Something went wrong"), or every error's own message
+  // shown (a network failure's "Failed to fetch").
+  it('AC-11: property: a NymbalApiError refusal whose code starts reviews. or auth. (other than auth.unauthorized) shows the server’s message in the error part with the form still shown; a TypeError("Failed to fetch") or a NymbalApiError of another kind shows the generic text', async () => {
+    const own = fc
+      .tuple(
+        fc.constantFrom(
+          ['reviews.already_reviewed', 409] as const,
+          ['reviews.submit_unsupported', 409] as const,
+          ['auth.forbidden', 403] as const,
+        ),
+        fc.stringMatching(/^[A-Z][a-z]{3,12}( [a-z]{2,10}){1,5}\.$/),
+      )
+      .map(([[code, status], message]) => ({
+        error: new NymbalApiError(code, message, status) as Error,
+        shows: message,
+      }))
+    const other = fc.oneof(
+      fc.constant({ error: new TypeError('Failed to fetch') as Error, shows: GENERIC }),
+      fc
+        .constantFrom(['internal', 500] as const, ['checkout.cart_empty', 409] as const)
+        .map(([code, status]) => ({
+          error: new NymbalApiError(code, `${code} happened`, status) as Error,
+          shows: GENERIC,
+        })),
+    )
+    await fc.assert(
+      fc.asyncProperty(fc.oneof(own, other), async ({ error, shows }) => {
+        document.body.innerHTML = ''
+        const el = await refusedWith(error)
+
+        expect(errorShown(el), error.message).toBe(shows)
+        expect(renderedParts(el), error.message).toEqual([...FORM_PARTS, 'error'].sort())
+      }),
+      {
+        numRuns: 20,
+        examples: [
+          [
+            {
+              error: new NymbalApiError(
+                'reviews.already_reviewed',
+                'You have already reviewed this product.',
+                409,
+              ),
+              shows: 'You have already reviewed this product.',
+            },
+          ],
+        ],
+      },
+    )
+  })
+
+  // Kills: an ended session left as a form whose every submit fails again.
+  it('AC-11: a NymbalApiError auth.unauthorized 401 refusal turns the form into the sign-in link', async () => {
+    const el = await refusedWith(
+      new NymbalApiError('auth.unauthorized', 'Authentication required', 401),
+    )
+
+    expect(signInLink(el)?.getAttribute('part') ?? null).toBe('sign-in')
+    expect(renderedParts(el).filter((p) => FORM_PARTS.includes(p))).toEqual([])
   })
 })

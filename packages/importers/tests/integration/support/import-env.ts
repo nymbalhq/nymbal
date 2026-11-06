@@ -32,6 +32,12 @@ const MIGRATIONS_ROOT = fileURLToPath(new URL('../../../../platform/migrations',
 const FIXTURE_DIR = fileURLToPath(new URL('../fixtures', import.meta.url))
 export const WC_URL = 'https://wc.example.com'
 
+/**
+ * The importer's address lookup for these suites: every image host resolves to one public address, so the image
+ * policy passes them without a DNS query and the suites stay offline.
+ */
+export const offlineLookup = async (_host: string): Promise<string[]> => ['93.184.215.14']
+
 const IMAGE_TYPES = [
   { contentType: 'image/jpeg', ext: 'jpg' },
   { contentType: 'image/png', ext: 'png' },

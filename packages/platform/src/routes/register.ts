@@ -1,16 +1,18 @@
 import {
   ConfigError,
   type HttpAdapter,
+  type ToolSurface,
   type DocumentStoreAdapter,
   type EventBusAdapter,
 } from '@nymbalhq/types'
-import type { NymbalConfig } from '@nymbalhq/config'
+import { secureCookies, type NymbalConfig } from '@nymbalhq/config'
 import type { ServiceRegistry } from '../services/index.js'
 import type { AdapterRegistry } from '../adapters/registry.js'
 import type { Repositories } from '../repositories/index.js'
 import type { EventPublisher } from '../events/publisher.js'
 import type { DeclaredSlot } from '../settings/load.js'
 import { runWithCorrelation } from '../events/correlation.js'
+import { categoriesOf } from '../read-models/sources.js'
 import type { CommandStore } from '../db/command-store.js'
 import { actorOf, runAsActor } from '../audit/actor.js'
 import {
@@ -25,7 +27,7 @@ import { registerAuthRoutes } from './auth.js'
 import { registerProductRoutes } from './products.js'
 import { registerCapabilitiesRoute } from './capabilities.js'
 import { registerCategoryRoutes } from './categories.js'
-import { registerCartRoutes } from './cart.js'
+import { mergeCartOnSignIn, registerCartRoutes } from './cart.js'
 import { registerCheckoutRoutes } from './checkout.js'
 import { registerOrderRoutes } from './orders.js'
 import { registerCustomerRoutes } from './customers.js'
@@ -34,10 +36,15 @@ import { registerAdminStaticRoute } from './admin-static.js'
 import { registerEventsSseRoute } from './events-sse.js'
 import { registerInboundWebhookRoute } from './webhooks-inbound.js'
 import { validatedAdapter } from './validated-adapter.js'
+import { gateOf, withGate } from './role-middleware.js'
 import { routeSchemas } from './schemas.js'
 import { registerAdminActivityRoutes } from './admin-activity.js'
+import { registerAdminProposalRoutes } from './admin-proposals.js'
+import { storePreviewReads } from '../services/proposal-preview.js'
+import { registerAdminAssistantRoutes } from './admin-assistant.js'
 import { foldViewsOnSignIn, registerRecentlyViewedRoutes } from './recently-viewed.js'
 import { registerAlertRoutes } from './alerts.js'
+import { registerReviewRoutes } from './reviews.js'
 
 export interface RegisterAllRoutesDeps {
   config: NymbalConfig
@@ -54,6 +61,8 @@ export interface RegisterAllRoutesDeps {
   jwtSecret: string
   /** The admin's dist directory, or null for a 404 that says how to build it; undefined serves no admin. */
   adminRoot?: string | null | undefined
+  /** The tools the admin's assistant runs, built over these routes once they are registered. */
+  assistantTools: () => ToolSurface | undefined
 }
 
 /** Every handler runs in its request's correlation scope, so each event a route's services publish carries its id. */
@@ -63,7 +72,10 @@ function correlatedAdapter(adapter: HttpAdapter): HttpAdapter {
       adapter.registerRoute(
         method,
         path,
-        (ctx) => runWithCorrelation(ctx.correlationId, () => handler(ctx)),
+        withGate(
+          (ctx) => runWithCorrelation(ctx.correlationId, () => handler(ctx)),
+          gateOf(handler),
+        ),
         options,
       )
     },
@@ -100,7 +112,8 @@ function commandOf(method: string, path: string): string | null | undefined {
 /**
  * Every handler runs as its request's actor. A route that runs a command runs it as one audited command; an admin
  * write with an `Idempotency-Key` runs once per key (a malformed key is refused before anything runs). It wraps each
- * handler before `validatedAdapter` does, so the schema runs first and a request it refuses never reaches a command.
+ * handler before `validatedAdapter` does, so the schema runs first and a request it refuses never reaches a command;
+ * it passes the handler's auth gate on, so the gate runs before both.
  */
 function auditedAdapter(adapter: HttpAdapter, store: CommandStore): HttpAdapter {
   return {
@@ -111,7 +124,7 @@ function auditedAdapter(adapter: HttpAdapter, store: CommandStore): HttpAdapter 
       adapter.registerRoute(
         method,
         path,
-        (ctx) => {
+        withGate((ctx) => {
           const actor = actorOf(ctx.auth)
           return runAsActor(actor, async () => {
             const keyed = adminWrite ? idempotencyKeyOf(ctx) : { key: undefined }
@@ -126,7 +139,7 @@ function auditedAdapter(adapter: HttpAdapter, store: CommandStore): HttpAdapter 
               run,
             )
           })
-        },
+        }, gateOf(handler)),
         options,
       )
     },
@@ -155,9 +168,12 @@ export function registerAllRoutes(deps: RegisterAllRoutesDeps): void {
   // Auth middleware — decodes bearer if present.
   adapter.registerMiddleware(createAuthMiddleware(services.auth))
 
-  // The cart merge, when it is wired, is one more hook here.
-  const afterSignIn = [foldViewsOnSignIn(services.recentlyViewed)]
-  registerAuthRoutes(adapter, services.auth, config.security.auth.refreshTtl, afterSignIn)
+  const secure = () => secureCookies(config, process.env)
+  const afterSignIn = [
+    foldViewsOnSignIn(services.recentlyViewed, secure),
+    mergeCartOnSignIn(services.cart, secure),
+  ]
+  registerAuthRoutes(adapter, services.auth, config.security.auth.refreshTtl, afterSignIn, secure)
   registerCapabilitiesRoute(adapter, adapters)
   registerCategoryRoutes(adapter, documentStore, config.store.name)
   registerProductRoutes(
@@ -168,20 +184,25 @@ export function registerAllRoutes(deps: RegisterAllRoutesDeps): void {
     services.search,
     () => adapters.search.capabilities().includes('facet'),
     (field, params) => adapters.search.facet(field, params),
+    (ids) => repos.category.store.read((tx) => categoriesOf(tx, repos, ids)),
   )
   registerCartRoutes(adapter, {
     cart: services.cart,
     productRepo: repos.product,
     variantRepo: repos.variant,
+    secureCookies: secure,
   })
   registerRecentlyViewedRoutes(adapter, {
     recentlyViewed: services.recentlyViewed,
     documentStore,
     productRepo: repos.product,
     retentionDays: config.events.retentionDays,
+    reviews: adapters.reviews,
+    secureCookies: secure,
   })
   registerCheckoutRoutes(adapter, services.checkout)
   registerAlertRoutes(adapter, { alerts: services.alert })
+  registerReviewRoutes(adapter, { reviews: services.review })
   registerOrderRoutes(adapter, services.order, documentStore)
   registerCustomerRoutes(adapter, services.customer)
   registerAdminRoutes(adapter, {
@@ -193,6 +214,22 @@ export function registerAllRoutes(deps: RegisterAllRoutesDeps): void {
     settingsSlots: deps.settingsSlots,
   })
   registerAdminActivityRoutes(adapter, { auditEntries: repos.auditEntry })
+  registerAdminProposalRoutes(adapter, {
+    proposals: services.proposals,
+    preview: storePreviewReads({
+      product: services.product,
+      repos,
+      currency: config.store.currency,
+    }),
+  })
+  registerAdminAssistantRoutes(adapter, {
+    config,
+    ai: adapters.ai,
+    tools: deps.assistantTools,
+    proposals: services.proposals,
+    documentStore,
+    jwtSecret: deps.jwtSecret,
+  })
   registerEventsSseRoute(adapter, {
     eventBus,
     documentStore,

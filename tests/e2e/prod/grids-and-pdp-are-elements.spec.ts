@@ -331,7 +331,16 @@ test.describe('AC-3: the grids and the PDP are elements (production build)', () 
             ]
           : // The cards are inside the grid's shadow root; the light-DOM host is the grid.
             ['nymbal-product-grid']
-      await expectMarkupReused(page, browser, testInfo, at, elements)
+      // A guest's review form becomes a sign-in link once the session is known, so its part counts are left out;
+      // every other element the server rendered is compared.
+      await expectMarkupReused(
+        page,
+        browser,
+        testInfo,
+        at,
+        elements,
+        name === 'product' ? ['nymbal-review-form'] : [],
+      )
     })
   }
 

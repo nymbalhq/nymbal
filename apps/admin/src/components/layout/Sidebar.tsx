@@ -6,6 +6,7 @@ import {
   Boxes,
   Users,
   History,
+  Inbox,
   Settings,
   LogOut,
   Loader2,
@@ -13,6 +14,7 @@ import {
 import { useMe } from '@/hooks/useMe'
 import { useAuth } from '@/hooks/useAuth'
 import { useOrders } from '@/hooks/useOrders'
+import { usePendingProposalCount } from '@/hooks/useProposals'
 import { tid } from '@/lib/testid'
 import { cn } from '@/lib/utils'
 
@@ -24,6 +26,7 @@ const navItems = [
   { to: '/inventory', label: 'Inventory', icon: Boxes, end: false },
   { to: '/customers', label: 'Customers', icon: Users, end: false },
   { to: '/activity', label: 'Activity', icon: History, end: false },
+  { to: '/inbox', label: 'Inbox', icon: Inbox, end: false },
   { to: '/settings', label: 'Settings', icon: Settings, end: false },
 ]
 
@@ -34,6 +37,19 @@ function PendingOrdersBadge() {
   return (
     <span className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-500/20 px-1 text-[10px] font-semibold text-blue-400">
       {orders.length}
+    </span>
+  )
+}
+
+function PendingProposalsBadge() {
+  const { data: pending } = usePendingProposalCount()
+  if (pending === undefined || pending === 0) return null
+  return (
+    <span
+      className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500/20 px-1 text-[10px] font-semibold text-amber-400"
+      data-testid={tid('inbox', 'count')}
+    >
+      {pending}
     </span>
   )
 }
@@ -106,6 +122,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
                     />
                     <span>{item.label}</span>
                     {item.label === 'Orders' && <PendingOrdersBadge />}
+                    {item.label === 'Inbox' && <PendingProposalsBadge />}
                   </>
                 )}
               </NavLink>

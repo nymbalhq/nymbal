@@ -44,6 +44,8 @@ export interface RequestContext<TBody = unknown, TQuery = Record<string, string 
   correlationId: string
   logger: Logger
   ip: string
+  /** The agent a tool call is made for. Only the tool invoker sets it; no HTTP adapter does, so no header can claim it. */
+  agent?: { name: string }
 }
 
 export interface ResponseCookie {
@@ -113,4 +115,54 @@ export interface HttpAdapter {
   setDefaultHeaders(headers: Record<string, string>): void
   start(port: number, host?: string): Promise<void>
   stop(): Promise<void>
+}
+
+/** A JSON Schema whose root is an object, as an MCP tool's `inputSchema` must be. */
+export interface JsonSchemaObject {
+  type: 'object'
+  properties?: Record<string, unknown>
+  required?: string[]
+  [keyword: string]: unknown
+}
+
+/** Who a tool runs for: the verified bearer's user (none for an anonymous agent) and the agent's client info. */
+export interface Caller {
+  auth?: RequestAuth
+  agent: { name: string; version?: string }
+  /** The address the agent's request came from, for the route's rate rule. */
+  ip?: string
+}
+
+/**
+ * One route of the API as an agent tool. `scope` is the least caller the route's gate admits; `kind` is `read` for a
+ * GET, `session` for a write that changes nothing audited (the cart), `command` for an audited command.
+ */
+export interface ToolDefinition {
+  name: string
+  title: string
+  description: string
+  inputSchema: JsonSchemaObject
+  scope: 'public' | 'customer' | 'admin'
+  kind: 'read' | 'session' | 'command'
+  route: { method: HttpMethod; path: string; command: string | null | undefined }
+}
+
+export interface ToolResult {
+  content: Array<{ type: 'text'; text: string }>
+  structuredContent?: Record<string, unknown>
+  isError?: boolean
+}
+
+/** What a caller of the tool surface may ask of one call beside its arguments. */
+export interface ToolCallOptions {
+  /** The correlation id the call's request, its proposal and its audit entries carry; a fresh one when absent. */
+  correlationId?: string
+  /** Keep a command as a pending proposal whatever the policy says (`agents.autoApprove`, `agents.mcp.writes`). */
+  proposeWrites?: boolean
+}
+
+/** The tools a store serves to agents; the transports (HTTP, stdio) bind it. */
+export interface ToolSurface {
+  list(caller: Caller): ToolDefinition[]
+  call(name: string, args: unknown, caller: Caller, options?: ToolCallOptions): Promise<ToolResult>
 }

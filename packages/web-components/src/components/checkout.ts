@@ -14,8 +14,12 @@ import type { NymbalPaymentElement } from './payment-element.js'
 const SCHEMA: ElementSchema = {
   tag: 'nymbal-checkout',
   reactName: 'Checkout',
-  // The cart a server read (cart-projection.ts), shown in the summary until the cart store settles.
-  attributes: [{ name: 'cart', prop: 'cart', type: 'json' }],
+  attributes: [
+    // The cart a server read (cart-projection.ts), shown in the summary until the cart store settles.
+    { name: 'cart', prop: 'cart', type: 'json' },
+    // Where a shopper whose session ended signs in again, coming back to the checkout.
+    { name: 'sign-in-href', prop: 'signInHref', type: 'string' },
+  ],
   events: [
     {
       name: 'nymbal:checkout:placed',
@@ -83,9 +87,19 @@ const STEP_LABELS: Record<Step, string> = {
 /** Outlasts the 500 ms an OS allows between the two clicks of a double click. */
 const STEP_HEIGHT_HOLD_MS = 600
 const PAYMENT_FAILED = 'Payment failed. Please try again.'
+const SESSION_EXPIRED = 'Your session has expired. Sign in again to place your order.'
+const SIGN_IN_HREF = '/account/login?redirect=%2Fcheckout'
+/** The refusals of a customer's order request whose token is gone: sent again, it would place a guest order. */
+const SESSION_ENDED = new Set(['auth.token_invalid', 'auth.token_expired'])
 
-/** No payment element: nothing to confirm, as for a payments adapter with no client half. */
-const NO_PAYMENT_STEP: PaymentConfirmation = { ok: true, confirmed: false }
+/**
+ * No payment element, or one never upgraded: nothing on the page can take a payment that needs it. A payments adapter
+ * with no client half is the payment element's own answer, not this one.
+ */
+const NO_PAYMENT_ELEMENT: PaymentConfirmation = {
+  ok: false,
+  error: 'Payment could not be taken on this page. Please reload and try again.',
+}
 
 /**
  * The checkout: contact, shipping, then payment with billing, beside the order summary. It drives the SDK's checkout
@@ -298,12 +312,15 @@ export class NymbalCheckout extends NymbalElement {
   private billingSame = true
   private placing = false
   private placed = false
+  /** The shopper's session ended at Place Order: no order can be placed as them from this page any more. */
+  private sessionEnded = false
   /** True from a step change until the next animation frame, so a second click of a double click is ignored. */
   private stepChanging = false
   private stepTurn = 0
   private heightRelease: ReturnType<typeof setTimeout> | undefined
 
   declare cart: unknown
+  declare signInHref: string | undefined
 
   protected override stores() {
     return [this.client.cart]
@@ -347,7 +364,8 @@ export class NymbalCheckout extends NymbalElement {
   private go(step: Step): void {
     this.holdMainHeight()
     this.step = step
-    this.error = null
+    // Place Order stays disabled after an ended session, so its reason stays too.
+    this.error = this.sessionEnded ? SESSION_EXPIRED : null
     this.stepChanging = true
     const turn = ++this.stepTurn
     requestAnimationFrame(() => {
@@ -431,7 +449,7 @@ export class NymbalCheckout extends NymbalElement {
 
   private readonly onPlace = (event: Event): void => {
     if (!this.accepts(event, 'payment')) return
-    if (this.placing || this.placed || this.paymentBlocked()) return
+    if (this.placing || this.placed || this.sessionEnded || this.paymentBlocked()) return
     const billing = this.billingAddress()
     if (billing === null) return
     this.placing = true
@@ -448,8 +466,12 @@ export class NymbalCheckout extends NymbalElement {
       const result = await checkout.submitPayment()
       if (result === null) {
         // A resubmit of a cart that already became an order (Back, then Place Order) goes to that order.
-        const { placedOrderNumber, placedOrderKey, error } = checkout.getState()
+        const { placedOrderNumber, placedOrderKey, error, errorCode } = checkout.getState()
         if (placedOrderNumber) return this.leaveFor(placedOrderNumber, placedOrderKey ?? undefined)
+        if (errorCode !== null && SESSION_ENDED.has(errorCode)) {
+          this.sessionEnded = true
+          return this.stay(SESSION_EXPIRED)
+        }
         return this.stay(error ?? PAYMENT_FAILED)
       }
       if (result.payment.status === 'failed') {
@@ -475,7 +497,9 @@ export class NymbalCheckout extends NymbalElement {
     clientSecret: string,
     context: PaymentConfirmContext,
   ): Promise<PaymentConfirmation> {
-    return this.paymentElement()?.confirm(clientSecret, context) ?? Promise.resolve(NO_PAYMENT_STEP)
+    const element = this.paymentElement()
+    if (typeof element?.confirm !== 'function') return Promise.resolve(NO_PAYMENT_ELEMENT)
+    return element.confirm(clientSecret, context)
   }
 
   private stay(message: string): void {
@@ -637,7 +661,7 @@ export class NymbalCheckout extends NymbalElement {
               part="submit"
               class="btn btn-primary"
               data-testid="place-order"
-              ?disabled=${busy || this.paymentBlocked()}
+              ?disabled=${busy || this.sessionEnded || this.paymentBlocked()}
               @click=${this.onSubmitClick}
             >
               ${this.placing
@@ -701,6 +725,11 @@ export class NymbalCheckout extends NymbalElement {
       ${this.error === null
         ? nothing
         : html`<div part="error" role="alert" data-testid="checkout-error">${this.error}</div>`}
+      ${this.sessionEnded
+        ? html`<a data-testid="checkout-sign-in" href=${this.signInHref || SIGN_IN_HREF}
+            >Sign in</a
+          >`
+        : nothing}
       <div part="layout">
         <div part="main">
           ${this.renderContact()} ${this.renderShipping()} ${this.renderPayment()}

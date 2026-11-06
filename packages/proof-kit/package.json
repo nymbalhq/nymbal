@@ -55,7 +55,7 @@
     "@nymbalhq/platform": "workspace:*",
     "@nymbalhq/types": "workspace:*",
     "fast-check": "^4.10.2",
-    "nodemailer": "^6.9.16"
+    "nodemailer": "^10.3.1"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.11",

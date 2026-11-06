@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation'
 import { preload } from 'react-dom'
 import { fetchProducts, fetchCategories } from '@/lib/api'
 import { cardImageOf, cardProductOf, renderNymbal } from '@/lib/render'
-import { organizationJsonLd } from '@/lib/seo'
+import { organizationJsonLd, serializeJsonLd } from '@/lib/seo'
 import { HeroSection } from '@/components/server/HeroSection'
 import { CategoryNav, ProductGrid, RecentlyViewed } from '@/components/client/elements'
 import { NewsletterSignup } from '@/components/client/NewsletterSignup'
@@ -44,7 +44,7 @@ export default async function HomePage({ params }: HomePageProps) {
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(jsonLd) }}
       />
 
       <HeroSection />

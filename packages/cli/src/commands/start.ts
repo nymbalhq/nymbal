@@ -5,7 +5,7 @@ import { connect, createServer } from 'node:net'
 import { join, resolve } from 'node:path'
 import { defineCommand } from 'citty'
 import pc from 'picocolors'
-import type { NymbalConfig } from '@nymbalhq/config'
+import { resolveOriginLock, resolveTrustedProxies, type NymbalConfig } from '@nymbalhq/config'
 import { boundedHealthCheck, ConfigError, type HealthReport } from '@nymbalhq/types'
 import {
   createApp,
@@ -23,7 +23,8 @@ import {
   createReadyRoute,
   FastifyHttpAdapter,
   forwardToStorefront,
-  resolveTrustProxy,
+  mountAgentSurfaces,
+  mountMcp,
   type ReadyState,
 } from '@nymbalhq/http'
 import { loadProject } from '../utils/project.js'
@@ -81,7 +82,8 @@ export function checkStartEnv(config: NymbalConfig, env: NodeJS.ProcessEnv): str
   } else if (publicOrigin(env['NYMBAL_PUBLIC_URL']) === null) {
     problems.push('NYMBAL_PUBLIC_URL must be an http or https origin with no path')
   }
-  // The app refuses a malformed NYMBAL_JWT_SECRET or NYMBAL_TRUST_PROXY_HOPS under any NODE_ENV, by the same check.
+  // The app refuses a malformed NYMBAL_JWT_SECRET, trusted proxy setting or origin secret under any NODE_ENV, by the
+  // same check.
   const refusal = <T>(check: () => T): T | undefined => {
     try {
       return check()
@@ -92,7 +94,8 @@ export function checkStartEnv(config: NymbalConfig, env: NodeJS.ProcessEnv): str
     }
   }
   const jwt = refusal(() => resolveAuthSecret(config, env))
-  refusal(() => resolveTrustProxy(config, env))
+  refusal(() => resolveTrustedProxies(config, env))
+  refusal(() => resolveOriginLock(config, env))
   if (env['NODE_ENV'] === 'development') {
     problems.push('NODE_ENV is development: nymbal start runs in production; unset it')
   }
@@ -344,14 +347,33 @@ export const startCommand = defineCommand({
       logger: platform.logger,
       documentStore: platform.documentStore,
       version,
+      network: app.network,
     })
     http.registerRoute('GET', '/ready', createReadyRoute(probe))
     await app.attachHttp(http.adapter, { adminRoot: resolveAdminRoot() })
+    await mountMcp(http, {
+      app,
+      verify: (token) => app.services.auth.verifyAccessToken(token),
+      origins: config.http.cors.allowedOrigins,
+      enabled: config.agents.mcp.enabled,
+      version,
+    })
+    await mountAgentSurfaces(http, {
+      app,
+      verify: (token) => app.services.auth.verifyAccessToken(token),
+      origins: config.http.cors.allowedOrigins,
+      urls: () => ({ api: publicUrl, storefront: publicUrl }),
+      version,
+    })
     if (!(http.adapter instanceof FastifyHttpAdapter)) {
       throw new Error('nymbal start needs the fastify http adapter')
     }
     const internalPort = await loopbackPort()
-    const forward = forwardToStorefront(http.adapter, { port: internalPort, publicUrl })
+    const forward = forwardToStorefront(http.adapter, {
+      port: internalPort,
+      publicUrl,
+      headers: config.security.headers,
+    })
 
     const storefront = spawn(process.execPath, launch(internalPort), {
       cwd: projectRoot,

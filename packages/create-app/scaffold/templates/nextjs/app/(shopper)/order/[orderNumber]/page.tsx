@@ -9,13 +9,13 @@ interface OrderPageProps {
   searchParams: Promise<{ key?: string | string[] }>
 }
 
-// The URL carries the order's key (`?key=`), so nothing this page links to or loads may be told the URL: the meta
-// tag here, and the header next.config.mjs sets on every /order/<n> response, the not-found render's too.
+// The URL carries the order's key (`?key=`), so nothing this page links to or loads may be told more than its origin:
+// the meta tag here, and the header next.config.mjs sets on every /order/<n> response, the not-found render's too.
 export async function generateMetadata({ params }: OrderPageProps): Promise<Metadata> {
   const { orderNumber } = await params
   return {
     title: `Order ${orderNumber}`,
-    referrer: 'no-referrer',
+    referrer: 'strict-origin',
   }
 }
 

@@ -14,6 +14,7 @@ import {
 import type { CustomerRepository } from '../../repositories/customer.js'
 import type { OrderRepository } from '../../repositories/order.js'
 import { buildCustomerProfile, CUSTOMER_PROFILES } from '../../read-models/builders.js'
+import { settle } from '../../read-models/settle.js'
 import { subscribeDerived, type DerivedHandler } from '../derived.js'
 
 export interface CustomerProjectionDeps {
@@ -32,12 +33,14 @@ export function customerProjection(deps: CustomerProjectionDeps): DerivedHandler
   const { documentStore, logger, customerRepo, orderRepo } = deps
 
   async function reproject(customerId: string): Promise<void> {
-    const c = await customerRepo.store.read((tx) => customerRepo.findById(tx, customerId))
-    if (!c) {
-      await documentStore.delete(CUSTOMER_PROFILES, customerId)
-      return
-    }
-    await documentStore.put<CustomerProfile>(CUSTOMER_PROFILES, c.id, buildCustomerProfile(c))
+    await settle(documentStore, `customer ${customerId}`, async () => {
+      const c = await customerRepo.store.read((tx) => customerRepo.findById(tx, customerId))
+      if (!c) {
+        return { puts: [], deletes: async () => [{ collection: CUSTOMER_PROFILES, key: customerId }] }
+      }
+      const doc: CustomerProfile = buildCustomerProfile(c)
+      return { puts: [{ collection: CUSTOMER_PROFILES, key: c.id, doc }] }
+    })
     logger.debug({ customerId }, 'customer profile projected')
   }
 

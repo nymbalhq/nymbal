@@ -67,7 +67,10 @@ export interface EventLogRepository extends StoreRepository {
   listDead(tx: ReadTx, limit: number): Promise<LoggedEvent[]>
   /** Neither delivered nor dead, with at least one failed attempt. */
   countRetrying(tx: ReadTx): Promise<number>
-  /** Deletes delivered events delivered before `at`; returns how many. Undelivered and dead events are never deleted. */
+  /**
+   * Deletes delivered events delivered before `at`; returns how many. Undelivered and dead events, a dead one also
+   * marked delivered included, are never deleted.
+   */
   deleteDeliveredBefore(tx: Tx, at: Date): Promise<number>
   listAll(tx: ReadTx): Promise<LoggedEvent[]>
   /** One correlation id's events, by `seq`. */
@@ -357,13 +360,15 @@ export function createEventLogRepository(store: CommandStore): EventLogRepositor
       if (tx.kind === 'sqlite') {
         const result = sqliteDb(tx)
           .delete(s)
-          .where(and(isNotNull(s.deliveredAt), lt(s.deliveredAt, at.toISOString())))
+          .where(
+            and(isNull(s.deadAt), isNotNull(s.deliveredAt), lt(s.deliveredAt, at.toISOString())),
+          )
           .run()
         return result.changes
       }
       const result = await postgresDb(tx)
         .delete(p)
-        .where(and(isNotNull(p.deliveredAt), lt(p.deliveredAt, at)))
+        .where(and(isNull(p.deadAt), isNotNull(p.deliveredAt), lt(p.deliveredAt, at)))
       return result.rowCount ?? 0
     },
     async listAll(tx) {

@@ -18,6 +18,7 @@ export async function seedReviews(adapter: ReviewsAdapter, count: number): Promi
       productId,
       customerId: null,
       orderId: null,
+      author: null,
       rating: (i % 5) + 1,
       title: `review ${i}`,
       body: `body ${i}`,

@@ -89,6 +89,12 @@ export function parseDurationToMs(s: string): number {
   }
 }
 
+/**
+ * How long after its first rotation a refresh token may be rotated again: two tabs restored together present one cookie
+ * at once. The window is anchored at that first rotation and never slides.
+ */
+export const REFRESH_REUSE_WINDOW_MS = 30_000
+
 function hashRefresh(token: string): string {
   return createHash('sha256').update(token).digest('hex')
 }
@@ -220,8 +226,22 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
       const jti = payload.jti
       const customerId = payload.sub
       const record = await store.read((tx) => repos.refreshToken.findById(tx, jti))
-      if (!record) throw new AuthError('token_invalid', 'refresh token unknown')
-      if (record.revokedAt) throw new AuthError('token_invalid', 'refresh token revoked')
+      if (!record) {
+        // Every token is inserted before it is returned, so a signed one with no row was rotated and purged: a replay.
+        await store.transaction((tx) => repos.refreshToken.revokeAllForCustomer(tx, customerId))
+        throw new AuthError('token_invalid', 'refresh token unknown; sessions revoked')
+      }
+      if (record.revokedAt) {
+        // Revoked by logout or by a sign-out of every session: refused, and nothing more.
+        if (record.replacedByJti === null) {
+          throw new AuthError('token_invalid', 'refresh token revoked')
+        }
+        // Rotated: two tabs presenting one cookie together get a pair each; later, it is a stolen token replayed.
+        if (Date.now() - Date.parse(record.revokedAt) > REFRESH_REUSE_WINDOW_MS) {
+          await store.transaction((tx) => repos.refreshToken.revokeAllForCustomer(tx, customerId))
+          throw new AuthError('token_invalid', 'refresh token reused; sessions revoked')
+        }
+      }
       if (record.tokenHash !== hashRefresh(refreshToken)) {
         // A mismatch means replay with an older token — revoke chain.
         await store.transaction((tx) => repos.refreshToken.revokeAllForCustomer(tx, customerId))
@@ -301,6 +321,7 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
           customerId: id,
           email,
           customer: toCustomerSnapshot(inserted),
+          origin: 'import',
         })
         logger.info({ customerId: id }, 'customer imported')
         return inserted

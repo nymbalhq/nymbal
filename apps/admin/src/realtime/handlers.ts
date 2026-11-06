@@ -72,6 +72,7 @@ const LIVE_QUERY_PREFIXES: QueryKey[] = [
   ['orders', 'detail'],
   ['dashboard'],
   ['inventory', 'list'],
+  ['proposals'],
 ]
 
 /**
@@ -155,6 +156,24 @@ export function createEventHandlers(queryClient: QueryClient) {
         break
       }
 
+      case 'proposal.created.v1': {
+        void queryClient.invalidateQueries({ queryKey: ['proposals'] })
+        push({
+          type: 'info',
+          title: 'Inbox',
+          message: `Agent proposal: ${event.payload.command}`,
+        })
+        break
+      }
+
+      case 'proposal.approved.v1':
+      case 'proposal.rejected.v1':
+      case 'proposal.applied.v1':
+      case 'proposal.failed.v1': {
+        void queryClient.invalidateQueries({ queryKey: ['proposals'] })
+        break
+      }
+
       case 'adapter.error.v1': {
         const { adapterType, adapterName, error } = event.payload
         push({
@@ -190,11 +209,16 @@ interface TickerEvent {
 
 interface EventTickerStore {
   events: TickerEvent[]
+  /** Whether the realtime stream is confirmed live: its `connected` frame came and no error since. */
+  connected: boolean
   pushEvent: (type: string, label: string) => void
+  setConnected: (connected: boolean) => void
 }
 
 export const useEventTicker = create<EventTickerStore>((set) => ({
   events: [],
+  connected: false,
+  setConnected: (connected) => set({ connected }),
   pushEvent: (type, label) => {
     const event: TickerEvent = {
       id: crypto.randomUUID(),

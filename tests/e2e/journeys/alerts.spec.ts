@@ -104,18 +104,16 @@ const ADMIN_BASE = `${API_URL}/admin/`
 const pounds = (minor: number): string => `£${(minor / 100).toFixed(2)}`
 
 /**
- * Opens the product in the admin's product page, sets the variant's price on the Variants tab (pressing Add Variant
- * first when asked) and saves; answers the save's PATCH status and echoed correlation id.
+ * Opens the product in the admin's product page, sets the variant's price on the Variants tab and saves; answers the
+ * save's PATCH status and echoed correlation id.
  */
 async function saveAdminPrice(
   admin: Page,
   product: OwnProduct,
   priceMinor: number,
-  opts: { addRow?: boolean } = {},
 ): Promise<{ status: number; correlationId: string }> {
   await admin.goto(new URL(`products/${product.slug}`, ADMIN_BASE).href)
   await admin.getByTestId('admin-product-tab-variants').click()
-  if (opts.addRow === true) await admin.getByRole('button', { name: /Add Variant/ }).click()
   await admin
     .getByTestId(`admin-product-variant-price-${product.variantId}`)
     .fill((priceMinor / 100).toFixed(2))
@@ -342,10 +340,62 @@ test.describe('back-in-stock alerts', () => {
     )
     expect(confirmations).toEqual([1, 1])
   })
+
+  test('AC-10: on the Mailpit store, a second notify-me submit for the same address and variant after a reload, while the first confirmation is new and unconfirmed, puts no second confirmation in Mailpit, and the first one’s confirm link and button still confirm @capabilities', async ({
+    page,
+    request,
+  }, testInfo) => {
+    test.setTimeout(120_000)
+    const caps = await storeCapabilities(request)
+    const delivering = isCustomProject(testInfo.project.name)
+    expect(delivers(caps), JSON.stringify(caps)).toBe(delivering)
+    const token = await adminToken(request)
+    const product = await ownProduct(request, token, 0)
+
+    if (!delivering) {
+      await page.goto(`/product/${product.slug}`)
+      await hydrated(page)
+      expect(await page.locator(TAG).count()).toBe(0)
+      return
+    }
+
+    const mail = await mailbox()
+    const tag = randomUUID().slice(0, 8)
+    const again = address('again', tag)
+
+    await subscribeFromPage(page, product, again)
+    const first = await confirmation(mail, again)
+
+    await page.reload()
+    await hydrated(page)
+    await page.locator(TAG).getByTestId('notify-me-email').fill(again)
+    await page.locator(TAG).getByTestId('notify-me-submit').click()
+    await expect(page.locator(TAG).getByTestId('notify-me-notice')).toHaveText(
+      'Check your inbox to confirm.',
+    )
+
+    // A marker's confirmation, asked for after the second submit, has arrived: a second one to the address would too.
+    const marker = address('again-marker', tag)
+    const sub = await subscribeThroughApi(
+      request,
+      storefrontOrigin(testInfo),
+      marker,
+      product.variantId,
+    )
+    expect(sub.status, sub.text).toBe(202)
+    await mail.waitFor(marker, 1)
+
+    const confirmations = (await mail.messages(again)).filter(isConfirmation)
+    expect(confirmations.length, `confirmations to ${again}`).toBe(1)
+    await openAndPress(page, linkTo(first, '/alerts/confirm').href)
+    await expect(
+      page.getByTestId('alert-confirmed').locator(`a[href$="/product/${product.slug}"]`),
+    ).toHaveCount(1)
+  })
 })
 
 test.describe('price-drop alerts', () => {
-  test('AC-6: on the Mailpit store, a price lowered in the admin’s product page (after Add Variant) saves, is served and logged with both prices, and mails each confirmed price-drop subscriber once naming both prices; the confirmation and confirm page name the price drop, never back in stock; an unsubscribed address, a rise and a return to the last alerted price mail nothing @capabilities', async ({
+  test('AC-6: on the Mailpit store, a price lowered in the admin’s product page saves, is served and logged with both prices, and mails each confirmed price-drop subscriber once naming both prices; the confirmation and confirm page name the price drop, never back in stock; an unsubscribed address, a rise and a return to the last alerted price mail nothing @capabilities', async ({
     page,
     request,
   }, testInfo) => {
@@ -387,11 +437,11 @@ test.describe('price-drop alerts', () => {
     // B, the control, through the API.
     await confirmedThroughApi(request, mail, origin, b, product, 'price_drop')
 
-    // The admin on the custom API: a row added, the existing variant's price lowered, saved.
+    // The admin on the custom API: the variant's price lowered, saved.
     const admin = await page.context().newPage()
     await signInAsAdmin(admin, ADMIN_BASE)
     const lower = start - 400
-    const first = await saveAdminPrice(admin, product, lower, { addRow: true })
+    const first = await saveAdminPrice(admin, product, lower)
     expect(first.status, 'the save’s PATCH').toBe(200)
 
     await mail.waitFor(a, 2)

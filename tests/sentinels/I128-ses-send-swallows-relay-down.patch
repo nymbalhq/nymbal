@@ -1,0 +1,18 @@
+# id: I128
+# kind: injected
+# defect: an SES send to a relay that is down resolves as not accepted instead of rejecting, so a dead relay reads as a refused message rather than a failure to retry
+# where: packages/adapters/email/ses/src/ses-adapter.ts:119
+# killed-by: tests/contracts/ses-email.test.ts (down: sendTransactional() rejects within 6 s instead of hanging)
+# suite: pnpm vitest run --project contracts-native tests/contracts/ses-email.test.ts
+diff --git a/packages/adapters/email/ses/src/ses-adapter.ts b/packages/adapters/email/ses/src/ses-adapter.ts
+--- a/packages/adapters/email/ses/src/ses-adapter.ts
++++ b/packages/adapters/email/ses/src/ses-adapter.ts
+@@ -116,7 +116,7 @@ export function createSesEmailAdapter(deps: {
+           new AdapterError('email.misconfigured', loginText(missing), { context: { missing } }),
+         )
+       }
+-      return sender.sendTransactional(params)
++      return sender.sendTransactional(params).catch(() => ({ accepted: false }))
+     },
+     syncCustomerToList: (customer) => sender.syncCustomerToList(customer),
+     removeCustomerFromList: (customerId) => sender.removeCustomerFromList(customerId),

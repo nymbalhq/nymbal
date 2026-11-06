@@ -27,7 +27,8 @@ import { EXCLUDED_PREFIXES, TEST_FILE } from './test-census'
 // system temp directory, removed before exit, also on SIGINT and SIGTERM. When a manifest or the lockfile differs
 // from the base's, the worktree installs the base's own dependencies. When that or the base's build fails, no file is
 // judged and the step fails closed with the first error line and the output's tail: a change must not be able to
-// opt out of the rule by breaking the base's install.
+// opt out of the rule by breaking the base's install. pnpm's own install before a run is off in the worktrees, whose
+// dependencies this script prepares; a base command that still reports that install failed fails the step the same way.
 // Every test-code file the change adds (a shared suite, a helper, a fixture) is copied in before the runs, so a new
 // test is judged by what it asserts and not by an import the base lacks; added product files and modified files stay
 // at the base's version. A `fails on base` line notes the error that failed the run.
@@ -130,7 +131,10 @@ export function addedTestCode(nameStatus: string, untracked: readonly string[]):
     .filter(
       (path) =>
         !TEST_FILE.test(path) &&
-        path.split('/').slice(0, -1).some((segment) => TEST_CODE_SEGMENTS.has(segment)) &&
+        path
+          .split('/')
+          .slice(0, -1)
+          .some((segment) => TEST_CODE_SEGMENTS.has(segment)) &&
         !EXCLUDED_PREFIXES.some((prefix) => path.startsWith(prefix)),
     )
     .sort()
@@ -211,10 +215,17 @@ type Session = { child?: ChildProcess; signal?: NodeJS.Signals }
 
 type SuiteRun = { status: number | null; signal: NodeJS.Signals | null; output: string }
 
+/**
+ * pnpm 12 installs before it runs a command unless a pnpm parent turned that off. Against a worktree whose
+ * node_modules link into HEAD's it fails, warns and runs on, so every failing run's first error was pnpm's.
+ */
+const NO_INSTALL_BEFORE_RUN = { pnpm_config_verify_deps_before_run: 'false' }
+
 function runCommand(cwd: string, command: string, session: Session): Promise<SuiteRun> {
   return new Promise((resolvePromise) => {
     const child = spawn(command, {
       cwd,
+      env: { ...process.env, ...NO_INSTALL_BEFORE_RUN },
       shell: true,
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -305,6 +316,22 @@ function tailOf(output: string): string[] {
   const all = outputLines(output)
   while (all.length > 0 && all[all.length - 1] === '') all.pop()
   return all.slice(-TAIL_LINES)
+}
+
+function baseFailureOf(output: string): BaseFailure {
+  return { reason: firstErrorLine(output), tail: tailOf(output) }
+}
+
+/** pnpm's warning once its install before a run has failed; the run itself goes on. */
+const INSTALL_BEFORE_RUN_FAILED = 'The install that runs before scripts failed'
+
+/** The failure of pnpm's install before a run, from the output up to its warning; undefined when it did not fail. */
+function installBeforeRunFailure(output: string): BaseFailure | undefined {
+  const lines = outputLines(output)
+  const warning = lines.findIndex((line) => line.includes(INSTALL_BEFORE_RUN_FAILED))
+  if (warning === -1) return undefined
+  const failure = baseFailureOf(lines.slice(0, warning + 1).join('\n'))
+  return { ...failure, reason: failure.reason.replace(/\s+/g, ' ') }
 }
 
 /**
@@ -488,22 +515,19 @@ export async function judge(opts: {
     if (!installs) mirrorInto(worktree)
 
     // A base that cannot install or build judges no test, and the step fails: the rule is never skipped silently.
-    const notBuilt = (output: string): Report => {
-      const reason = firstErrorLine(output)
-      return {
-        results: added.map((path) => ({
-          path,
-          verdict: 'not judged',
-          note: `${BASE_DID_NOT_BUILD}${reason}`,
-        })),
-        baseFailure: { reason, tail: tailOf(output) },
-      }
-    }
+    const notBuilt = (baseFailure: BaseFailure): Report => ({
+      results: added.map((path) => ({
+        path,
+        verdict: 'not judged',
+        note: `${BASE_DID_NOT_BUILD}${baseFailure.reason}`,
+      })),
+      baseFailure,
+    })
 
     if (installs) {
       const installed = await installBase(worktree, session)
       if (session.signal !== undefined) throw new Error(`interrupted by ${session.signal}`)
-      if (installed.status !== 0) return notBuilt(installed.output)
+      if (installed.status !== 0) return notBuilt(baseFailureOf(installed.output))
     }
 
     // Workspace packages export their built output, so the base's sources are built before they are imported.
@@ -511,7 +535,9 @@ export async function judge(opts: {
     if (build !== '') {
       const built = await runCommand(worktree, build, session)
       if (session.signal !== undefined) throw new Error(`interrupted by ${session.signal}`)
-      if (built.status !== 0) return notBuilt(built.output)
+      if (built.status !== 0) return notBuilt(baseFailureOf(built.output))
+      const uninstalled = installBeforeRunFailure(built.output)
+      if (uninstalled !== undefined) return notBuilt(uninstalled)
     }
 
     const support = addedTestCode(
@@ -534,6 +560,8 @@ export async function judge(opts: {
       copyInto(root, worktree, path)
       const run = await runCommand(worktree, `${opts.suite} ${quote(path)}`, session)
       if (session.signal !== undefined) throw new Error(`interrupted by ${session.signal}`)
+      const uninstalled = installBeforeRunFailure(run.output)
+      if (uninstalled !== undefined) return notBuilt(uninstalled)
       const judgement = verdictOf(run)
       results.push(
         judgement.verdict === 'fails on base'
@@ -583,23 +611,27 @@ export function render({ results, baseFailure, noBase }: Report): string {
   if (noBase === true)
     return 'tests-fail-on-base: HEAD is a root commit; no base to judge test files against'
   if (results.length === 0) return 'tests-fail-on-base: the change adds no test files'
-  const judged = results.filter((r) => r.verdict !== 'not judged')
-  const unjudged = results.filter((r) => r.verdict === 'not judged')
-  const lines = judged.map((r) => {
+  const line = (r: Judgement): string => {
     const verdict = r.verdict === 'fails under sentinel' ? `${r.verdict} ${r.sentinel}` : r.verdict
     return `${verdict}: ${r.path}${r.note === undefined ? '' : ` (${r.note})`}`
-  })
-  for (const r of unjudged) lines.push(`not judged: ${r.path} (${r.note})`)
-  const violations = results.filter((r) => r.verdict === 'PASSES ON BASE').length
-  lines.push(
-    `tests-fail-on-base: ${results.length} added, ${violations} violation(s), ${unjudged.length} not judged`,
-  )
+  }
+  const violations = results.filter((r) => r.verdict === 'PASSES ON BASE')
+  const unjudged = results.filter((r) => r.verdict === 'not judged')
+  const held = results.filter((r) => !violations.includes(r) && !unjudged.includes(r))
+  const lines = [...held.map(line), ...unjudged.map(line)]
+  // What fails the step comes last, beside the count, so a log cut to its last lines still shows it: the base's
+  // output tail, then why the base failed, then each violation.
   if (baseFailure !== undefined) {
     lines.push(
-      `failed: ${BASE_DID_NOT_BUILD}${baseFailure.reason}; the last ${baseFailure.tail.length} line(s) of its output:`,
-      ...baseFailure.tail.map((line) => `  | ${line}`),
+      `the base's output, its last ${baseFailure.tail.length} line(s):`,
+      ...baseFailure.tail.map((text) => `  | ${text}`),
+      `failed: ${BASE_DID_NOT_BUILD}${baseFailure.reason}`,
     )
   }
+  lines.push(
+    ...violations.map(line),
+    `tests-fail-on-base: ${results.length} added, ${violations.length} violation(s), ${unjudged.length} not judged`,
+  )
   return lines.join('\n')
 }
 

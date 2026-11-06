@@ -37,26 +37,6 @@ export const ProductFilter = /* @__PURE__ */ forwardRef<HTMLElement, ProductFilt
 
   useEffect(() => {
     const el = ref.current
-    if (!el) return
-    if (props.facets !== undefined) {
-      el.setAttribute('facets', JSON.stringify(props.facets))
-    } else {
-      el.removeAttribute('facets')
-    }
-  }, [props.facets])
-
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (props.source !== undefined) {
-      el.setAttribute('source', String(props.source))
-    } else {
-      el.removeAttribute('source')
-    }
-  }, [props.source])
-
-  useEffect(() => {
-    const el = ref.current
     if (!el || !props.onFilterChange) return
     const handler = props.onFilterChange as EventListener
     el.addEventListener('nymbal:filter:changed', handler)
@@ -66,7 +46,7 @@ export const ProductFilter = /* @__PURE__ */ forwardRef<HTMLElement, ProductFilt
     useDefine(NymbalProductFilter)
 
     return (
-      <nymbal-product-filter ref={ref as React.Ref<HTMLElement>} facets={props.facets === undefined ? undefined : JSON.stringify(props.facets)} source={props.source} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
+      <nymbal-product-filter ref={ref as React.Ref<HTMLElement>} {...{ 'FACETS': props.facets === undefined ? undefined : JSON.stringify(props.facets), 'SOURCE': props.source }} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
         // The server render goes on the tag itself: a full load parses its template into the shadow root, which React
         // does not see, and a soft navigation's innerHTML leaves it for the element to upgrade.
         dangerouslySetInnerHTML={props.serverHtml === undefined ? undefined : { __html: props.serverHtml }}

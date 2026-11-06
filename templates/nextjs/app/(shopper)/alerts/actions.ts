@@ -1,6 +1,7 @@
 'use server'
 
-import { confirmAlert, unsubscribeAlert, type AlertConfirmation } from '@/lib/api'
+import { headers } from 'next/headers'
+import { confirmAlert, shopperHeaders, unsubscribeAlert, type AlertConfirmation } from '@/lib/api'
 
 /** What a press of an alert page's button shows. */
 export type AlertLinkResult =
@@ -19,7 +20,8 @@ export async function confirmAlertAction(
   form: FormData,
 ): Promise<AlertLinkResult> {
   const token = tokenOf(form)
-  const confirmation = token === '' ? null : await confirmAlert(token)
+  const confirmation =
+    token === '' ? null : await confirmAlert(token, shopperHeaders(await headers()))
   return confirmation ? { result: 'confirmed', confirmation } : { result: 'invalid' }
 }
 
@@ -28,6 +30,7 @@ export async function unsubscribeAlertAction(
   form: FormData,
 ): Promise<AlertLinkResult> {
   const token = tokenOf(form)
-  const stopped = token === '' ? false : await unsubscribeAlert(token)
+  const stopped =
+    token === '' ? false : await unsubscribeAlert(token, shopperHeaders(await headers()))
   return stopped ? { result: 'unsubscribed' } : { result: 'invalid' }
 }

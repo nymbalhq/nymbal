@@ -1,15 +1,20 @@
-import { describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { AdapterContext, Logger, ShippingAdapter, Slot } from '@nymbalhq/types'
 import {
   EASYPOST_TEST_WEBHOOK_SECRET,
   signedPost,
   trackerEvent,
 } from '../../../../../tests/support/easypost'
-import { createAdapter, createEasyPostShippingAdapter } from './index.js'
+import { createAdapter, createEasyPostShippingAdapter, settings } from './index.js'
+import {
+  FAKE_EASYPOST_API_KEY,
+  startFakeEasyPost,
+  type FakeEasyPost,
+} from './tests/fake-easypost.js'
 
-// The package's entry as the kernel's loader calls it, and the three ShippingAdapter methods EasyPost serves none of
-// here: the adapter only verifies and maps tracker webhooks, so a rate, a label or a lookup is refused, naming EasyPost
-// and the method, never answered with something made up.
+// The package's entry as the kernel's loader calls it, and what the adapter declares by its config: with an API key it
+// rates, sells labels and registers tracking numbers through EasyPost's API (the in-process fake here), and says so
+// with all three words; without one it has none of those methods, declares nothing, and still verifies webhooks.
 
 const logger: Logger = {
   trace: () => {},
@@ -71,41 +76,79 @@ describe('AC-4: the package builds the easypost shipping adapter', () => {
       expect((error as Error).message, slot).toMatch(/\bshipping\b/)
     }
   })
+})
 
-  it('AC-4: rate, createLabel and track each reject with adapter.shipping.unsupported, naming EasyPost and the method', async () => {
+const WORDS = ['rates', 'labels', 'tracking'] as const
+const METHOD = { rates: 'rate', labels: 'createLabel', tracking: 'startTracking' } as const
+
+/** The words whose method the adapter has, in the words' order. */
+const served = (a: ShippingAdapter): string[] =>
+  WORDS.filter((w) => typeof (a as unknown as Record<string, unknown>)[METHOD[w]] === 'function')
+
+describe('AC-7: EasyPost declares by its config', () => {
+  let fake: FakeEasyPost
+
+  beforeAll(async () => {
+    fake = await startFakeEasyPost()
+  })
+  afterAll(async () => {
+    await fake.close()
+  })
+
+  it('AC-7: built with an apiKey it declares rates, labels and tracking, has the three methods, and startTracking reaches EasyPost', async () => {
     const a = createEasyPostShippingAdapter({
       logger,
-      config: { webhookSecret: EASYPOST_TEST_WEBHOOK_SECRET },
+      config: {
+        apiKey: FAKE_EASYPOST_API_KEY,
+        apiBase: fake.apiBase,
+        webhookSecret: EASYPOST_TEST_WEBHOOK_SECRET,
+      },
     })
-    const calls: Array<[string, () => Promise<unknown>]> = [
-      [
-        'rate',
-        () =>
-          a.rate({
-            fromPostalCode: 'LS1 4AP',
-            toPostalCode: 'BS1 4DJ',
-            toCountry: 'GB',
-            weightGrams: 500,
-            currency: 'GBP',
-          }),
-      ],
-      [
-        'createLabel',
-        () => a.createLabel({ orderId: 'ord_1', carrier: 'USPS', service: 'Priority' }),
-      ],
-      ['track', () => a.track('9400100000000000000004')],
+    const before = fake.requests.length
+
+    const answer = await a.startTracking!({
+      trackingNumber: '9400100000000000000005',
+      carrier: null,
+    })
+
+    expect([...a.capabilities()]).toEqual(['rates', 'labels', 'tracking'])
+    expect(served(a)).toEqual([...a.capabilities()])
+    expect(answer).toEqual({ status: 'tracking' })
+    expect(fake.requests.slice(before).map((r) => [r.method, r.path])).toEqual([
+      ['POST', '/v2/trackers'],
+    ])
+  })
+
+  it('AC-7: built without an apiKey (none, empty) it declares nothing, has no rate, createLabel or startTracking property, and a signed post still verifies', async () => {
+    const keyless = [
+      createEasyPostShippingAdapter({
+        logger,
+        config: { webhookSecret: EASYPOST_TEST_WEBHOOK_SECRET },
+      }),
+      createEasyPostShippingAdapter({
+        logger,
+        config: { webhookSecret: EASYPOST_TEST_WEBHOOK_SECRET, apiKey: '' },
+      }),
+      createAdapter(
+        ctx('shipping', { webhookSecret: EASYPOST_TEST_WEBHOOK_SECRET }),
+      ) as ShippingAdapter,
     ]
+    const post = signedPost(trackerEvent('9400100000000000000006', 'delivered'))
 
-    for (const [method, call] of calls) {
-      const { value, error } = await outcomeOf(call)
+    for (const a of keyless) {
+      const delivery = await a.receiveWebhook!(post.rawBody, post.headers)
 
-      expect(value, method).toBeUndefined()
-      expect(error, method).toMatchObject({
-        name: 'AdapterError',
-        code: 'adapter.shipping.unsupported',
-      })
-      expect((error as Error).message, method).toMatch(/EasyPost/)
-      expect((error as Error).message, method).toContain(method)
+      expect([...a.capabilities()]).toEqual([])
+      expect(['rate', 'createLabel', 'startTracking'].filter((m) => m in a)).toEqual([])
+      expect(served(a)).toEqual([...a.capabilities()])
+      expect([delivery.verified, delivery.events.length]).toEqual([true, 1])
     }
+  })
+
+  it('AC-7: settings lists apiKey and webhookSecret, both secret and optional, and nothing else', () => {
+    expect(settings.map((s) => [s.path, s.secret === true, s.optional === true]).sort()).toEqual([
+      ['apiKey', true, true],
+      ['webhookSecret', true, true],
+    ])
   })
 })

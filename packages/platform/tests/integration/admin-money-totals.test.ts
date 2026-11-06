@@ -7,10 +7,20 @@ import { adminClient, storedMoney, type AdminClient } from '../support/money.js'
 import { openRaw, type RawReader } from '../support/raw.js'
 
 // AC-7 on SQLite: dashboard revenue and a customer's totalSpentMinor are Σ (captured − refunded) over their orders,
-// over generated runs of paid, manually paid and unpaid orders with generated partial refunds.
+// over generated runs of paid, manually paid and unpaid orders with generated partial refunds. AC-3: the customer
+// page's stats count the same money (past one page of orders on both dialects: suites/customer-stats.ts).
 
 interface Dashboard {
   today: { orderCount: number; revenueMinor: number; itemsShipped: number }
+}
+
+interface CustomerRead {
+  customer: { totalSpentMinor: number }
+  stats: {
+    orderCount: number
+    lifetimeRevenueMinor: number
+    avgOrderValueMinor: number
+  }
 }
 
 const orderPlan = fc.record({
@@ -44,16 +54,15 @@ describe('AC-7: totals count money (sqlite)', () => {
     return res.body.data!.today.revenueMinor
   }
 
-  async function spentBy(customerId: string): Promise<number> {
-    const res = await admin.call<{ customer: { totalSpentMinor: number } }>(
-      'GET',
-      `/api/admin/customers/${customerId}`,
-    )
+  async function customerRead(customerId: string): Promise<CustomerRead> {
+    const res = await admin.call<CustomerRead>('GET', `/api/admin/customers/${customerId}`)
     expect(res.status, JSON.stringify(res.body)).toBe(200)
-    return res.body.data!.customer.totalSpentMinor
+    return res.body.data!
   }
 
-  it('AC-7: over generated paid, manually paid, unpaid, partially refunded and refunded orders, the dashboard revenue grows by exactly Σ (captured − refunded) and the customer’s totalSpentMinor equals it', async () => {
+  // AC-3 kills: stats summing `totalMinor` by status (a partial refund counted at its full total, a full refund at
+  // none of what it kept), and an average divided by unpaid orders too.
+  it('AC-7, AC-3: over generated paid, manually paid, unpaid, partially refunded and refunded orders, the dashboard revenue grows by exactly Σ (captured − refunded); the customer’s totalSpentMinor and Lifetime Value equal it, Avg Order is it over the orders that captured money, and orderCount counts every order', async () => {
     await fc.assert(
       fc.asyncProperty(fc.array(orderPlan, { minLength: 1, maxLength: 4 }), async (plans) => {
         const { customer } = await k.services.auth.register({
@@ -62,6 +71,7 @@ describe('AC-7: totals count money (sqlite)', () => {
         })
         const revenueBefore = await revenue()
         let moved = 0
+        let paidOrders = 0
 
         for (const plan of plans) {
           const seeded = await seedVariant(k, plan.qty + 2, { priceMinor: plan.priceMinor })
@@ -83,6 +93,7 @@ describe('AC-7: totals count money (sqlite)', () => {
               : null
           expect(paid?.status ?? 200, JSON.stringify(paid?.body)).toBe(200)
           const captured = plan.priceMinor * plan.qty
+          paidOrders += 1
           let refunded = 0
           for (const percent of plan.refundPercents) {
             const amountMinor = Math.min(
@@ -102,7 +113,15 @@ describe('AC-7: totals count money (sqlite)', () => {
         }
 
         expect((await revenue()) - revenueBefore).toBe(moved)
-        expect(await spentBy(customer.id)).toBe(moved)
+        const read = await customerRead(customer.id)
+        expect(read.customer.totalSpentMinor, 'totalSpentMinor').toBe(moved)
+        expect(read.stats.lifetimeRevenueMinor, 'Lifetime Value').toBe(
+          read.customer.totalSpentMinor,
+        )
+        expect(read.stats.avgOrderValueMinor, `Avg Order over ${paidOrders} paid`).toBe(
+          paidOrders === 0 ? 0 : Math.round(moved / paidOrders),
+        )
+        expect(read.stats.orderCount, 'orderCount').toBe(plans.length)
       }),
       { numRuns: 6 },
     )

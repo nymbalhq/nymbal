@@ -4,7 +4,13 @@ import type {
   ProductSearchResult,
   ReviewsListResult,
 } from '@nymbalhq/sdk'
-import { DEFAULT_PRODUCT_SORT, ORDER_KEY_HEADER, PRODUCT_SORT_KEYS } from '@nymbalhq/types'
+import {
+  DEFAULT_PRODUCT_SORT,
+  ORDER_EMAIL_HEADER,
+  ORDER_KEY_HEADER,
+  PRODUCT_SORT_KEYS,
+  SHOPPER_ATTESTATION_HEADER,
+} from '@nymbalhq/types'
 import type {
   AlertKind,
   Cart,
@@ -109,10 +115,9 @@ export async function fetchCategories(): Promise<Category[]> {
 
 /**
  * The order its key opens, `key` being the confirmation URL's `?key=`. `'expired'` when the API says the key has
- * expired, so the page can ask for the order's email, which the browser sends itself: a read from this server would
- * count every shopper's tries under the server's one address. Null on any other 404, which the API answers alike for
- * an unknown number and an order read without its key; rejects when the API fails, so a failed read is a 500 and
- * never a not-found page for an order the shopper has. The key goes in a header, never in the API's URL.
+ * expired, so the page can ask for the order's email. Null on any other 404, which the API answers alike for an
+ * unknown number and an order read without its key; rejects when the API fails, so a failed read is a 500 and never a
+ * not-found page for an order the shopper has. The key goes in a header, never in the API's URL.
  */
 export async function fetchOrder(
   orderNumber: string,
@@ -130,6 +135,69 @@ export async function fetchOrder(
   const envelope = (await res.json()) as { data?: ShopperOrder | null }
   if (!envelope.data) throw new ApiUnavailableError(`GET ${path} answered no data`)
   return envelope.data
+}
+
+// The two calls below serve the order page's forms only when its script did not run. From this server they count
+// against the shopper's address only when they echo the attestation the API sent with the page (`shopperHeaders`).
+
+/** The page request's `x-nymbal-shopper`, set by the API that forwarded it; `{}` when no API forwarded it. */
+export function shopperHeaders(headers: Headers): Record<string, string> {
+  const value = headers.get(SHOPPER_ATTESTATION_HEADER)
+  return value === null ? {} : { [SHOPPER_ATTESTATION_HEADER]: value }
+}
+
+/**
+ * The order its expired key opens beside the order's email; `'not-found'` when the email does not open it (the API's
+ * unknown-number 404), `'limited'` on the API's 429; rejects on any other failure. The email goes in a header.
+ */
+export async function openExpiredOrder(
+  orderNumber: string,
+  key: string,
+  email: string,
+  forwarded: Record<string, string> = {},
+): Promise<ShopperOrder | 'not-found' | 'limited'> {
+  const path = `/api/orders/${encodeURIComponent(orderNumber)}`
+  const res = await fetch(`${API_URL}${path}`, {
+    headers: { ...forwarded, [ORDER_KEY_HEADER]: key, [ORDER_EMAIL_HEADER]: email },
+  })
+  if (res.status === 404) return 'not-found'
+  if (res.status === 429) return 'limited'
+  if (!res.ok) throw new ApiUnavailableError(`GET ${path} answered ${res.status}`)
+  const envelope = (await res.json()) as { data?: ShopperOrder | null }
+  if (!envelope.data) throw new ApiUnavailableError(`GET ${path} answered no data`)
+  return envelope.data
+}
+
+const CSRF_COOKIE = 'nymbal.csrf'
+const CSRF_HEADER = 'x-csrf-token'
+
+/**
+ * Asks the API to mail the order's link to the order's email; `'sent'` whatever matched (the API answers alike),
+ * `'limited'` on its 429; rejects on any other failure. The route is CSRF-checked, so the token `GET /api/csrf` gives
+ * goes back as both its cookie and its header.
+ */
+export async function requestOrderLink(
+  orderNumber: string,
+  email: string,
+  forwarded: Record<string, string> = {},
+): Promise<'sent' | 'limited'> {
+  const issued = await fetch(`${API_URL}/api/csrf`, { headers: forwarded })
+  if (!issued.ok) throw new ApiUnavailableError(`GET /api/csrf answered ${issued.status}`)
+  const { token } = ((await issued.json()) as { data: { token: string } }).data
+  const res = await fetch(`${API_URL}/api/orders/link`, {
+    method: 'POST',
+    headers: {
+      ...forwarded,
+      'content-type': 'application/json',
+      accept: 'application/json',
+      cookie: `${CSRF_COOKIE}=${token}`,
+      [CSRF_HEADER]: token,
+    },
+    body: JSON.stringify({ orderNumber, email }),
+  })
+  if (res.status === 202) return 'sent'
+  if (res.status === 429) return 'limited'
+  throw new ApiUnavailableError(`POST /api/orders/link answered ${res.status}`)
 }
 
 export async function fetchReviews(productId: string): Promise<ReviewsListResult> {
@@ -189,6 +257,20 @@ export async function fetchCart(cookie: string | null): Promise<CartProjection |
   }
 }
 
+/** Whether a request's Cookie header carries the shopper's `nymbal.cart` cookie. */
+export function hasCartCookie(cookie: string | null): boolean {
+  return cartToken(cookie) !== null
+}
+
+/**
+ * The cart the cart page renders from: the empty cart without a `nymbal.cart` cookie, since the cart lives behind it,
+ * else `fetchCart`'s answer, where null (a failed read) is an unknown cart and never shown as empty.
+ */
+export async function cartPageCart(cookie: string | null): Promise<CartProjection | null> {
+  if (!hasCartCookie(cookie)) return { items: [], subtotalMinor: 0, currency: '', itemCount: 0 }
+  return fetchCart(cookie)
+}
+
 /** The search the search page shows for `q` (and its category), as the search store would hold it. */
 export async function fetchSearch(
   q: string,
@@ -208,10 +290,14 @@ export async function fetchSearch(
 }
 
 /** An alert link's token posted to the API from this server; null when the API refuses the link (404, or 400). */
-async function postAlertToken<T>(path: string, token: string): Promise<T | null> {
+async function postAlertToken<T>(
+  path: string,
+  token: string,
+  forwarded: Record<string, string>,
+): Promise<T | null> {
   const res = await fetch(`${API_URL}${path}`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    headers: { ...forwarded, 'content-type': 'application/json', accept: 'application/json' },
     body: JSON.stringify({ token }),
   })
   if (res.status === 404 || res.status === 400) return null
@@ -225,13 +311,23 @@ export interface AlertConfirmation {
 }
 
 /** Confirms the alert a confirmation email's link names; null when the link is not valid; rejects when the API fails. */
-export function confirmAlert(token: string): Promise<AlertConfirmation | null> {
-  return postAlertToken<AlertConfirmation>('/api/alerts/confirm', token)
+export function confirmAlert(
+  token: string,
+  forwarded: Record<string, string> = {},
+): Promise<AlertConfirmation | null> {
+  return postAlertToken<AlertConfirmation>('/api/alerts/confirm', token, forwarded)
 }
 
 /** Stops the alert an email's unsubscribe link names; false when the link is not valid; rejects when the API fails. */
-export async function unsubscribeAlert(token: string): Promise<boolean> {
+export async function unsubscribeAlert(
+  token: string,
+  forwarded: Record<string, string> = {},
+): Promise<boolean> {
   return (
-    (await postAlertToken<{ status: 'unsubscribed' }>('/api/alerts/unsubscribe', token)) !== null
+    (await postAlertToken<{ status: 'unsubscribed' }>(
+      '/api/alerts/unsubscribe',
+      token,
+      forwarded,
+    )) !== null
   )
 }

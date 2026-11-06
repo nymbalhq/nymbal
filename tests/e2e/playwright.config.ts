@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -90,12 +91,17 @@ const overrideSqlitePath = (process.env.NYMBAL_E2E_OVERRIDE_SQLITE_PATH ??= join
   `nymbal-e2e-override-${Date.now()}-${process.pid}.db`,
 ))
 
-// Where scripts/e2e-server.mjs records the store variables it starts the native API with (the database and the key
-// prefix it makes for the run), so the rebuild journey runs `nymbal replay` against that same store.
+// Where scripts/e2e-server.mjs records the store variables it starts the run's API with (the database and the key
+// prefix it makes for the run), so a journey reaches that same store (support/order-keys.ts). The native and the
+// custom store's APIs both write it: an invocation starts one of the two, never both (servers() below).
 const storeEnvFile = (process.env.NYMBAL_E2E_STORE_ENV_FILE ??= join(
   tmpdir(),
   `nymbal-e2e-store-env-${Date.now()}-${process.pid}.json`,
 ))
+
+// The store's ACP key: the native API turns agentic checkout on under it (nymbal.config.ts), and the journeys send it.
+// Made once here and inherited by the workers, which load this file again.
+const acpKey = (process.env.NYMBAL_ACP_API_KEY ??= randomBytes(24).toString('hex'))
 
 // Servers are dev servers started in place: the packages they import come from the build, which this file never runs.
 const apiServer = {
@@ -108,6 +114,7 @@ const apiServer = {
     NYMBAL_SQLITE_PATH: sqlitePath,
     NYMBAL_CORS_ORIGINS: corsOrigins(astroURL, nextjsURL),
     NYMBAL_E2E_STORE_ENV_FILE: storeEnvFile,
+    NYMBAL_ACP_API_KEY: acpKey,
   },
   gracefulShutdown: { signal: 'SIGTERM' as const, timeout: 10000 },
 }
@@ -131,6 +138,7 @@ const customApiServer = {
     NYMBAL_SQLITE_PATH: customSqlitePath,
     NYMBAL_CORS_ORIGINS: corsOrigins(astroCustomURL, nextjsCustomURL),
     NYMBAL_E2E_SMTP_PORT: mailpitSmtpPort,
+    NYMBAL_E2E_STORE_ENV_FILE: storeEnvFile,
   },
   gracefulShutdown: { signal: 'SIGTERM' as const, timeout: 10000 },
 }
@@ -264,15 +272,18 @@ export default defineConfig({
   globalTimeout,
   snapshotPathTemplate: '{testDir}/{testFileDir}/snapshots/{arg}-{projectName}{ext}',
   use: {
-    trace: 'on-first-retry',
+    // Every try is traced and only a failed try's trace is kept, so a test that hangs and then passes on its retry
+    // leaves the trace of the try that hung.
+    trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     ignoreHTTPSErrors: true,
   },
   projects: [
     {
       name: 'astro',
-      testIgnore: ['**/journeys/admin/**'],
-      grepInvert: /@nosearch|@override|@mail-outage/,
+      // The Next dev server with its API stopped is a journey of the Next template's alone.
+      testIgnore: ['**/journeys/admin/**', '**/journeys/next-dev-api-down.spec.ts'],
+      grepInvert: /@nosearch|@override|@mail-outage|@phone-width/,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: astroURL,
@@ -281,7 +292,7 @@ export default defineConfig({
     {
       name: 'nextjs',
       testIgnore: ['**/journeys/admin/**'],
-      grepInvert: /@nosearch|@override|@mail-outage/,
+      grepInvert: /@nosearch|@override|@mail-outage|@phone-width/,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: nextjsURL,
@@ -355,6 +366,8 @@ export default defineConfig({
         baseURL: nextjsOverrideURL,
       },
     },
+    // The phone projects: the visual baselines at Pixel 7, and the @phone-width journeys, which hold every page of a
+    // surface to the phone's width and run on no desktop project.
     {
       name: 'astro-mobile',
       testIgnore: ['**/journeys/admin/**'],
@@ -362,7 +375,7 @@ export default defineConfig({
         ...devices['Pixel 7'],
         baseURL: astroURL,
       },
-      grep: /@visual/,
+      grep: /@visual|@phone-width/,
     },
     {
       name: 'nextjs-mobile',
@@ -371,11 +384,12 @@ export default defineConfig({
         ...devices['Pixel 7'],
         baseURL: nextjsURL,
       },
-      grep: /@visual/,
+      grep: /@visual|@phone-width/,
     },
     {
       name: 'admin',
       testMatch: ['**/journeys/admin/**/*.spec.ts'],
+      grepInvert: /@phone-width/,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: adminURL,
@@ -388,7 +402,7 @@ export default defineConfig({
         ...devices['Pixel 7'],
         baseURL: adminURL,
       },
-      grep: /@visual/,
+      grep: /@visual|@phone-width/,
     },
   ],
   ...(isCI ? { webServer: servers() } : {}),

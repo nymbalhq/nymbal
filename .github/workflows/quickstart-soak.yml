@@ -1,0 +1,65 @@
+name: Quickstart soak
+
+# The quickstart page (apps/docs/src/content/docs/quickstart.md), followed end to end by scripts/quickstart.sh on fresh
+# runners: each job publishes this commit's packages to a local registry, scaffolds a store, runs its production image
+# with Postgres, and has an agent call it over MCP. A job fails on a crash or a step that fails, and the run is green
+# only when every job is. Dispatched by hand, and run on the release pull request into main (only promotions target
+# main) with 20 runs; never on a push: a network hiccup in one job must not hold a merge. No secret is read and nothing
+# is published to npmjs.
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: How many runs, alternating the Astro and Next.js templates (1 to 256)
+        type: number
+        default: 20
+
+jobs:
+  plan:
+    name: Plan the runs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - id: matrix
+        env:
+          RUNS: ${{ inputs.runs || 20 }}
+        run: |
+          node -e '
+          const runs = Number(process.env.RUNS)
+          if (!Number.isInteger(runs) || runs < 1 || runs > 256) throw new Error(`runs must be 1 to 256, not ${process.env.RUNS}`)
+          const include = Array.from({ length: runs }, (_, i) => ({ run: i + 1, template: i % 2 === 0 ? "astro" : "nextjs" }))
+          console.log(`matrix=${JSON.stringify(include)}`)
+          ' >> "$GITHUB_OUTPUT"
+
+  quickstart:
+    name: Quickstart ${{ matrix.run }} (${{ matrix.template }})
+    needs: [plan]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Follow the quickstart page
+        shell: bash
+        env:
+          TEMPLATE: ${{ matrix.template }}
+          RUN: ${{ matrix.run }}
+        run: |
+          status=0
+          scripts/quickstart.sh "$TEMPLATE" 2>&1 | tee quickstart.log || status=$?
+          result="$(grep '^quickstart: ' quickstart.log | grep -v ' snapshot ' | tail -1 || true)"
+          echo "run $RUN: ${result:-quickstart: no result line, exit $status}" >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"

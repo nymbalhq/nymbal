@@ -7,7 +7,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { ShipOrderDialog } from '@/components/orders/ShipOrderDialog'
 import { useMarkPaidOrder, useUpdateOrderStatus } from '@/hooks/useOrders'
+import { ApiError } from '@/lib/api'
 import { ORDER_STATUS_TRANSITIONS } from '@nymbalhq/types'
 import type { OrderStatus } from '@nymbalhq/types'
 import { tid } from '@/lib/testid'
@@ -38,7 +40,6 @@ const STATUS_LABELS: Record<OrderStatus, string> = {
 const ACTION_MAP: Partial<Record<OrderStatus, string>> = {
   confirmed: 'confirm',
   processing: 'process',
-  shipped: 'ship',
   delivered: 'mark-delivered',
   cancelled: 'cancel',
 }
@@ -67,21 +68,22 @@ export function OrderStatusSelect({
   const { mutateAsync: updateStatus, isPending: isUpdating } = useUpdateOrderStatus()
   const { mutateAsync: markPaid, isPending: isRecording } = useMarkPaidOrder()
   const [optimisticStatus, setOptimisticStatus] = useState<OrderStatus | null>(null)
+  const [failure, setFailure] = useState<string | null>(null)
+  const [shipping, setShipping] = useState(false)
 
   const nextStatuses = offeredStatuses(currentStatus, capturedMinor)
   const canRecordPayment = currentStatus === 'pending' && capturedMinor === 0
   const displayStatus = optimisticStatus ?? currentStatus
   const isPending = isUpdating || isRecording
-
-  if (nextStatuses.length === 0 && !canRecordPayment) {
-    return (
-      <span className="text-sm text-zinc-500 font-medium capitalize">
-        {STATUS_LABELS[currentStatus]}
-      </span>
-    )
-  }
+  const terminal = nextStatuses.length === 0 && !canRecordPayment
 
   const handleChange = async (value: string) => {
+    setFailure(null)
+    // Shipping needs a carrier and tracking number: the dialog asks for them and posts.
+    if (value === 'shipped') {
+      setShipping(true)
+      return
+    }
     const newStatus = value === RECORD_PAYMENT ? 'confirmed' : (value as OrderStatus)
     setOptimisticStatus(newStatus)
 
@@ -89,47 +91,75 @@ export function OrderStatusSelect({
       if (value === RECORD_PAYMENT) await markPaid({ orderId })
       else await updateStatus({ orderId, action: ACTION_MAP[newStatus] ?? newStatus })
     } catch (err) {
-      console.error('[OrderStatusSelect] status update failed', err)
+      setFailure(err instanceof ApiError ? err.message : 'The status could not be changed.')
       setOptimisticStatus(null)
       queryClient.invalidateQueries({ queryKey: ['orders', 'detail', orderNumber] })
     }
   }
 
+  // The error and the ship dialog outlive the select: a refusal's refetch can show an order with no moves left.
   return (
-    <Select value={displayStatus} onValueChange={(v) => void handleChange(v)} disabled={isPending}>
-      <SelectTrigger
-        className={cn('w-44 h-8 text-xs', isPending && 'opacity-50')}
-        aria-label="Order status"
-        data-testid={tid('order', 'status-select')}
-      >
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem
-          value={currentStatus}
-          disabled
-          data-testid={tid('order', 'status-option', currentStatus)}
+    <>
+      {terminal ? (
+        <span className="text-sm text-zinc-500 font-medium capitalize">
+          {STATUS_LABELS[currentStatus]}
+        </span>
+      ) : (
+        <Select
+          value={displayStatus}
+          onValueChange={(v) => void handleChange(v)}
+          disabled={isPending}
         >
-          {STATUS_LABELS[currentStatus]} (current)
-        </SelectItem>
-        {canRecordPayment && (
-          <SelectItem
-            value={RECORD_PAYMENT}
-            data-testid={tid('order', 'status-option', RECORD_PAYMENT)}
+          <SelectTrigger
+            className={cn('w-44 h-8 text-xs', isPending && 'opacity-50')}
+            aria-label="Order status"
+            data-testid={tid('order', 'status-select')}
           >
-            Record payment
-          </SelectItem>
-        )}
-        {nextStatuses.map((status) => (
-          <SelectItem
-            key={status}
-            value={status}
-            data-testid={tid('order', 'status-option', status)}
-          >
-            {STATUS_LABELS[status]}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem
+              value={currentStatus}
+              disabled
+              data-testid={tid('order', 'status-option', currentStatus)}
+            >
+              {STATUS_LABELS[currentStatus]} (current)
+            </SelectItem>
+            {canRecordPayment && (
+              <SelectItem
+                value={RECORD_PAYMENT}
+                data-testid={tid('order', 'status-option', RECORD_PAYMENT)}
+              >
+                Record payment
+              </SelectItem>
+            )}
+            {nextStatuses.map((status) => (
+              <SelectItem
+                key={status}
+                value={status}
+                data-testid={tid('order', 'status-option', status)}
+              >
+                {STATUS_LABELS[status]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
+      {failure && (
+        <span
+          role="alert"
+          className="text-xs text-red-600"
+          data-testid={tid('order', 'status-error')}
+        >
+          {failure}
+        </span>
+      )}
+      <ShipOrderDialog
+        orderId={orderId}
+        orderNumber={orderNumber}
+        open={shipping}
+        onOpenChange={setShipping}
+      />
+    </>
   )
 }

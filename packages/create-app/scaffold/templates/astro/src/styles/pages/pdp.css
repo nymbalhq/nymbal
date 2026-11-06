@@ -26,10 +26,13 @@
 
 /* ---- Image gallery (nymbal-image-gallery) ---- */
 
-.pdp-gallery {
-  position: sticky;
-  top: 80px;
-  align-self: start;
+/* Sticky only beside the info column: in one column it would paint over the actions scrolling under it. */
+@media (min-width: 769px) {
+  .pdp-gallery {
+    position: sticky;
+    top: 80px;
+    align-self: start;
+  }
 }
 
 /* ---- Product info ---- */

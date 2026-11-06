@@ -27,7 +27,7 @@ export function registerCustomerRoutes(adapter: HttpAdapter, customers: Customer
       try {
         return ok(await customers.getProfile(ctx.auth!.userId!))
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )
@@ -45,7 +45,7 @@ export function registerCustomerRoutes(adapter: HttpAdapter, customers: Customer
         })
         return ok(profile)
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )
@@ -57,7 +57,7 @@ export function registerCustomerRoutes(adapter: HttpAdapter, customers: Customer
       try {
         return ok(await customers.listAddresses(ctx.auth!.userId!))
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )
@@ -85,7 +85,7 @@ export function registerCustomerRoutes(adapter: HttpAdapter, customers: Customer
         })
         return ok(addr, undefined, 201)
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )
@@ -100,7 +100,7 @@ export function registerCustomerRoutes(adapter: HttpAdapter, customers: Customer
         await customers.deleteAddress(ctx.auth!.userId!, id)
         return ok({ ok: true })
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )

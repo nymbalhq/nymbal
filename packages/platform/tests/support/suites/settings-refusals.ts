@@ -10,7 +10,8 @@ import {
   attemptStore,
   captureLogs,
   cleanups,
-  migrationsBefore0008,
+  execSql,
+  migrate,
   newSecretsKey,
   openReader,
   openStore,
@@ -32,7 +33,7 @@ import type { SuiteTarget } from './settings-restart.js'
 // a malformed key (not 32 bytes of base64), a key whose key_id differs, a tampered row. The refused boot changes no
 // row. The row is the AI slot's `apiKey` (Anthropic, its stub at the declared baseUrl), a store that boots without
 // it, so each case is red on the refusal itself.
-// Boots that need no key: a store with no rows, a store from before migration 0008 (no settings relation), and
+// Boots that need no key: a store with no rows, a store with no settings relation, and
 // (SQLite) a Stripe store from `nymbal add stripe` whose database file does not exist yet (`nymbal import` on a fresh
 // scaffold), which gets past the settings read to open its store. A row that env (ANTHROPIC_API_KEY, the declared env)
 // shadows is not decrypted: boot without the key succeeds and logs a warning naming slot and path.
@@ -145,17 +146,13 @@ export function settingsRefusalsSuite(
       expect((await storedSettings(raw)).length).toBeLessThan(1)
     }, 60_000)
 
-    it('AC-6: a store migrated only to 0007 (no settings relation) boots with NYMBAL_SECRETS_KEY unset, and its admin lists apiKey unset', async () => {
+    it('AC-6: a store with no settings relation boots with NYMBAL_SECRETS_KEY unset, and its admin lists apiKey unset', async () => {
       const { stub, target } = await begin()
       scope.add(setEnv({ [SECRETS_KEY]: undefined }))
-      const before0008 = migrationsBefore0008(dialect)
-      scope.add(() => before0008.drop())
-      const store = await openStore({
-        dialect,
-        target,
-        config: configFor(stub),
-        migrationsRoot: before0008.root,
-      })
+      // Every other table at the head's schema, which the boot's read models read; only the settings relation is absent.
+      await migrate(dialect, target)
+      await execSql(dialect, target, 'DROP TABLE settings')
+      const store = await openStore({ dialect, target, config: configFor(stub), migrate: false })
       scope.add(() => store.stop())
       const listing = await (await store.admin()).call('GET', '/api/admin/settings')
       expect(listing.status, JSON.stringify(listing.body)).toBe(200)

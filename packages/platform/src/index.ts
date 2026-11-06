@@ -74,6 +74,34 @@ export {
 export { registerAllRoutes, type RegisterAllRoutesDeps } from './routes/register.js'
 export { registerAlertRoutes, type RegisterAlertRoutesDeps } from './routes/alerts.js'
 export { routeSchemas, type RouteSchema } from './routes/schemas.js'
+export { toolsOf, jsonSchemaOf, toolName } from './mcp/registry.js'
+export { RouteTable, recordingAdapter } from './mcp/route-table.js'
+export { createInvoker, type Invoker, type InvokerDeps } from './mcp/invoke.js'
+export { policyOf, type Executed, type Policy, type Proposal } from './mcp/proposals.js'
+export {
+  ASSISTANT_AGENT,
+  runAssistantTurn,
+  streamOf,
+  type AssistantDeps,
+  type AssistantTurn,
+} from './assistant/loop.js'
+export {
+  GOLDEN_QUESTIONS,
+  goldenStore,
+  type GoldenFact,
+  type GoldenKind,
+  type GoldenQuestion,
+} from './assistant/golden.js'
+export {
+  runGolden,
+  type GoldenReport,
+  type GoldenResult,
+  type RunGoldenOptions,
+} from './assistant/eval.js'
+export { ucpProfile, UCP_VERSION } from './agents/profile.js'
+export { agentNameOf } from './agents/agent-name.js'
+export { createUcpSurface, type UcpSurfaceDeps } from './agents/ucp-surface.js'
+export { agentReadiness } from './agents/readiness.js'
 export {
   createApp,
   type NymbalApp,
@@ -83,15 +111,18 @@ export {
   type CapabilitySlot,
   type SlotCapabilities,
 } from './app.js'
-export { resolveAuthSecret, type AuthSecret } from './auth-secret.js'
+export { isLoopbackHost, resolveAuthSecret, type AuthSecret } from './auth-secret.js'
+export { secureCookies } from '@nymbalhq/config'
 export { registerAdminStaticRoute } from './routes/admin-static.js'
 export {
   startInventoryReservationSweeper,
   startCartAbandonmentSweeper,
   startEventRetentionSweeper,
+  startRefreshTokenSweeper,
   type SweeperHandle,
   type EventArchiveWriter,
   type EventRetentionSweeperDeps,
+  type RefreshTokenSweeperDeps,
 } from './sweepers/index.js'
 export * from './services/index.js'
 export * from './adapters/index.js'

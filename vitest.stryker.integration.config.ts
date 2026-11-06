@@ -2,7 +2,9 @@ import { defineConfig } from 'vitest/config'
 
 // Used only by Stryker (stryker.integration.config.mjs): the platform-integration project narrowed to the test families
 // that reach the files that config mutates. Prefix globs take in a new test of a family with no change here; the
-// tests that spawn processes or import from outside the sandbox (adapter-graph, capabilities-route) stay out.
+// tests that spawn processes or import from outside the sandbox (adapter-graph, capabilities-route) stay out. The unit
+// tests beside the relay and the publisher are in too: they reach what no store-level test can (the outage probe's
+// bounds, start and stop, the bus wrapper, a correlated publisher).
 export default defineConfig({
   test: {
     name: 'platform-integration',
@@ -19,6 +21,14 @@ export default defineConfig({
       'packages/platform/tests/integration/order-email-retry*.test.ts',
       'packages/platform/tests/integration/email-feedback*.test.ts',
       'packages/platform/tests/integration/email-outage.test.ts',
+      'packages/platform/tests/integration/event-retention*.test.ts',
+      'packages/platform/tests/integration/review*.test.ts',
+      'packages/platform/tests/integration/product-ratings*.test.ts',
+      'packages/platform/tests/integration/proposals*.test.ts',
+      'packages/platform/tests/integration/import-removal-*.test.ts',
+      'packages/platform/tests/integration/product-description*.test.ts',
+      'packages/platform/tests/integration/audit-*.test.ts',
+      'packages/platform/src/events/*.test.ts',
     ],
     testTimeout: 30000,
   },

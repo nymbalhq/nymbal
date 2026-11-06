@@ -17,8 +17,20 @@ export {
 } from './known-infrastructure.js'
 export type { Slot } from '@nymbalhq/types'
 export { loadConfig, findConfigFile, type LoadedConfig } from './load.js'
+export { PUBLIC_URL_ENV, secureCookies } from './secure-cookies.js'
+export { ORIGIN_SECRET_ENV, resolveOriginLock } from './origin-lock.js'
 export {
+  CLIENT_IP_HEADER_ENV,
+  TRUSTED_PROXIES_ENV,
+  resolveTrustedProxies,
+  trustedProxyProblem,
+  trustSuggestion,
+} from './trusted-proxies.js'
+export {
+  ACP_KEY_MIN_LENGTH,
+  ACP_LINK_TYPES,
   DEFAULT_JWT_SECRET,
+  DEFAULT_AGENT_CRAWLERS,
   nymbalConfigSchema,
   storeSchema,
   infrastructureSchema,
@@ -31,6 +43,7 @@ export {
   featuresSchema,
   eventsSchema,
   eventArchiveSchema,
+  agentsSchema,
   type NymbalConfig,
   type NymbalConfigInput,
 } from './schema.js'

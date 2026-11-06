@@ -1,7 +1,7 @@
 ---
 import '../../styles/pages/error.css'
 import BaseLayout from '../../layouts/BaseLayout.astro'
-import { confirmAlert } from '../../lib/api'
+import { confirmAlert, shopperHeaders } from '../../lib/api'
 
 // Opening the link only shows the button, so a mail scanner that fetches it confirms nothing. The press posts the
 // token back here, and this server posts it on to the API, so the browser needs no CSRF cookie.
@@ -9,7 +9,8 @@ const pressed = Astro.request.method === 'POST'
 const token = pressed
   ? String((await Astro.request.formData()).get('token') ?? '')
   : (Astro.url.searchParams.get('token') ?? '')
-const confirmed = pressed && token !== '' ? await confirmAlert(token) : null
+const confirmed =
+  pressed && token !== '' ? await confirmAlert(token, shopperHeaders(Astro.request.headers)) : null
 ---
 
 <BaseLayout title="Email alert | Nymbal" description="Confirm your email alert.">

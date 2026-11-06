@@ -4,8 +4,15 @@ import pc from 'picocolors'
 import { KNOWN_PROVIDERS, type NymbalConfig } from '@nymbalhq/config'
 import { ConfigError, type CommerceSlot } from '@nymbalhq/types'
 import { loadProject } from '../utils/project.js'
-import { createApp, createLogger, runSeed, sqliteFile, type NymbalApp } from '@nymbalhq/platform'
-import { createHttpServer } from '@nymbalhq/http'
+import {
+  createApp,
+  createLogger,
+  resolveAuthSecret,
+  runSeed,
+  sqliteFile,
+  type NymbalApp,
+} from '@nymbalhq/platform'
+import { createHttpServer, mountAgentSurfaces, mountMcp } from '@nymbalhq/http'
 import { run } from '../utils/spawn.js'
 import { getCliVersion } from '../utils/version.js'
 import { findFreePort } from '../utils/port.js'
@@ -100,6 +107,27 @@ function summaryInfo(
   }
 }
 
+const WILDCARD_HOST = '0.0.0.0'
+const LOOPBACK_HOST = '127.0.0.1'
+
+/**
+ * Where `nymbal dev` listens: 127.0.0.1 in place of the schema's wildcard while tokens are signed with the published
+ * default secret, so no other machine can reach a store whose admin tokens anyone can forge. A secret of the store's
+ * own, or a host the config names, is used as given (the app refuses a default secret on a non-loopback host).
+ */
+export function devListenHost(config: NymbalConfig, env: NodeJS.ProcessEnv): string {
+  const host = config.http.host
+  if (host !== WILDCARD_HOST) return host
+  return resolveAuthSecret(config, env).source === 'default' ? LOOPBACK_HOST : host
+}
+
+/** A config mistake is the store developer's to fix: its message says how, a stack would bury it. */
+function exitOnConfigError(error: unknown): never {
+  if (!(error instanceof ConfigError)) throw error
+  process.stderr.write(`${pc.red(error.message)}\n`)
+  process.exit(1)
+}
+
 /** The API port: `--port` when given, else the config's `http.port`. */
 function apiPort(config: NymbalConfig, flagPort: string | undefined): number {
   if (flagPort === undefined || flagPort.trim() === '') return config.http.port
@@ -154,7 +182,24 @@ export const devCommand = defineCommand({
     const loaded = await loadProject()
     const { projectRoot } = loaded
     const port = apiPort(loaded.config, args.port)
-    const config: NymbalConfig = { ...loaded.config, http: { ...loaded.config.http, port } }
+    let host: string
+    try {
+      host = devListenHost(loaded.config, process.env)
+    } catch (error) {
+      exitOnConfigError(error)
+    }
+    if (host !== loaded.config.http.host) {
+      // eslint-disable-next-line no-console
+      console.log(
+        pc.yellow(
+          `The API listens on ${host} only: tokens are signed with the published default secret. Set NYMBAL_JWT_SECRET to listen on ${loaded.config.http.host}.`,
+        ),
+      )
+    }
+    const config: NymbalConfig = {
+      ...loaded.config,
+      http: { ...loaded.config.http, port, host },
+    }
     const version = getCliVersion()
 
     // Auto-migrate on startup so a fresh clone works without running `nymbal migrate` first
@@ -168,12 +213,7 @@ export const devCommand = defineCommand({
       version,
       logger,
       ...(loaded.adapters !== undefined && { adapters: loaded.adapters }),
-    }).catch((error: unknown) => {
-      // A config mistake is the store developer's to fix: its message says how, a stack would bury it.
-      if (!(error instanceof ConfigError)) throw error
-      process.stderr.write(`${pc.red(error.message)}\n`)
-      process.exit(1)
-    })
+    }).catch(exitOnConfigError)
     const { platform } = app
 
     if (args.seed) {
@@ -200,11 +240,29 @@ export const devCommand = defineCommand({
       logger: platform.logger,
       documentStore: platform.documentStore,
       version,
+      network: app.network,
     })
     const adminRoot = resolveAdminRoot()
     await app.attachHttp(http.adapter, { adminRoot })
-    await http.start()
+    await mountMcp(http, {
+      app,
+      verify: (token) => app.services.auth.verifyAccessToken(token),
+      origins: config.http.cors.allowedOrigins,
+      enabled: config.agents.mcp.enabled,
+      version,
+    })
     const apiUrl = `http://localhost:${config.http.port}`
+    // The storefront's port is chosen after the API starts, so the agent surfaces read it per request. The one this
+    // process started wins over `store.url`, which a scaffold sets to the default port even when another is taken.
+    let storefrontUrl: string | undefined
+    await mountAgentSurfaces(http, {
+      app,
+      verify: (token) => app.services.auth.verifyAccessToken(token),
+      origins: config.http.cors.allowedOrigins,
+      urls: () => ({ api: apiUrl, storefront: storefrontUrl ?? config.store.url }),
+      version,
+    })
+    await http.start()
     const printSummary = (storefront: DevSummaryInfo['storefront']) => {
       // eslint-disable-next-line no-console
       console.log(
@@ -257,7 +315,7 @@ export const devCommand = defineCommand({
     // monorepo layout falls back to a pnpm --filter on the template package.
     const launch = planTemplateLaunch(projectRoot, config.template, storefrontPort)
 
-    const storefrontUrl = `http://localhost:${storefrontPort}`
+    storefrontUrl = `http://localhost:${storefrontPort}`
     const templateProc = run(launch.command, launch.args, {
       cwd: launch.cwd,
       env: storefrontEnv(config, apiUrl, storefrontPort),

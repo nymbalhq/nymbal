@@ -444,8 +444,15 @@ const pageItem = fc.record({
   imageUrl: fc.constantFrom('', 'https://example.test/line.jpg'),
 })
 
+// A served rating: the API rounds the average to one decimal and serves none for a product without approved reviews.
+const productRating = fc.record({
+  average: fc.integer({ min: 10, max: 50 }).map((tenths) => tenths / 10),
+  count: fc.integer({ min: 0, max: 100_000 }),
+})
+
 const cardProduct = fc.record({
   id: word,
+  rating: fc.option(productRating),
   slug: word,
   name: word,
   priceMinor: fc.option(fc.integer({ min: 0, max: 100_000 })),
@@ -505,6 +512,14 @@ function formStates(base: Partial<State> = {}): State[] {
 }
 
 const signedIn = { stores: { auth: { customer: CUSTOMER, isAuthenticated: true } } }
+
+/** Lets a signed-out element's profile load settle and its next render land. */
+async function settleProfile(el: HTMLElement): Promise<void> {
+  for (let turn = 0; turn < 5; turn += 1) {
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    await settled(el)
+  }
+}
 
 // ─── The checkout's steps, walked as a shopper walks them ───────────────────
 
@@ -758,6 +773,7 @@ const FIXED: Record<Tag, State[]> = {
         product: JSON.stringify(card({ priceMinor: null, priceRange: null, currency: null })),
       },
     }),
+    state({ attrs: { product: JSON.stringify(card({ rating: { average: 4.5, count: 2 } })) } }),
   ],
   'nymbal-search-results': [
     state(),
@@ -971,8 +987,36 @@ const FIXED: Record<Tag, State[]> = {
         ]),
       },
     }),
+    state({
+      attrs: {
+        rating: JSON.stringify({ average: 3, count: 2 }),
+        reviews: JSON.stringify([
+          {
+            id: 'r1',
+            productId: 'p1',
+            rating: 4,
+            title: 'Good',
+            body: 'Solid mug.',
+            submittedAt: '2026-10-22T00:00:00.000Z',
+          },
+          {
+            id: 'r2',
+            productId: 'p1',
+            rating: 2,
+            title: 'Meh',
+            body: 'Chipped.',
+            submittedAt: '2026-10-21T00:00:00.000Z',
+          },
+        ]),
+      },
+    }),
   ],
-  'nymbal-review-form': formStates({ attrs: { 'product-id': 'p1' } }),
+  // Signed in: the form, submitted held, refused and accepted. Signed out once the profile load settles: the sign-in
+  // link alone.
+  'nymbal-review-form': [
+    ...formStates({ ...signedIn, attrs: { 'product-id': 'p1' } }),
+    state({ attrs: { 'product-id': 'p1' }, walk: settleProfile }),
+  ],
   // Out of stock (the back-in-stock form), submitted held, refused and accepted; in stock (the price-drop form); and
   // following the store.
   'nymbal-notify-me': [
@@ -1307,10 +1351,22 @@ const ARBITRARY: Record<Tag, fc.Arbitrary<State>> = {
       }),
       { maxLength: 4, selector: (r) => r.id },
     )
-    .map((reviews) => state({ attrs: { reviews: JSON.stringify(reviews) } })),
+    .chain((reviews) =>
+      fc
+        .option(productRating)
+        .map((rating) =>
+          state({ attrs: { reviews: JSON.stringify(reviews), rating: JSON.stringify(rating) } }),
+        ),
+    ),
   'nymbal-review-form': fc
-    .option(fc.constantFrom(...PHASES))
-    .map((phase) => state({ attrs: { 'product-id': 'p1' }, phase })),
+    .record({ phase: fc.option(fc.constantFrom(...PHASES)), signed: fc.boolean() })
+    .map(({ phase, signed }) =>
+      state({
+        ...(signed ? signedIn : { walk: settleProfile }),
+        attrs: { 'product-id': 'p1' },
+        phase,
+      }),
+    ),
   'nymbal-notify-me': fc
     .record({
       stock: fc.integer({ min: -2, max: 6 }),
@@ -1585,7 +1641,10 @@ const INTERFACE: Array<{
     tag: 'nymbal-review-list',
     reactName: 'ReviewList',
     events: [],
-    attributes: [{ name: 'reviews', type: 'json' }],
+    attributes: [
+      { name: 'reviews', type: 'json' },
+      { name: 'rating', type: 'json' },
+    ],
   },
   {
     tag: 'nymbal-review-form',
@@ -1664,11 +1723,14 @@ describe('AC-1: the moved views carry the interface the templates call them by',
 // submits (Enter in a field submits `closest('form')`, which does not cross a shadow boundary), and its summary is
 // built as the cart page's is, with names as text.
 describe('AC-1: nymbal-checkout meets the foundation', () => {
-  it('AC-1: nymbal-checkout’s schema: reactName Checkout, one attribute (cart, json), nymbal:checkout:placed as onPlaced with { orderNumber: string; orderKey?: string }, a payment slot, children passed through', () => {
+  it('AC-1: nymbal-checkout’s schema: reactName Checkout, two attributes (cart, json; sign-in-href, string), nymbal:checkout:placed as onPlaced with { orderNumber: string; orderKey?: string }, a payment slot, children passed through', () => {
     const schema = schemaOf(customElements.get('nymbal-checkout'))
     expect(schema, 'nymbal-checkout is defined with a static schema').toBeDefined()
     expect(schema?.reactName).toBe('Checkout')
-    expect(schema?.attributes).toEqual([{ name: 'cart', prop: 'cart', type: 'json' }])
+    expect(schema?.attributes).toEqual([
+      { name: 'cart', prop: 'cart', type: 'json' },
+      { name: 'sign-in-href', prop: 'signInHref', type: 'string' },
+    ])
     expect(schema?.events).toContainEqual({
       name: 'nymbal:checkout:placed',
       prop: 'onPlaced',

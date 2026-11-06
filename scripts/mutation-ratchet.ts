@@ -1,9 +1,9 @@
 import { execFileSync, spawnSync } from 'node:child_process'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
-import { mutateSet, strykerConfig } from './gate'
+import { globToRegExp, mutateSet, strykerConfig } from './gate'
 
 // The mutation ratchet: mutation-ratchet.json records each mutated file's best Stryker score, and a run that scores a
 // file below its entry fails. `check` runs in gate:full after Stryker and `check --static` (entries against the
@@ -18,6 +18,8 @@ import { mutateSet, strykerConfig } from './gate'
 // `check --static` also names the mutate-set files with no unit test file beside them (only integration tests reach
 // them), and, given a base, warns of a change to a measured file whose unit test file did not change: new code in a
 // service with no unit test passed every local gate and failed the incremental Stryker run in CI.
+// `target` holds each file of the unit mutate set that a group of mutation-targets.json names to that group's floor,
+// scoring a file the higher of its unit and integration entries. It is a release check: nothing else runs it.
 
 export type Scores = Record<string, number>
 
@@ -149,6 +151,99 @@ export function raiseWithin(ratchet: Scores, scores: Scores, changed: Iterable<s
     Object.entries(scores).filter(([file]) => within.has(file) || ratchet[file] === undefined),
   )
   return raise(ratchet, eligible)
+}
+
+export type Targets = {
+  groups: Array<{ name: string; glob: string; floor: number }>
+  exceptions: Record<string, string>
+}
+
+export type Shortfall = { file: string; score: number; floor: number; group: string }
+
+/**
+ * The files of `set` a group's glob matches (the first group that matches a file holds it) whose higher entry of the
+ * two ratchets is below the group's floor, the exceptions among them left out; and the exceptions that name no such
+ * file, which would otherwise outlive the file they excuse.
+ */
+export function shortfalls(
+  targets: Targets,
+  set: string[],
+  unit: Scores,
+  integration: Scores,
+): { below: Shortfall[]; excepted: string[]; stale: string[] } {
+  const groups = targets.groups.map((g) => ({ ...g, re: globToRegExp(g.glob) }))
+  const below: Shortfall[] = []
+  const held = new Set<string>()
+  for (const file of [...set].sort()) {
+    const group = groups.find((g) => g.re.test(file))
+    if (group === undefined) continue
+    held.add(file)
+    if (Object.hasOwn(targets.exceptions, file)) continue
+    const score = Math.max(unit[file] ?? 0, integration[file] ?? 0)
+    if (cents(score) < cents(group.floor)) {
+      below.push({ file, score, floor: group.floor, group: group.name })
+    }
+  }
+  const named = Object.keys(targets.exceptions).sort()
+  return {
+    below,
+    excepted: named.filter((file) => held.has(file)),
+    stale: named.filter((file) => !held.has(file)),
+  }
+}
+
+function readTargets(path: string): Targets {
+  const targets = readJson<Partial<Targets>>(path)
+  const groups = Array.isArray(targets.groups) ? targets.groups : []
+  const bad = groups.filter(
+    (g) =>
+      typeof g?.name !== 'string' ||
+      typeof g.glob !== 'string' ||
+      typeof g.floor !== 'number' ||
+      !(g.floor >= 0 && g.floor <= 100),
+  )
+  if (groups.length === 0 || bad.length > 0) {
+    throw new Error(
+      `${path}: groups must be a non-empty list of { name, glob, floor } with a floor from 0 to 100`,
+    )
+  }
+  return { groups, exceptions: targets.exceptions ?? {} }
+}
+
+async function targetCheck(
+  targetsPath: string,
+  unitPath: string,
+  integrationPath: string,
+): Promise<number> {
+  const targets = readTargets(targetsPath)
+  const set = await trackedMutateSet(process.cwd(), DEFAULT_CONFIG)
+  if (set === undefined) {
+    throw new Error(`target reads Stryker's mutate set from git: run it inside the repository`)
+  }
+  const files = (path: string): Scores => (existsSync(path) ? readJson<Ratchet>(path).files : {})
+  const { below, excepted, stale } = shortfalls(
+    targets,
+    set,
+    files(unitPath),
+    files(integrationPath),
+  )
+  for (const s of below) {
+    process.stdout.write(`below target: ${s.file} ${s.score} < ${s.floor} (${s.group})\n`)
+  }
+  for (const file of excepted) {
+    process.stdout.write(`exception: ${file}: ${targets.exceptions[file]}\n`)
+  }
+  for (const file of stale) process.stdout.write(`target: stale exception: ${file}\n`)
+  if (below.length > 0 || stale.length > 0) {
+    const staleNote = stale.length > 0 ? `, ${stale.length} stale exception(s)` : ''
+    process.stdout.write(`mutation target: ${below.length} file(s) below their floor${staleNote}\n`)
+    return 1
+  }
+  const counted = set.filter((file) => targets.groups.some((g) => globToRegExp(g.glob).test(file)))
+  process.stdout.write(
+    `mutation target: ${counted.length - excepted.length} files at or above their floor\n`,
+  )
+  return 0
 }
 
 function readJson<T>(path: string): T {
@@ -412,6 +507,8 @@ async function main(argv: string[]): Promise<number> {
       static: { type: 'boolean', default: false },
       files: { type: 'string' },
       base: { type: 'string' },
+      targets: { type: 'string', default: 'mutation-targets.json' },
+      'integration-ratchet': { type: 'string', default: 'mutation-ratchet.integration.json' },
     },
   })
   const [subcommand] = positionals
@@ -431,11 +528,14 @@ async function main(argv: string[]): Promise<number> {
   const given =
     values.base ?? (values.config === DEFAULT_CONFIG ? process.env['GATE_BASE'] : undefined)
   const base = given === undefined || given === '' ? undefined : given
+  if (subcommand === 'target') {
+    return targetCheck(resolve(values.targets), ratchetPath, resolve(values['integration-ratchet']))
+  }
   const to = await target(values.config, ratchet)
   if (subcommand === 'check' && values.static) return staticCheck(ratchetPath, base, to)
   if (values.report === undefined || (subcommand !== 'check' && subcommand !== 'update')) {
     throw new Error(
-      'usage: mutation-ratchet.ts check --static [--base <ref>] [--config <stryker config>] [--ratchet <file>] | check --report <mutation.json> [--config <stryker config>] [--ratchet <file>] | update --report <mutation.json> [--config <stryker config>] [--ratchet <file>] [--total] [--command <text>] [--files <a,b> | --base <ref>]',
+      'usage: mutation-ratchet.ts target [--targets <file>] [--ratchet <file>] [--integration-ratchet <file>] | check --static [--base <ref>] [--config <stryker config>] [--ratchet <file>] | check --report <mutation.json> [--config <stryker config>] [--ratchet <file>] | update --report <mutation.json> [--config <stryker config>] [--ratchet <file>] [--total] [--command <text>] [--files <a,b> | --base <ref>]',
     )
   }
   const report = readJson<unknown>(resolve(values.report))
@@ -451,7 +551,12 @@ async function main(argv: string[]): Promise<number> {
       )
 }
 
-if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// Real paths on both sides: run through a symlinked scripts/ (a linked worktree), the unresolved path never matches and
+// the check would exit 0 having done nothing.
+if (
+  process.argv[1] !== undefined &&
+  import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href
+) {
   main(process.argv.slice(2)).then(
     (code) => {
       process.exitCode = code

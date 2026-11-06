@@ -36,52 +36,12 @@ export const ProductPrice = /* @__PURE__ */ forwardRef<HTMLElement, ProductPrice
     const innerRef = useRef<HTMLElement>(null)
     const ref = (forwardedRef ?? innerRef) as React.RefObject<HTMLElement | null>
 
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (props.productId !== undefined) {
-      el.setAttribute('product-id', String(props.productId))
-    } else {
-      el.removeAttribute('product-id')
-    }
-  }, [props.productId])
-
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (props.priceMinor !== undefined) {
-      el.setAttribute('price-minor', String(props.priceMinor))
-    } else {
-      el.removeAttribute('price-minor')
-    }
-  }, [props.priceMinor])
-
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (props.currency !== undefined) {
-      el.setAttribute('currency', String(props.currency))
-    } else {
-      el.removeAttribute('currency')
-    }
-  }, [props.currency])
-
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (props.compareAtMinor !== undefined) {
-      el.setAttribute('compare-at-minor', String(props.compareAtMinor))
-    } else {
-      el.removeAttribute('compare-at-minor')
-    }
-  }, [props.compareAtMinor])
-
 
 
     useDefine(NymbalProductPrice)
 
     return (
-      <nymbal-product-price ref={ref as React.Ref<HTMLElement>} product-id={props.productId} price-minor={props.priceMinor} currency={props.currency} compare-at-minor={props.compareAtMinor} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
+      <nymbal-product-price ref={ref as React.Ref<HTMLElement>} {...{ 'product-id': props.productId, 'price-minor': props.priceMinor, 'CURRENCY': props.currency, 'compare-at-minor': props.compareAtMinor }} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
         // The server render goes on the tag itself: a full load parses its template into the shadow root, which React
         // does not see, and a soft navigation's innerHTML leaves it for the element to upgrade.
         dangerouslySetInnerHTML={props.serverHtml === undefined ? undefined : { __html: props.serverHtml }}

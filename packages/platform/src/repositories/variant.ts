@@ -64,6 +64,9 @@ export interface VariantRepository extends StoreRepository {
   findById(tx: ReadTx, id: string): Promise<Variant | null>
   findBySku(tx: ReadTx, sku: string): Promise<Variant | null>
   findByProduct(tx: ReadTx, productId: string): Promise<Variant[]>
+  /** `findByProduct`, holding the rows for the rest of the transaction so concurrent commands on them queue behind
+   *  this one (Postgres `FOR UPDATE`; SQLite's `BEGIN IMMEDIATE` already holds the database). */
+  lockByProduct(tx: Tx, productId: string): Promise<Variant[]>
   insert(tx: Tx, v: VariantInsert): Promise<void>
   update(tx: Tx, id: string, patch: VariantUpdate): Promise<void>
   /** One conditional UPDATE: the new stock, or null when the variant is missing or holds fewer than `qty`. */
@@ -74,6 +77,25 @@ export interface VariantRepository extends StoreRepository {
 }
 
 export function createVariantRepository(store: CommandStore): VariantRepository {
+  async function byProduct(tx: ReadTx, productId: string, lock: boolean): Promise<Variant[]> {
+    if (tx.kind === 'sqlite') {
+      const rows = sqliteDb(tx)
+        .select()
+        .from(sqliteSchema.variants)
+        .where(eq(sqliteSchema.variants.productId, productId))
+        .orderBy(asc(sqliteSchema.variants.createdAt), asc(sqliteSchema.variants.id))
+        .all()
+      return rows.map((r) => rowToVariant('sqlite', r as Record<string, unknown>))
+    }
+    const query = postgresDb(tx)
+      .select()
+      .from(postgresSchema.variants)
+      .where(eq(postgresSchema.variants.productId, productId))
+      .orderBy(asc(postgresSchema.variants.createdAt), asc(postgresSchema.variants.id))
+    const rows = await (lock ? query.for('update') : query)
+    return rows.map((r) => rowToVariant('postgres', r as Record<string, unknown>))
+  }
+
   return {
     store,
     async findById(tx, id) {
@@ -106,23 +128,8 @@ export function createVariantRepository(store: CommandStore): VariantRepository 
         .where(eq(postgresSchema.variants.sku, sku))
       return row ? rowToVariant('postgres', row as Record<string, unknown>) : null
     },
-    async findByProduct(tx, productId) {
-      if (tx.kind === 'sqlite') {
-        const rows = sqliteDb(tx)
-          .select()
-          .from(sqliteSchema.variants)
-          .where(eq(sqliteSchema.variants.productId, productId))
-          .orderBy(asc(sqliteSchema.variants.createdAt), asc(sqliteSchema.variants.id))
-          .all()
-        return rows.map((r) => rowToVariant('sqlite', r as Record<string, unknown>))
-      }
-      const rows = await postgresDb(tx)
-        .select()
-        .from(postgresSchema.variants)
-        .where(eq(postgresSchema.variants.productId, productId))
-        .orderBy(asc(postgresSchema.variants.createdAt), asc(postgresSchema.variants.id))
-      return rows.map((r) => rowToVariant('postgres', r as Record<string, unknown>))
-    },
+    findByProduct: (tx, productId) => byProduct(tx, productId, false),
+    lockByProduct: (tx, productId) => byProduct(tx, productId, true),
     async insert(tx, v) {
       const common = {
         id: v.id,

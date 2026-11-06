@@ -7,6 +7,7 @@ import type {
   Order,
   OrderStatus,
   PaymentIntent,
+  ProductRating,
   ProductSortKey,
   VariantOption,
 } from '@nymbalhq/types'
@@ -41,6 +42,8 @@ export interface DenormalisedProduct {
   categories: Array<{ id: string; name: string; slug: string }>
   createdAt: string
   updatedAt: string
+  /** Served by the product routes, not stored: null when the product has no approved review. */
+  rating?: ProductRating | null
 }
 
 // --- Store state types -----------------------------------------------------
@@ -105,6 +108,8 @@ export interface CheckoutState {
   /** What the server said about the payment; `succeeded` only once the order is paid. */
   paymentStatus: 'idle' | 'processing' | 'requires_action' | 'succeeded' | 'failed'
   error: string | null
+  /** The API's code for `error` (`auth.token_invalid`, …), null when the error came from no API answer. */
+  errorCode: string | null
   order: { orderId: string; orderNumber: string; paymentIntent: PaymentIntent } | null
   /** The order this cart already became, when the server refused a resubmit and named it. */
   placedOrderNumber: string | null

@@ -621,7 +621,7 @@ export function eventRetriesSuite(dialect: Dialect, options: RetriesSuiteOptions
       }
     }, 120_000)
 
-    it('AC-6: property: with a named saboteur on * that throws on the first delivery of every event, over generated command sequences through the services (a fixed tour of a paid checkout taken to delivered, a register, product create, update and delete, category edits, a restock with two active alert subscribers, a price drop with one, views and a visitor merge, then a generated tail), once every event is delivered each read-model collection and the search index equal a fresh rebuild document by document; one order-placed email per paid order, one welcome per customer, one confirmation per alert request, one alert per alert.sent.v1 and none twice for a row and trigger, one review request per delivered order; and every event took exactly one retry', async () => {
+    it('AC-6: property: with a named saboteur on * that throws on the first delivery of every event, over generated command sequences through the services (a fixed tour of a paid checkout taken to delivered, a register, product create, update and delete, category edits, a restock with two active alert subscribers, a price drop with one, views and a visitor merge, then a generated tail), once every event is delivered each read-model collection and the search index equal a fresh rebuild document by document; one order-placed email per paid order, one shipped email per order.shipped, one welcome per customer, one confirmation per alert request, one alert per alert.sent.v1 and none twice for a row and trigger, one review request per delivered order; and every event took exactly one retry', async () => {
       await fc.assert(
         fc.asyncProperty(fc.array(op, { minLength: 2, maxLength: 10 }), async (tail) => {
           const mail = capture()
@@ -699,6 +699,11 @@ export function eventRetriesSuite(dialect: Dialect, options: RetriesSuiteOptions
             expect(
               sorted(mailed('order-placed').map((m) => String(m.vars['orderNumber']))),
             ).toEqual(sorted(paid.map((id) => numbers.get(id))))
+            // The tour ships one order; a retried order.shipped.v1 must not mail its shopper twice.
+            expect(
+              sorted(mailed('order-shipped').map((m) => String(m.vars['orderNumber']))),
+              'shipped emails against order.shipped.v1, by order number',
+            ).toEqual(sorted(payloads('order.shipped.v1').map((p) => numbers.get(p['orderId']!))))
 
             expect(sorted(mailed('welcome').map((m) => m.to))).toEqual(
               sorted(payloads('customer.created.v1').map((p) => p['email']!)),

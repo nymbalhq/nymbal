@@ -281,6 +281,14 @@ export function isBuildInput(path: string): boolean {
   )
 }
 
+/** A file the admin's build reads: its source, page, public assets, manifest, and build configs; tests aside. */
+export function isAdminBuildInput(path: string): boolean {
+  if (TEST_FILE.test(path)) return false
+  return /^apps\/admin\/(?:src\/|public\/|index\.html$|package\.json$|(?:vite|tailwind|postcss)\.config\.[cm]?[jt]s$|tsconfig[^/]*\.json$)/.test(
+    path,
+  )
+}
+
 /**
  * The packages under `packages/`, at any depth, with their manifests: the workspace members when `root` is a
  * workspace, else (a tree with no `pnpm-workspace.yaml`, so no nested glob) each `packages/<name>` on the disk.
@@ -948,7 +956,7 @@ function testQualityStep(root: string, base: string, startedMs: number): number 
 // The steps of gate and gate:full
 // ---------------------------------------------------------------------------------------------------------------
 
-function globToRegExp(glob: string): RegExp {
+export function globToRegExp(glob: string): RegExp {
   let source = ''
   for (let i = 0; i < glob.length; i += 1) {
     const ch = glob[i] as string
@@ -997,21 +1005,57 @@ export async function mutateSet(
   )
 }
 
-/** A path whose change can move a mutation score without touching a mutated file: the platform's tests and Stryker's configs. */
+/**
+ * The paths whose change can move a mutation score without touching a mutated file: Stryker's configs and the tests
+ * vitest.stryker.config.ts includes. Listed by hand; a test in tests/tooling checks a file of each include glob
+ * against this list. The platform's unit-test helpers (packages/platform/src/tests) are left to the nightly's
+ * `--force` run: Stryker's incremental mode reuses a result whenever the mutated code and the test files that killed
+ * or covered it are unchanged, so a helper change re-measures nothing unless the cache is pruned, and pruning the
+ * whole platform set would outlast the mutation job.
+ */
+const STRYKER_INPUTS = [
+  'stryker.config.mjs',
+  'vitest.stryker.config.ts',
+  'packages/platform/src/**/*.test.ts',
+  'packages/importers/tests/mappers/**/*.test.ts',
+].map(globToRegExp)
+
 function isStrykerInput(path: string): boolean {
-  return (
-    path === 'stryker.config.mjs' ||
-    path === 'vitest.stryker.config.ts' ||
-    (path.startsWith('packages/platform/src/') && path.endsWith('.test.ts'))
+  return STRYKER_INPUTS.some((re) => re.test(path))
+}
+
+/**
+ * What the importer's mapper tests read besides their own files: their support, the order generators they share with
+ * the integration tests, and the recorded stores support/wc.ts reads. Stryker's incremental mode never looks at these,
+ * so a change here prunes the mappers' cached statuses (`mapperRemeasured`) rather than only selecting them.
+ */
+const MAPPER_TEST_READS = [
+  'packages/importers/tests/mappers/**',
+  'packages/importers/tests/integration/support/wc-orders.ts',
+  'packages/importers/tests/integration/fixtures/recorded/store-a-gbp/**',
+  'packages/importers/tests/integration/fixtures/recorded/store-b-jpy/**',
+].map(globToRegExp)
+
+const MAPPERS = globToRegExp('packages/importers/src/woocommerce/mappers/**')
+
+/** The mutate set's mapper files when something the mapper tests read changed, to be measured afresh; else none. */
+export async function mapperRemeasured(root: string, changed: string[]): Promise<string[]> {
+  const read = changed.some(
+    (path) => !isStrykerInput(path) && MAPPER_TEST_READS.some((re) => re.test(path)),
   )
+  if (!read) return []
+  const candidates = [...new Set([...lines(git(root, ['ls-files'])), ...changed])].filter(
+    (path) => MAPPERS.test(path) && existsSync(resolve(root, path)),
+  )
+  return mutateSet(root, candidates)
 }
 
 /**
  * The files Stryker mutates for this change set: the whole mutate set whenever one of its tests or configs changed,
  * otherwise the changed ones in the set. A changed test invalidates cached kills in files it did not change, and a
  * `--mutate` narrowed to the changed sources leaves those unmeasured; incremental mode re-measures only the mutants
- * the changed tests can move, so the whole set costs only those. `remeasured` (the files whose ratchet entry moved)
- * are mutated as well, whatever changed.
+ * the changed tests can move, so the whole set costs only those. `remeasured` (the files whose cached statuses the
+ * stryker step drops) are mutated as well, whatever changed.
  */
 export async function strykerTargets(
   root: string,
@@ -1038,8 +1082,8 @@ function ratchetFiles(text: string): Record<string, unknown> {
 
 /**
  * The files whose entry in the head's mutation-ratchet.json is new or differs from the base's (both given as text;
- * an empty text is a ratchet with no entries). Their cached mutant statuses predate the entry, so they are measured
- * fresh; every other file keeps its cache.
+ * an empty text is a ratchet with no entries). Their cached statuses predate the entry; `belowCachedScore` says which
+ * of them are measured fresh.
  */
 export function ratchetChanges(base: string, head: string): string[] {
   const before = ratchetFiles(base)
@@ -1062,12 +1106,73 @@ function ratchetChangesSince(root: string, base: string): string[] {
 /** Stryker's own default, when its config names no incremental file. */
 const STRYKER_INCREMENTAL_DEFAULT = 'reports/stryker-incremental.json'
 
+async function incrementalReport(root: string): Promise<string> {
+  return resolve(root, (await strykerConfig(root)).incrementalFile ?? STRYKER_INCREMENTAL_DEFAULT)
+}
+
+/**
+ * Beside the incremental report: the commit the report's statuses were measured at. CI's mutation job writes it after
+ * a passing stryker step, as its cache is saved only then.
+ */
+function incrementalStamp(report: string): string {
+  return `${report.replace(/\.json$/, '')}.commit`
+}
+
+/**
+ * The changed paths and moved ratchet entries the stryker step selects by. The incremental report holds statuses
+ * from the commit its stamp names, and CI saves it only when the job passes, so after a red run that commit is
+ * older than `base`: a file changed in between, outside `--mutate`, would be reported with statuses from before
+ * its change. So whatever changed since the stamp counts too. A stamp naming no commit here leaves the report's age
+ * unknown, and every tracked file counts as changed.
+ */
+export async function strykerChanges(
+  root: string,
+  base: string,
+  changed: string[],
+): Promise<{ changed: string[]; moved: string[] }> {
+  const moved = ratchetChangesSince(root, base)
+  const stampPath = incrementalStamp(await incrementalReport(root))
+  if (!existsSync(stampPath)) return { changed, moved }
+  const stamp = readFileSync(stampPath, 'utf8').trim()
+  const at = /^[0-9a-f]{40}$/i.test(stamp) ? commitOf(root, stamp) : undefined
+  if (at === undefined) {
+    process.stderr.write(
+      `stryker: the incremental report's commit ${stamp || '(empty)'} is not in this clone; the whole mutate set is measured\n`,
+    )
+    return { changed: [...new Set([...changed, ...lines(git(root, ['ls-files']))])], moved }
+  }
+  if (at === base) return { changed, moved }
+  return {
+    changed: [...new Set([...changed, ...changedFiles(root, at)])].sort(),
+    moved: [...new Set([...moved, ...ratchetChangesSince(root, at)])],
+  }
+}
+
+/**
+ * Of the files whose ratchet entry moved, those the incremental report scores below their new entry or holds no
+ * mutants of. Only those are measured afresh: a cached score under the entry would fail a file no change touched.
+ * A file the report already holds at its entry keeps its statuses, and Stryker re-measures what changed sources and
+ * tests reach in it, as in every other file. Dropping every moved entry's statuses measured 3,931 of 4,657 mutants
+ * cold after a ratchet raised from a full run, past the mutation job's timeout.
+ */
+export async function belowCachedScore(root: string, moved: string[]): Promise<string[]> {
+  if (moved.length === 0) return moved
+  const report = await incrementalReport(root)
+  const ratchet = resolve(root, RATCHET)
+  if (!existsSync(report) || !existsSync(ratchet)) return moved
+  const { scoreByFile } = await import('./mutation-ratchet')
+  const cached = scoreByFile(JSON.parse(readFileSync(report, 'utf8')))
+  const entries = ratchetFiles(readFileSync(ratchet, 'utf8'))
+  return moved.filter((path) => {
+    const entry = entries[path]
+    const score = cached[path]
+    return typeof entry !== 'number' || score === undefined || score < entry
+  })
+}
+
 /** Drops `files` from Stryker's incremental report, so its next run measures their mutants afresh. */
 async function pruneIncremental(root: string, files: string[]): Promise<void> {
-  const report = resolve(
-    root,
-    (await strykerConfig(root)).incrementalFile ?? STRYKER_INCREMENTAL_DEFAULT,
-  )
+  const report = await incrementalReport(root)
   if (!existsSync(report)) {
     process.stderr.write(`stryker: no incremental report at ${relative(root, report)} to prune\n`)
     return
@@ -1078,7 +1183,7 @@ async function pruneIncremental(root: string, files: string[]): Promise<void> {
   for (const path of dropped) delete cached[path]
   writeFileSync(report, JSON.stringify(data))
   process.stderr.write(
-    `stryker: ratchet entries moved, measured afresh: ${files.join(', ')} (${dropped.length} in the cache)\n`,
+    `stryker: measured afresh: ${files.join(', ')} (${dropped.length} in the cache)\n`,
   )
 }
 
@@ -1089,7 +1194,10 @@ export type PlanInput = {
   noBase?: boolean | undefined
   changed: string[]
   mutated: string[]
-  /** Files in `mutated` whose cached mutants the stryker step drops first (`ratchetChanges`). None when not given. */
+  /**
+   * Files in `mutated` whose cached mutants the stryker step drops first (`belowCachedScore`, `mapperRemeasured`). None
+   * when not given.
+   */
   remeasured?: string[] | undefined
   /** Run only these steps, in plan order. A name the plan does not have is an error. */
   only?: string[] | undefined
@@ -1133,8 +1241,8 @@ export type PlanInput = {
    */
   harness?: 'all' | 'changed' | undefined
   /**
-   * Harness test files that read a changed file outside their imports (`harnessInputTests`): the plain gate's
-   * `changed` run takes them beside the changed paths and keeps their projects. None when not given.
+   * Harness test files that read a changed file outside their imports (`harnessInputTests`): gate:full and the plain
+   * gate's `changed` run keep their projects, and the latter takes them beside the changed paths. None when not given.
    */
   inputReaders?: string[] | undefined
   /** The paths that run hands `vitest related`: `changed` with both sides of each rename. `changed` when not given. */
@@ -1144,8 +1252,12 @@ export type PlanInput = {
    * inputs (`buildIsCurrent`), as after a merge of dev. False when not given.
    */
   buildStale?: boolean | undefined
-  /** `--rerun-red`: the tests step runs these tests alone (when any), and Playwright only its last failures. */
-  rerun?: { tests: RedTest[] } | undefined
+  /**
+   * The plain gate builds the admin too: apps/admin/dist is there but was built from other admin inputs than the work
+   * tree holds (`adminBuildIsCurrent`), so a walk or a gate:full --no-build would serve the old admin. False when not
+   * given.
+   */
+  adminStale?: boolean | undefined
   /** `--shard <i>/<n>`: the tests step runs Vitest's shard i of n, when it runs every test. */
   shard?: Shard | undefined
 }
@@ -1172,37 +1284,15 @@ function checkedShard(shard: Shard): Shard {
   return shard
 }
 
-/** A Vitest test by file (from the root) and full name (describe titles and its own, joined by spaces). */
-export type RedTest = { file: string; name: string }
-
-/** What `--rerun-red` reads back: every gate run writes it. `e2e[target]` is true when that E2E step was red. */
+/** What every gate run writes: each step's status and milliseconds, in plan order, and the first red step. */
 export type LastRun = {
   sha: string
-  diffHash: string
   steps: Record<string, StepStatus>
-  vitest: RedTest[]
-  e2e: Record<string, boolean>
-  /** Each step's milliseconds, in plan order, and the first red step: what gate-runs.tsv keeps per run. */
   stepsMs: Record<string, number>
   redStep: string | null
 }
 
 const LAST_RUN = 'reports/last-run.json'
-const RERUN_REPORT = 'reports/vitest-rerun.json'
-
-function escapeRegExp(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-/** Vitest on the red files, filtered to the red tests by full name (the name `-t` matches starts with the file's). */
-function rerunTestsCommand(red: RedTest[]): string {
-  const files = [...new Set(red.map((t) => t.file))].map(shellWord).join(' ')
-  const names = [...new Set(red.map((t) => escapeRegExp(t.name)))].join('|')
-  return (
-    `pnpm run test ${files} -t ${shellWord(`(?:^|\\s)(?:${names})$`)} ` +
-    `--reporter=default --reporter=json --outputFile.json=${RERUN_REPORT}`
-  )
-}
 
 const SCRIPT = 'node_modules/.bin/tsx scripts/gate.ts'
 /** The `test` script's filters (package.json), which the plain gate's `vitest related` run repeats. */
@@ -1233,19 +1323,24 @@ function withHolds(steps: StepSpec[]): StepSpec[] {
         : step,
   )
 }
-/** Where the tests step's Vitest JSON goes: test-quality reads it, and `--rerun-red` finds the red tests in it. */
+/** Where the tests step's Vitest JSON goes: test-quality reads it. */
 const VITEST_REPORT = 'reports/vitest.json'
 const VITEST_JSON = `--reporter=default --reporter=json --outputFile.json=${VITEST_REPORT}`
 /** Left by scripts/e2e-server.mjs when a server outlived its shutdown. */
 const SHUTDOWN_REPORT = 'reports/e2e-shutdown.json'
+/** The admin's build, which `pnpm build` (packages/** only) leaves out. */
+const ADMIN_BUILD = 'pnpm --filter @nymbalhq/admin build'
+/** The page the API serves the admin from. */
+const ADMIN_INDEX = 'apps/admin/dist/index.html'
 /** The build output each E2E target serves itself. The templates run as dev servers; the API serves the admin. */
 const E2E_SERVES: Record<string, string[]> = {
   astro: [],
   nextjs: [],
-  admin: ['apps/admin/dist/index.html'],
-  // The custom-providers fixture store (tests/e2e/fixtures/custom-providers) with each template on it.
-  'astro-custom': [],
-  'nextjs-custom': [],
+  admin: [ADMIN_INDEX],
+  // The custom-providers fixture store (tests/e2e/fixtures/custom-providers) with each template on it; its alert and
+  // resend journeys sign in to the admin that store's API serves.
+  'astro-custom': [ADMIN_INDEX],
+  'nextjs-custom': [ADMIN_INDEX],
   // The custom store's API alone, for the mail outage journey.
   'mail-outage': [],
   // The no-search fixture store (tests/e2e/fixtures/no-search) with each template on it.
@@ -1356,6 +1451,7 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
   const buildInputs = changed.filter(isBuildInput)
   const stamp = `${SCRIPT} build-stamp`
   const builds = buildInputs.length > 0 || input.buildStale === true
+  const adminBuilds = input.adminStale === true
   const build: StepSpec = full
     ? input.noBuild === true
       ? {
@@ -1365,9 +1461,15 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
           idle: true,
         }
       : // `pnpm build` covers packages/** only; the admin E2E serves apps/admin/dist, which a fresh checkout lacks.
-        { name: 'build', command: `pnpm build && pnpm --filter @nymbalhq/admin build && ${stamp}` }
-    : builds
-      ? { name: 'build', command: `pnpm build && ${stamp}` }
+        { name: 'build', command: `pnpm build && ${ADMIN_BUILD} && ${stamp} --admin` }
+    : builds || adminBuilds
+      ? {
+          name: 'build',
+          command: [
+            ...(builds ? ['pnpm build'] : []),
+            ...(adminBuilds ? [ADMIN_BUILD, `${stamp} --admin`] : [stamp]),
+          ].join(' && '),
+        }
       : {
           name: 'build',
           command: 'true',
@@ -1379,37 +1481,36 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
   // imports runs the kit's own tests as well.
   const kit = input.proofKitPackages ?? ['packages/proof-kit']
   const kitChanged = buildInputs.some((path) => kit.some((dir) => path.startsWith(`${dir}/`)))
-  const red = input.rerun?.tests ?? []
   // The timing-bound tests run in steps of their own. When `--only` leaves those steps out (CI's jobs name theirs), the
   // tests and integration-postgres steps run them, as they did before the steps existed.
   const picked = (name: string): boolean => input.only === undefined || input.only.includes(name)
   const perfApart = picked('perf') ? ` --exclude ${PERF_FILE}` : ''
-  // CI splits a run of every test over a matrix of jobs; the changed and rerun selections are local and run whole.
-  const shardPart =
-    shard === undefined || input.rerun !== undefined
-      ? ''
-      : ` --shard=${shard.index}/${shard.count}`
+  // CI splits a run of every test over a matrix of jobs; the changed selection is local and runs whole.
+  const shardPart = shard === undefined ? '' : ` --shard=${shard.index}/${shard.count}`
   // The harness projects are most of the suite's file time and move only with the harness: unless a harness path
   // changed, the plain gate leaves them out and gate:full leaves out the tooling ones; dev CI asks for all of them with
   // `--harness all`. vitest.config.ts drops them: Vitest ORs repeated `--project` filters, so a negation beside
   // `pnpm test`'s `!integration-*` would run every project, the service-backed ones included.
+  // Both sides of a rename: `git mv scripts/x.ts tools/x.ts` moves a harness path although its new name is not one.
   const harnessKept =
-    input.harness === 'all' || input.noBase === true || changed.some(isHarnessPath)
+    input.harness === 'all' ||
+    input.noBase === true ||
+    [...changed, ...(input.relatedPaths ?? [])].some(isHarnessPath)
   const harnessSkipped = harnessKept ? [] : full ? FULL_GATE_HARNESS_PROJECTS : HARNESS_PROJECTS
   const skipEnv = (projects: string[]): string =>
     projects.length === 0 ? '' : `NYMBAL_VITEST_SKIP_PROJECTS=${projects.join(',')} `
   // The plain gate never runs the slow harness projects, unless `--harness all` asks for every one.
   const plainApart = (projects: string[]): string[] =>
     full || input.harness === 'all' ? projects : [...projects, ...SLOW_HARNESS_PROJECTS]
-  const harnessApart = skipEnv(plainApart(harnessSkipped))
-  // A harness test that reads a changed file keeps its project, and `vitest related` is handed the test itself.
+  // A harness test that reads a changed file keeps its project: gate:full runs that project whole, the plain gate's
+  // `vitest related` is handed the test itself.
   const readers = input.inputReaders ?? []
   const readerProjects = new Set<string>(
     readers.map((file) => (file.startsWith('tests/architecture/') ? 'architecture' : 'tooling')),
   )
-  const changedApart = skipEnv(
-    plainApart(harnessSkipped.filter((project) => !readerProjects.has(project))),
-  )
+  const readersKept = harnessSkipped.filter((project) => !readerProjects.has(project))
+  const harnessApart = skipEnv(plainApart(full ? readersKept : harnessSkipped))
+  const changedApart = skipEnv(plainApart(readersKept))
   // CI exports the pushed branch's previous tip as GATE_BASE to every step; the plain gate hands its Vitest runs its
   // own base the same way, so a script that reads it fails here as it would there.
   const baseEnv = full || input.noBase === true ? '' : `GATE_BASE=${shellWord(base)} `
@@ -1433,24 +1534,22 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
         idle: true,
       }
   const tests: StepSpec =
-    red.length > 0
-      ? { name: 'tests', command: `${baseEnv}${rerunTestsCommand(red)}`, ...buildNeeds }
-      : selection.mode === 'none'
-        ? { name: 'tests', command: 'true', skip: selection.reason, idle: true }
-        : selection.mode === 'changed'
-          ? {
-              name: 'tests',
-              // One process and one report: the changed paths' related tests and the harness tests reading them.
-              command:
-                `${baseEnv}${changedApart}pnpm exec vitest related --run ${TEST_SCRIPT_FILTERS} --passWithNoTests${perfApart} ${VITEST_JSON} ${related}` +
-                (kitChanged ? ` && ${baseEnv}pnpm exec vitest run --project proof-kit` : ''),
-              ...buildNeeds,
-            }
-          : {
-              name: 'tests',
-              command: `${baseEnv}${harnessApart}pnpm run test${perfApart} ${VITEST_JSON}${shardPart}`,
-              ...buildNeeds,
-            }
+    selection.mode === 'none'
+      ? { name: 'tests', command: 'true', skip: selection.reason, idle: true }
+      : selection.mode === 'changed'
+        ? {
+            name: 'tests',
+            // One process and one report: the changed paths' related tests and the harness tests reading them.
+            command:
+              `${baseEnv}${changedApart}pnpm exec vitest related --run ${TEST_SCRIPT_FILTERS} --passWithNoTests${perfApart} ${VITEST_JSON} ${related}` +
+              (kitChanged ? ` && ${baseEnv}pnpm exec vitest run --project proof-kit` : ''),
+            ...buildNeeds,
+          }
+        : {
+            name: 'tests',
+            command: `${baseEnv}${harnessApart}pnpm run test${perfApart} ${VITEST_JSON}${shardPart}`,
+            ...buildNeeds,
+          }
   const steps: StepSpec[] = [
     { name: 'lint', command: 'pnpm lint' },
     // Every mutate-set file has a ratchet entry and every entry names a file, before anything slow runs: a missing
@@ -1514,12 +1613,11 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
   const e2eNeeds = stores === 'sqlite-memory' ? ['build'] : ['build', 'compose up']
   // Visual baselines are linux/chromium: on another platform every @visual test would fail on the missing baseline.
   const grep = process.platform === 'linux' ? '' : ' --grep-invert @visual'
-  const lastFailed = input.rerun === undefined ? '' : ' --last-failed'
-  // `--last-failed` reads `.last-run.json` from the output dir, so each project keeps its own or the last one wins.
+  // Each target keeps its own output dir, so one target's results never overwrite another's.
   const e2e = (target: string): string =>
     e2eCommand(
       target,
-      `${slotEnv}${storeEnv}CI=1 NYMBAL_E2E_TARGET=${target} pnpm --filter @nymbalhq/e2e exec playwright test --project ${target} --output test-results/${target}${grep}${lastFailed}`,
+      `${slotEnv}${storeEnv}CI=1 NYMBAL_E2E_TARGET=${target} pnpm --filter @nymbalhq/e2e exec playwright test --project ${target} --output test-results/${target}${grep}`,
     )
   const chosen = input.sentinels ?? 'all'
   const sentinels: StepSpec =
@@ -1687,20 +1785,20 @@ export function artefactPresent(root: string): boolean {
 const BUILD_STAMP = 'reports/build-stamp.json'
 
 /**
- * A hash of the package build inputs (`isBuildInput`) in the work tree: each blob's id and path. A clean input is
- * HEAD's blob; a modified, staged or untracked one is the blob `git hash-object` gives its bytes, which is the id
- * committing them records, so output built from a dirty tree still matches once that tree is committed.
+ * A hash of the build inputs under `dir` in the work tree: each blob's id and path. A clean input is HEAD's blob; a
+ * modified, staged or untracked one is the blob `git hash-object` gives its bytes, which is the id committing them
+ * records, so output built from a dirty tree still matches once that tree is committed.
  */
-export function buildInputsStamp(root: string): string {
+function inputsStamp(root: string, dir: string, isInput: (path: string) => boolean): string {
   const blobs = new Map<string, string>()
-  for (const line of lines(git(root, ['ls-tree', '-r', 'HEAD', '--', 'packages']))) {
+  for (const line of lines(git(root, ['ls-tree', '-r', 'HEAD', '--', dir]))) {
     const [meta, path] = line.split('\t')
-    if (path !== undefined && isBuildInput(path)) blobs.set(path, meta?.split(' ')[2] ?? '')
+    if (path !== undefined && isInput(path)) blobs.set(path, meta?.split(' ')[2] ?? '')
   }
   const dirty = [
-    ...lines(git(root, ['diff', '--name-only', '--no-renames', 'HEAD', '--', 'packages'])),
-    ...lines(git(root, ['ls-files', '--others', '--exclude-standard', '--', 'packages'])),
-  ].filter(isBuildInput)
+    ...lines(git(root, ['diff', '--name-only', '--no-renames', 'HEAD', '--', dir])),
+    ...lines(git(root, ['ls-files', '--others', '--exclude-standard', '--', dir])),
+  ].filter(isInput)
   const present = dirty.filter((path) => existsSync(resolve(root, path)))
   for (const path of dirty) blobs.delete(path)
   if (present.length > 0) {
@@ -1712,12 +1810,34 @@ export function buildInputsStamp(root: string): string {
   return hash.digest('hex')
 }
 
-/** Records the build inputs the packages were just built from (the build step's last command). */
-export function writeBuildStamp(root: string): void {
+/** The package build inputs (`isBuildInput`) as `inputsStamp` hashes them. */
+export function buildInputsStamp(root: string): string {
+  return inputsStamp(root, 'packages', isBuildInput)
+}
+
+/** The admin's build inputs (`isAdminBuildInput`) as `inputsStamp` hashes them. */
+export function adminInputsStamp(root: string): string {
+  return inputsStamp(root, 'apps/admin', isAdminBuildInput)
+}
+
+type BuildStamp = { inputs?: string | null; admin?: string | null }
+
+function readBuildStamp(root: string): BuildStamp | undefined {
+  const path = resolve(root, BUILD_STAMP)
+  return existsSync(path) ? (JSON.parse(readFileSync(path, 'utf8')) as BuildStamp) : undefined
+}
+
+/**
+ * Records the build inputs the packages were just built from (the build step's last command), and with `admin` the
+ * admin's as well; without it the admin's entry is the one the last admin build recorded.
+ */
+export function writeBuildStamp(root: string, admin = false): void {
   const inputs = buildInputsStamp(root)
+  const adminInputs = admin ? adminInputsStamp(root) : (readBuildStamp(root)?.admin ?? null)
   const target = resolve(root, BUILD_STAMP)
   mkdirSync(dirname(target), { recursive: true })
-  writeFileSync(target, `${JSON.stringify({ inputs, at: new Date().toISOString() }, null, 2)}\n`)
+  const stamp = { inputs, admin: adminInputs, at: new Date().toISOString() }
+  writeFileSync(target, `${JSON.stringify(stamp, null, 2)}\n`)
 }
 
 /**
@@ -1728,10 +1848,18 @@ export function writeBuildStamp(root: string): void {
 export function buildIsCurrent(root: string): boolean {
   if (buildingPackages(root).length === 0) return true
   if (!packagesBuilt(root)) return false
-  const path = resolve(root, BUILD_STAMP)
-  if (!existsSync(path)) return false
-  const stamp = JSON.parse(readFileSync(path, 'utf8')) as { inputs?: string | null }
-  return stamp.inputs === buildInputsStamp(root)
+  const stamp = readBuildStamp(root)
+  return stamp !== undefined && stamp.inputs === buildInputsStamp(root)
+}
+
+/**
+ * Whether apps/admin/dist can stand for the admin's source in the work tree: it is built and the stamp names the
+ * admin's inputs as they are now. A tree with no admin has nothing stale.
+ */
+export function adminBuildIsCurrent(root: string): boolean {
+  if (!existsSync(resolve(root, 'apps/admin/package.json'))) return true
+  if (!existsSync(resolve(root, ADMIN_INDEX))) return false
+  return readBuildStamp(root)?.admin === adminInputsStamp(root)
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1812,120 +1940,24 @@ export function releaseInUse(root: string, stopHolder = true): InUse | undefined
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// The last run, and --rerun-red
+// The last run
 // ---------------------------------------------------------------------------------------------------------------
 
-/** A hash of the work tree against HEAD, untracked files included: equal hashes mean nothing was edited between. */
-function diffHash(root: string): string {
-  const hash = createHash('sha256')
-  hash.update(git(root, ['rev-parse', 'HEAD']))
-  hash.update(git(root, ['diff', 'HEAD', '--binary']))
-  for (const path of lines(git(root, ['ls-files', '--others', '--exclude-standard'])).sort()) {
-    const absolute = resolve(root, path)
-    hash.update(`\0${path}\0`)
-    if (existsSync(absolute) && statSync(absolute).isFile()) hash.update(readFileSync(absolute))
-  }
-  return hash.digest('hex')
-}
-
-function testsWith(root: string, report: VitestReport | undefined, status: string): RedTest[] {
-  return (report?.testResults ?? []).flatMap((file) =>
-    (file.assertionResults ?? [])
-      .filter((t) => t.status === status)
-      .map((t) => ({ file: relative(root, file.name), name: t.fullName ?? t.title ?? '' })),
-  )
-}
-
-function writeLastRun(root: string, steps: Step[], startedMs: number): void {
-  const status = (name: string): StepStatus | undefined =>
-    steps.find((s) => s.name === name)?.status
-  const last: LastRun = {
-    sha: git(root, ['rev-parse', 'HEAD']).trim(),
-    diffHash: diffHash(root),
+/** reports/last-run.json's record; the Stop hook reads its `stepsMs` and `redStep` (.claude/hooks/lib.sh). */
+export function lastRunRecord(sha: string, steps: Step[]): LastRun {
+  return {
+    sha,
     steps: Object.fromEntries(steps.map((s) => [s.name, s.status])),
     stepsMs: Object.fromEntries(steps.map((s) => [s.name, s.ms])),
     redStep: steps.find((s) => s.status === 'red')?.name ?? null,
-    vitest:
-      status('tests') === 'red'
-        ? testsWith(
-            root,
-            freshReport<VitestReport>(resolve(root, VITEST_REPORT), startedMs),
-            'failed',
-          )
-        : [],
-    e2e: Object.fromEntries(
-      steps
-        .filter((s) => s.name.startsWith('e2e '))
-        .map((s) => [s.name.slice(4), s.status === 'red']),
-    ),
   }
+}
+
+function writeLastRun(root: string, steps: Step[]): void {
+  const last = lastRunRecord(git(root, ['rev-parse', 'HEAD']).trim(), steps)
   const target = resolve(root, LAST_RUN)
   mkdirSync(dirname(target), { recursive: true })
   writeFileSync(target, `${JSON.stringify(last, null, 2)}\n`)
-}
-
-function readLastRun(root: string): LastRun {
-  const path = resolve(root, LAST_RUN)
-  if (!existsSync(path)) throw new Error(`--rerun-red: no ${LAST_RUN}; run the gate first`)
-  return JSON.parse(readFileSync(path, 'utf8')) as LastRun
-}
-
-/** The steps that were red last time, in plan order; a need on a step that is not re-run was met then. */
-function redSteps(steps: StepSpec[], last: LastRun): StepSpec[] {
-  const kept = steps.filter((s) => last.steps[s.name] === 'red')
-  const names = new Set(kept.map((s) => s.name))
-  return kept.map((s) => {
-    const { needs, ...rest } = s
-    const still = (needs ?? []).filter((n) => names.has(n))
-    return still.length > 0 ? { ...rest, needs: still } : rest
-  })
-}
-
-/**
- * Prints the re-run's rows, a `flaky:` line for each test that went green on an unchanged tree, and the count. It
- * returns 1 whatever ran: a re-run of part of the gate is never its verdict.
- */
-function reportRerun(root: string, result: RunResult, last: LastRun, startedMs: number): number {
-  const green: string[] = []
-  const red: string[] = []
-  const flakyCandidates: string[] = []
-  for (const step of result.steps) {
-    if (step.name === 'tests' && last.vitest.length > 0) {
-      const passed = testsWith(
-        root,
-        freshReport<VitestReport>(resolve(root, RERUN_REPORT), startedMs),
-        'passed',
-      )
-      for (const t of last.vitest) {
-        const unit = `${t.file} > ${t.name}`
-        if (passed.some((p) => p.file === t.file && p.name === t.name)) {
-          green.push(unit)
-          flakyCandidates.push(unit)
-        } else red.push(unit)
-      }
-      continue
-    }
-    if (step.status === 'ok') {
-      green.push(step.name)
-      if (step.name.startsWith('e2e ')) flakyCandidates.push(step.name)
-    } else red.push(step.name)
-  }
-  // A red step this plan does not have (a gate:full step re-run without --full) did not go green.
-  const ran = new Set(result.steps.map((s) => s.name))
-  const absent = Object.keys(last.steps).filter((n) => last.steps[n] === 'red' && !ran.has(n))
-  red.push(...absent)
-  const unchanged = diffHash(root) === last.diffHash
-  const out = [
-    ...(green.length + red.length === 0 ? ['nothing was red in the last run'] : []),
-    ...(absent.length > 0
-      ? [`not re-run: ${absent.join(', ')} (not in this plan; add --full)`]
-      : []),
-    ...result.report.split('\n').slice(0, -1),
-    ...(unchanged ? flakyCandidates.map((unit) => `flaky: ${unit}`) : []),
-    `rerun: ${green.length} green, ${red.length} red, not a gate verdict`,
-  ]
-  process.stdout.write(`${out.join('\n')}\n`)
-  return 1
 }
 
 /**
@@ -1988,8 +2020,8 @@ async function main(argv: string[]): Promise<number> {
       'perf-bytes': { type: 'boolean', default: false },
       harness: { type: 'string', default: 'changed' },
       check: { type: 'boolean', default: false },
+      admin: { type: 'boolean', default: false },
       stores: { type: 'string' },
-      'rerun-red': { type: 'boolean', default: false },
       shard: { type: 'string' },
     },
   })
@@ -2001,18 +2033,25 @@ async function main(argv: string[]): Promise<number> {
     return 0
   }
   if (subcommand === 'build-stamp') {
-    // `--check` answers whether the packages' build output stands for HEAD, for whoever would otherwise rebuild.
+    // `--check` answers whether the packages' and the admin's build output stand for HEAD, for whoever would otherwise
+    // rebuild; `--admin` records that the admin was built as well.
     if (!values.check) {
-      writeBuildStamp(root)
+      writeBuildStamp(root, values.admin)
       return 0
     }
     const current = buildIsCurrent(root)
+    const admin = adminBuildIsCurrent(root)
     process.stdout.write(
       current
         ? 'build: the package build output matches HEAD\n'
         : 'build: the package build output is stale or unstamped; run pnpm build\n',
     )
-    return current ? 0 : 1
+    if (!admin) {
+      process.stdout.write(
+        `build: the admin build output (apps/admin/dist) is stale, missing or unstamped; run ${ADMIN_BUILD} && pnpm exec tsx scripts/gate.ts build-stamp --admin\n`,
+      )
+    }
+    return current && admin ? 0 : 1
   }
   if (subcommand === 'chaos-off') {
     await mailpitChaosOff(process.env.NYMBAL_TEST_MAILPIT_URL ?? MAILPIT_URL)
@@ -2091,9 +2130,6 @@ async function main(argv: string[]): Promise<number> {
   if (values.harness !== 'all' && values.harness !== 'changed') {
     throw new Error(`--harness takes all or changed, not "${values.harness}"`)
   }
-  const rerun = values['rerun-red']
-  if (rerun && only !== undefined)
-    throw new Error('--rerun-red runs what was red; it takes no --only')
   const shard = values.shard === undefined ? undefined : parseShard(values.shard)
   const inUse = checkoutInUse(root)
   if (inUse !== undefined) {
@@ -2103,18 +2139,42 @@ async function main(argv: string[]): Promise<number> {
     )
     return 1
   }
-  const last = rerun ? readLastRun(root) : undefined
   const base = resolveBase(root, values.base)
   const noBase = base === emptyTree(root)
   const startedMs = Date.now()
   const changed = changedFiles(root, base)
   const relatedPaths = changedFiles(root, base, { renames: false })
-  const inputReaders = values.full ? [] : harnessInputTests(root, relatedPaths)
-  const moved = values.full && strykerMode !== 'off' ? ratchetChangesSince(root, base) : []
+  const inputReaders = harnessInputTests(root, relatedPaths)
+  const forStryker =
+    values.full && strykerMode !== 'off'
+      ? await strykerChanges(root, base, changed)
+      : { changed: [], moved: [] }
+  const moved = forStryker.moved
+  const readsChanged =
+    values.full && strykerMode !== 'off' ? await mapperRemeasured(root, forStryker.changed) : []
   const mutated =
-    values.full && strykerMode !== 'off' ? await strykerTargets(root, changed, moved) : []
-  const remeasured = moved.filter((path) => mutated.includes(path))
+    values.full && strykerMode !== 'off'
+      ? await strykerTargets(root, forStryker.changed, [...moved, ...readsChanged])
+      : []
+  const remeasured = [
+    ...new Set([
+      ...(await belowCachedScore(
+        root,
+        moved.filter((path) => mutated.includes(path)),
+      )),
+      ...readsChanged,
+    ]),
+  ]
+  const held = moved.filter((path) => mutated.includes(path) && !remeasured.includes(path))
+  if (held.length > 0) {
+    process.stderr.write(
+      `stryker: ratchet entries moved, the cached report already at them: ${held.join(', ')}\n`,
+    )
+  }
   const buildStale = !values.full && !buildIsCurrent(root)
+  // A stale admin build is rebuilt; a missing one is left to whoever serves it (the walk's check, gate:full's build).
+  const adminStale =
+    !values.full && existsSync(resolve(root, ADMIN_INDEX)) && !adminBuildIsCurrent(root)
   const postgresUrl = process.env.NYMBAL_TEST_POSTGRES_URL
   const mailpitUrl = process.env.NYMBAL_TEST_MAILPIT_URL
   const redisUrl = process.env.NYMBAL_TEST_REDIS_URL
@@ -2150,20 +2210,17 @@ async function main(argv: string[]): Promise<number> {
     inputReaders,
     relatedPaths,
     buildStale,
+    adminStale,
     ...(shard === undefined ? {} : { shard }),
-    ...(last === undefined
-      ? {}
-      : { rerun: { tests: last.steps.tests === 'red' ? last.vitest : [] } }),
   })
-  const { budgetMs } = planned
-  const steps = last === undefined ? planned.steps : redSteps(planned.steps, last)
+  const { budgetMs, steps } = planned
   const testsStep = steps.find((step) => step.name === 'tests')
   if (shard !== undefined && testsStep !== undefined && !testsStep.command.includes(' --shard=')) {
     process.stderr.write(
-      `gate: --shard ${values.shard} is ignored: it slices a run of every test, not ${rerun ? '--rerun-red' : 'the changed tests'}\n`,
+      `gate: --shard ${values.shard} is ignored: it slices a run of every test, not the changed tests\n`,
     )
   }
-  if (values.full && only === undefined && last === undefined) {
+  if (values.full && only === undefined) {
     // The report reads what the steps above wrote, so it runs last and is part of the verdict.
     steps.push({
       name: 'test-quality report',
@@ -2174,8 +2231,7 @@ async function main(argv: string[]): Promise<number> {
     process.stderr.write(text)
   }
   const result = await run(steps, { cwd: root, budgetMs, log })
-  if (last !== undefined) return reportRerun(root, result, last, startedMs)
-  writeLastRun(root, result.steps, startedMs)
+  writeLastRun(root, result.steps)
   // A selected step skipped because a precondition failed (a URL unset, the artefact missing, a need left out)
   // proves nothing: the run is red, and the rows say why. A skip with nothing to do (no changed file to mutate,
   // services or build supplied from outside) is not.

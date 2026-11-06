@@ -1,8 +1,8 @@
 import { request as playwrightRequest, type APIRequestContext, type Page } from '@playwright/test'
 import { expect, test } from '../../support/fixtures'
 import { csrf } from '../../support/csrf'
-import { placeOrder, signInAsAdmin } from '../../support/admin'
-import { adminToken } from '../../support/checkout'
+import { signInAsAdmin } from '../../support/admin'
+import { adminToken, ownProduct } from '../../support/checkout'
 
 const API_URL = process.env.NYMBAL_API_URL ?? 'http://localhost:3001'
 const ADMIN_EMAIL = process.env.NYMBAL_ADMIN_EMAIL ?? 'admin@nymbal.local'
@@ -20,42 +20,36 @@ const address = {
 }
 
 /**
- * Creates a real pending order through the platform API: seeded product →
- * cart → checkout (native-stub payments). Every response is wrapped in the
+ * Places a real order through the platform API: a product of its own → cart →
+ * checkout (native-stub payments). The product is the order's own, so this never
+ * moves the stock of a product another journey asserts on. The default
+ * `+stub-pending` email leaves the order pending for the admin to confirm; any
+ * other email is captured by the stub. Every response is wrapped in the
  * { data, meta, error } envelope and must be unwrapped.
  */
-async function createPendingOrder(
+async function placeOwnOrder(
   request: APIRequestContext,
+  email = `e2e-admin-orders-${Date.now()}-${Math.floor(Math.random() * 1e6)}+stub-pending@nymbal.dev`,
 ): Promise<{ orderId: string; orderNumber: string }> {
-  const productsRes = await request.get(`${API_URL}/api/products?limit=20`)
-  expect(productsRes.ok(), 'GET /api/products should succeed').toBe(true)
-  const productsBody = (await productsRes.json()) as {
-    data: { items: Array<{ name: string; variants?: Array<{ id: string }> }> }
+  // The admin signs in on a context of its own, so the shopper's checkout below stays a guest's.
+  const admin = await playwrightRequest.newContext()
+  let variantId: string
+  try {
+    variantId = (await ownProduct(admin, await adminToken(admin), 1)).variantId
+  } finally {
+    await admin.dispose()
   }
-  const products = productsBody.data.items
-  expect(products.length, 'seed should provide at least one product').toBeGreaterThan(0)
 
-  // Walk the catalog until a variant with available stock is added.
-  let added = false
-  for (const product of products) {
-    const variantId = product.variants?.[0]?.id
-    if (!variantId) continue
-    const addRes = await request.post(`${API_URL}/api/cart/items`, {
-      headers: await csrf(request, API_URL),
-      data: { variantId, qty: 1 },
-    })
-    if (addRes.ok()) {
-      added = true
-      break
-    }
-  }
-  expect(added, 'a seeded variant should be added to the cart').toBe(true)
+  const addRes = await request.post(`${API_URL}/api/cart/items`, {
+    headers: await csrf(request, API_URL),
+    data: { variantId, qty: 1 },
+  })
+  expect(addRes.ok(), `POST /api/cart/items: ${await addRes.text()}`).toBe(true)
 
   const checkoutRes = await request.post(`${API_URL}/api/checkout`, {
     headers: await csrf(request, API_URL),
     data: {
-      // `+stub-pending`: the stub leaves the order pending for the admin to confirm.
-      email: 'e2e-admin-orders+stub-pending@nymbal.dev',
+      email,
       billingAddress: address,
       shippingAddress: address,
     },
@@ -229,12 +223,12 @@ test.describe('Admin orders', () => {
     request,
   }) => {
     test.setTimeout(120_000)
-    const unpaid = await placeOrder(request)
+    const unpaid = await placeOwnOrder(request)
     // A second shopper, with a cart of their own: from the same cart the paid checkout would supersede the pending order.
     const shopper = await playwrightRequest.newContext()
-    let paid: Awaited<ReturnType<typeof placeOrder>>
+    let paid: Awaited<ReturnType<typeof placeOwnOrder>>
     try {
-      paid = await placeOrder(shopper, paidEmail('paid'))
+      paid = await placeOwnOrder(shopper, paidEmail('paid'))
     } finally {
       await shopper.dispose()
     }
@@ -289,7 +283,7 @@ test.describe('Admin orders', () => {
     request,
   }) => {
     test.setTimeout(180_000)
-    const order = await placeOrder(request, paidEmail('refund'))
+    const order = await placeOwnOrder(request, paidEmail('refund'))
     const token = await adminToken(request)
     const start = await readOrder(request, token, order.orderNumber)
     const captured = start.payment?.capturedMinor
@@ -353,7 +347,7 @@ test.describe('Admin orders', () => {
   }) => {
     test.setTimeout(120_000)
     await page.route('**/api/admin/events**', (route) => route.abort())
-    const order = await placeOrder(request, paidEmail('stale-refund'))
+    const order = await placeOwnOrder(request, paidEmail('stale-refund'))
     const token = await adminToken(request)
     const start = await readOrder(request, token, order.orderNumber)
     const captured = start.payment.capturedMinor
@@ -405,7 +399,7 @@ test.describe('Admin orders', () => {
 
   test('orders list page is accessible @a11y', async ({ page, request }) => {
     test.setTimeout(60_000)
-    const { orderNumber } = await createPendingOrder(request)
+    const { orderNumber } = await placeOwnOrder(request)
     await loginAsAdmin(page)
     await page.getByTestId('admin-nav-orders').click()
     await expect(page.getByTestId(`admin-orders-row-${orderNumber}`)).toBeVisible({
@@ -418,7 +412,7 @@ test.describe('Admin orders', () => {
 
   test('order detail page is accessible @a11y', async ({ page, request }) => {
     test.setTimeout(60_000)
-    const { orderNumber } = await createPendingOrder(request)
+    const { orderNumber } = await placeOwnOrder(request)
     await loginAsAdmin(page)
     await openOrderDetail(page, orderNumber)
     await expect(page.getByTestId('admin-order-status-badge')).toHaveText('Pending')

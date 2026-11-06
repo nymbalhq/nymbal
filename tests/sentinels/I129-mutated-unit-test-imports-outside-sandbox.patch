@@ -1,0 +1,17 @@
+# id: I129
+# kind: injected
+# defect: a unit test beside mutated kernel code imports packages/platform/tests, which Stryker's sandbox leaves out, so the test fails to load there and kills no mutant while passing in pnpm test
+# where: packages/platform/src/services/cart-service.test.ts:16
+# killed-by: tests/architecture/stryker-sandbox-imports.test.ts (no test under the mutate set imports a file the sandbox leaves out)
+# suite: pnpm vitest run --project architecture tests/architecture/stryker-sandbox-imports.test.ts
+diff --git a/packages/platform/src/services/cart-service.test.ts b/packages/platform/src/services/cart-service.test.ts
+--- a/packages/platform/src/services/cart-service.test.ts
++++ b/packages/platform/src/services/cart-service.test.ts
+@@ -13,6 +13,7 @@ import {
+ } from '@nymbalhq/types'
+ import { InMemoryDocumentStore } from '../document-store/in-memory.js'
+ import { InProcessEventBus } from '../event-bus/in-process.js'
++import { kernelConfig } from '../../tests/support/kernel.js'
+ import { createCommandStore, type ReadTx, type Tx } from '../db/command-store.js'
+ import { runMigrations } from '../db/migrate.js'
+ import { buildRepositories } from '../repositories/index.js'

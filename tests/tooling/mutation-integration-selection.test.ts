@@ -105,34 +105,39 @@ async function toolingFiles(cwd: string, args: string[]): Promise<string[]> {
 }
 
 describe('AC-7: a change to an integration mutation file selects its tests', () => {
-  it('AC-7: through Vitest, a change to each new file alone selects the tests of the integration config and ratchet, and not the whole tooling project', async () => {
-    expect(
-      NEW_FILES.filter((f) => !existsSync(join(REPO, f))),
-      'files at the repo root',
-    ).toEqual([])
-    const dir = workTreeCopy()
-    const all = await toolingFiles(dir, [])
-    const rows: Array<{ file: string; missing: string[]; selected: number }> = []
-    for (const file of NEW_FILES) {
-      appendFileSync(join(dir, file), '\n')
-      const picked = await toolingFiles(dir, ['--changed', 'HEAD'])
-      git(dir, 'checkout', '--', file)
-      rows.push({
-        file,
-        missing: GUARDS.filter((g) => !picked.includes(g)),
-        selected: picked.length,
-      })
-    }
-    expect(
-      rows.map(
-        (r) =>
-          `${r.file}: ${r.missing.length === 0 ? 'selected' : `misses ${r.missing.join(', ')}`}`,
-      ),
-    ).toEqual(NEW_FILES.map((f) => `${f}: selected`))
-    for (const r of rows) {
-      expect(r.selected, `${r.file} selects part of the tooling project`).toBeLessThan(all.length)
-    }
-  }, 120_000)
+  // Runs Vitest in a copy once per file: only under NYMBAL_SLOW_CASES (vitest.config.ts; the nightly's harness-tests job).
+  it.runIf(process.env['NYMBAL_SLOW_CASES'])(
+    'AC-7: through Vitest, a change to each new file alone selects the tests of the integration config and ratchet, and not the whole tooling project',
+    async () => {
+      expect(
+        NEW_FILES.filter((f) => !existsSync(join(REPO, f))),
+        'files at the repo root',
+      ).toEqual([])
+      const dir = workTreeCopy()
+      const all = await toolingFiles(dir, [])
+      const rows: Array<{ file: string; missing: string[]; selected: number }> = []
+      for (const file of NEW_FILES) {
+        appendFileSync(join(dir, file), '\n')
+        const picked = await toolingFiles(dir, ['--changed', 'HEAD'])
+        git(dir, 'checkout', '--', file)
+        rows.push({
+          file,
+          missing: GUARDS.filter((g) => !picked.includes(g)),
+          selected: picked.length,
+        })
+      }
+      expect(
+        rows.map(
+          (r) =>
+            `${r.file}: ${r.missing.length === 0 ? 'selected' : `misses ${r.missing.join(', ')}`}`,
+        ),
+      ).toEqual(NEW_FILES.map((f) => `${f}: selected`))
+      for (const r of rows) {
+        expect(r.selected, `${r.file} selects part of the tooling project`).toBeLessThan(all.length)
+      }
+    },
+    120_000,
+  )
 
   it('AC-7: the three files are harness paths that select the related tests, not every test, and widen no unit Stryker run', async () => {
     expect(NEW_FILES.filter((f) => !isHarnessPath(f))).toEqual([])

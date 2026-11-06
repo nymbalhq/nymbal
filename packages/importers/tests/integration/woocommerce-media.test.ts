@@ -9,6 +9,7 @@ import {
   buildImportEnv,
   importedMedia,
   importOptions,
+  offlineLookup,
   sourceCatalogue,
   wooFetch,
   type SourceImage,
@@ -83,6 +84,7 @@ async function runImport(media: MediaStorage) {
     repos: env.repos,
     adapters: env.adapters,
     media,
+    lookup: offlineLookup,
     onProgress: (event) => events.push(event as (typeof events)[number]),
   }
   const report = await runWooCommerceImport(opts, deps)

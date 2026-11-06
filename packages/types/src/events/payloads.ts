@@ -4,6 +4,8 @@ import type { Order, OrderStatus } from '../domain/order.js'
 import type { Product, Variant } from '../domain/product.js'
 import type { StockAdjustmentReason } from '../domain/inventory.js'
 import type { AlertKind } from '../alerts.js'
+import type { ProposalDecider } from '../proposals.js'
+import type { SettingSourceName } from '../settings.js'
 
 export interface ProductSnapshot extends Product {
   variants: Variant[]
@@ -115,6 +117,13 @@ export interface OrderStatusChangedV1Payload {
 export interface OrderConfirmationResendRequestedV1Payload {
   orderId: string
 }
+/** An imported order taken back out. It carries what the order's documents are keyed by, as its row is gone. */
+export interface OrderDeletedV1Payload {
+  orderId: string
+  orderNumber: string
+  customerId: string | null
+  createdAt: string
+}
 
 export interface InventoryChangedV1Payload {
   variantId: string
@@ -159,6 +168,8 @@ export interface CustomerCreatedV1Payload {
   customerId: string
   email: string
   customer?: CustomerSnapshot
+  /** `'import'` for a customer an import brought over, who is not welcomed; absent for one who registered. */
+  origin?: 'import'
 }
 export interface CustomerUpdatedV1Payload {
   customerId: string
@@ -248,6 +259,42 @@ export interface AlertSentV1Payload {
    */
   triggerEventId: string
 }
+export interface AlertConfirmationSentV1Payload {
+  subscriptionId: string
+  kind: AlertKind
+  /** The alert.requested.v1 the confirmation answered. */
+  requestEventId: string
+}
+
+export interface ReviewSubmittedV1Payload {
+  reviewId: string
+  productId: string
+  customerId: string
+  /** The reviewer's paid order holding the product, which makes the review verified; null when there is none. */
+  orderId: string | null
+  rating: number
+}
+
+// No proposal event carries the arguments or a handle: the log is kept, archived and streamed to every admin tab.
+export interface ProposalCreatedV1Payload {
+  proposalId: string
+  tool: string
+  command: string
+  proposerId: string | null
+  agentName: string
+}
+export interface ProposalApprovedV1Payload extends ProposalCreatedV1Payload {
+  decidedBy: ProposalDecider
+}
+export interface ProposalRejectedV1Payload extends ProposalApprovedV1Payload {
+  reason: string | null
+}
+export interface ProposalAppliedV1Payload extends ProposalCreatedV1Payload {
+  outcome: { status: number }
+}
+export interface ProposalFailedV1Payload extends ProposalCreatedV1Payload {
+  outcome: { status: number; code?: string; message?: string }
+}
 
 export interface AdapterErrorV1Payload {
   adapterType: string
@@ -260,5 +307,5 @@ export interface AdapterErrorV1Payload {
 export interface SettingsChangedV1Payload {
   slot: string
   path: string
-  source: 'settings' | null
+  source: SettingSourceName | null
 }

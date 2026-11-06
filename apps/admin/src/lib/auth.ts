@@ -30,11 +30,17 @@ export function onSessionLost(listener: () => void): () => void {
   }
 }
 
+/** False, once the refused answer's body is let go: an unread body keeps its request open, and its connection. */
+async function refused(response: Response): Promise<false> {
+  await response.body?.cancel()
+  return false
+}
+
 /** Whether `token` belongs to an admin; anything else, an unreachable API included, is a no. */
 async function isAdminToken(token: string): Promise<boolean> {
   try {
     const response = await fetch('/api/admin/me', { headers: { Authorization: `Bearer ${token}` } })
-    if (!response.ok) return false
+    if (!response.ok) return refused(response)
     const body = (await response.json()) as { data?: { roles?: string[] } }
     return body.data?.roles?.includes('admin') ?? false
   } catch {
@@ -50,7 +56,7 @@ async function requestRefresh(): Promise<boolean> {
   let token: string | undefined
   try {
     const response = await fetchWithCsrf('/api/auth/refresh', { method: 'POST' })
-    if (!response.ok) return false
+    if (!response.ok) return refused(response)
     const body = (await response.json()) as { data?: { accessToken?: string } }
     token = body.data?.accessToken
   } catch {

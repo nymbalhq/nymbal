@@ -11,6 +11,7 @@ import {
   ROOT,
   pnpmMembers,
   pnpmPackageDirs,
+  registryDisagreements,
 } from './adapter-table'
 
 // AC-2: each first-party adapter registry/adapters.json lists is a workspace member at
@@ -50,13 +51,10 @@ const tracked = (dir: string): string[] =>
     .filter(Boolean)
 
 describe('AC-2: the adapters live by slot', () => {
-  it('AC-2: each first-party adapter the registry lists is a workspace member at packages/adapters/<kebab slot>/<provider>, under its convention name', () => {
+  it('AC-2: each first-party adapter the registry lists is a workspace member at packages/adapters/<kebab slot>/<provider>, under its convention name, and the registry lists every workspace adapter', () => {
     const byDir = new Map(pnpmMembers().map((m) => [m.dir, m.name]))
-    const wrong = FIRST_PARTY_ADAPTERS.filter((a) => byDir.get(a.dir) !== a.name).map(
-      (a) => `${a.dir}: ${byDir.has(a.dir) ? `named ${byDir.get(a.dir)}` : 'not a member'}`,
-    )
 
-    expect(wrong).toEqual([])
+    expect(registryDisagreements(FIRST_PARTY_ADAPTERS, pnpmMembers())).toEqual([])
     expect(FIRST_PARTY_ADAPTERS.filter((a) => byDir.has(a.dir)).length).toBe(
       FIRST_PARTY_ADAPTERS.length,
     )

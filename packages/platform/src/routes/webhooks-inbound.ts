@@ -264,7 +264,7 @@ export function registerInboundWebhookRoute(
                 ? await receivePayment(ctx, name, target.adapter)
                 : await receiveHooked(ctx, name, target)
             } catch (err) {
-              return renderError(err)
+              return renderError(err, ctx.logger)
             }
           },
         ),

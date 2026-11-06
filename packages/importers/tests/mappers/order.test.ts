@@ -122,4 +122,96 @@ describe('mapOrder', () => {
     const result = mapOrder(makeOrder(), null, {}, 'GBP')
     expect(result.createdAt.toISOString()).toContain('2024-01-15')
   })
+
+  it('maps WC pending to pending', () => {
+    expect(mapOrder(makeOrder({ status: 'pending' }), null, {}, 'GBP').status).toBe('pending')
+  })
+
+  it('carries a billing address line by line, filling an empty street, city or country', () => {
+    const billing = {
+      ...makeOrder().billing,
+      address_1: '',
+      address_2: 'Unit 4',
+      city: '',
+      country: '',
+      company: 'Acme Ltd',
+    }
+    const result = mapOrder(makeOrder({ billing }), null, {}, 'GBP')
+    expect(result.billingAddress).toEqual({
+      firstName: 'Alice',
+      lastName: 'Smith',
+      addressLine1: '—',
+      addressLine2: 'Unit 4',
+      city: '—',
+      region: 'England',
+      postalCode: 'E1 6AN',
+      country: 'US',
+      phone: '07700900000',
+      company: 'Acme Ltd',
+    })
+  })
+
+  it('keeps a given street and leaves out an empty second line, phone and company', () => {
+    const shipping = { ...makeOrder().shipping, address_2: '', phone: '', company: '' }
+    const result = mapOrder(makeOrder({ shipping }), null, {}, 'GBP')
+    expect(result.shippingAddress.addressLine1).toBe('2 Ship St')
+    expect(
+      Object.keys(result.shippingAddress).filter((k) =>
+        ['addressLine2', 'phone', 'company'].includes(k),
+      ),
+    ).toEqual([])
+  })
+
+  it('links a line to the variation it bought, or to the product of a simple one, and marks an unmapped one unknown', () => {
+    const line = makeOrder().line_items[0]!
+    const result = mapOrder(
+      makeOrder({
+        line_items: [
+          { ...line, id: 1, product_id: 100, variation_id: 501 },
+          { ...line, id: 2, product_id: 100, variation_id: 0 },
+          { ...line, id: 3, product_id: 300, variation_id: 0 },
+        ],
+      }),
+      null,
+      { 100: 'product-100' },
+      'GBP',
+      { variantIds: { 501: 'variant-501', 100: 'variant-of-100' } },
+    )
+    expect(result.lineItems.map((l) => [l.variantId, l.productId, l.imageUrl])).toEqual([
+      ['variant-501', 'product-100', ''],
+      ['variant-of-100', 'product-100', ''],
+      ['unknown', 'unknown', ''],
+    ])
+  })
+
+  it('has one line per product line when the order lists no fees', () => {
+    const order = makeOrder()
+    delete order.fee_lines
+    expect(mapOrder(order, null, {}, 'GBP').lineItems).toHaveLength(order.line_items.length)
+  })
+
+  it('names a buyer with no billing email by the order id', () => {
+    const billing = { ...makeOrder().billing }
+    delete billing.email
+    expect(mapOrder(makeOrder({ id: 31, billing }), null, {}, 'GBP').email).toBe(
+      'wc-31@unknown.nymbal.local',
+    )
+  })
+
+  it('captures nothing for a free completed order, and refunds nothing on a paid one that lists no refunds', () => {
+    const free = mapOrder(makeOrder({ total: '0.00' }), null, {}, 'GBP')
+    expect('capturedMinor' in free).toBe(false)
+    const order = makeOrder({ status: 'processing' })
+    delete order.refunds
+    const paid = mapOrder(order, null, {}, 'GBP')
+    expect(paid.capturedMinor).toBe(paid.totalMinor)
+    expect(paid.refundedMinor).toBe(0)
+    expect(paid.refundedMinor!).toBeLessThanOrEqual(paid.capturedMinor!)
+  })
+
+  it('keeps the customer note', () => {
+    expect(mapOrder(makeOrder({ customer_note: 'Leave by the door' }), null, {}, 'GBP').notes).toBe(
+      'Leave by the door',
+    )
+  })
 })

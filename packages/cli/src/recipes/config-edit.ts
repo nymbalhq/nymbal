@@ -194,6 +194,28 @@ function sameValue(a: unknown, b: unknown): boolean {
   )
 }
 
+/**
+ * Whether `node` already holds `wanted` in the keys the recipe owns: an object the recipe sets is compared key by key,
+ * so a key the developer added beside them (literal or not) leaves a rerun a no-op rather than a conflict. A spread,
+ * computed key or method can override a recipe key at runtime, so an object holding one is not compared key by key.
+ */
+function holds(node: Node, wanted: RecipeValue, envName: string | undefined): boolean {
+  const inner = unwrap(node)
+  if (
+    typeof wanted === 'object' &&
+    !isEnvRef(wanted) &&
+    inner?.type === 'ObjectExpression' &&
+    children(inner, 'properties').every((p) => p.type === 'ObjectProperty' && !p['computed'])
+  ) {
+    return Object.entries(wanted).every(([key, value]) => {
+      const prop = findProperty(inner, key)
+      return prop !== undefined && holds(child(prop, 'value'), value, envName)
+    })
+  }
+  const current = evaluate(node, envName)
+  return current !== undefined && sameValue(current, wanted)
+}
+
 function isScaffoldDefault(value: unknown): boolean {
   if (typeof value === 'string') return SCAFFOLD_DEFAULTS.includes(value)
   const provider = (value as { provider?: unknown } | null)?.provider
@@ -372,8 +394,8 @@ function setPath(
     }
     const held = child(prop, 'value')
     if (i === keys.length - 1) {
+      if (holds(held, value, mod.envName)) return { source, wrote: false }
       const current = evaluate(held, mod.envName)
-      if (current !== undefined && sameValue(current, value)) return { source, wrote: false }
       if (!force && !isScaffoldDefault(current)) {
         return {
           conflict: { path, current: current ?? lf.slice(held.start, held.end), wanted: value },

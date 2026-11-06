@@ -139,8 +139,9 @@ const isSet = (name: string, fromFile: Record<string, string>): boolean =>
  * Why the candidate config would not run, without connecting to anything: a recipe package the project does not
  * resolve, or a config `loadConfig` refuses (the schema and its cross-slot rules). The candidate is loaded as
  * `nymbal.config.ts` from a temp directory under the project, so `@nymbalhq/config` resolves as the real one does. For
- * that load only, every variable an `env()` call names takes its `.env` value as `nymbal dev` would, and one still
- * unset gets a placeholder unless its calls have a default, which is what runs.
+ * that load only, every variable `.env` sets applies as `nymbal dev` loads it, whatever reads it (`env()`,
+ * `envNumber()`, `process.env`), and a variable an `env()` call names that is still unset gets a placeholder unless
+ * its calls have a default, which is what runs.
  */
 async function problemsWith(
   candidate: string,
@@ -156,12 +157,16 @@ async function problemsWith(
     )
   }
   const saved = new Map<string, string | undefined>()
-  for (const { name, defaulted } of envCalls(candidate)) {
-    if ((process.env[name] ?? '') !== '') continue
-    const value = fromFile[name] || (defaulted ? undefined : `nymbal-add-placeholder-${name}`)
-    if (value === undefined) continue
-    saved.set(name, process.env[name])
+  const assign = (name: string, value: string): void => {
+    if (!saved.has(name)) saved.set(name, process.env[name])
     process.env[name] = value
+  }
+  for (const [name, value] of Object.entries(fromFile)) {
+    if ((process.env[name] ?? '') === '' && value !== '') assign(name, value)
+  }
+  for (const { name, defaulted } of envCalls(candidate)) {
+    if ((process.env[name] ?? '') === '' && !defaulted)
+      assign(name, `nymbal-add-placeholder-${name}`)
   }
   const dir = mkdtempSync(join(root, '.nymbal-add-'))
   try {
