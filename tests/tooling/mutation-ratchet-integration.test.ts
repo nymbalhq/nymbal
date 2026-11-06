@@ -59,6 +59,19 @@ const INTEGRATION_FILES = [
   'packages/platform/src/repositories/audit-entry.ts',
 ]
 
+/** The files no unit test reaches: the integration config alone mutates them, the unit config leaves them out. */
+const INTEGRATION_ONLY = [
+  'packages/platform/src/repositories/alert-subscription.ts',
+  'packages/platform/src/repositories/email-suppression.ts',
+  'packages/platform/src/repositories/proposal.ts',
+  'packages/platform/src/repositories/review.ts',
+  'packages/platform/src/services/alert-service.ts',
+  'packages/platform/src/services/description.ts',
+  'packages/platform/src/services/import-removal-service.ts',
+  'packages/platform/src/services/proposal-service.ts',
+  'packages/platform/src/services/recently-viewed-service.ts',
+]
+
 /** Integration tests that fail in Stryker's sandbox, or import from outside it. */
 const SANDBOX_UNSAFE = ['adapter-graph', 'security-adapter-selection', 'capabilities-route']
 
@@ -128,7 +141,10 @@ afterEach(() => {
 
 type Status = 'Killed' | 'Timeout' | 'Survived' | 'NoCoverage' | 'Ignored'
 
-/** A report in Stryker's schema, files keyed by repo-relative path. */
+/**
+ * A report in Stryker's schema, files keyed by repo-relative path. A Timeout is one Stryker ended by its hit limit,
+ * which counts as detected everywhere; one the time allowance ended is recorded as undetected.
+ */
 function report(files: Record<string, Status[]>): Record<string, unknown> {
   return {
     schemaVersion: '1.0',
@@ -144,6 +160,7 @@ function report(files: Record<string, Status[]>): Record<string, unknown> {
             mutatorName: 'BlockStatement',
             replacement: '{}',
             status,
+            ...(status === 'Timeout' ? { statusReason: 'Hit limit reached (601/600)' } : {}),
             location: { start: { line: 1, column: 1 }, end: { line: 1, column: 2 } },
           })),
         },
@@ -253,14 +270,16 @@ const writeReport = (dir: string, files: Record<string, Status[]>): string => {
 // ---------------------------------------------------------------------------------------------------------------
 
 describe('AC-1: the integration Stryker config and its test set', () => {
-  it('AC-1: the integration config mutates exactly its sixteen files, each tracked and each in the unit mutate set, and runs its own Vitest config', async () => {
+  it('AC-1: the integration config mutates exactly its sixteen files, each tracked, the unit mutate set holding those a unit test reaches and none of the others, and runs its own Vitest config', async () => {
     expect(SET).toEqual([...INTEGRATION_FILES].sort())
     const tracked = execFileSync('git', ['ls-files', '--', ...SET], { cwd: REPO, encoding: 'utf8' })
       .split('\n')
       .filter(Boolean)
       .sort()
     expect(tracked, 'tracked in git').toEqual(SET)
-    expect((await mutateSet(REPO, SET)).sort(), 'inside the unit mutate set').toEqual(SET)
+    expect((await mutateSet(REPO, SET)).sort(), 'inside the unit mutate set').toEqual(
+      SET.filter((p) => !INTEGRATION_ONLY.includes(p)),
+    )
     const everyTracked = execFileSync('git', ['ls-files'], { cwd: REPO, encoding: 'utf8' })
       .split('\n')
       .filter(Boolean)
@@ -271,7 +290,7 @@ describe('AC-1: the integration Stryker config and its test set', () => {
     expect(STRYKER.vitest?.configFile).toBe(INTEGRATION_VITEST)
   })
 
-  it('AC-1: property: of any set of paths, the integration config mutates exactly those in its set, and the unit config mutates each of them too', async () => {
+  it('AC-1: property: of any set of paths, the integration config mutates exactly those in its set, and the unit config each of them but the integration-only files', async () => {
     const tracked = execFileSync('git', ['ls-files', 'packages/platform/src'], {
       cwd: REPO,
       encoding: 'utf8',
@@ -290,8 +309,9 @@ describe('AC-1: the integration Stryker config and its test set', () => {
       fc.asyncProperty(fc.subarray(sample), async (paths) => {
         const integration = await mutateSet(REPO, paths, INTEGRATION_CONFIG)
         const unit = new Set(await mutateSet(REPO, paths))
-        expect(integration.filter((p) => !unit.has(p))).toEqual([])
-        expect(integration.length).toBeLessThanOrEqual(unit.size)
+        expect(integration.filter((p) => !unit.has(p)).sort()).toEqual(
+          paths.filter((p) => INTEGRATION_ONLY.includes(p)).sort(),
+        )
         expect([...integration].sort()).toEqual(paths.filter((p) => SET.includes(p)).sort())
       }),
       { numRuns: 100, examples: [[SET]] },

@@ -33,6 +33,7 @@ export default {
     '!/package.json',
     '!/tsconfig*.json',
     '!/vitest.stryker.integration.config.ts',
+    '!/vitest.stryker.setup.ts',
     '!/packages',
     '!/tests',
     '/tests/*',
@@ -43,6 +44,9 @@ export default {
   ],
   disableTypeChecks: 'packages/platform/src/{services,repositories}/**/*.ts',
   coverageAnalysis: 'perTest',
+  // Static mutants are left out as in stryker.config.mjs: each reruns the whole suite with a reload, which is most of
+  // the run's tail. Only pure static mutants are skipped; one a test also reaches runs against it.
+  ignoreStatic: true,
   reporters: ['clear-text', 'progress', 'json', 'html'],
   jsonReporter: { fileName: 'reports/mutation-integration/mutation.json' },
   htmlReporter: { fileName: 'reports/mutation-integration/mutation.html' },

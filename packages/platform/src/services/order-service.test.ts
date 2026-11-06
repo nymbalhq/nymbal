@@ -221,6 +221,7 @@ describe('OrderService', () => {
     await commandStore.close()
   })
 
+  // Defect: a transition the order's state machine forbids is written, or refused with some other error.
   it('updateStatus throws on invalid transition', async () => {
     const { commandStore, orderService } = await setup()
     const id = uuidv7()
@@ -239,7 +240,11 @@ describe('OrderService', () => {
       totalMinor: line.lineTotalMinor,
       currency: 'GBP',
     })
-    await expect(orderService.updateStatus(id, 'delivered', 'admin')).rejects.toThrow()
+    const before = await orderService.getById(id)
+    await expect(orderService.updateStatus(id, 'delivered', 'admin')).rejects.toBeInstanceOf(
+      StatusTransitionError,
+    )
+    expect(await orderService.getById(id)).toEqual(before)
     await commandStore.close()
   })
 

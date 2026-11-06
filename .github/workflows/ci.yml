@@ -2,17 +2,19 @@ name: CI
 
 # Tasks merge into dev locally (scripts/merge-to-dev.sh, after a green gate:full at the merged sha), so CI runs on
 # the shared branches only: a red dev run is a fix-forward task, and a release needs a green dev run first. A release
-# dispatches a run of every job on dev, Lighthouse included.
+# reads the push run at its candidate and dispatches `select=lighthouse` for the one thing a push leaves out: the
+# build and the perf job's Lighthouse suite, every other job and step skipped. `select=all` runs every job, as a push
+# does, and Lighthouse besides.
 on:
   push:
     branches: [main, dev]
   workflow_dispatch:
     inputs:
       select:
-        description: Which jobs run (all, or auto for those the change reaches)
+        description: Which jobs run (all, or lighthouse for the build and the Lighthouse suite only)
         type: choice
-        options: [all, auto]
-        default: auto
+        options: [all, lighthouse]
+        default: all
       base:
         description: The commit every gate.ts call diffs against (a release passes origin/main)
         type: string
@@ -62,6 +64,7 @@ jobs:
   # static steps too, which adds no job to the org's concurrent-job cap.
   gate-tests:
     name: Gate — tests (shard ${{ matrix.shard }} of 3)
+    if: inputs.select != 'lighthouse'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [build]
@@ -116,8 +119,10 @@ jobs:
           name: build-output
       # The packages come from the build job. The templates are built again by each perf:budgets run: the store's own
       # seed images go into each template's public directory first, and Astro copies them at build time.
-      # Every event holds each page's script bytes to its budget, with no Lighthouse; the nightly runs Lighthouse.
+      # Every event holds each page's script bytes to its budget, with no Lighthouse; the nightly runs Lighthouse. A
+      # select=lighthouse dispatch skips every step here but the Lighthouse suite: the push run at its sha ran them.
       - name: perf:budgets --bytes
+        if: inputs.select != 'lighthouse'
         run: pnpm perf:budgets --bytes
       # A dispatch (the release's) also runs the Lighthouse suite. It runs `pnpm perf:budgets` twice: with a 300 KB
       # script added to Astro's home page (it must fail), then as committed (it must pass, and writes the report).
@@ -133,25 +138,29 @@ jobs:
       # The browsers are cached on the runner OS and the locked Playwright version; the cache holds no system
       # libraries, so a hit still installs those.
       - name: Playwright version
+        if: inputs.select != 'lighthouse'
         id: playwright
         run: |
           version=$(grep -m1 -oE "^  '@playwright/test@[0-9]+\.[0-9]+\.[0-9]+'" pnpm-lock.yaml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
           echo "version=$version" >> "$GITHUB_OUTPUT"
       - name: Cache Playwright browsers
+        if: inputs.select != 'lighthouse'
         id: browsers
         uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
       - name: Install Playwright browsers
-        if: steps.browsers.outputs.cache-hit != 'true'
+        if: inputs.select != 'lighthouse' && steps.browsers.outputs.cache-hit != 'true'
         run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
       - name: Install Playwright system libraries
-        if: steps.browsers.outputs.cache-hit == 'true'
+        if: inputs.select != 'lighthouse' && steps.browsers.outputs.cache-hit == 'true'
         run: pnpm --filter @nymbalhq/e2e exec playwright install-deps chromium
       - name: Production E2E (tests/e2e/prod)
+        if: inputs.select != 'lighthouse'
         run: pnpm --filter @nymbalhq/e2e exec playwright test -c playwright.prod.config.ts
       - name: ISR E2E (tests/e2e/isr)
+        if: inputs.select != 'lighthouse'
         run: pnpm --filter @nymbalhq/e2e exec playwright test -c playwright.isr.config.ts
       - name: Upload the budget reports
         if: always()
@@ -167,6 +176,7 @@ jobs:
   # projects, which need no service, ride the lightest one.
   integration:
     name: Integration — ${{ matrix.step }}
+    if: inputs.select != 'lighthouse'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [build]
@@ -251,6 +261,7 @@ jobs:
 
   mutation:
     name: Mutation — Stryker (incremental)
+    if: inputs.select != 'lighthouse'
     runs-on: ubuntu-24.04
     # A cold whole-set run (a fresh cache chain, or any platform test change on a miss) measured 1,491 s on this runner
     # (PR #24) and 1,472 s on dev, against 290 s on 12 local cores; the mutate set grows with each service.
@@ -296,6 +307,7 @@ jobs:
 
   sentinels:
     name: Sentinels and tests-fail-on-base
+    if: inputs.select != 'lighthouse'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     needs: [build]
@@ -376,6 +388,7 @@ jobs:
 
   e2e-astro:
     name: E2E — Astro
+    if: inputs.select != 'lighthouse'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [build]
@@ -439,6 +452,7 @@ jobs:
 
   e2e-nextjs:
     name: E2E — Next.js
+    if: inputs.select != 'lighthouse'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [build]
@@ -496,6 +510,7 @@ jobs:
 
   e2e-admin:
     name: E2E — Admin
+    if: inputs.select != 'lighthouse'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [build]
@@ -555,6 +570,7 @@ jobs:
   # jobs of their own so the native ones keep their time.
   e2e-astro-custom:
     name: E2E — Astro on custom providers
+    if: inputs.select != 'lighthouse'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [build]
@@ -629,6 +645,7 @@ jobs:
 
   e2e-nextjs-custom:
     name: E2E — Next.js on custom providers
+    if: inputs.select != 'lighthouse'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [build]
@@ -704,6 +721,7 @@ jobs:
 
   scaffold-clean:
     name: Scaffold from a clean machine (${{ matrix.template }})
+    if: inputs.select != 'lighthouse'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
@@ -748,6 +766,7 @@ jobs:
 
   scaffold-image:
     name: Scaffold into an image and run it (${{ matrix.template }})
+    if: inputs.select != 'lighthouse'
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     strategy:
@@ -800,6 +819,7 @@ jobs:
   # The docs site builds from apps/docs/src/content/docs alone, so a dependency bump that breaks it shows here.
   docs:
     name: Build the docs site
+    if: inputs.select != 'lighthouse'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:

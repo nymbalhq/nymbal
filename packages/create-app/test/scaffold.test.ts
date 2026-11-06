@@ -13,6 +13,7 @@ import {
   readNymbalVersions,
   rewriteWorkspaceVersions,
   shouldCopyScaffoldEntry,
+  // @ts-expect-error -- a JavaScript script with no declaration file, as stryker.config.mjs
 } from '../scripts/sync-scaffold.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))

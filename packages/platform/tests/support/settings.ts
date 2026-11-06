@@ -188,7 +188,7 @@ export async function migrate(
 }
 
 export interface ApiClient {
-  call<T>(method: string, path: string, body?: unknown): Promise<ShopResponse<T>>
+  call<T>(method: string, path: string, body?: unknown): Promise<Omit<ShopResponse<T>, 'setCookies'>>
 }
 
 export interface Store {

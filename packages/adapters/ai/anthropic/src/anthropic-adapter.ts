@@ -218,6 +218,7 @@ export function createAnthropicAiAdapter(config: AnthropicAiAdapterConfig): AiAd
   const adapter: AiAdapter = {
     kind: 'ai',
     providerName: PROVIDER,
+    endpoint: base,
     capabilities: () => ['complete', 'chat', 'tools', 'stream'],
     producesEvents: [],
     consumesEvents: [],

@@ -26,11 +26,15 @@ import {
   type SnsMessage,
   type UnsignedSnsMessage,
 } from '../../../../../tests/support/ses'
+import { fakeTimeBounds, until } from '../../../../../tests/support/fake-clock'
 import { createSesEmailAdapter, type SesEmailAdapterConfig } from './index.js'
 
 // The store confirms its own SNS subscription: a signed SubscriptionConfirmation for its topic makes the adapter GET
 // the message's SubscribeURL, once, on SNS's host only. `fetch` is a fake (vi.stubGlobal) that answers SNS's
 // confirmation for a SubscribeURL and the test certificate for any other URL, and records every call.
+
+/** Each outbound GET's time bound. */
+const FETCH_BOUND_MS = 5_000
 
 const logger: Logger = {
   trace: () => {},
@@ -318,16 +322,24 @@ describe('AC-4: the store confirms its own subscription, and only that', () => {
     const net = stubFetch((url, call) =>
       url === message.SubscribeURL ? neverAnswers(call) : snsAnswers(url),
     )
+    const realClock = fakeTimeBounds()
+    try {
+      const pending = receive(adapter(), signedSnsPost(message)).catch(() => undefined)
+      await until(
+        () => net.callsTo(message.SubscribeURL!).length > 0,
+        'the SubscribeURL was never fetched',
+      )
+      const [get] = net.callsTo(message.SubscribeURL!)
 
-    const pending = receive(adapter(), signedSnsPost(message)).catch(() => undefined)
-    await settledCall(net, message.SubscribeURL!)
-    const [get] = net.callsTo(message.SubscribeURL!)
+      await vi.advanceTimersByTimeAsync(FETCH_BOUND_MS - 1)
+      const justBefore = get!.signal?.aborted
+      await vi.advanceTimersByTimeAsync(1)
 
-    await vi.waitFor(() => expect(get!.signal?.aborted, 'the GET was never cut off').toBe(true), {
-      timeout: 9_000,
-      interval: 50,
-    })
-    await pending
-    expect(net.callsTo(message.SubscribeURL!).length).toBe(1)
-  }, 15_000)
+      expect([justBefore, get!.signal?.aborted]).toEqual([false, true])
+      await pending
+      expect(net.callsTo(message.SubscribeURL!).length).toBe(1)
+    } finally {
+      realClock()
+    }
+  })
 })

@@ -165,7 +165,7 @@ const headerArb: fc.Arbitrary<Sent> = fc.oneof(
   fc.constant({ kind: 'exact' as const }),
   fc.nat().map((at) => ({ kind: 'other' as const, value: changedAt(S, at) })),
   fc.constant({ kind: 'other' as const, value: `${S}x` }),
-  fc.constant({ kind: 'other' as const, value: [S, S] }),
+  fc.constant<Sent>({ kind: 'other', value: [S, S] }),
   fc.integer({ min: 1, max: S.length - 1 }).map((n) => ({
     kind: 'other' as const,
     value: S.slice(0, n),

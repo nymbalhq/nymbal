@@ -17,6 +17,18 @@ export default {
     'packages/platform/src/events/relay.ts',
     'packages/platform/src/events/publisher.ts',
     'packages/importers/src/woocommerce/mappers/**/*.ts',
+    // No unit test reaches these: stryker.integration.config.mjs measures them, and the services' composition root is
+    // wiring every integration test runs through. Here they would score 0 and only cost time.
+    '!packages/platform/src/services/alert-service.ts',
+    '!packages/platform/src/services/description.ts',
+    '!packages/platform/src/services/import-removal-service.ts',
+    '!packages/platform/src/services/index.ts',
+    '!packages/platform/src/services/proposal-service.ts',
+    '!packages/platform/src/services/recently-viewed-service.ts',
+    '!packages/platform/src/repositories/alert-subscription.ts',
+    '!packages/platform/src/repositories/email-suppression.ts',
+    '!packages/platform/src/repositories/proposal.ts',
+    '!packages/platform/src/repositories/review.ts',
     '!**/*.test.ts',
     '!**/*.d.ts',
     // Type tests (`expectTypeOf`): tsc checks them, nothing runs them, so every mutant would survive.
@@ -30,6 +42,7 @@ export default {
     '!/package.json',
     '!/tsconfig*.json',
     '!/vitest.stryker.config.ts',
+    '!/vitest.stryker.setup.ts',
     '!/packages',
     '/packages/*',
     '!/packages/platform',
@@ -43,6 +56,10 @@ export default {
   ],
   disableTypeChecks: 'packages/platform/src/{services,repositories}/**/*.ts',
   coverageAnalysis: 'perTest',
+  // A static mutant (module-level code, or a factory every test's setup calls) reruns the whole suite with a reload, last
+  // in the run, against an allowance shorter than the suite's cold start: those reruns were most of the run's tail,
+  // 46 of a nightly's 133 minutes. Only pure static mutants are skipped; one a test also reaches runs against it.
+  ignoreStatic: true,
   reporters: ['clear-text', 'progress', 'json', 'html'],
   jsonReporter: { fileName: 'reports/mutation/mutation.json' },
   htmlReporter: { fileName: 'reports/mutation/mutation.html' },

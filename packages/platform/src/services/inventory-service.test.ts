@@ -180,9 +180,21 @@ describe('InventoryService', () => {
     await commandStore.close()
   })
 
+  // Defect: a release of a reservation already gone (released, committed, never made) throws, or moves stock anyway.
   it('releaseReservation is idempotent (missing reservation is silently ignored)', async () => {
-    const { commandStore, inventory } = await setup()
-    await expect(inventory.releaseReservation('ghost-id', 'abandoned')).resolves.not.toThrow()
+    const { commandStore, product, inventory, repos } = await setup()
+    const variant = await createTestVariant(product, 10)
+    const { reservationId } = await inventory.reserveStock(variant.id, 4)
+    await inventory.releaseReservation(reservationId, 'cancelled')
+    const held = () =>
+      commandStore.read(async (tx) => ({
+        stock: (await repos.variant.findById(tx, variant.id))?.stock,
+        reservations: await repos.inventoryReservation.findByVariant(tx, variant.id),
+      }))
+    const before = await held()
+    for (const id of [reservationId, 'ghost-id'])
+      await inventory.releaseReservation(id, 'abandoned')
+    expect(await held()).toEqual(before)
     await commandStore.close()
   })
 

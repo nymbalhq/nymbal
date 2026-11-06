@@ -6,6 +6,8 @@ export default defineConfig({
   test: {
     name: 'platform-unit',
     environment: 'node',
+    // A fixed fast-check seed, so a property test kills the same mutants on every run.
+    setupFiles: ['vitest.stryker.setup.ts'],
     include: [
       'packages/platform/src/**/*.test.ts',
       'packages/importers/tests/mappers/**/*.test.ts',

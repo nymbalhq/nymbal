@@ -1,4 +1,4 @@
-// Reads: scripts/mutation-ratchet.ts, mutation-targets.json, stryker.config.mjs
+// Reads: scripts/mutation-ratchet.ts, mutation-targets.json, stryker.config.mjs, stryker.integration.config.mjs
 import { execFile, execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -10,9 +10,10 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { shortfalls } from '../../scripts/mutation-ratchet'
 import type { Scores, Targets } from '../../scripts/mutation-ratchet'
 
-// The mutation floors: every service, repository and mapper of the unit mutate set at or above its group's floor,
-// scored the higher of its unit and integration entries. The CLI runs from this checkout's scripts in scratch git
-// repositories holding a copy of the unit Stryker config, so nothing here writes the checkout's own files.
+// The mutation floors: every service, repository and mapper of either mutate set at or above its group's floor, scored
+// the higher of its unit and integration entries. The CLI runs from this checkout's scripts in scratch git
+// repositories holding a copy of the unit Stryker config, or fixture configs of both, so nothing here writes the
+// checkout's own files.
 
 const REPO = fileURLToPath(new URL('../../', import.meta.url))
 const TSX = join(REPO, 'node_modules/.bin/tsx')
@@ -59,15 +60,22 @@ const TARGETS: Targets = {
 const ratchet = (files: Scores): string =>
   `${JSON.stringify({ measuredAt: '2026-11-01T00:00:00.000Z', command: 'fixture', total: 50, files }, null, 2)}\n`
 
-/** A git repository with the unit Stryker config, the fixture sources, both ratchets and a targets file. */
-function scratch(unit: Scores, integration: Scores, targets: Targets): string {
+/** A git repository with the Stryker configs (the unit one copied by default), the fixture sources, both ratchets and a targets file. */
+function scratch(
+  unit: Scores,
+  integration: Scores,
+  targets: Targets,
+  configs: Record<string, string> = {
+    'stryker.config.mjs': readFileSync(join(REPO, 'stryker.config.mjs'), 'utf8'),
+  },
+): string {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'nymbal-targets-')))
   created.push(dir)
   const write = (path: string, text: string): void => {
     mkdirSync(dirname(join(dir, path)), { recursive: true })
     writeFileSync(join(dir, path), text)
   }
-  write('stryker.config.mjs', readFileSync(join(REPO, 'stryker.config.mjs'), 'utf8'))
+  for (const [path, text] of Object.entries(configs)) write(path, text)
   FILES.forEach((path, i) => write(path, `export const n${i} = ${i}\n`))
   write('mutation-ratchet.json', ratchet(unit))
   write('mutation-ratchet.integration.json', ratchet(integration))
@@ -125,6 +133,37 @@ describe('AC-1: mutation:ratchet target against fixture ratchets and floors', ()
     expect(belowLines(green.output)).toEqual([])
     // Six group files, one of them excepted; the relay is in no group.
     expect(green.output).toContain('mutation target: 5 files at or above their floor')
+  })
+
+  // A file only the integration tests reach is left out of the unit mutate set and mutated by the integration config
+  // alone; its floor still holds, through its integration entry.
+  it('AC-1: a file only the integration config mutates is held to its floor by its integration entry, and an exception for it is not stale', async () => {
+    const configs = {
+      'stryker.config.mjs': `export default { mutate: ['packages/platform/src/services/**/*.ts', 'packages/platform/src/repositories/**/*.ts', '!${INTEGRATION_ONLY}'] }\n`,
+      'stryker.integration.config.mjs': `export default { mutate: ['${INTEGRATION_ONLY}'] }\n`,
+    }
+    const unit: Scores = { [SERVICE]: 60, [SERVICE_AT_FLOOR]: 60, [UNMEASURED]: 50, [EXCEPTED]: 0 }
+    const below = await target(scratch(unit, { [INTEGRATION_ONLY]: 59.99 }, TARGETS, configs))
+    expect(below.code, below.output).toBe(1)
+    expect(belowLines(below.output), below.output).toEqual([INTEGRATION_ONLY])
+    expect(below.output).toContain(`below target: ${INTEGRATION_ONLY} 59.99 < 60 (services)`)
+
+    const excused = await target(
+      scratch(
+        unit,
+        { [INTEGRATION_ONLY]: 59.99 },
+        { ...TARGETS, exceptions: { ...TARGETS.exceptions, [INTEGRATION_ONLY]: 'why' } },
+        configs,
+      ),
+    )
+    expect(excused.code, excused.output).toBe(0)
+    expect(excused.output).toContain(`exception: ${INTEGRATION_ONLY}: why`)
+    expect(excused.output).not.toContain('stale exception')
+
+    const held = await target(scratch(unit, { [INTEGRATION_ONLY]: 60 }, TARGETS, configs))
+    expect(held.code, held.output).toBe(0)
+    // a-, b- and c-service, d.ts; page.ts excepted; the mapper and the relay are in neither fixture set.
+    expect(held.output).toContain('mutation target: 4 files at or above their floor')
   })
 
   it('AC-1: a stale exception alone fails the check', async () => {
@@ -190,16 +229,16 @@ describe('AC-1: mutation:ratchet target against fixture ratchets and floors', ()
 // Whether the committed ratchets meet these floors is release:check's mutation item, not this test's: the floor holds
 // the release, never the gate.
 describe('AC-2: the committed floors', () => {
-  it('AC-2: mutation-targets.json holds services 60, repositories 50, mappers 80 with the two exceptions', () => {
+  it('AC-2: mutation-targets.json holds services 60, repositories 50, mappers 80 with the one exception', () => {
     const committed = JSON.parse(
       readFileSync(join(REPO, 'mutation-targets.json'), 'utf8'),
     ) as Targets
     expect(committed.groups.map((g) => [g.name, g.glob, g.floor])).toEqual(
       TARGETS.groups.map((g) => [g.name, g.glob, g.floor]),
     )
+    // The services' composition root left the unit mutate set, so its exception went with it.
     expect(Object.keys(committed.exceptions).sort()).toEqual([
       'packages/platform/src/repositories/page.ts',
-      'packages/platform/src/services/index.ts',
     ])
   })
 })

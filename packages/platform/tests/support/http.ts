@@ -1,5 +1,6 @@
 import { createServer } from 'node:net'
 import { createHttpServer } from '../../../http/src/index.js'
+import type { AttachHttpOptions } from '../../src/app.js'
 import type { Kernel } from './kernel.js'
 
 // A kernel built from `src/` (createKernel) served over HTTP by the http package's `src/` (the adapter guard lives
@@ -35,7 +36,10 @@ function addressInUse(error: unknown): boolean {
   return (error as NodeJS.ErrnoException | null)?.code === 'EADDRINUSE'
 }
 
-export async function serveKernel(kernel: Kernel): Promise<ServedKernel> {
+export async function serveKernel(
+  kernel: Kernel,
+  attach?: AttachHttpOptions,
+): Promise<ServedKernel> {
   let port = await freePort()
   for (let attempt = 0; ; attempt += 1) {
     const http = createHttpServer({
@@ -45,7 +49,7 @@ export async function serveKernel(kernel: Kernel): Promise<ServedKernel> {
       version: '0.0.0',
       network: kernel.app.network,
     })
-    await kernel.app.attachHttp(http.adapter)
+    await kernel.app.attachHttp(http.adapter, attach)
     try {
       await http.start()
     } catch (error) {

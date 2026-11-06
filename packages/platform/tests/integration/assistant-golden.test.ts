@@ -272,3 +272,43 @@ describe('AC-17: the evaluator fails the question the model got wrong, and only 
     120_000,
   )
 })
+
+describe('AC-9: the golden set holds with the default mask', () => {
+  const ORDER_EMAIL = 'maya.patel@example.com'
+  const runGoldenSeen = platform.runGolden as (
+    app: AssistantStore['kernel']['app'],
+    opts: { onResult: (result: { id: string }) => void },
+  ) => Promise<
+    Omit<GoldenReport, 'results'> & {
+      results: Array<GoldenReport['results'][number] & { answer: string }>
+    }
+  >
+
+  it('AC-9: under the config default runGolden passes 25/25; order-customer’s answer holds maya.patel@example.com and none of that question’s model requests holds it', async () => {
+    const store = await assistantStore()
+    try {
+      await goldenStore(store.kernel.app)
+      await store.kernel.app.relay.drain()
+      store.standIn.script = goldenScript({ currency: store.kernel.config.store.currency })
+      // How many requests the stand-in had received when each question ended.
+      const ended: Array<{ id: string; requests: number }> = []
+
+      const report = await runGoldenSeen(store.kernel.app, {
+        onResult: (result) =>
+          void ended.push({ id: result.id, requests: store.standIn.requests.length }),
+      })
+
+      const at = ended.findIndex((e) => e.id === 'order-customer')
+      const asked = store.standIn.requests.slice(ended[at - 1]?.requests ?? 0, ended[at]!.requests)
+      expect(store.standIn.scriptErrors).toEqual([])
+      expect(report.results.filter((r) => !r.ok).map((r) => [r.id, r.reasons])).toEqual([])
+      expect(report.passed).toBe(report.total)
+      expect(report.total).toBe(GOLDEN_ROWS.length)
+      expect(report.results.find((r) => r.id === 'order-customer')?.answer).toContain(ORDER_EMAIL)
+      expect(asked.length).toBe(2)
+      expect(asked.filter((r) => JSON.stringify(r.body).includes(ORDER_EMAIL)).length).toBe(0)
+    } finally {
+      await store.close()
+    }
+  }, 180_000)
+})

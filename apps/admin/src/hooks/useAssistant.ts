@@ -16,10 +16,15 @@ export interface AssistantStep {
   code?: string
 }
 
+/** Where in an answer the server revealed a customer's value, and of which kind: offsets into `answer`. */
+export type RevealedSpan = NonNullable<FrameData<'text'>['revealed']>[number]
+
 export interface AssistantExchange {
   id: number
   question: string
   answer: string
+  /** Sent back with the answer, so the next turn masks those values again. */
+  revealed: RevealedSpan[]
   state: AnswerState
   steps: AssistantStep[]
   proposals: ProposalView[]
@@ -44,11 +49,21 @@ const MAX_CHARS = 8_000
 
 /** The conversation the server takes: text turns only, at most 40, starting with the user's, the question last. */
 function conversationOf(exchanges: AssistantExchange[], question: string) {
-  const turns: Array<{ role: 'user' | 'assistant'; content: string }> = []
+  const turns: Array<{
+    role: 'user' | 'assistant'
+    content: string
+    revealed?: RevealedSpan[]
+  }> = []
   for (const e of exchanges) {
     turns.push({ role: 'user', content: e.question.slice(0, MAX_CHARS) })
-    if (e.answer.trim() !== '')
-      turns.push({ role: 'assistant', content: e.answer.slice(0, MAX_CHARS) })
+    if (e.answer.trim() !== '') {
+      const revealed = e.revealed.filter((s) => s.end <= MAX_CHARS)
+      turns.push({
+        role: 'assistant',
+        content: e.answer.slice(0, MAX_CHARS),
+        ...(revealed.length > 0 && { revealed }),
+      })
+    }
   }
   turns.push({ role: 'user', content: question.slice(0, MAX_CHARS) })
   const recent = turns.slice(-MAX_TURNS)
@@ -87,7 +102,19 @@ export const useAssistant = create<AssistantStore>((set, get) => {
     const live = () => source === es
     es.addEventListener('text', (event) => {
       const data = parsed<FrameData<'text'>>(event)
-      if (live() && data !== undefined) patch(id, (e) => ({ answer: e.answer + data.delta }))
+      if (live() && data !== undefined) {
+        patch(id, (e) => ({
+          answer: e.answer + data.delta,
+          revealed: [
+            ...e.revealed,
+            ...(data.revealed ?? []).map((s) => ({
+              ...s,
+              start: s.start + e.answer.length,
+              end: s.end + e.answer.length,
+            })),
+          ],
+        }))
+      }
     })
     es.addEventListener('tool', (event) => {
       const data = parsed<FrameData<'tool'>>(event)
@@ -127,7 +154,15 @@ export const useAssistant = create<AssistantStore>((set, get) => {
         busy: true,
         exchanges: [
           ...s.exchanges,
-          { id, question: text, answer: '', state: 'streaming', steps: [], proposals: [] },
+          {
+            id,
+            question: text,
+            answer: '',
+            revealed: [],
+            state: 'streaming',
+            steps: [],
+            proposals: [],
+          },
         ],
       }))
       const sent = page.slice(0, 200)

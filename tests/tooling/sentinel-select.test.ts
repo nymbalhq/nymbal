@@ -159,9 +159,10 @@ describe('AC-2: the CLI runs the sentinels it is given, whatever changed', () =>
 })
 
 // A GitHub Actions expression, the subset a workflow here could use to pick an argument by event: string and boolean
-// literals, `github.event_name`, `env.<NAME>`, the status functions, `!`, `==`, `!=`, `&&`, `||` and parentheses.
+// literals, `github.event_name`, `env.<NAME>`, `inputs.<name>` (null when the event gave none), the status functions,
+// `!`, `==`, `!=`, `&&`, `||` and parentheses.
 // Anything else throws, so a form this reader does not know fails loudly instead of reading as the wrong event.
-type Ctx = { event: string; env: Record<string, string> }
+type Ctx = { event: string; env: Record<string, string>; inputs: Record<string, string> }
 type Value = string | boolean | null
 
 function evaluate(source: string, ctx: Ctx): Value {
@@ -190,6 +191,7 @@ function evaluate(source: string, ctx: Ctx): Value {
     if (t === 'always()' || t === 'success()') return true
     if (t === 'failure()' || t === 'cancelled()') return false
     if (t === 'github.event_name') return ctx.event
+    if (t.startsWith('inputs.')) return ctx.inputs[t.slice('inputs.'.length)] ?? null
     if (t.startsWith('env.')) {
       const raw = ctx.env[t.slice(4)]
       return raw === undefined ? '' : interpolate(raw, ctx)
@@ -249,17 +251,23 @@ type Workflow = { env?: Record<string, string>; jobs?: Record<string, WorkflowJo
  * The `--sentinels` argument of every step of `job` whose run matches `runs` and that runs on `event`, with its
  * expressions and the shell variable it names (from the step, job or workflow env) resolved.
  */
-function sentinelsArgs(file: string, job: string, runs: RegExp, event: string): string[] {
+function sentinelsArgs(
+  file: string,
+  job: string,
+  runs: RegExp,
+  event: string,
+  inputs: Record<string, string> = {},
+): string[] {
   const wf = parseYaml(readFileSync(join(REPO, file), 'utf8')) as Workflow
   const j = wf.jobs?.[job]
   expect(j, `${file} has a job ${job}`).toBeTruthy()
   if (j === undefined) return []
-  const jobCtx: Ctx = { event, env: { ...wf.env, ...j.env } }
+  const jobCtx: Ctx = { event, env: { ...wf.env, ...j.env }, inputs }
   if (!condition(j.if, jobCtx)) return []
   const args: string[] = []
   for (const step of j.steps ?? []) {
     if (step.run === undefined || !runs.test(step.run)) continue
-    const ctx: Ctx = { event, env: { ...jobCtx.env, ...step.env } }
+    const ctx: Ctx = { event, env: { ...jobCtx.env, ...step.env }, inputs }
     if (!condition(step.if, ctx)) continue
     const at = step.run.search(/--sentinels(?:[= ]|$)/)
     if (at < 0) {
@@ -280,17 +288,20 @@ function sentinelsArgs(file: string, job: string, runs: RegExp, event: string): 
   return args
 }
 
-// CI runs on a push and on the release's dispatch; each runs every sentinel.
+// CI runs on a push and on a dispatch of every job; each runs every sentinel. The release's Lighthouse-only dispatch
+// runs none: it reads the push run at the same sha.
 describe('AC-4: a push and a dispatch run all sentinels', () => {
-  it("AC-4: ci.yml's sentinel job passes all on a push and on a workflow_dispatch", () => {
-    const ci = (event: string): string[] =>
-      sentinelsArgs('.github/workflows/ci.yml', 'sentinels', /scripts\/gate\.ts/, event)
+  it("AC-4: ci.yml's sentinel job passes all on a push and on a select=all workflow_dispatch, and is skipped on a select=lighthouse one", () => {
+    const ci = (event: string, inputs: Record<string, string> = {}): string[] =>
+      sentinelsArgs('.github/workflows/ci.yml', 'sentinels', /scripts\/gate\.ts/, event, inputs)
     expect({
       push: ci('push'),
-      workflow_dispatch: ci('workflow_dispatch'),
+      workflow_dispatch: ci('workflow_dispatch', { select: 'all' }),
+      lighthouse: ci('workflow_dispatch', { select: 'lighthouse' }),
     }).toEqual({
       push: ['all'],
       workflow_dispatch: ['all'],
+      lighthouse: [],
     })
   })
 })

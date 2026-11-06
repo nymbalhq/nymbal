@@ -144,7 +144,8 @@ describe('mapProduct prices', () => {
     expect(productWarnings(wc, [], store)).toEqual([])
   })
 
-  // The properties above reach these two edges only on some random runs; each is pinned here.
+  // The properties above reach the first edge only on runs that draw a sale fraction of exactly 1, and never the
+  // second: `pricing` charges below the regular price only while a sale is live. Each is pinned here.
   it('a live sale at the regular price imports with no compare-at, since the sale lowers nothing', () => {
     const wc = wcProduct({
       price: '20.00',

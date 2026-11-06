@@ -180,6 +180,7 @@ export async function runGolden(
         logger,
         store: { name: config.store.name, currency: config.store.currency },
         customerData: config.agents.assistant.customerData,
+        mask: config.agents.assistant.mask,
       },
       {
         caller,

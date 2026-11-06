@@ -19,7 +19,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
 import { afterAll, describe, expect, it } from 'vitest'
-import { plan, run, stepModes, type StepSpec } from '../../scripts/gate'
+import { mutateSet, plan, run, stepModes, type StepSpec } from '../../scripts/gate'
 
 // AC-4: the gate's stryker step fails when the fresh report has a file below the ratchet, and passes when it is equal
 // or above. The step is the one gate:full plans, run by the gate's own runner in a scratch copy of the repo's scripts
@@ -338,8 +338,8 @@ function writeRatchet(dir: string, name: string, files: Record<string, number>):
 
 /**
  * Both ratchets in step with both Stryker configs, committed: the integration set's sources, this checkout's
- * integration config, the unit ratchet holding `unit` and an entry for each integration file, and the integration
- * ratchet holding each of those.
+ * integration config, the unit ratchet holding `unit` and an entry for each integration file the unit config mutates
+ * too, and the integration ratchet holding each integration file.
  */
 async function inStep(dir: string, unit: Record<string, number>): Promise<string[]> {
   const set = await integrationSet()
@@ -350,7 +350,7 @@ async function inStep(dir: string, unit: Record<string, number>): Promise<string
   cpSync(join(REPO, INTEGRATION_CONFIG), join(dir, INTEGRATION_CONFIG))
   writeRatchet(dir, 'mutation-ratchet.json', {
     ...unit,
-    ...Object.fromEntries(set.map((p) => [p, 0])),
+    ...Object.fromEntries((await mutateSet(dir, set)).map((p) => [p, 0])),
   })
   writeRatchet(dir, INTEGRATION_RATCHET, Object.fromEntries(set.map((p) => [p, 60])))
   git(dir, ['add', '-A'])

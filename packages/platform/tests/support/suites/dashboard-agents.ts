@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import fc from 'fast-check'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { NymbalConfig } from '@nymbalhq/config'
-import type { OrderStatus } from '@nymbalhq/types'
+import type { OrderSource, OrderStatus } from '@nymbalhq/types'
 import { serveKernel, type ServedKernel } from '../http.js'
 import { address, type Kernel } from '../kernel.js'
 import { adminAccount, customerAccount, type Account } from '../mcp.js'
@@ -18,7 +18,7 @@ const WINDOW = 30 * DAY
 const SOURCES = [
   'storefront',
   'import',
-  ...['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((s) => `agent:${s}`),
+  ...['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((s): OrderSource => `agent:${s}`),
 ] as const
 const STATUSES: OrderStatus[] = [
   'pending',

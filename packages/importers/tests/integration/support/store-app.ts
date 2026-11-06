@@ -291,6 +291,7 @@ export async function seedStore(env: StoreApp): Promise<Seeded> {
     productId: product.id,
     customerId: customerIds[0]!,
     orderId: null,
+    author: null,
     rating: 4,
     title: '',
     body: 'the store’s own review',

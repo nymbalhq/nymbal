@@ -464,13 +464,15 @@ export function historyAsOfSuite(
         expect(new Date(res.body.data!.asOf).getTime(), context).toBe(new Date(rec.t).getTime())
       }
       const history = await import('../../../src/history/index.js')
-      const toAsOf: Record<HistoryKind, (read: Json) => unknown> = {
+      const toAsOf = {
         order: history.toOrderAsOf,
         product: history.toProductAsOf,
         customer: history.toCustomerAsOf,
-      }
+      } satisfies Record<HistoryKind, unknown>
       for (const rec of run.records) {
-        expect(asJson(toAsOf[rec.kind](rec.read)), `to${rec.kind}AsOf after ${rec.after}`).toEqual(
+        // The recorded read is the admin answer's JSON, which each takes as its typed read.
+        const toKindAsOf = toAsOf[rec.kind] as unknown as (read: Json) => unknown
+        expect(asJson(toKindAsOf(rec.read)), `to${rec.kind}AsOf after ${rec.after}`).toEqual(
           rec.view,
         )
       }

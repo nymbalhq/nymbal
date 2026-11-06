@@ -118,19 +118,42 @@ describe('nymbal-address-book', () => {
     )
   })
 
+  // Defect: any key in a field submits the form, saving the address before it is finished. The fields are filled,
+  // so a submit would pass validation and show: the list would gain the address and the form would be cleared.
   it('a key other than Enter in a field saves nothing', async () => {
-    const create = vi.fn(async () => ({
-      ...ADDRESS,
-      isDefaultShipping: false,
-      isDefaultBilling: false,
-    }))
-    installAddresses([], create)
+    const saved: unknown[] = []
+    const create = vi.fn(async (a: Record<string, unknown>) => {
+      const address = {
+        ...a,
+        id: `addr-${saved.length + 1}`,
+        isDefaultShipping: false,
+        isDefaultBilling: false,
+      }
+      saved.push(address)
+      return address
+    })
+    installAddresses(saved, create)
     const book = await mount()
+    const names = [
+      'firstName',
+      'lastName',
+      'addressLine1',
+      'city',
+      'region',
+      'postalCode',
+      'country',
+    ] as const
+    for (const name of names) field(book, `new-address-${name}`).value = ADDRESS[name]
+    const shown = () => ({
+      list: book.shadowRoot!.querySelector('[data-testid="addresses-list"]')!.textContent,
+      fields: names.map((name) => field(book, `new-address-${name}`).value),
+    })
+    const before = shown()
     field(book, 'new-address-postalCode').dispatchEvent(
       new KeyboardEvent('keydown', { key: 'a', bubbles: true, composed: true, cancelable: true }),
     )
     await flush(book)
-    expect(create).not.toHaveBeenCalled()
+    expect(shown()).toEqual(before)
   })
 
   it('property: each address is badged "Default Shipping" iff isDefaultShipping and "Default Billing" iff isDefaultBilling', async () => {

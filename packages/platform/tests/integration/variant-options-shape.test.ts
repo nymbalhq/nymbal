@@ -69,7 +69,6 @@ beforeAll(async () => {
       params: { slug },
       query: {},
       body: null,
-      rawBody: undefined,
       headers: {},
       cookies: {},
       requestId: 'variants-req',

@@ -333,6 +333,9 @@ describe('WooCommerce importer integration', () => {
       healthCheck: async () => ({ status: 'healthy' }),
       embed: async (texts) => texts.map(() => [0]),
       complete: aiComplete,
+      chat: async () => {
+        throw new Error('not used: the import calls complete')
+      },
     }
 
     const report = await runWooCommerceImport(opts({ entities: ['products'], ai: false }), {

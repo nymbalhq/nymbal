@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { HealthReport, Logger, ShippingAdapter } from '@nymbalhq/types'
 import { createEasyPostShippingAdapter } from './index.js'
 import {
@@ -10,6 +10,7 @@ import {
   type FakeEasyPost,
 } from './tests/fake-easypost.js'
 import { codeOf, FROM, outcomeOf, recordingLogger, silent, stringsIn, TO } from './tests/support.js'
+import { fakeTimeBounds, until } from '../../../../../tests/support/fake-clock'
 
 // What each EasyPost failure means to the store. A 4xx but 429 is EasyPost refusing for good: rate and createLabel
 // reject adapter.shipping.refused and startTracking answers refused, each with EasyPost's message, so the relay does
@@ -210,15 +211,26 @@ describe('AC-9: an outage rejects within timeoutMs, and health says down', () =>
   })
 
   it('AC-9: with the default timeoutMs (10 s), an EasyPost that never answers rejects adapter.shipping.unavailable after about 10 s, not before', async () => {
-    const a = easypost({ timeoutMs: 'default' })
-    fake.answer('trackers.create', 'hang')
+    const realClock = fakeTimeBounds()
+    try {
+      const a = easypost({ timeoutMs: 'default' })
+      fake.answer('trackers.create', 'hang')
+      const before = fake.requests.length
+      let outcome: Awaited<ReturnType<typeof outcomeOf>> | undefined
+      void outcomeOf(() => call(a, 'startTracking')).then((o) => (outcome = o))
+      await until(() => fake.requests.length > before, 'EasyPost never took the request')
 
-    const { error, ms } = await outcomeOf(() => call(a, 'startTracking'))
+      // Far past the bound: a bound twice as long still fires, and its ms says so.
+      await vi.advanceTimersByTimeAsync(60_000)
+      await until(() => outcome !== undefined, 'startTracking never settled')
 
-    expect(codeOf(error)).toBe('adapter.shipping.unavailable')
-    expect(ms).toBeGreaterThanOrEqual(9_500)
-    expect(ms).toBeLessThan(10_000 + GRACE_MS)
-  }, 20_000)
+      expect(codeOf(outcome!.error)).toBe('adapter.shipping.unavailable')
+      expect(outcome!.ms).toBeGreaterThanOrEqual(9_500)
+      expect(outcome!.ms).toBeLessThan(10_000 + GRACE_MS)
+    } finally {
+      realClock()
+    }
+  })
 })
 
 describe('AC-9: the API key never leaks', () => {

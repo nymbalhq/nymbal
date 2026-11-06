@@ -1,5 +1,13 @@
 import { randomUUID } from 'node:crypto'
-import type { APIRequestContext, Browser, Locator, Page, TestInfo } from '@playwright/test'
+import type {
+  APIRequestContext,
+  Browser,
+  Locator,
+  Page,
+  Response,
+  TestInfo,
+} from '@playwright/test'
+import { appliedEntries } from '../support/activity'
 import { signInAsAdmin } from '../support/admin'
 import { linksIn, mailbox, type Mail, type Mailbox } from '../support/alerts'
 import { isCustomProject } from '../support/capabilities'
@@ -12,7 +20,8 @@ import { formatPrice } from '../support/variants'
 // relaying into Mailpit (@capabilities; the native store's email only logs, so there is nothing to read there). A
 // guest order is placed and paid through the store's API, the admin selects Actions → Resend confirmation, and what is
 // checked is what the shopper and the admin get: one more confirmation in Mailpit, a link whose key opens the order in
-// a browser with nothing else, and one applied entry in Activity.
+// a browser with nothing else, and one applied entry in Activity. Each assertion waits on the answered request and
+// reads Activity after it; Mailpit is read for the message alone.
 
 const ADMIN_BASE = `${API_URL}/admin/`
 const COMMAND = 'order.resendConfirmation'
@@ -34,7 +43,6 @@ const auth = (token: string) => ({ authorization: `Bearer ${token}` })
 async function paidGuestOrder(
   request: APIRequestContext,
   token: string,
-  mail: Mailbox,
   tag: string,
 ): Promise<PaidOrder> {
   const product = await ownProduct(request, token, 5)
@@ -58,16 +66,17 @@ async function paidGuestOrder(
     data: { email: buyer, billingAddress: address, shippingAddress: address },
   })
   expect(res.ok(), `POST /api/checkout: ${await res.text()}`).toBe(true)
-  const { orderId, orderNumber } = ((await res.json()) as {
-    data: { orderId: string; orderNumber: string }
-  }).data
-  // The checkout's own confirmation, so every count after it is the resend's.
-  await mail.waitFor(buyer, 1)
+  const { orderId, orderNumber } = (
+    (await res.json()) as {
+      data: { orderId: string; orderNumber: string }
+    }
+  ).data
   const read = await request.get(`${API_URL}/api/admin/orders/${encodeURIComponent(orderNumber)}`, {
     headers: auth(token),
   })
-  const order = ((await read.json()) as { data: { status: string; totalMinor: number; currency: string } })
-    .data
+  const order = (
+    (await read.json()) as { data: { status: string; totalMinor: number; currency: string } }
+  ).data
   expect(order.status, 'the paid order').toBe('confirmed')
   return { orderId, orderNumber, buyer, totalMinor: order.totalMinor, currency: order.currency }
 }
@@ -83,20 +92,6 @@ async function confirmationsTo(mail: Mailbox, order: PaidOrder): Promise<Mail[]>
 const orderLinks = (m: Mail, orderNumber: string): URL[] =>
   linksIn(m).filter((u) => u.pathname === `/order/${encodeURIComponent(orderNumber)}`)
 
-/** The applied entries Activity lists for the command with the order as subject, by actor. */
-async function appliedEntries(request: APIRequestContext, token: string, orderId: string) {
-  const res = await request.get(`${API_URL}/api/admin/activity?command=${COMMAND}&outcome=applied`, {
-    headers: auth(token),
-  })
-  expect(res.ok(), `GET /api/admin/activity: ${await res.text()}`).toBe(true)
-  const entries = ((await res.json()) as {
-    data: Array<{ actor: { kind: string; id: string }; subjects: Array<{ type: string; id: string }> }>
-  }).data
-  return entries
-    .filter((e) => e.subjects.some((s) => s.type === 'order' && s.id === orderId))
-    .map((e) => e.actor)
-}
-
 async function adminUserId(request: APIRequestContext, token: string): Promise<string> {
   const res = await request.get(`${API_URL}/api/admin/me`, { headers: auth(token) })
   return ((await res.json()) as { data: { userId: string } }).data.userId
@@ -111,18 +106,43 @@ async function adminOnOrder(browser: Browser, order: PaidOrder): Promise<Page> {
   return admin
 }
 
-/** Counts the resend POSTs the admin page sends and the answers it gets. */
-function watchResends(admin: Page) {
-  const seen = { sent: 0, answered: 0 }
-  const isResend = (url: string, method: string) =>
-    method === 'POST' && new URL(url).pathname.endsWith('/resend-confirmation')
-  admin.on('request', (req) => {
-    if (isResend(req.url(), req.method())) seen.sent += 1
+const isResend = (res: Response): boolean =>
+  res.request().method() === 'POST' && new URL(res.url()).pathname.endsWith('/resend-confirmation')
+
+/**
+ * Holds the admin page's first resend POST until `settled`, so whatever input follows it lands while it is in flight,
+ * however slowly the browser delivers that input. Activity read after `settled` is final.
+ */
+async function holdResends(admin: Page) {
+  let release: () => void = () => undefined
+  const held = new Promise<void>((resolve) => {
+    release = resolve
   })
-  admin.on('response', (res) => {
-    if (isResend(res.url(), res.request().method())) seen.answered += 1
-  })
-  return seen
+  const answers: Array<Promise<Response | null>> = []
+  await admin.route(
+    (url) => url.pathname.endsWith('/resend-confirmation'),
+    async (route) => {
+      if (route.request().method() !== 'POST') return route.fallback()
+      answers.push(route.request().response())
+      await held
+      await route.continue().catch(() => undefined)
+    },
+  )
+  return {
+    /**
+     * Lets the held request go, then answers once every resend the page sent is answered, with their number; fails
+     * within the expect timeout, naming `gesture`, if the page sent none.
+     */
+    async settled(gesture: string): Promise<number> {
+      await expect
+        .poll(() => answers.length, { message: `${gesture}: the first resend sent` })
+        .toBeGreaterThan(0)
+      release()
+      await answers[0]
+      await Promise.all(answers)
+      return answers.length
+    },
+  }
 }
 
 async function openItem(admin: Page): Promise<Locator> {
@@ -130,26 +150,6 @@ async function openItem(admin: Page): Promise<Locator> {
   const item = admin.getByTestId(ITEM)
   await expect(item).toBeVisible()
   return item
-}
-
-/**
- * Once every resend the page sent is answered, the applied entries are final; waits for that many more confirmations
- * than `before`, then answers the entries and the confirmations.
- */
-async function settled(
-  admin: Page,
-  seen: { sent: number; answered: number },
-  request: APIRequestContext,
-  token: string,
-  mail: Mailbox,
-  order: PaidOrder,
-  before: number,
-) {
-  await expect(admin.getByTestId(RESULT)).toContainText(order.buyer, { timeout: 15_000 })
-  await expect.poll(() => seen.answered - seen.sent, { timeout: 15_000 }).toBe(0)
-  const entries = await appliedEntries(request, token, order.orderId)
-  if (entries.length > 0) await mail.waitFor(order.buyer, before + entries.length)
-  return { entries, confirmations: await confirmationsTo(mail, order) }
 }
 
 function skipOffMailpit(testInfo: TestInfo): void {
@@ -169,25 +169,24 @@ test.describe('resending an order confirmation', () => {
     test.setTimeout(120_000)
     const mail = await mailbox()
     const token = await adminToken(request)
-    const order = await paidGuestOrder(request, token, mail, 'ac10')
+    const order = await paidGuestOrder(request, token, 'ac10')
+    // The checkout's own confirmation, so the count after the resend is the resend's.
+    await mail.waitFor(order.buyer, 1)
     const earlier = await confirmationsTo(mail, order)
     const earlierKeys = earlier.flatMap((m) =>
       orderLinks(m, order.orderNumber).map((u) => u.searchParams.get('key')),
     )
 
     const admin = await adminOnOrder(browser, order)
-    const seen = watchResends(admin)
-    await (await openItem(admin)).click()
-    const { entries, confirmations } = await settled(
-      admin,
-      seen,
-      request,
-      token,
-      mail,
-      order,
-      earlier.length,
-    )
+    const item = await openItem(admin)
+    const answered = admin.waitForResponse(isResend)
+    await item.click()
+    expect((await answered).status(), 'the resend POST').toBe(200)
+    await expect(admin.getByTestId(RESULT)).toContainText(order.buyer)
+    const entries = await appliedEntries(request, token, COMMAND, order.orderId)
 
+    await mail.waitFor(order.buyer, earlier.length + 1)
+    const confirmations = await confirmationsTo(mail, order)
     expect(confirmations.length, 'confirmations after the resend').toBe(earlier.length + 1)
     const fresh = confirmations.filter((m) => !earlier.some((e) => e.text === m.text))
     expect(fresh.length, 'the new confirmation').toBe(1)
@@ -195,7 +194,10 @@ test.describe('resending an order confirmation', () => {
     expect(links.length, `links to /order/${order.orderNumber} in "${fresh[0]!.text}"`).toBe(1)
     const key = links[0]!.searchParams.get('key') ?? ''
     expect(key).toMatch(ORDER_KEY)
-    expect(earlierKeys.filter((k) => k === key), 'the key in an earlier mail').toEqual([])
+    expect(
+      earlierKeys.filter((k) => k === key),
+      'the key in an earlier mail',
+    ).toEqual([])
 
     // A browser with no cookies and no storage, on this project's storefront: the key belongs to the API.
     const baseURL = testInfo.project.use.baseURL
@@ -218,14 +220,17 @@ test.describe('resending an order confirmation', () => {
     await admin.context().close()
   })
 
-  // Kills: an item neither disabled nor de-duplicated while its request is in flight, so k clicks make k commands.
-  test('AC-11: a double-click on Resend confirmation, and Enter on the focused item followed by a click, each add exactly one confirmation for the buyer and one applied entry @capabilities', async ({
+  // Kills: an item neither disabled nor de-duplicated while its request is in flight, so k clicks make k commands. The
+  // first request is held until the gesture is over, so its second input always lands in flight. The menu closes on
+  // the first selection, so the second input of the first two may reach no item; two clicks in one task reach it
+  // before the re-render, which only the request's de-duplication refuses. One applied entry is one confirmation
+  // queued (AC-10 reads it).
+  test('AC-11: a double-click on Resend confirmation, Enter on the focused item followed by a click, and two clicks before the page re-renders, each landing while the first request is in flight, each add exactly one applied entry @capabilities', async ({
     request,
     browser,
   }, testInfo) => {
     skipOffMailpit(testInfo)
     test.setTimeout(150_000)
-    const mail = await mailbox()
     const token = await adminToken(request)
 
     const gestures: Array<[string, (item: Locator) => Promise<void>]> = [
@@ -246,28 +251,30 @@ test.describe('resending an order confirmation', () => {
           }, ITEM)
         },
       ],
+      [
+        'two clicks before the page re-renders',
+        // Both in one task, so the second reaches the item before the menu closes or the item is disabled.
+        (item) =>
+          item.evaluate((el) => {
+            ;(el as HTMLElement).click()
+            ;(el as HTMLElement).click()
+          }),
+      ],
     ]
-    const outcomes: Array<[string, number, number]> = []
+    const outcomes: Array<[string, number]> = []
     for (const [gesture, act] of gestures) {
-      const order = await paidGuestOrder(request, token, mail, 'ac11')
-      const before = (await confirmationsTo(mail, order)).length
+      const order = await paidGuestOrder(request, token, 'ac11')
       const admin = await adminOnOrder(browser, order)
-      const seen = watchResends(admin)
+      const resends = await holdResends(admin)
       await act(await openItem(admin))
-      const { entries, confirmations } = await settled(
-        admin,
-        seen,
-        request,
-        token,
-        mail,
-        order,
-        before,
-      )
-      outcomes.push([gesture, confirmations.length - before, entries.length])
+      await resends.settled(gesture)
+      await expect(admin.getByTestId(RESULT)).toContainText(order.buyer)
+      const entries = await appliedEntries(request, token, COMMAND, order.orderId)
+      outcomes.push([gesture, entries.length])
       await admin.context().close()
     }
-    expect(outcomes, '[gesture, confirmations added, applied entries]').toEqual(
-      gestures.map(([gesture]) => [gesture, 1, 1]),
+    expect(outcomes, '[gesture, applied entries]').toEqual(
+      gestures.map(([gesture]) => [gesture, 1]),
     )
   })
 })

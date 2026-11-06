@@ -4,9 +4,10 @@ description: Which customer details the admin's assistant sends to your AI provi
 ---
 
 The admin's assistant (**Ask** in the admin) answers by calling the store's tools and sending each result to the AI
-provider in `commerce.ai`, as the tool answered it. A result can hold customer details. The assistant is told to use a
-customer's details only when your question needs them, and each call's log line counts the emails, phones and
-addresses it sent, never their values.
+provider in `commerce.ai`. A result can hold customer details: by default their emails, phones, street lines and
+postcodes reach the provider as placeholders (see [Masking](#masking)). The assistant is told to use a customer's
+details only when your question needs them, and each call's log line counts the emails, phones and addresses the
+result held, never their values.
 
 ## The tools that send customer details
 
@@ -35,6 +36,43 @@ With `agents.assistant.customerData: false` the assistant is not offered any too
 results reaches the provider. It still reads products, stock and categories; a question that needs a customer, an
 order list or the inbox is one it cannot answer. The default is `true`.
 
+## Masking
+
+`agents.assistant.mask` lists the customer fields the provider reads as placeholders: any of `email`, `phone`,
+`address` (street lines), `postcode` and `name` (first and last names).
+
+```ts
+agents: {
+  assistant: { mask: ['email', 'phone', 'address', 'postcode', 'name'] },
+},
+```
+
+The default is `['email', 'phone', 'address', 'postcode']`: names are sent. City, region, country, company and
+everything else a tool answers are always sent, so the assistant can still count orders by city or country.
+
+Within one question, each value becomes a placeholder such as `[email-1]` or `[postcode-2]`, the same value always the
+same placeholder. When the model copies a placeholder into a tool call, the store receives the real value, so a search
+by a customer's email still works; when it copies one into its answer, you see the real value. Placeholders live only
+in that question's memory: no log line, stored record or proposal holds one.
+
+Details you type in a question are caught in free text by pattern: emails, and phone numbers starting with `+`, `(` or
+`0` (`+44 7700 900123`, `(555) 123-4567`). A US-style `555-123-4567` without one of those is a miss and is sent as
+typed. A spaced product code of 10 to 15 digits starting with 0, such as `012345 678905`, is a false positive: it is
+masked as a phone and restored in calls and the answer. Postcodes, street lines and names in free text (a question, a
+note, a review) are masked only once a field has shown them in the turn.
+
+On a follow-up, the admin sends each earlier answer back with the places where it showed a customer's value, so the
+details an earlier answer showed are masked again rather than sent as you see them. Text written like a placeholder,
+in a question or anywhere in the store's data, reaches the model as `[email 1]`, so it can never be revealed as a
+customer's value.
+
+Masking has an accuracy cost: the model cannot reason over what it cannot read (a phone number's country, which
+postcodes share an area), and a model that rewrites a placeholder shows it as text. Set `mask: []` to send every field
+as the tool answered it, for example with a model on your own server.
+
+`nymbal doctor` prints an `ai host` line naming the host the assistant sends to, whether it is this machine, your
+network or remote, and which customer fields are masked there.
+
 ## Your provider's terms
 
 What the provider keeps, for how long, and whether it trains on it are the provider's terms, not Nymbal's:
@@ -50,8 +88,9 @@ What the provider keeps, for how long, and whether it trains on it are the provi
 A paragraph you can adapt:
 
 > We use an AI service, [provider], to help our staff manage the store. When a member of staff asks it about an order
-> or a customer, the order or customer details it needs (such as a name, email address, phone number or delivery
-> address) are sent to [provider] to answer that question. [Provider] processes them under its terms for business
+> or a customer, the order or customer details it needs are sent to [provider] to answer that question. Email
+> addresses, phone numbers, street addresses and postcodes are replaced with placeholders before they are sent; a
+> name, a city and a country may be sent as they are. [Provider] processes them under its terms for business
 > customers: [link].
 
 ## A model on your own server

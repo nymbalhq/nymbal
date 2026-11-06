@@ -2,8 +2,9 @@ import { randomUUID } from 'node:crypto'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import fc from 'fast-check'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { AdapterError, ConfigError, type SearchDocument, type SearchResult } from '@nymbalhq/types'
+import { fakeTimeBounds, until } from '../../../../../tests/support/fake-clock'
 import { createAlgoliaSearchAdapter } from './index.js'
 import {
   QUERY_LIMIT_BYTES,
@@ -229,21 +230,30 @@ describe('AC-4: a slow or failing Algolia', () => {
 
   it('AC-4: against an Algolia that never answers, a search and an index each reject with an AdapterError at the 5 s timeout, inside the contract bound of 6 s', async () => {
     const silent = await startSilentServer()
+    const realClock = fakeTimeBounds()
     try {
       const adapter = await adapterOn(algoliaConfig(silent.host), { initialize: false })
-      const outcomes = await Promise.all([
+      let outcomes: Outcome[] | undefined
+      void Promise.all([
         outcome(() => adapter.search('anything', { limit: 1 })),
         outcome(() => adapter.index([productDoc('hung-1', { name: 'Hung' })])),
-      ])
-      for (const o of outcomes) {
+      ]).then((o) => (outcomes = o))
+      await until(() => silent.requests() === 2, 'Algolia never took both requests')
+
+      // Far past the bound: a bound twice as long still fires, and its ms says so.
+      await vi.advanceTimersByTimeAsync(60_000)
+      await until(() => outcomes !== undefined, 'the search and the index never settled')
+
+      for (const o of outcomes!) {
         expect(o.error).toBeInstanceOf(AdapterError)
         expect(o.ms).toBeGreaterThanOrEqual(4_500)
         expect(o.ms).toBeLessThan(6_000)
       }
     } finally {
+      realClock()
       await silent.close()
     }
-  }, 20_000)
+  })
 
   it("AC-4: property: an HTTP error from Algolia is an AdapterError naming its status and Algolia's message, and the API key is nowhere in it", async () => {
     const guarded = await startFakeAlgolia({ apiKey: 'the-right-key' })

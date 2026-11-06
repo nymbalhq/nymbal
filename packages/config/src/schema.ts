@@ -586,6 +586,11 @@ export const DEFAULT_AGENT_CRAWLERS: readonly string[] = Object.freeze([
 
 const CRAWL_OTHERS = ['allow', 'disallow'] as const
 
+/** The customer fields the admin's assistant can send to its AI provider as placeholders (`[email-1]`). */
+export const ASSISTANT_MASK_FIELDS = ['email', 'phone', 'address', 'postcode', 'name'] as const
+export type AssistantMaskField = (typeof ASSISTANT_MASK_FIELDS)[number]
+export const DEFAULT_ASSISTANT_MASK = ['email', 'phone', 'address', 'postcode'] as const
+
 /** The link types the Agentic Commerce Protocol (2026-04-17) names for a session's `links`. */
 export const ACP_LINK_TYPES = [
   'terms_of_use',
@@ -687,6 +692,11 @@ export const agentsSchema = z
       .object({
         /** false keeps every tool that answers a customer's email, phone or address off the admin's assistant. */
         customerData: z.boolean().default(true),
+        /** The fields sent as placeholders; [] sends them as they are. */
+        mask: z
+          .array(z.enum(ASSISTANT_MASK_FIELDS))
+          .transform((fields) => [...new Set(fields)])
+          .default(() => [...DEFAULT_ASSISTANT_MASK]),
       })
       .strict()
       .prefault({}),

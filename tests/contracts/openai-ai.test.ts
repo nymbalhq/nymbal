@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto'
+import fc from 'fast-check'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { adapterContext, runAiContract, type AiFailureMode } from '@nymbalhq/contract-tests'
 import type { AiAdapter, Logger } from '@nymbalhq/types'
-import { createAdapter } from '../../packages/adapters/ai/openai/src/index.js'
+import { createAdapter, DEFAULT_BASE_URL } from '../../packages/adapters/ai/openai/src/index.js'
 import {
   contentText,
   LOOKUP_PRICE,
@@ -500,5 +501,27 @@ describe('AC-9: the OpenAI request shape', () => {
       name: 'ConfigError',
       message: expect.stringContaining('commerce.ai.config.model'),
     })
+  })
+})
+
+describe('AC-11: the adapter says where its requests go', () => {
+  it("AC-11: property: endpoint is the baseUrl the block gives, OpenAI's DEFAULT_BASE_URL when it gives none or an empty one, and never holds the key", async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.oneof(
+          fc.webUrl({ withQueryParameters: false, withFragments: false }),
+          fc.constantFrom(undefined, ''),
+        ),
+        fc.stringMatching(/^[A-Za-z0-9_-]{24,48}$/),
+        async (baseUrl, secret) => {
+          const key = `sk-${secret}`
+          const adapter = await build({ apiKey: key, ...(baseUrl !== undefined && { baseUrl }) })
+
+          expect(adapter.endpoint).toBe(baseUrl === undefined || baseUrl === '' ? DEFAULT_BASE_URL : baseUrl)
+          expect(String(adapter.endpoint).includes(key)).toBe(false)
+        },
+      ),
+      { numRuns: 50 },
+    )
   })
 })

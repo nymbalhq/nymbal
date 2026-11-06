@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type * as Clack from '@clack/prompts'
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest'
 import { main } from '../src/index.js'
 
 // AC-12: create-app writes `.env` with the admin email and a random password before it seeds, passes both to the seed
@@ -77,7 +77,7 @@ const saved = {
   ua: process.env['npm_config_user_agent'],
   password: process.env['NYMBAL_ADMIN_PASSWORD'],
 }
-let stdoutSpy: ReturnType<typeof vi.spyOn>
+let stdoutSpy: MockInstance<typeof process.stdout.write>
 
 beforeEach(() => {
   printed.text.length = 0

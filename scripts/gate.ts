@@ -148,6 +148,10 @@ const ROOT_CONFIG_FILES = new Set([
   'vitest.stryker.config.ts',
 ])
 
+/** The mutation ratchets: each mutated file's best score, unit and integration. */
+export const RATCHET = 'mutation-ratchet.json'
+export const INTEGRATION_RATCHET = 'mutation-ratchet.integration.json'
+
 /**
  * The integration mutation run's config, test set and ratchet: only the tooling tests read them, and they import each
  * one, so a change selects those tests and no others. The unit Stryker run does not read them.
@@ -155,7 +159,7 @@ const ROOT_CONFIG_FILES = new Set([
 const INTEGRATION_MUTATION_FILES = new Set([
   'stryker.integration.config.mjs',
   'vitest.stryker.integration.config.ts',
-  'mutation-ratchet.integration.json',
+  INTEGRATION_RATCHET,
 ])
 
 function isConfiguration(path: string): boolean {
@@ -1016,6 +1020,7 @@ export async function mutateSet(
 const STRYKER_INPUTS = [
   'stryker.config.mjs',
   'vitest.stryker.config.ts',
+  'vitest.stryker.setup.ts',
   'packages/platform/src/**/*.test.ts',
   'packages/importers/tests/mappers/**/*.test.ts',
 ].map(globToRegExp)
@@ -1072,8 +1077,6 @@ export async function strykerTargets(
     [...new Set([...candidates, ...remeasured])].filter((path) => existsSync(resolve(root, path))),
   )
 }
-
-const RATCHET = 'mutation-ratchet.json'
 
 function ratchetFiles(text: string): Record<string, unknown> {
   if (text.trim() === '') return {}
