@@ -848,14 +848,17 @@ function jobsRun(workflow: Workflow, github: Ctx): string[] {
 }
 
 describe('AC-8: a dispatch runs every job with a real base', () => {
-  it('AC-8: a dispatch of ci.yml takes select (all or auto, auto by default) and is refused without a base', () => {
+  it('AC-8: a dispatch of ci.yml takes select (all or lighthouse, all by default) and is refused without a base', () => {
     const ci = loadWorkflow(WORKFLOW)
     const base = sha('9')
-    expect(dispatchInputs(ci, { base })).toEqual({ select: 'auto', base })
-    expect(dispatchInputs(ci, { select: 'all', base })).toEqual({ select: 'all', base })
+    expect(dispatchInputs(ci, { base })).toEqual({ select: 'all', base })
+    expect(dispatchInputs(ci, { select: 'lighthouse', base })).toEqual({
+      select: 'lighthouse',
+      base,
+    })
     expect(() => dispatchInputs(ci, { select: 'all' })).toThrow('base is required')
-    expect(() => dispatchInputs(ci, { select: 'some', base })).toThrow(
-      'select: some is not one of all, auto',
+    expect(() => dispatchInputs(ci, { select: 'auto', base })).toThrow(
+      'select: auto is not one of all, lighthouse',
     )
   })
 
@@ -864,6 +867,29 @@ describe('AC-8: a dispatch runs every job with a real base', () => {
     const onPush = jobsRun(ci, DEV_PUSH)
     expect(onPush.length, 'jobs that run on a push to dev').toBeGreaterThan(10)
     expect(jobsRun(ci, DEV_DISPATCH)).toEqual(onPush)
+  })
+})
+
+// The release reads dev's push run at its candidate and dispatches only what a push leaves out: Lighthouse.
+describe('a select=lighthouse dispatch runs only what the push run at the same sha leaves out', () => {
+  it('only the build and the perf job run, and the perf job runs the Lighthouse suite and nothing a push already ran', () => {
+    const ci = loadWorkflow(WORKFLOW)
+    const lighthouse = {
+      ...DEV_DISPATCH,
+      event: { inputs: dispatchInputs(ci, { select: 'lighthouse', base: sha('9') }) },
+    }
+    expect(jobsRun(ci, lighthouse)).toEqual(['build', PERF_JOB])
+    const onPush = perfJobRuns(DEV_PUSH)
+    expect(perfJobRuns(lighthouse)).toEqual({
+      bytes: 0,
+      lighthouse: onPush.lighthouse + 1,
+      prod: 0,
+      isr: 0,
+    })
+    const perfScripts = execute(ci, lighthouse)
+      .filter((r) => r.job === PERF_JOB)
+      .map((r) => r.script)
+    expect(perfScripts.filter((s) => /playwright/.test(s))).toEqual([])
   })
 })
 
@@ -1211,6 +1237,7 @@ describe('perf:budgets takes the median of at least five Lighthouse runs a page'
       github: DEV_DISPATCH,
       lighthouse: true,
     },
+
     ...NIGHTLY_EVENTS.map((e) => ({
       label: `nightly.yml on ${e.label}`,
       file: NIGHTLY,
