@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { v7 as uuidv7 } from 'uuid'
-import type { OrderLineItem, OrderStatus } from '@nymbalhq/types'
+import type { Address, OrderLineItem, OrderStatus } from '@nymbalhq/types'
 import { address, type Kernel } from './kernel.js'
 import { unaudited } from './write-audit.js'
 
@@ -12,6 +12,10 @@ export interface OrderSpec {
   createdAt?: Date
   customerId?: string | null
   email?: string
+  /** The kernel's `address` when absent. */
+  shippingAddress?: Address
+  billingAddress?: Address
+  orderNumber?: string
 }
 
 export interface WrittenOrder {
@@ -45,7 +49,7 @@ export async function insertOrders(
 ): Promise<WrittenOrder[]> {
   const written = specs.map((spec) => ({
     id: uuidv7(),
-    orderNumber: `LIST-${randomUUID().slice(0, 12)}`,
+    orderNumber: spec.orderNumber ?? `LIST-${randomUUID().slice(0, 12)}`,
     status: spec.status,
     createdAt: spec.createdAt ?? new Date(),
   }))
@@ -62,8 +66,8 @@ export async function insertOrders(
           customerId: spec.customerId ?? null,
           status: spec.status,
           email: spec.email ?? `buyer-${randomUUID()}@listed.test`,
-          billingAddress: address,
-          shippingAddress: address,
+          billingAddress: spec.billingAddress ?? address,
+          shippingAddress: spec.shippingAddress ?? address,
           lineItems,
           subtotalMinor: 1200,
           taxTotalMinor: 0,

@@ -25,7 +25,7 @@ import { getCliVersion } from '../utils/version.js'
 import { resolveMigrations, resolvePackageDir } from './migrate.js'
 
 /** Three misses allowed. */
-const DEFAULT_THRESHOLD = 22
+const DEFAULT_THRESHOLD = 24
 /** The admin of the throwaway store, so the seed does not announce dev credentials. */
 const EVAL_ADMIN = 'eval@nymbal.local'
 

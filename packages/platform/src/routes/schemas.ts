@@ -50,6 +50,13 @@ export interface RouteSchema {
   destructive?: true
   /** Kept from one agent surface while the others keep the tool: `assistant: false` is not offered to Ask. */
   agents?: { assistant?: false }
+  /**
+   * The admin's assistant sends each of the answer's `items` to the model as this record's summary
+   * (`assistant/summary.ts`); every other reader gets the items whole.
+   */
+  summary?: 'order' | 'product'
+  /** The answer names orders or customers the admin's assistant shows a card of, read by the admin from the store. */
+  record?: 'order' | 'customer'
 }
 
 /** A customer field a route's answer can carry. */
@@ -79,7 +86,16 @@ const dateFrom = z.union([z.iso.date(), isoDateTime])
 /** A date-only upper bound reaches the day's last millisecond, so dateFrom=dateTo=D is all of D. */
 const dateTo = z.union([z.iso.date().transform((d) => `${d}T23:59:59.999Z`), isoDateTime])
 const DATE_BOUND =
-  'An ISO date (a whole UTC day) or date-time with Z or an offset; orders placed on or after dateFrom and on or before dateTo (dateFrom=dateTo=2026-11-01 is all of 1 November, UTC).'
+  'An ISO date (a whole UTC day) or a date-time with seconds and Z or an offset (2026-11-01T09:00:00Z, 2026-11-01T09:00:00+02:00); orders placed on or after dateFrom and on or before dateTo (dateFrom=dateTo=2026-11-01 is all of 1 November, UTC).'
+/** A shipping postcode's start: something other than spaces. */
+const postcodePrefix = z
+  .string()
+  .refine((value) => value.replaceAll(' ', '') !== '', 'postcode needs more than spaces')
+/** A two-letter ISO country code in any case, answered upper-cased; UK is read as GB. */
+const countryCode = z
+  .string()
+  .regex(/^[A-Za-z]{2}$/, 'country takes a two-letter ISO code')
+  .transform((code) => (code.toUpperCase() === 'UK' ? 'GB' : code.toUpperCase()))
 /** A detail read as the event log folds it at `at`. */
 const asOfQuery = z.object({ at: queryValue })
 const historyQuery = z.object({ cursor: queryValue, limit: queryValue })
@@ -441,8 +457,10 @@ export const routeSchemas: Record<string, RouteSchema> = {
   'GET /api/admin/orders': {
     name: 'admin.orders.list',
     personal: ALL_PERSONAL,
+    summary: 'order',
+    record: 'order',
     description:
-      'List orders, newest first (50 by default, at most 200; page with offset). Each order carries its number, status, email, addresses, totalMinor, capturedMinor and refundedMinor.',
+      'List orders, newest first (50 by default, at most 200; page with offset), with total, the number of orders every filter matches. Each order carries its number, status, email, addresses, totalMinor, capturedMinor and refundedMinor.',
     query: z.object({
       status: orderStatus
         .describe(
@@ -455,14 +473,25 @@ export const routeSchemas: Record<string, RouteSchema> = {
         'A customer id or an email (also finds orders placed as a guest with that email).',
       ),
       q: queryValue.describe(
-        'Part of the order number or the email only; names, postcodes and products are not searched.',
+        'Part of the order number or the email only; for a postcode use postcode, for a country use country; names and products are not searched.',
       ),
+      postcode: postcodePrefix
+        .describe(
+          'The start of the shipping postcode, case and spaces ignored: SW1 matches SW1A 1AA and SW1V 3LP (and SW10 to SW19); send the letter too (SW1A) to narrow.',
+        )
+        .optional(),
+      country: countryCode
+        .describe(
+          'The shipping country as a two-letter ISO code: GB for the United Kingdom, DE for Germany, US for the United States.',
+        )
+        .optional(),
       ...pagingOf(50, 200),
     }),
   },
   'GET /api/admin/orders/:orderNumber': {
     name: 'admin.orders.get',
     personal: ALL_PERSONAL,
+    record: 'order',
     description:
       'Get one order with its status history; with `at`, the order as the event log folds it at that time.',
     params: orderNumberParams,
@@ -566,6 +595,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   // Admin: products
   'GET /api/admin/products': {
     name: 'admin.products.list',
+    summary: 'product',
     description: 'List products, filtered by status or name.',
     query: z.object({
       status: productStatus.describe('draft, active or archived.').optional(),
@@ -690,12 +720,14 @@ export const routeSchemas: Record<string, RouteSchema> = {
   'GET /api/admin/customers': {
     name: 'admin.customers.list',
     personal: ALL_PERSONAL,
+    record: 'customer',
     description: 'List customers, filtered and sorted.',
     query: z.object({ q: queryValue, sort: queryValue, ...paging }),
   },
   'GET /api/admin/customers/:id': {
     name: 'admin.customers.get',
     personal: ALL_PERSONAL,
+    record: 'customer',
     description:
       'Get one customer with order statistics; with `at`, the customer as the event log folds it at that time.',
     params: idParams,
@@ -711,6 +743,8 @@ export const routeSchemas: Record<string, RouteSchema> = {
   'GET /api/admin/customers/:id/orders': {
     name: 'admin.customers.orders',
     personal: ALL_PERSONAL,
+    summary: 'order',
+    record: 'order',
     description:
       'List the orders a customer placed while signed in. Orders placed as a guest with the same email are not here: find them with admin_orders_list customer=<email>.',
     params: idParams,

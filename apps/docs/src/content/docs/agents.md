@@ -28,6 +28,12 @@ NYMBAL_MCP_URL=http://localhost:8080/api/mcp npx nymbal mcp tools
 The [quickstart](../quickstart/#3-connect-an-agent) shows a host's config. A request from a browser origin outside
 `http.cors.allowedOrigins` is refused.
 
+A tool whose route answers a list answers `{ items }` with the route's paging beside them: `admin_orders_list`
+answers `total`, the number of orders every filter matches, and `admin_activity_list` and `orders_list` answer
+`nextCursor`. `admin_orders_list` filters by `postcode`, the start of the shipping postcode with case and spaces
+ignored (`SW1` matches `SW1A 1AA` and `SW10 9AB`), and by `country`, the shipping country's two-letter ISO code (`UK`
+is read as `GB`); a store whose orders hold country names instead of codes, as an import may leave them, matches none.
+
 ### Customer details agents are not sent
 
 An admin agent's tool results carry no customer email, phone, street line or postcode, over `POST /api/mcp` and

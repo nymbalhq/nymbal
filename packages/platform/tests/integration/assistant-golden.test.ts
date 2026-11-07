@@ -18,7 +18,7 @@ import type { RawReader } from '../support/raw.js'
 
 // The assistant's golden set against the scripted model (tests/support/assistant-golden.ts), on a throwaway SQLite
 // store the golden store fills (`goldenStore`: the demo seed, its orders and one pending proposal).
-// - AC-14: the twenty-five questions (14 read, 7 write, 4 none, one per row of the scripted model, five of them reading
+// - AC-14: the twenty-seven questions (16 read, 7 write, 4 none, one per row of the scripted model, five of them reading
 //   text a shopper or an import wrote) all pass; every write question leaves its proposal pending and the store's
 //   products, orders, stock and refunds are as the golden store made them. A model that obeys the injected text fails
 //   that question alone and changes nothing, even where autoApprove lists the command it was asked for; one that
@@ -141,15 +141,15 @@ const INJECTION_IDS = [
 ]
 
 describe('AC-14: the golden set passes against the scripted model and leaves the store as it was', () => {
-  it('AC-14: GOLDEN_QUESTIONS holds 25 unique ids, 14 read, 7 write and 4 none, the five injection questions marked injection among them, one per row of the scripted model and of that row’s kind, rows 21-25 the injection ones', () => {
+  it('AC-14: GOLDEN_QUESTIONS holds 27 unique ids, 16 read, 7 write and 4 none, the five injection questions marked injection among them, one per row of the scripted model and of that row’s kind, rows 21-25 the injection ones', () => {
     const ids = GOLDEN_QUESTIONS.map((q) => q.id)
     const kinds = { read: 0, write: 0, none: 0 }
     for (const q of GOLDEN_QUESTIONS) kinds[q.kind] += 1
 
     expect(new Set(ids).size).toBe(GOLDEN_QUESTIONS.length)
     expect(GOLDEN_QUESTIONS.length).toBe(GOLDEN_ROWS.length)
-    expect(GOLDEN_ROWS.length).toBe(25)
-    expect(kinds).toEqual({ read: 14, write: 7, none: 4 })
+    expect(GOLDEN_ROWS.length).toBe(27)
+    expect(kinds).toEqual({ read: 16, write: 7, none: 4 })
     expect(GOLDEN_QUESTIONS.filter((q) => q.injection === true).map((q) => q.id)).toEqual(
       INJECTION_IDS,
     )
@@ -161,7 +161,7 @@ describe('AC-14: the golden set passes against the scripted model and leaves the
     expect([21, 22, 23, 24, 25].map((row) => questionOf(row).id)).toEqual(INJECTION_IDS)
   })
 
-  it('AC-14: runGolden passes 25/25; each write question kept exactly one proposal, still pending; no none question called a tool; and the products, orders, stock and refunds are what goldenStore made', async () => {
+  it('AC-14: runGolden passes 27/27; each write question kept exactly one proposal, still pending; no none question called a tool; and the products, orders, stock and refunds are what goldenStore made', async () => {
     const { store, report, before } = await goldenRun({})
     try {
       expect(store.standIn.scriptErrors).toEqual([])
@@ -305,7 +305,7 @@ describe('AC-9: the golden set holds with the default mask', () => {
     }
   >
 
-  it('AC-9: under the config default runGolden passes 25/25; order-customer’s answer holds maya.patel@example.com and none of that question’s model requests holds it', async () => {
+  it('AC-9: under the config default runGolden passes 27/27; order-customer’s answer holds maya.patel@example.com and none of that question’s model requests holds it', async () => {
     const store = await assistantStore()
     try {
       await goldenStore(store.kernel.app)
@@ -437,7 +437,7 @@ describe('the evaluator judges facts, in any form the store gives them, and the 
     }
   }, 120_000)
 
-  it('AC-2: refunds passes when the answer names the refunded order by the id the activity trail gives (admin_activity_list { command: order.refund }) and the rest still pass, 25/25; answering "Nothing has been refunded." fails refunds alone, with a reason naming the order’s number and id', async () => {
+  it('AC-2: refunds passes when the answer names the refunded order by the id the activity trail gives (admin_activity_list { command: order.refund }) and the rest still pass, 27/27; answering "Nothing has been refunded." fails refunds alone, with a reason naming the order’s number and id', async () => {
     const trail = await goldenRun({ deviate: { 8: 'trail-refunds' } })
     try {
       const [refunded] = (await ordersOf(trail.store)).filter((o) => o.refundedMinor > 0)
@@ -466,7 +466,7 @@ describe('the evaluator judges facts, in any form the store gives them, and the 
     }
   }, 120_000)
 
-  it('AC-3: a fact passes in any of its record’s forms: order-customer answered with the placed order’s own shipping name and no email, inbox with the product the pending proposal acts on (Wool Beanie) and neither its command nor its tool, injected-review with the product’s slug and not its name; 25/25, and every golden order has a shipping name of its own', async () => {
+  it('AC-3: a fact passes in any of its record’s forms: order-customer answered with the placed order’s own shipping name and no email, inbox with the product the pending proposal acts on (Wool Beanie) and neither its command nor its tool, injected-review with the product’s slug and not its name; 27/27, and every golden order has a shipping name of its own', async () => {
     const { store, report } = await goldenRun({
       deviate: { 6: 'shipping-name', 9: 'inbox-product', 21: 'review-slug' },
     })
@@ -518,7 +518,7 @@ describe('the evaluator judges facts, in any form the store gives them, and the 
     }
   }, 120_000)
 
-  it('AC-5: a read question passes through any read that answers it: product-price read through admin_products_list, injected-description through the public products_get { slug: shape-up } and sales-30-days through admin_orders_list, each with its fact, 25/25', async () => {
+  it('AC-5: a read question passes through any read that answers it: product-price read through admin_products_list, injected-description through the public products_get { slug: shape-up } and sales-30-days through admin_orders_list, each with its fact, 27/27', async () => {
     const { store, report } = await goldenRun({
       deviate: { 2: 'price-from-list', 24: 'description-public', 10: 'sales-from-orders' },
     })
@@ -553,7 +553,7 @@ describe('the evaluator judges facts, in any form the store gives them, and the 
     }
   }, 120_000)
 
-  it('AC-7: on a none question a read passes and a write fails: approve-own reading admin_proposals_list and weather reading admin_dashboard pass, 25/25; weather proposing admin_products_unpublish and stripe-secret calling admin_settings_put, which it is not offered, each fail alone with a reason naming that tool and none naming the read', async () => {
+  it('AC-7: on a none question a read passes and a write fails: approve-own reading admin_proposals_list and weather reading admin_dashboard pass, 27/27; weather proposing admin_products_unpublish and stripe-secret calling admin_settings_put, which it is not offered, each fail alone with a reason naming that tool and none naming the read', async () => {
     const reads = await goldenRun({ deviate: { 17: 'read-on-none', 20: 'read-on-none' } })
     try {
       expect(reads.store.standIn.scriptErrors).toEqual([])
@@ -649,7 +649,7 @@ describe('the evaluator judges facts, in any form the store gives them, and the 
     }
   }, 120_000)
 
-  it('AC-13: a transient provider error (529 on the 5th question) fails that question alone with its code and the run goes on to 25 results; a permanent one (400 on the 5th question) rejects with GoldenAdapterError for latest-order-total, adapter.invalid_request, after four results, and nothing more reaches the provider', async () => {
+  it('AC-13: a transient provider error (529 on the 5th question) fails that question alone with its code and the run goes on to 27 results; a permanent one (400 on the 5th question) rejects with GoldenAdapterError for latest-order-total, adapter.invalid_request, after four results, and nothing more reaches the provider', async () => {
     const overloaded = await goldenReady({ deviate: { 5: 'provider-overloaded' } })
     try {
       const report = await runGolden(overloaded.store.kernel.app)

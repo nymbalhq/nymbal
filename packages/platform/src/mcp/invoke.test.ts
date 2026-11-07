@@ -186,15 +186,19 @@ describe('AC-3: a read tool answers what its route answers', () => {
     expect(contentOf(got).text).toEqual(detail.data)
   })
 
-  it('AC-3: a route whose data is an array answers structuredContent { items }: admin_activity_list carries the entries GET /api/admin/activity answers, and a text block that parses to the same', async () => {
+  it('AC-3: a route whose data is an array answers structuredContent { items, ...meta }: admin_activity_list carries the entries GET /api/admin/activity answers and its nextCursor, and a text block that parses to the same', async () => {
     const store = proposal
     const route = await httpData(store, '/api/admin/activity', store.admin.token)
+    const meta = (JSON.parse(route.text) as { meta?: Record<string, unknown> }).meta
     const listed = await store.tools.call('admin_activity_list', {}, store.admin.caller)
 
     expect(route.status).toBe(200)
     expect(Array.isArray(route.data)).toBe(true)
     expect(listed.isError ?? false).toBe(false)
-    expect(listed.structuredContent).toEqual({ items: route.data })
+    expect(listed.structuredContent).toEqual({
+      items: route.data,
+      nextCursor: meta?.['nextCursor'],
+    })
     expect(contentOf(listed).text).toEqual(listed.structuredContent)
   })
 
@@ -827,7 +831,7 @@ describe('AC-4: an admin-scope tool’s result withholds customer fields, and no
       )
       seen.push({
         orders: orders.structuredContent,
-        ordersRoute: structuredOfRoute((await httpData(store, '/api/orders', own.token)).data),
+        ordersRoute: structuredOfRoute(await httpData(store, '/api/orders', own.token)),
         ordersHold: heldBy(orders, [own.email, customer.details.street, customer.details.postcode]),
         me: me.structuredContent,
         meRoute: (await httpData(store, '/api/customers/me', own.token)).data,
@@ -886,7 +890,8 @@ describe('AC-4: an admin-scope tool’s result withholds customer fields, and no
   })
 })
 
-/** A route's data as a tool answers it: an array becomes `{ items }`. */
-function structuredOfRoute(data: unknown): unknown {
-  return Array.isArray(data) ? { items: data } : data
+/** A route's answer as a tool answers it: an array becomes `{ items }`, its meta (a `nextCursor`) beside them. */
+function structuredOfRoute(answer: { data: unknown; text: string }): unknown {
+  const { meta } = JSON.parse(answer.text) as { meta?: Record<string, unknown> }
+  return Array.isArray(answer.data) ? { ...meta, items: answer.data } : answer.data
 }

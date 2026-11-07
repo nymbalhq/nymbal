@@ -57,7 +57,8 @@ const tool = (
 
 const GET = tool('admin_customers_get', 'GET', '/api/admin/customers/:id')
 const SEARCH = tool('admin_customers_list', 'GET', '/api/admin/customers')
-const ORDERS = tool('admin_orders_list', 'GET', '/api/admin/orders')
+// The long list is the admin search, a list the loop sends whole: the orders list reaches the model as summaries.
+const ORDERS = tool('admin_search', 'GET', '/api/admin/search')
 const ORDER = tool('admin_orders_get', 'GET', '/api/admin/orders/:id')
 const REVIEWS = tool('admin_reviews_pending', 'GET', '/api/admin/reviews')
 const UPDATE = tool('admin_products_update', 'PATCH', '/api/admin/products/:id', 'command')

@@ -3,6 +3,7 @@ import {
   NymbalError,
   type AiAdapter,
   type AssistantFrame,
+  type AssistantRecord,
   type Caller,
   type ChatMessage,
   type ChatOptions,
@@ -10,12 +11,14 @@ import {
   type ChatStreamEvent,
   type ChatTool,
   type Logger,
+  type Order,
+  type ProductSnapshot,
   type ToolDefinition,
   type ToolCallOptions,
   type ToolResult,
   type ToolSurface,
 } from '@nymbalhq/types'
-import { routeSchemas } from '../routes/schemas.js'
+import { routeSchemas, type RouteSchema } from '../routes/schemas.js'
 import type { ProposalService } from '../services/proposal-service.js'
 import {
   createTurnMask,
@@ -24,6 +27,7 @@ import {
   type MaskField,
   type RevealedSpan,
 } from './mask.js'
+import { orderSummary, productSummary } from './summary.js'
 
 /** The agent name every tool call, proposal and audit entry of the assistant carries. */
 export const ASSISTANT_AGENT = 'nymbal-assistant'
@@ -37,6 +41,8 @@ const RESULT_BUDGET_CHARS = 64_000
 export const MAX_WRITES_PER_TURN = 10
 /** Deletions, archives, cancellations and refunds past this many in one turn are refused, not run or proposed. */
 export const MAX_DESTRUCTIVE_PER_TURN = 3
+/** Record frames past this many in one turn are not sent; a list longer than this sends none. */
+export const MAX_RECORDS_PER_TURN = 5
 /** A tool name the log may carry: any other name the model asks for is its own text. */
 const TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/
 
@@ -273,6 +279,44 @@ function cut(result: ToolResult, max: number): string {
   return `${text.slice(0, max)}\n[cut: ${text.length - max} of ${text.length} characters not shown]`
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** A list result with each of its `items` replaced by its summary; every other key kept. */
+function summarised(result: ToolResult, kind: NonNullable<RouteSchema['summary']>): ToolResult {
+  const structured = result.structuredContent
+  const items = structured?.['items']
+  if (structured === undefined || !Array.isArray(items)) return result
+  const shape = (item: Record<string, unknown>) =>
+    kind === 'order'
+      ? orderSummary(item as unknown as Order)
+      : productSummary(item as unknown as ProductSnapshot)
+  const next = { ...structured, items: items.map((item) => (isRecord(item) ? shape(item) : item)) }
+  return { ...result, content: [{ type: 'text', text: JSON.stringify(next) }], structuredContent: next }
+}
+
+/**
+ * The orders or customers a successful read answered, as the route's `record` mark reads them: a detail's own number
+ * or id, or each item's of a list holding at most MAX_RECORDS_PER_TURN; an empty or missing value names none.
+ */
+function recordsOf(
+  kind: NonNullable<RouteSchema['record']>,
+  structured: Record<string, unknown>,
+): AssistantRecord[] {
+  const list = kind === 'order' ? structured['items'] : structured['customers']
+  const read = Array.isArray(list)
+    ? list.length <= MAX_RECORDS_PER_TURN
+      ? list
+      : []
+    : [kind === 'order' ? structured : structured['customer']]
+  return read.flatMap((item): AssistantRecord[] => {
+    const value = isRecord(item) ? item[kind === 'order' ? 'orderNumber' : 'id'] : undefined
+    if (typeof value !== 'string' || value === '') return []
+    return [kind === 'order' ? { kind, orderNumber: value } : { kind, id: value }]
+  })
+}
+
 const UNKNOWN_PLACEHOLDER =
   'A placeholder in the arguments stands for no value of this turn: copy it exactly as a tool result gave it'
 
@@ -362,6 +406,8 @@ export async function runAssistantTurn(
   // An earlier answer may quote a tool result, so a follow-up's first reply may already obey store data.
   const quotesStoreData = turn.messages.some((m) => m.role === 'assistant')
   const proposals: string[] = []
+  /** `<kind>:<number or id>` of each record frame sent this turn. */
+  const recorded = new Set<string>()
   let used = 0
   let steps = 0
   let calls = 0
@@ -469,10 +515,10 @@ export async function runAssistantTurn(
     const tool = byName.get(call.name)
     const paged = withParams !== undefined && call.name === PAGE_TOOL.name ? withParams : undefined
     const title = tool?.title ?? (paged === undefined ? call.name : PAGE_TITLE)
+    const entry =
+      tool === undefined ? undefined : routeSchemas[`${tool.route.method} ${tool.route.path}`]
     // Checked before the reply's own cap, whose text asks for the call again.
-    const isDestructive =
-      tool !== undefined &&
-      routeSchemas[`${tool.route.method} ${tool.route.path}`]?.destructive === true
+    const isDestructive = entry?.destructive === true
     if (isDestructive && destructive >= MAX_DESTRUCTIVE_PER_TURN) {
       return refuse(
         call.name,
@@ -551,7 +597,19 @@ export async function runAssistantTurn(
         },
       })
     }
-    const answered = toModel(result)
+    if (!isError && entry?.record !== undefined) {
+      for (const record of recordsOf(entry.record, structured)) {
+        if (recorded.size >= MAX_RECORDS_PER_TURN) break
+        const key = record.kind === 'order' ? `order:${record.orderNumber}` : `customer:${record.id}`
+        if (recorded.has(key)) continue
+        recorded.add(key)
+        emit({ event: 'record', data: record })
+      }
+    }
+    // Summarised before the mask, under the record's own key names, so the mask reads them as it reads the record.
+    const answered = toModel(
+      !isError && entry?.summary !== undefined ? summarised(result, entry.summary) : result,
+    )
     used += answered.content.length
     // Counted over the whole result: what the model is sent is at most this.
     return { ...answered, isError, fields: fieldsIn(structured) }

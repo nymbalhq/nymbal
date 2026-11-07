@@ -24,6 +24,8 @@ import { goldenScript } from '../../../support/assistant-golden'
 // - AC-13 (cards that show the change): the price and stock questions show pending cards naming what they act on and
 //   the value now beside the value proposed, in the panel and in the inbox, and change nothing.
 // - AC-14 (masking): the provider reads a fresh order's email as [email-1] and the admin sees the email itself.
+// - AC-12 (record cards): asking who placed a fresh order shows its card, filled from the admin API with the email,
+//   phone, street line and postcode the provider never received, its link opening the order's page.
 // - AC-22: Esc mid-answer stops the turn (the provider request closed, nothing after it) and the answer reads Stopped;
 //   on a store with no provider, Ask points to Settings and proposes nothing.
 
@@ -199,12 +201,13 @@ const mugPrice = async (request: APIRequestContext, base: string, token: string)
     )
   ).variants[0]!.priceMinor
 
-/** A guest order of one Stoneware Mug on the journey's store, placed with `email`: its order number. */
+/** A guest order of one Stoneware Mug on the journey's store, placed with `email` (and `shipping`): its order number. */
 async function placeOrderOn(
   request: APIRequestContext,
   base: string,
   token: string,
   email: string,
+  shipping: typeof SHIPPING_ADDRESS & { phone?: string } = SHIPPING_ADDRESS,
 ): Promise<string> {
   const mug = await getData<{ variants: Array<{ id: string }> }>(
     request,
@@ -219,7 +222,7 @@ async function placeOrderOn(
   expect(added.ok(), `POST /api/cart/items: ${await added.text()}`).toBe(true)
   const placed = await request.post(`${base}/api/checkout`, {
     headers: await csrf(request, base),
-    data: { email, billingAddress: SHIPPING_ADDRESS, shippingAddress: SHIPPING_ADDRESS },
+    data: { email, billingAddress: SHIPPING_ADDRESS, shippingAddress: shipping },
   })
   expect(placed.ok(), `POST /api/checkout: ${await placed.text()}`).toBe(true)
   return ((await placed.json()) as { data: { orderNumber: string } }).data.orderNumber
@@ -637,6 +640,50 @@ test.describe('the assistant in the admin palette', () => {
     expect(asked.length).toBe(2)
     expect(asked[1]).toContain('[email-1]')
     expect(asked.filter((body) => body.includes(email))).toEqual([])
+  })
+
+  test('AC-12: assistant.record-card: after an order placed with a fresh email, a shipping phone, street line and postcode, asking who placed it shows admin-assistant-record-order-<n> holding the email, phone, street line and postcode GET /api/admin/orders/<n> answers; its link opens /admin/orders/<n>; of that question’s provider requests none holds any of the four', async ({
+    browser,
+    request,
+  }) => {
+    test.setTimeout(90_000)
+    const tag = `${Date.now()}${Math.floor(Math.random() * 1e6)}`
+    const email = `card-${tag}@shoppers.test`
+    const shipping = {
+      ...SHIPPING_ADDRESS,
+      addressLine1: `${tag.slice(-4)} Rosemary Lane`,
+      postalCode: `SW${(Number(tag.slice(-1)) % 9) + 1}A ${tag.slice(-2, -1)}QX`,
+      phone: `+44 7700 9${tag.slice(-5)}`,
+    }
+    const orderNumber = await placeOrderOn(request, store.base, token, email, shipping)
+    const order = await getData<{
+      email: string
+      shippingAddress: { addressLine1: string; postalCode: string; phone?: string }
+    }>(request, store.base, token, `/api/admin/orders/${orderNumber}`)
+    const values = [
+      order.email,
+      order.shippingAddress.phone ?? '',
+      order.shippingAddress.addressLine1,
+      order.shippingAddress.postalCode,
+    ]
+    expect(values).toEqual([email, shipping.phone, shipping.addressLine1, shipping.postalCode])
+    const signed = await signedInContext(browser, store.base)
+    context = signed.context
+    const page = signed.page
+    await openAsk(page)
+    const sent = store.standIn.requests.length
+
+    await askQuestion(page, `Who placed order #${orderNumber}?`)
+    await expect(lastAnswer(page)).toHaveAttribute('data-state', 'done', { timeout: 15_000 })
+    const card = page.getByTestId(`admin-assistant-record-order-${orderNumber}`)
+    for (const value of values) await expect(card).toContainText(value, { timeout: 15_000 })
+
+    const asked = store.standIn.requests.slice(sent).map((r) => JSON.stringify(r.body))
+    expect(asked.length).toBe(2)
+    expect(values.filter((value) => asked.some((body) => body.includes(value)))).toEqual([])
+
+    await card.locator(`a[href$="/orders/${orderNumber}"]`).first().click()
+    await expect(page).toHaveURL(new RegExp(`/admin/orders/${orderNumber}$`))
   })
 })
 

@@ -81,6 +81,21 @@ as the tool answered it, for example with a model on your own server.
 `nymbal doctor` prints an `ai host` line naming the host the assistant sends to, whether it is this machine, your
 network or remote, and which customer fields are masked there.
 
+## List summaries and record cards
+
+The orders lists (`admin_orders_list`, `admin_customers_orders`) and the products list (`admin_products_list`) reach
+the provider as summaries: each order as its number, status, date, email, shipping first and last name, city,
+postcode and country, its totals and its number of items; each product as its id, slug, name, status and its
+variants' names, SKUs, prices and stock. Street lines, phones, notes and descriptions are left out. A summary keeps
+the order's own field names, so the mask applies to it as to the whole order: by default the email and postcode are
+placeholders and the names are sent. A page of 50 orders fits one result, and `total` tells the model how many orders
+matched.
+
+Under an answer, the admin shows a card for each order or customer the question read, at most five: the order's
+shipping name, email, phone, address, status and total, or the customer's details and order count. The admin reads
+each card from the store with your own session; the answer's stream names only the order number or customer id, and
+none of a card's content is sent to the provider.
+
 ## Agents over MCP
 
 An AI agent an admin connects over `POST /api/mcp` or `nymbal mcp` (Claude Desktop, ChatGPT, Cursor) is not masked

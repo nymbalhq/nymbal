@@ -68,10 +68,17 @@ function refusal(code: string, message: string): ToolResult {
   return resultOf({ code, message }, true)
 }
 
-/** MCP wants an object: an array answers `{ items }`, a bare value `{ value }`, nothing `{}`. */
-function structuredOf(data: unknown): Record<string, unknown> {
+/**
+ * MCP wants an object: an array answers `{ items }` with its `meta` beside them (a list's `total` or `nextCursor`), a
+ * bare value `{ value }`, nothing `{}`.
+ */
+function structuredOf(data: unknown, meta: unknown): Record<string, unknown> {
   if (data === undefined) return {}
-  if (Array.isArray(data)) return { items: data }
+  if (Array.isArray(data)) {
+    // The route's items are the data: a meta key named `items` never replaces them.
+    const { items: _, ...rest } = isRecord(meta) ? meta : {}
+    return { ...rest, items: data }
+  }
   return isRecord(data) ? { ...data } : { value: data }
 }
 
@@ -101,7 +108,7 @@ function resultOfEnvelope(envelope: ResponseEnvelope, entry: RouteSchema): ToolR
       true,
     )
   }
-  const structured = structuredOf(body['data'])
+  const structured = structuredOf(body['data'], body['meta'])
   for (const [argument, cookieName] of Object.entries(entry.handles ?? {})) {
     const set = envelope.cookies?.find((cookie) => cookie.name === cookieName)
     if (set !== undefined && set.value !== '') structured[`${argument}Handle`] = set.value

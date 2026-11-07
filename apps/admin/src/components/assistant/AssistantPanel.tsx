@@ -5,6 +5,7 @@ import { useAssistant, type AssistantExchange } from '@/hooks/useAssistant'
 import { useCommandPalette } from '@/hooks/useCommandPalette'
 import { tid } from '@/lib/testid'
 import { AssistantProposalCard } from './AssistantProposalCard'
+import { AssistantRecordCard } from './AssistantRecordCard'
 
 function Exchange({ exchange }: { exchange: AssistantExchange }) {
   const close = useCommandPalette((s) => s.close)
@@ -35,6 +36,12 @@ function Exchange({ exchange }: { exchange: AssistantExchange }) {
             <span className="font-mono">{step.title}</span>
             {step.code !== undefined && <span className="text-red-500">{step.code}</span>}
           </p>
+        ))}
+        {exchange.records.map((record) => (
+          <AssistantRecordCard
+            key={record.kind === 'order' ? `order:${record.orderNumber}` : `customer:${record.id}`}
+            record={record}
+          />
         ))}
         {exchange.proposals.map((proposal) => (
           <AssistantProposalCard key={proposal.id} proposal={proposal} />
@@ -96,7 +103,13 @@ export function AssistantPanel({
 
   useEffect(() => {
     end.current?.scrollIntoView({ block: 'end' })
-  }, [exchanges.length, last?.answer, last?.steps.length, last?.proposals.length])
+  }, [
+    exchanges.length,
+    last?.answer,
+    last?.steps.length,
+    last?.proposals.length,
+    last?.records.length,
+  ])
 
   useEffect(() => {
     if (!busy) input.current?.focus()
