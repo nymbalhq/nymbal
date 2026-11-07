@@ -443,7 +443,8 @@ export function shippingTrackingSuite(
         fc.asyncProperty(arbSpelling, arbSpelling, arbCarrier, async (shipped, sent, carrier) => {
           const n = freshNumber()
           const placed = await checkoutOf(k, stock, 1, `buyer-${randomUUID()}@tracking.test`)
-          if (placed.orderKey === undefined) throw new Error('a guest checkout answered no order key')
+          if (placed.orderKey === undefined)
+            throw new Error('a guest checkout answered no order key')
           const process = await admin.call(
             'POST',
             `/api/admin/orders/${placed.orderId}/process`,
@@ -504,17 +505,16 @@ export function shippingTrackingSuite(
 
     // ─── AC-3: every other update changes nothing ────────────────────────────────────────────────────────────
 
-    it(`AC-3: property: updates for a shipped order's N with any status but delivered, and delivered updates for an unknown number, for a processing, delivered, refunded or partially refunded order holding a shipment row, or for an order shipped before its row existed, each answer 200, leave every order's status and history unchanged, and no event is retried (${dialect})`, async () => {
+    it(`AC-3: property: updates for a shipped order's N with any status but delivered, and delivered updates for an unknown number, for a processing, delivered or refunded order holding a shipment row, or for an order shipped before its row existed, each answer 200, leave every order's status and history unchanged, and no event is retried (${dialect})`, async () => {
       const numbers = {
         shipped: freshNumber(),
         processing: freshNumber(),
         delivered: freshNumber(),
         refunded: freshNumber(),
-        partially_refunded: freshNumber(),
         preUpgrade: freshNumber(),
       }
       await shippedOrder(numbers.shipped)
-      for (const status of ['processing', 'delivered', 'refunded', 'partially_refunded'] as const) {
+      for (const status of ['processing', 'delivered', 'refunded'] as const) {
         const seeded = await seedOrder(status)
         await recordShipment(seeded.id, numbers[status])
       }
@@ -530,7 +530,6 @@ export function shippingTrackingSuite(
             'processing',
             'delivered',
             'refunded',
-            'partially_refunded',
             'preUpgrade',
             'unknown',
           ),
@@ -564,6 +563,78 @@ export function shippingTrackingSuite(
         { numRuns: options.propertyRuns * 2 },
       )
     }, 180_000)
+
+    // ─── A partly refunded order ─────────────────────────────────────────────────────────────────────────────
+
+    /** A checkout order the stub paid, moved to processing and shipped by the admin with `n`. */
+    async function paidAndShipped(n: string): Promise<{ id: string; captured: number }> {
+      const placed = await checkoutOf(k, stock, 1, `buyer-${randomUUID()}@tracking.test`)
+      expect(placed.orderStatus).toBe('confirmed')
+      const process = await admin.call('POST', `/api/admin/orders/${placed.orderId}/process`, {})
+      expect(answerOf(process), JSON.stringify(process.body)).toEqual([200, null])
+      const shipping = await ship(placed.orderId, n, 'Royal Mail')
+      expect(answerOf(shipping), JSON.stringify(shipping.body)).toEqual([200, null])
+      return { id: placed.orderId, captured: placed.totalMinor }
+    }
+
+    async function refundPart(order: { id: string; captured: number }): Promise<void> {
+      const res = await admin.call('POST', `/api/admin/orders/${order.id}/refund`, {
+        amountMinor: Math.max(1, Math.floor(order.captured / 3)),
+      })
+      expect(answerOf(res), JSON.stringify(res.body)).toEqual([200, null])
+      expect(await statusOf(order.id)).toBe('partially_refunded')
+    }
+
+    async function historyOf(orderId: string): Promise<HistoryRow[]> {
+      return raw.rows<HistoryRow>(
+        'SELECT from_status, to_status, actor, note FROM order_history WHERE order_id = ? ORDER BY timestamp, id',
+        [orderId],
+      )
+    }
+
+    it(`AC-6: a signed delivered update for N delivers an order shipped with N and then partly refunded: 200 { received: true, events: 1 }, the order delivered with one order.delivered and a delivered history row by ${TRACKING_ACTOR}; the same update for an order shipped with N, delivered and then partly refunded answers 200 and changes nothing, and no event is retried (${dialect})`, async () => {
+      const n = freshNumber()
+      const order = await paidAndShipped(n)
+      await refundPart(order)
+      await delivered()
+      const rowsBefore = await historyOf(order.id)
+
+      const answer = await send(shipDelivery({ id: freshId(), updates: [update(n, 'delivered')] }))
+      await delivered()
+
+      expect([answer.status, answer.data], JSON.stringify(answer.body)).toEqual([
+        200,
+        { received: true, events: 1 },
+      ])
+      expect(await statusOf(order.id)).toBe('delivered')
+      expect((await orderEvents(order.id, EVT_ORDER_DELIVERED)).length).toBe(1)
+      const rowsAfter = await historyOf(order.id)
+      expect(rowsAfter.slice(0, rowsBefore.length)).toEqual(rowsBefore)
+      expect(
+        rowsAfter.slice(rowsBefore.length).map((r) => [r.from_status, r.to_status, r.actor]),
+      ).toEqual([['partially_refunded', 'delivered', TRACKING_ACTOR]])
+
+      const m = freshNumber()
+      const done = await paidAndShipped(m)
+      const deliver = await markDelivered(done.id)
+      expect(answerOf(deliver), JSON.stringify(deliver.body)).toEqual([200, null])
+      await refundPart(done)
+      await delivered()
+      const before = { status: await statusOf(done.id), history: await historyOf(done.id) }
+      const deliveredBefore = (await orderEvents(done.id, EVT_ORDER_DELIVERED)).length
+      const start = await maxSeq(raw)
+
+      const again = await send(shipDelivery({ id: freshId(), updates: [update(m, 'delivered')] }))
+      await delivered()
+
+      expect([again.status, again.data], JSON.stringify(again.body)).toEqual([
+        200,
+        { received: true, events: 1 },
+      ])
+      expect({ status: await statusOf(done.id), history: await historyOf(done.id) }).toEqual(before)
+      expect((await orderEvents(done.id, EVT_ORDER_DELIVERED)).length).toBe(deliveredBefore)
+      expect(await retriedSince(start)).toEqual([])
+    }, 60_000)
 
     // ─── AC-4: refused whole ─────────────────────────────────────────────────────────────────────────────────
 

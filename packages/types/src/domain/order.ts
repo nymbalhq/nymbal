@@ -10,7 +10,8 @@ export type OrderStatus =
   | 'refunded'
   | 'partially_refunded'
 
-// A captured order is refunded from any status between confirmed and delivered; a partial refund leaves room for more.
+// A captured order is refunded from any status between confirmed and delivered; a partial refund leaves room for more,
+// and the order may still be fulfilled from where it was refunded (`orderMovesFrom`).
 export const ORDER_STATUS_TRANSITIONS: Record<OrderStatus, readonly OrderStatus[]> = {
   pending: ['confirmed', 'cancelled'],
   confirmed: ['processing', 'cancelled', 'refunded', 'partially_refunded'],
@@ -19,7 +20,42 @@ export const ORDER_STATUS_TRANSITIONS: Record<OrderStatus, readonly OrderStatus[
   delivered: ['refunded', 'partially_refunded'],
   cancelled: [],
   refunded: [],
-  partially_refunded: ['refunded'],
+  partially_refunded: ['processing', 'shipped', 'delivered', 'refunded'],
+}
+
+const FULFILMENT_MOVES: readonly OrderStatus[] = ['processing', 'shipped', 'delivered']
+
+/**
+ * The status an order was in when a partial refund moved it to `partially_refunded`: the `fromStatus` of the last row
+ * into `partially_refunded` from another status. Null when no row says (an imported order).
+ */
+export function statusBeforePartialRefund(
+  history: ReadonlyArray<Pick<OrderHistoryEntry, 'fromStatus' | 'toStatus'>>,
+): OrderStatus | null {
+  for (let i = history.length - 1; i >= 0; i--) {
+    const row = history[i]!
+    if (
+      row.toStatus === 'partially_refunded' &&
+      row.fromStatus !== null &&
+      row.fromStatus !== 'partially_refunded'
+    ) {
+      return row.fromStatus
+    }
+  }
+  return null
+}
+
+/**
+ * Where an order may move. A partially refunded order moves on only as the status it was refunded at would, so
+ * fulfilment never goes backwards or repeats; with that status unknown the table's row applies.
+ */
+export function orderMovesFrom(
+  status: OrderStatus,
+  before: OrderStatus | null,
+): readonly OrderStatus[] {
+  if (status !== 'partially_refunded' || before === null) return ORDER_STATUS_TRANSITIONS[status]
+  const onward = ORDER_STATUS_TRANSITIONS[before]
+  return ['refunded', ...FULFILMENT_MOVES.filter((m) => onward.includes(m))]
 }
 
 export function canTransitionOrder(from: OrderStatus, to: OrderStatus): boolean {

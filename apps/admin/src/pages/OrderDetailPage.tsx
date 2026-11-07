@@ -42,6 +42,7 @@ import { formatMoney } from '@/lib/money'
 import { formatDate } from '@/lib/dates'
 import { tid } from '@/lib/testid'
 import { cn } from '@/lib/utils'
+import { statusBeforePartialRefund } from '@nymbalhq/types'
 import type {
   CaptureMethod,
   Order,
@@ -387,6 +388,7 @@ export function OrderDetailPage() {
           currentStatus={order.status}
           orderNumber={order.orderNumber}
           capturedMinor={order.payment.capturedMinor}
+          statusBeforePartialRefund={statusBeforePartialRefund(order.history ?? [])}
         />
       </div>
 

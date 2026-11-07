@@ -20,9 +20,9 @@ function kindOf(row: HistoryRow): OrderTimelineKind | null {
   const { fromStatus: from, toStatus: to } = row
   if (from === null) return to === 'pending' ? 'placed' : null
   if (from === to) {
-    // A same-status row is a further partial refund or a captured payment that was not applied; only the note
-    // tells them apart.
-    return to === 'partially_refunded' && row.note.startsWith(REFUND_NOTE_PREFIX)
+    // A same-status row is a further partial refund (which keeps whatever status the order reached) or a captured
+    // payment that was not applied; only the note tells them apart.
+    return to !== 'refunded' && to !== 'cancelled' && row.note.startsWith(REFUND_NOTE_PREFIX)
       ? 'partially_refunded'
       : null
   }
