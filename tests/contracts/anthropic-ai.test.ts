@@ -8,12 +8,14 @@ import { DEFAULT_BASE_URL } from '../../packages/adapters/ai/anthropic/src/anthr
 import {
   contentText,
   LOOKUP_PRICE,
+  MIN_CACHED_WORDS,
   refusedUrl,
   settledCode,
   startAiStandIn,
   toolAware,
   type AiStandIn,
   type ToolAwareEvent,
+  type ToolAwareResult,
 } from '../support/ai-stand-in.js'
 
 // The ai contract for `anthropic` against the Anthropic stand-in (tests/support/ai-stand-in.ts): the eval set, refused
@@ -314,9 +316,82 @@ describe('the Anthropic wire', () => {
 
     expect(streamed['stream']).toBe(true)
     expect(plain['stream'] ?? false).toBe(false)
-    expect(wire.requests.map((r) => r.headers['anthropic-version'])).toEqual(['2023-06-01', '2023-06-01'])
+    expect(wire.requests.map((r) => r.headers['anthropic-version'])).toEqual([
+      '2023-06-01',
+      '2023-06-01',
+    ])
     expect({ ...streamed, stream: undefined }).toEqual({ ...plain, stream: undefined })
     expect(events.at(-1)?.type).toBe('done')
+  })
+
+  /** One request through chat() or chatStream(); its result. */
+  async function ask(
+    streamed: boolean,
+    messages: unknown[],
+    opts: Record<string, unknown>,
+  ): Promise<ToolAwareResult> {
+    const chat = toolAware(adapter)
+    if (!streamed) return chat.chat(messages, opts)
+    let done: ToolAwareResult | undefined
+    for await (const event of chat.chatStream!.call(adapter, messages, opts)) {
+      if (event.type === 'done') done = event.result
+    }
+    return done!
+  }
+
+  /** One tool loop, a call then its answer, each step through chat() or chatStream(); each step's result. */
+  async function toolLoop(streamed: boolean): Promise<ToolAwareResult[]> {
+    const opts = { system: 'Answer briefly.', tools: [LOOKUP_PRICE] }
+    const first = await ask(streamed, [{ role: 'user', content: ASK }], opts)
+    const second = await ask(
+      streamed,
+      [
+        { role: 'user', content: ASK },
+        { role: 'assistant', content: first.text, toolCalls: first.toolCalls },
+        { role: 'tool', toolCallId: first.toolCalls![0]!.id, content: RESULT },
+      ],
+      opts,
+    )
+    return [first, second]
+  }
+
+  it("every request asks for Anthropic's automatic prompt caching with the default lifetime, and a tool loop's next request repeats the tools, system and turns before it byte for byte, so it reads them from the cache", async () => {
+    await toolLoop(false)
+    const [first, second] = wire.requests.map((r) => r.body as Record<string, unknown>)
+    const prefix = (body: Record<string, unknown>, turns: number) =>
+      JSON.stringify([body['tools'], body['system'], messagesOf(body).slice(0, turns)])
+
+    expect([first!['cache_control'], second!['cache_control']]).toEqual([
+      { type: 'ephemeral' },
+      { type: 'ephemeral' },
+    ])
+    expect(prefix(second!, messagesOf(first!).length)).toBe(
+      prefix(first!, messagesOf(first!).length),
+    )
+    expect(wire.answers.map((a) => a.cacheReadWords)).toEqual([0, wire.answers[0]!.inputWords])
+    expect(wire.answers[0]!.inputWords).toBeGreaterThan(0)
+  })
+
+  it('usage counts every input token, read from the cache, written to it or neither, in chat() and in chatStream() alike', async () => {
+    for (const streamed of [false, true]) {
+      wire.reset()
+      const results = await toolLoop(streamed)
+      // Under the minimum cacheable length: all of it is plain input_tokens.
+      results.push(await ask(streamed, [{ role: 'user', content: 'Say hello.' }], {}))
+      const answers = wire.answers
+
+      expect(answers.map((a) => [a.cacheReadWords > 0, a.cacheWrittenWords > 0])).toEqual([
+        [false, true],
+        [true, true],
+        [false, false],
+      ])
+      expect(answers[0]!.inputWords).toBeGreaterThanOrEqual(MIN_CACHED_WORDS)
+      expect(answers[2]!.inputWords).toBeGreaterThan(0)
+      expect(answers[2]!.inputWords).toBeLessThan(MIN_CACHED_WORDS)
+      expect(results.map((r) => r.usage)).toEqual(
+        answers.map((a) => ({ inputTokens: a.inputWords, outputTokens: a.outputWords })),
+      )
+    }
   })
 })
 
@@ -333,7 +408,9 @@ describe('AC-11: the adapter says where its requests go', () => {
           const key = `sk-${secret}`
           const adapter = await build({ apiKey: key, ...(baseUrl !== undefined && { baseUrl }) })
 
-          expect(adapter.endpoint).toBe(baseUrl === undefined || baseUrl === '' ? DEFAULT_BASE_URL : baseUrl)
+          expect(adapter.endpoint).toBe(
+            baseUrl === undefined || baseUrl === '' ? DEFAULT_BASE_URL : baseUrl,
+          )
           expect(String(adapter.endpoint).includes(key)).toBe(false)
         },
       ),

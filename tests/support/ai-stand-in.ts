@@ -20,7 +20,11 @@ import type { AddressInfo } from 'node:net'
 //   provider's length stop reason.
 // A conversation the provider itself would refuse with 400 is refused the same way: a tool result whose id is not a
 // call of the assistant turn just before it, or a call left unanswered when the next turn starts.
-// Usage is counted in words. Every request is recorded with its headers, its body, the key it carried and whether the
+// Usage is counted in words. On Anthropic's wire a request with a top-level `cache_control` is cached as the provider's
+// automatic caching does: a prompt of fewer than `MIN_CACHED_WORDS` words is not cached (the provider's minimum
+// cacheable length), and a longer one reads the longest prefix (model, tools, system and its first turns, as parsed) an
+// earlier such request ended on, writes the rest, and reports them as `cache_read_input_tokens` and
+// `cache_creation_input_tokens` apart from `input_tokens`. Every request is recorded with its headers, its body, the key it carried and whether the
 // client closed the connection before the stand-in finished answering.
 //
 // `stream: true` answers as server-sent events in the wire's own format, one word per text delta (the deltas
@@ -118,7 +122,11 @@ export interface AiStandInAnswer {
   text: string
   /** The model name it reported, which is not the one it was asked for. */
   model: string
+  /** Every input word, cached or not. */
   inputWords: number
+  /** Of `inputWords`, those read from the prompt cache and those written to it (Anthropic's wire; 0 otherwise). */
+  cacheReadWords: number
+  cacheWrittenWords: number
   outputWords: number
   /** The wire stop reason it sent. */
   stop: string
@@ -489,6 +497,41 @@ const sse = (res: ServerResponse, event: string | undefined, data: unknown): voi
   )
 }
 
+/** The stand-in's minimum cacheable prompt, in words: Anthropic processes a shorter prompt without caching it. */
+export const MIN_CACHED_WORDS = 8
+
+/**
+ * What Anthropic's automatic caching reads and writes for `body`, in words of its `total`, recording the prefix it ends
+ * on in `cache`; nothing when the request asks for no caching or is shorter than `MIN_CACHED_WORDS`.
+ */
+function cachedOf(
+  body: unknown,
+  total: number,
+  cache: Map<string, number>,
+): { read: number; written: number } {
+  const b = recOf(body)
+  if (recOf(b['cache_control'])['type'] !== 'ephemeral' || total < MIN_CACHED_WORDS) {
+    return { read: 0, written: 0 }
+  }
+  const messages = Array.isArray(b['messages']) ? (b['messages'] as unknown[]) : []
+  const keyOf = (n: number) =>
+    createHash('sha256')
+      .update(
+        JSON.stringify([b['model'], b['tools'] ?? null, b['system'] ?? null, messages.slice(0, n)]),
+      )
+      .digest('hex')
+  let read = 0
+  for (let n = messages.length; n > 0; n--) {
+    const hit = cache.get(keyOf(n))
+    if (hit !== undefined) {
+      read = hit
+      break
+    }
+  }
+  cache.set(keyOf(messages.length), total)
+  return { read, written: total - read }
+}
+
 /** A stand-in for `wire`'s API on a free port of 127.0.0.1, answering as `mode` until the test changes it. */
 export async function startAiStandIn(
   wire: AiWire,
@@ -496,6 +539,7 @@ export async function startAiStandIn(
   script?: AiScript,
 ): Promise<AiStandIn> {
   let scriptCalls = 0
+  const promptCache = new Map<string, number>()
   const standIn: AiStandIn = {
     wire,
     url: '',
@@ -509,6 +553,7 @@ export async function startAiStandIn(
       standIn.requests.length = 0
       standIn.answers.length = 0
       standIn.scriptErrors.length = 0
+      promptCache.clear()
     },
     close: async () => undefined,
   }
@@ -651,10 +696,21 @@ export async function startAiStandIn(
               ? 'end_turn'
               : 'stop'
       const outputWords = words(text).length
+      const cached =
+        wire === 'anthropic'
+          ? cachedOf(body, answered.inputWords, promptCache)
+          : { read: 0, written: 0 }
+      const inputUsage = {
+        input_tokens: answered.inputWords - cached.read - cached.written,
+        cache_creation_input_tokens: cached.written,
+        cache_read_input_tokens: cached.read,
+      }
       const answer: AiStandInAnswer = {
         text,
         model,
         inputWords: answered.inputWords,
+        cacheReadWords: cached.read,
+        cacheWrittenWords: cached.written,
         outputWords,
         stop: wireStop,
         toolCalls: calls,
@@ -689,7 +745,7 @@ export async function startAiStandIn(
               ],
               stop_reason: wireStop,
               stop_sequence: null,
-              usage: { input_tokens: answered.inputWords, output_tokens: outputWords },
+              usage: { ...inputUsage, output_tokens: outputWords },
             }),
           )
         }
@@ -752,7 +808,7 @@ export async function startAiStandIn(
             content: [],
             stop_reason: null,
             stop_sequence: null,
-            usage: { input_tokens: answered.inputWords, output_tokens: 0 },
+            usage: { ...inputUsage, output_tokens: 0 },
           },
         })
         sse(res, 'ping', { type: 'ping' })

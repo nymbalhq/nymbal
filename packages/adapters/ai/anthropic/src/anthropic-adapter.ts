@@ -50,6 +50,12 @@ function stopReasonOf(wire: unknown): ChatStopReason {
 
 const count = (value: unknown): number => (typeof value === 'number' ? value : 0)
 
+/** Every input token the model read: Anthropic counts those read from or written to its prompt cache apart. */
+const inputOf = (usage: Record<string, unknown>): number =>
+  count(usage['input_tokens']) +
+  count(usage['cache_creation_input_tokens']) +
+  count(usage['cache_read_input_tokens'])
+
 /** The conversation as Anthropic's turns: calls as `tool_use` blocks, each run of tool turns as one user turn. */
 function wireMessages(messages: readonly ChatMessage[]): unknown[] {
   const out: unknown[] = []
@@ -103,6 +109,9 @@ export function createAnthropicAiAdapter(config: AnthropicAiAdapterConfig): AiAd
     return JSON.stringify({
       model,
       max_tokens: maxTokens,
+      // Automatic caching: the breakpoint follows the last block, so a tool loop's resent tools, system prompt and
+      // earlier turns are read from the cache instead of billed again in full.
+      cache_control: { type: 'ephemeral' },
       messages: wireMessages(messages),
       ...(system !== undefined && system !== '' && { system }),
       ...(tools.length > 0 && {
@@ -163,7 +172,7 @@ export function createAnthropicAiAdapter(config: AnthropicAiAdapterConfig): AiAd
         if (e['type'] === 'message_start') {
           const message = recOf(e['message'])
           reported = message['model']
-          inputTokens = count(recOf(message['usage'])['input_tokens'])
+          inputTokens = inputOf(recOf(message['usage']))
         } else if (e['type'] === 'content_block_start') {
           const block = recOf(e['content_block'])
           if (block['type'] === 'tool_use') {
@@ -286,7 +295,7 @@ export function createAnthropicAiAdapter(config: AnthropicAiAdapterConfig): AiAd
         toolCalls,
         body['stop_reason'],
         {
-          inputTokens: count(usage['input_tokens']),
+          inputTokens: inputOf(usage),
           outputTokens: count(usage['output_tokens']),
         },
         body['model'],
