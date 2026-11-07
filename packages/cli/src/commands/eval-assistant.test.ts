@@ -12,6 +12,7 @@ import {
 import { GOLDEN_ROWS, goldenScript, rowOf } from '../../../../tests/support/assistant-golden.js'
 import { cliEnv, migratedSqlite, runCli, type CliRun } from '../../../../tests/support/doctor.js'
 import { project, workspace } from '../../../../tests/support/project.js'
+import { currentAssistantEvalHash } from '../../../platform/tests/support/eval-hash.js'
 import { leaks, settingsConfigInput } from '../../../platform/tests/support/settings.js'
 
 // AC-15: the twenty-seven golden questions, the threshold at 24 and the injection questions' tally on a line of its own.
@@ -196,9 +197,6 @@ describe('AC-18: nymbal eval assistant', () => {
   }, 240_000)
 })
 
-/** The stamp the platform's test compares the prompt and tools with. */
-const STAMP_FILE = new URL('../../../platform/assistant-eval.json', import.meta.url)
-
 describe('nymbal eval assistant --stamp', () => {
   it('against the scripted stand-in, on Anthropic’s wire or OpenAI’s, --stamp exits 2 naming the host a stamp needs, asks no question and writes no file', async () => {
     for (const [wire, standIn, host] of [
@@ -223,19 +221,19 @@ describe('nymbal eval assistant --stamp', () => {
     }
   }, 120_000)
 
-  it('--json reports the hash of the prompt and tools the run asked with, the hash the committed stamp is checked against', async () => {
+  it('--json reports the hash of the prompt and tools the run asked with, the hash release:check holds the committed stamp to', async () => {
     const p = await storeProject(
       block('anthropic', anthropic, `sk-ant-eval-${randomBytes(12).toString('hex')}`),
     )
-    const committed = (JSON.parse(readFileSync(STAMP_FILE, 'utf8')) as { hash: string }).hash
+    const current = await currentAssistantEvalHash()
 
     const run = await evalAssistant(p, ['--only', 'books-count', '--threshold', '1', '--json'])
 
     expect(run.code, run.out).toBe(0)
     expect(
       (JSON.parse(run.stdout) as { hash: string }).hash,
-      'the eval hashes what packages/platform/src/assistant/stamp.test.ts does: rebuild, or record the stamp again',
-    ).toBe(committed)
+      'the built CLI hashes what the platform source sends: rebuild',
+    ).toBe(current)
   }, 120_000)
 })
 

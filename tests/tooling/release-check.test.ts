@@ -93,6 +93,8 @@ type Overrides = {
   target?: { code: number; output: string }
   history?: Commit[]
   stamp?: string | undefined
+  /** The hash of the prompt and tools at the candidate; the stamp's own by default. */
+  hash?: string
 }
 
 /** The questions the eval asks. */
@@ -125,6 +127,7 @@ function runCheck(f: Fixture, o: Overrides = {}) {
     adapters: ADAPTERS,
     history: o.history ?? ALONE(f),
     stamp: 'stamp' in o ? o.stamp : JSON.stringify(STAMPED),
+    hash: o.hash ?? STAMPED.hash,
     questions: QUESTIONS,
   })
   const { text, code } = render(result)
@@ -306,6 +309,7 @@ describe('AC-4: release:check against recorded gh output', () => {
       adapters: ADAPTERS,
       history: ALONE(f),
       stamp: JSON.stringify(STAMPED),
+      hash: STAMPED.hash,
       questions: QUESTIONS,
     })
     const mutation = result.items.find((i) => i.item === 'mutation')!
@@ -381,7 +385,7 @@ const NOTHING_CARRIED = {
   mutation: 'missing',
 }
 
-describe('release:check holds a release whose assistant eval stamp records no passing real run', () => {
+describe('release:check holds a release whose assistant eval stamp records no passing real run of the candidate’s prompt and tools', () => {
   const PENDING = {
     ...STAMPED,
     provider: 'pending',
@@ -392,7 +396,20 @@ describe('release:check holds a release whose assistant eval stamp records no pa
     threshold: null,
     date: null,
   }
-  const cases: Array<{ name: string; stamp: string | undefined; verdict: string; says: string }> = [
+  const cases: Array<{
+    name: string
+    stamp: string | undefined
+    hash?: string
+    verdict: string
+    says: string
+  }> = [
+    {
+      name: 'a passing real run of the prompt and tools before a change to them',
+      stamp: JSON.stringify(STAMPED),
+      hash: 'sha256:1e',
+      verdict: 'missing',
+      says: `the stamp records a run of another prompt or tools (${STAMPED.hash}; the candidate's is sha256:1e): run \`${STAMP_COMMAND}\` on the candidate`,
+    },
     {
       name: 'a pending stamp',
       stamp: JSON.stringify(PENDING),
@@ -443,7 +460,10 @@ describe('release:check holds a release whose assistant eval stamp records no pa
   for (const c of cases) {
     it(`${c.name}: assistant-eval alone is ${c.verdict}, named on its line, and the release is not ready`, () => {
       const f = recorded()
-      const { text, code, verdicts, items } = runCheck(f, { stamp: c.stamp })
+      const { text, code, verdicts, items } = runCheck(f, {
+        stamp: c.stamp,
+        ...(c.hash !== undefined && { hash: c.hash }),
+      })
       expect(code, text).toBe(1)
       expectOnly(verdicts, { 'assistant-eval': c.verdict })
       expect(items.find((i) => i.item === 'assistant-eval')!.what[0]).toContain(c.says)

@@ -70,6 +70,8 @@ export type CheckOptions = {
   history: Commit[]
   /** `packages/platform/assistant-eval.json` as committed at `sha` (`stampAt`); undefined when it has none. */
   stamp: string | undefined
+  /** The hash of the prompt and tools the assistant is sent at `sha`, as the CLI's eval reports it. */
+  hash: string
   /** How many golden questions the eval asks: a stamp records a run of every one. */
   questions: number
 }
@@ -470,18 +472,22 @@ export function check(opts: CheckOptions): { items: Item[]; notes: string[] } {
     }
   }
 
-  // assistant-eval: the stamp records a real provider's run that passed. The platform's unit test holds its hash to the
-  // prompt and tools; a pending stamp passes that test and is held here instead.
+  // assistant-eval: the stamp records a real provider's run that passed, of the prompt and tools the candidate sends.
+  // This is the only place the hash is held: a change to the prompt or tools between releases is not.
   {
     const read = readStamp(opts.stamp)
     const stamp = read.stamp ?? {}
+    const rerun = `run \`${STAMP_COMMAND}\` on the candidate against a real provider as CONTRIBUTING.md shows and commit the stamp`
     const pending =
       opts.stamp === undefined
         ? `no ${STAMP_FILE} at ${short(sha)}`
-        : read.error === undefined &&
-            (typeof stamp.provider !== 'string' || stamp.provider === 'pending')
-          ? `no real eval run recorded for this prompt: run \`${STAMP_COMMAND}\` against a real provider as CONTRIBUTING.md shows and commit the stamp`
-          : undefined
+        : read.error !== undefined
+          ? undefined
+          : typeof stamp.provider !== 'string' || stamp.provider === 'pending'
+            ? `no real eval run recorded for this prompt: ${rerun}`
+            : stamp.hash !== opts.hash
+              ? `the stamp records a run of another prompt or tools (${String(stamp.hash)}; the candidate's is ${opts.hash}): ${rerun}`
+              : undefined
     const what =
       pending !== undefined
         ? [pending]
@@ -523,7 +529,13 @@ export function check(opts: CheckOptions): { items: Item[]; notes: string[] } {
 
 /** A stamp's fields, or why its text is not one. */
 function readStamp(text: string | undefined): {
-  stamp?: { provider?: unknown; passed?: unknown; threshold?: unknown; total?: unknown }
+  stamp?: {
+    hash?: unknown
+    provider?: unknown
+    passed?: unknown
+    threshold?: unknown
+    total?: unknown
+  }
   error?: string
 } {
   if (text === undefined) return {}
@@ -631,8 +643,12 @@ async function main(argv: string[]): Promise<number> {
     adapters: manifest.adapters.map((a) => a.package),
     history: releaseHistory(root, sha, 'origin/main'),
     stamp: stampAt(root, sha),
-    // The checkout's golden set: the mutation item holds the checkout to the candidate.
-    questions: (await import('../packages/platform/src/assistant/golden.js')).GOLDEN_QUESTIONS.length,
+    // The checkout's prompt, tools and golden set: the mutation item holds the checkout to the candidate.
+    hash: await (
+      await import('../packages/platform/tests/support/eval-hash.js')
+    ).currentAssistantEvalHash(),
+    questions: (await import('../packages/platform/src/assistant/golden.js')).GOLDEN_QUESTIONS
+      .length,
   })
   const { text, code } = render(result)
   process.stdout.write(text)
