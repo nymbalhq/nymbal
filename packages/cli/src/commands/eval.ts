@@ -1,11 +1,12 @@
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineCommand } from 'citty'
-import type { NymbalConfig } from '@nymbalhq/config'
+import type { LoadedConfig, NymbalConfig } from '@nymbalhq/config'
 import { createHttpServer } from '@nymbalhq/http'
 import {
+  assistantEvalHash,
   createApp,
   createCommandStore,
   createLogger,
@@ -22,10 +23,9 @@ import {
 } from '@nymbalhq/platform'
 import { loadProject } from '../utils/project.js'
 import { getCliVersion } from '../utils/version.js'
+import { DEFAULT_THRESHOLD, stampFileRefusal, stampOf, stampRunRefusal } from './eval-stamp.js'
 import { resolveMigrations, resolvePackageDir } from './migrate.js'
 
-/** Three misses allowed. */
-const DEFAULT_THRESHOLD = 24
 /** The admin of the throwaway store, so the seed does not announce dev credentials. */
 const EVAL_ADMIN = 'eval@nymbal.local'
 
@@ -134,15 +134,22 @@ function runsOf(value: unknown): number | undefined {
     : undefined
 }
 
-async function evaluate(args: {
-  only: string | undefined
-  json: boolean
-  verbose: boolean
-}): Promise<GoldenReport> {
-  const { config, projectRoot, adapters } = await loadProject()
-  const ai = config.commerce.ai
-  if (ai.provider === 'none') throw new EvalRefused('no AI provider: set ai in nymbal.config.ts')
+/** One run's report and the hash of the prompt and tools it asked with (the stamp's). */
+interface Evaluated {
+  report: GoldenReport
+  hash: string
+}
 
+async function evaluate(
+  project: LoadedConfig,
+  args: {
+    only: string | undefined
+    json: boolean
+    verbose: boolean
+  },
+): Promise<Evaluated> {
+  const { config, projectRoot, adapters } = project
+  const ai = config.commerce.ai
   const evalConfig = throwawayConfig(config, withKey(ai))
   const dir = mkdtempSync(join(tmpdir(), 'nymbal-eval-'))
   const sqlitePath = join(dir, 'eval.db')
@@ -177,16 +184,18 @@ async function evaluate(args: {
       // The routes are the tools; nothing listens.
       await app.attachHttp(http.adapter, { adminRoot: null })
       await goldenStore(app)
+      const hash = assistantEvalHash(app.assistantTools!)
       const only = args.only
         ?.split(',')
         .map((id) => id.trim())
         .filter((id) => id !== '')
-      return await runGolden(app, {
+      const report = await runGolden(app, {
         ...(only !== undefined && { only }),
         ...(!args.json && {
           onResult: (result) => process.stdout.write(`${line(result, args.verbose)}\n`),
         }),
       })
+      return { report, hash }
     } finally {
       await app.stop()
     }
@@ -222,6 +231,11 @@ const assistantCommand = defineCommand({
       description: 'Print each call, its arguments and outcome, and each answer',
       default: false,
     },
+    stamp: {
+      type: 'string',
+      description:
+        'Write the eval stamp to this file when the run passes: the hash of the prompt and tools, the provider, model and tally. Anthropic or OpenAI’s own API only, every question, the default threshold or above',
+    },
   },
   async run({ args }) {
     const threshold =
@@ -237,18 +251,60 @@ const assistantCommand = defineCommand({
       }
       const runs = runsOf(args.runs)
       if (runs === undefined) throw new EvalRefused('--runs takes a whole number of at least 1')
+      const stampFile =
+        typeof args.stamp === 'string' && args.stamp !== '' ? resolve(args.stamp) : undefined
+      const fileRefused = stampFile === undefined ? undefined : stampFileRefusal(stampFile)
+      if (fileRefused !== undefined) throw new EvalRefused(fileRefused)
+      const project = await loadProject()
+      const ai = project.config.commerce.ai
+      if (ai.provider === 'none')
+        throw new EvalRefused('no AI provider: set ai in nymbal.config.ts')
+      if (stampFile !== undefined) {
+        const { customerData, mask } = project.config.agents.assistant
+        const refused = stampRunRefusal({
+          ai,
+          only: typeof args.only === 'string' ? args.only : undefined,
+          threshold,
+          customerData,
+          mask,
+        })
+        if (refused !== undefined) throw new EvalRefused(refused)
+      }
       const reports: GoldenReport[] = []
+      let hash = ''
       for (let run = 1; run <= runs; run += 1) {
         if (runs > 1 && !args.json) process.stdout.write(`run ${run}/${runs}\n`)
-        reports.push(
-          await evaluate({
-            only: typeof args.only === 'string' ? args.only : undefined,
-            json: args.json,
-            verbose: args.verbose,
-          }),
-        )
+        const evaluated = await evaluate(project, {
+          only: typeof args.only === 'string' ? args.only : undefined,
+          json: args.json,
+          verbose: args.verbose,
+        })
+        reports.push(evaluated.report)
+        hash = evaluated.hash
       }
       const tally = tallyGolden(reports)
+      const stamp =
+        stampFile === undefined
+          ? undefined
+          : stampOf({
+              hash,
+              provider: ai.provider,
+              models: reports.flatMap((r) => r.models),
+              tally,
+              threshold,
+              date: new Date(),
+            })
+      if (stampFile !== undefined && stamp !== undefined) {
+        writeFileSync(stampFile, `${JSON.stringify(stamp, null, 2)}\n`)
+      }
+      const stamped =
+        stampFile === undefined
+          ? []
+          : [
+              stamp === undefined
+                ? `stamp not written: ${tally.passed}/${tally.total} is under the threshold ${threshold}`
+                : `stamp written: ${stampFile}`,
+            ]
       out = process.stdout
       text = args.json
         ? JSON.stringify(
@@ -257,6 +313,7 @@ const assistantCommand = defineCommand({
               passed: tally.passed,
               total: tally.total,
               threshold,
+              hash,
               questions: tally.questions,
               reports,
             },
@@ -269,6 +326,7 @@ const assistantCommand = defineCommand({
               : []),
             `assistant eval: ${tally.passed}/${tally.total} passed (threshold ${threshold})`,
             injectionTally(tally),
+            ...stamped,
           ].join('\n')
       code = tally.passed >= threshold ? 0 : 1
     } catch (error) {

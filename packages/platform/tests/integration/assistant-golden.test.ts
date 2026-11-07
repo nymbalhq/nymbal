@@ -59,6 +59,7 @@ interface GoldenReport {
 interface TracedReport {
   passed: number
   total: number
+  models: string[]
   results: Array<
     GoldenReport['results'][number] & { ask: string; answer: string; trace: GoldenCall[] }
   >
@@ -169,6 +170,7 @@ describe('AC-14: the golden set passes against the scripted model and leaves the
       expect(report.passed).toBe(report.total)
       expect(report.total).toBe(GOLDEN_ROWS.length)
       expect(report.results.map((r) => r.id)).toEqual(GOLDEN_QUESTIONS.map((q) => q.id))
+      expect(report.models).toEqual([...new Set(store.standIn.answers.map((a) => a.model))])
 
       const byId = new Map(report.results.map((r) => [r.id, r]))
       const writes = GOLDEN_QUESTIONS.filter((q) => q.kind === 'write')

@@ -19,7 +19,7 @@ const resultOf = (id: string, ok: boolean): GoldenResult => ({
 /** One run's report, its results in the order given. */
 const reportOf = (verdicts: ReadonlyArray<readonly [string, boolean]>): GoldenReport => {
   const results = verdicts.map(([id, ok]) => resultOf(id, ok))
-  return { passed: results.filter((r) => r.ok).length, total: results.length, results }
+  return { passed: results.filter((r) => r.ok).length, total: results.length, results, models: [] }
 }
 
 describe('AC-10: tallyGolden judges each question by majority over the runs', () => {

@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
@@ -194,6 +194,49 @@ describe('AC-18: nymbal eval assistant', () => {
     expect(summaryOf(run.out)).toEqual({ passed: 27, total: 27, threshold: 24 })
     expect(openai.requests.length).toBeGreaterThanOrEqual(GOLDEN_ROWS.length)
   }, 240_000)
+})
+
+/** The stamp the platform's test compares the prompt and tools with. */
+const STAMP_FILE = new URL('../../../platform/assistant-eval.json', import.meta.url)
+
+describe('nymbal eval assistant --stamp', () => {
+  it('against the scripted stand-in, on Anthropic’s wire or OpenAI’s, --stamp exits 2 naming the host a stamp needs, asks no question and writes no file', async () => {
+    for (const [wire, standIn, host] of [
+      ['anthropic', anthropic, 'api.anthropic.com'],
+      ['openai', openai, 'api.openai.com'],
+    ] as const) {
+      const p = await storeProject(
+        block(wire, standIn, `sk-eval-${randomBytes(12).toString('hex')}`),
+      )
+      const stamp = join(p.dir, 'assistant-eval.json')
+      standIn.reset()
+
+      const run = await evalAssistant(p, ['--stamp', stamp])
+
+      expect(run.code, run.out).toBe(2)
+      expect(run.stderr).toContain(`--stamp records a run against ${host}, not the baseUrl`)
+      expect([summaryOf(run.out), existsSync(stamp), standIn.requests.length]).toEqual([
+        null,
+        false,
+        0,
+      ])
+    }
+  }, 120_000)
+
+  it('--json reports the hash of the prompt and tools the run asked with, the hash the committed stamp is checked against', async () => {
+    const p = await storeProject(
+      block('anthropic', anthropic, `sk-ant-eval-${randomBytes(12).toString('hex')}`),
+    )
+    const committed = (JSON.parse(readFileSync(STAMP_FILE, 'utf8')) as { hash: string }).hash
+
+    const run = await evalAssistant(p, ['--only', 'books-count', '--threshold', '1', '--json'])
+
+    expect(run.code, run.out).toBe(0)
+    expect(
+      (JSON.parse(run.stdout) as { hash: string }).hash,
+      'the eval hashes what packages/platform/src/assistant/stamp.test.ts does: rebuild, or record the stamp again',
+    ).toBe(committed)
+  }, 120_000)
 })
 
 const TALLY = /^tally (\S+) (\d+)\/(\d+)$/

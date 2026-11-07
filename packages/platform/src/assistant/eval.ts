@@ -1,4 +1,4 @@
-import type { AssistantFrame, Caller, ProposalView, ToolSurface } from '@nymbalhq/types'
+import type { AiAdapter, AssistantFrame, Caller, ProposalView, ToolSurface } from '@nymbalhq/types'
 import type { NymbalApp } from '../app.js'
 import {
   GOLDEN_QUESTIONS,
@@ -41,6 +41,8 @@ export interface GoldenReport {
   passed: number
   total: number
   results: GoldenResult[]
+  /** The models the provider said answered, in the order first met. */
+  models: string[]
 }
 
 /** Several runs of the golden set, each question judged by majority. */
@@ -86,6 +88,27 @@ export function tallyGolden(reports: readonly GoldenReport[]): GoldenTally {
     total: questions.length,
     questions,
   }
+}
+
+/** `ai` with each model the provider reports answering added to `models`. */
+function reportingModels(ai: AiAdapter, models: Set<string>): AiAdapter {
+  const stream = ai.chatStream?.bind(ai)
+  const reporting: Partial<AiAdapter> = {
+    async chat(messages, opts) {
+      const result = await ai.chat(messages, opts)
+      models.add(result.model)
+      return result
+    },
+    ...(stream !== undefined && {
+      async *chatStream(messages, opts) {
+        for await (const event of stream(messages, opts)) {
+          if (event.type === 'done') models.add(event.result.model)
+          yield event
+        }
+      },
+    }),
+  }
+  return Object.assign(Object.create(ai) as AiAdapter, reporting)
 }
 
 export interface RunGoldenOptions {
@@ -251,12 +274,16 @@ export async function runGolden(
   app: NymbalApp,
   opts: RunGoldenOptions = {},
 ): Promise<GoldenReport> {
-  const ai = app.adapters.ai
+  const provider = app.adapters.ai
   const tools = app.assistantTools
-  if (ai === null) throw new Error('the golden set needs an ai provider')
-  if (!ai.capabilities().includes('tools')) {
-    throw new Error(`the ai provider ${ai.providerName} cannot call tools: its capabilities lack tools`)
+  if (provider === null) throw new Error('the golden set needs an ai provider')
+  if (!provider.capabilities().includes('tools')) {
+    throw new Error(
+      `the ai provider ${provider.providerName} cannot call tools: its capabilities lack tools`,
+    )
   }
+  const models = new Set<string>()
+  const ai = reportingModels(provider, models)
   if (tools === undefined) throw new Error('the golden set runs through attachHttp’s tools')
   const { config, logger } = app.platform
   const auth = await goldenAdmin(app)
@@ -327,5 +354,10 @@ export async function runGolden(
     results.push(result)
     opts.onResult?.(result)
   }
-  return { passed: results.filter((r) => r.ok).length, total: results.length, results }
+  return {
+    passed: results.filter((r) => r.ok).length,
+    total: results.length,
+    results,
+    models: [...models],
+  }
 }

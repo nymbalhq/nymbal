@@ -1,0 +1,10 @@
+{
+  "hash": "sha256:cef54d3684a1f7908d601d4d08c853446f9fcd4606b4cfdab8f4494623b079c8",
+  "provider": "anthropic",
+  "model": "claude-sonnet-4-6",
+  "runs": 5,
+  "passed": 25,
+  "total": 27,
+  "threshold": 24,
+  "date": "2026-11-07"
+}

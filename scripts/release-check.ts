@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
+import { DEFAULT_THRESHOLD } from '../packages/cli/src/commands/eval-stamp'
 import { INTEGRATION_RATCHET, RATCHET } from './gate'
 import { EXCLUDED_PREFIXES, TEST_FILE } from './test-census'
 
@@ -67,7 +68,14 @@ export type CheckOptions = {
    * the only commits a run may be carried from.
    */
   history: Commit[]
+  /** `packages/platform/assistant-eval.json` as committed at `sha` (`stampAt`); undefined when it has none. */
+  stamp: string | undefined
+  /** How many golden questions the eval asks: a stamp records a run of every one. */
+  questions: number
 }
+
+export const STAMP_FILE = 'packages/platform/assistant-eval.json'
+export const STAMP_COMMAND = `nymbal eval assistant --runs 5 --stamp <absolute path to ${STAMP_FILE}>`
 
 export const CI = 'ci.yml'
 export const NIGHTLY = 'nightly.yml'
@@ -462,6 +470,45 @@ export function check(opts: CheckOptions): { items: Item[]; notes: string[] } {
     }
   }
 
+  // assistant-eval: the stamp records a real provider's run that passed. The platform's unit test holds its hash to the
+  // prompt and tools; a pending stamp passes that test and is held here instead.
+  {
+    const read = readStamp(opts.stamp)
+    const stamp = read.stamp ?? {}
+    const pending =
+      opts.stamp === undefined
+        ? `no ${STAMP_FILE} at ${short(sha)}`
+        : read.error === undefined &&
+            (typeof stamp.provider !== 'string' || stamp.provider === 'pending')
+          ? `no real eval run recorded for this prompt: run \`${STAMP_COMMAND}\` against a real provider as CONTRIBUTING.md shows and commit the stamp`
+          : undefined
+    const what =
+      pending !== undefined
+        ? [pending]
+        : read.error !== undefined
+          ? [`${STAMP_FILE} at ${short(sha)} is not a stamp: ${read.error}`]
+          : [
+              ...(typeof stamp.threshold === 'number' && stamp.threshold >= DEFAULT_THRESHOLD
+                ? []
+                : [
+                    `the stamp's threshold ${String(stamp.threshold)} is under the default ${DEFAULT_THRESHOLD}`,
+                  ]),
+              ...(stamp.total === opts.questions
+                ? []
+                : [
+                    `the stamp's run asked ${String(stamp.total)} questions, not the ${opts.questions} the eval asks`,
+                  ]),
+              ...(typeof stamp.passed === 'number' &&
+              typeof stamp.threshold === 'number' &&
+              stamp.passed >= stamp.threshold
+                ? []
+                : [
+                    `the stamp's run passed ${String(stamp.passed)}, under its threshold ${String(stamp.threshold)}`,
+                  ]),
+            ]
+    items.push(item('assistant-eval', [STAMP_FILE], what, pending !== undefined))
+  }
+
   const notes =
     nightly === undefined
       ? []
@@ -472,6 +519,35 @@ export function check(opts: CheckOptions): { items: Item[]; notes: string[] } {
           }`
         })
   return { items, notes }
+}
+
+/** A stamp's fields, or why its text is not one. */
+function readStamp(text: string | undefined): {
+  stamp?: { provider?: unknown; passed?: unknown; threshold?: unknown; total?: unknown }
+  error?: string
+} {
+  if (text === undefined) return {}
+  let value: unknown
+  try {
+    value = JSON.parse(text)
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) }
+  }
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return { error: 'not a JSON object' }
+  }
+  return { stamp: value }
+}
+
+/** `STAMP_FILE` as committed at `sha`, never the working tree's; undefined when the commit has none. */
+export function stampAt(root: string, sha: string): string | undefined {
+  const git = (args: string[]) => {
+    const out = spawnSync('git', args, { cwd: root, encoding: 'utf8' })
+    if (out.status !== 0) throw new Error(`git ${args.join(' ')}: ${out.stderr.trim()}`)
+    return out.stdout
+  }
+  if (git(['ls-tree', '--name-only', sha, '--', STAMP_FILE]).trim() === '') return undefined
+  return git(['show', `${sha}:${STAMP_FILE}`])
 }
 
 /**
@@ -521,7 +597,7 @@ export function render({ items, notes }: { items: Item[]; notes: string[] }): {
   return { text: `${lines.join('\n')}\n`, code: failed === 0 ? 0 : 1 }
 }
 
-function main(argv: string[]): number {
+async function main(argv: string[]): Promise<number> {
   const { values } = parseArgs({ args: argv, options: { sha: { type: 'string' } } })
   const root = process.cwd()
   const run = (cmd: string, args: string[]): { code: number; out: string; err: string } => {
@@ -554,6 +630,9 @@ function main(argv: string[]): number {
     },
     adapters: manifest.adapters.map((a) => a.package),
     history: releaseHistory(root, sha, 'origin/main'),
+    stamp: stampAt(root, sha),
+    // The checkout's golden set: the mutation item holds the checkout to the candidate.
+    questions: (await import('../packages/platform/src/assistant/golden.js')).GOLDEN_QUESTIONS.length,
   })
   const { text, code } = render(result)
   process.stdout.write(text)
@@ -564,12 +643,15 @@ if (
   process.argv[1] !== undefined &&
   import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href
 ) {
-  try {
-    process.exitCode = main(process.argv.slice(2))
-  } catch (error) {
-    process.stderr.write(
-      `release-check: ${error instanceof Error ? error.message : String(error)}\n`,
-    )
-    process.exitCode = 2
-  }
+  main(process.argv.slice(2)).then(
+    (code) => {
+      process.exitCode = code
+    },
+    (error: unknown) => {
+      process.stderr.write(
+        `release-check: ${error instanceof Error ? error.message : String(error)}\n`,
+      )
+      process.exitCode = 2
+    },
+  )
 }

@@ -102,6 +102,7 @@ export {
   type GoldenTally,
   type RunGoldenOptions,
 } from './assistant/eval.js'
+export { assistantEvalHash, type AssistantEvalStamp } from './assistant/stamp.js'
 export { ucpProfile, UCP_VERSION } from './agents/profile.js'
 export { agentNameOf } from './agents/agent-name.js'
 export { createUcpSurface, type UcpSurfaceDeps } from './agents/ucp-surface.js'

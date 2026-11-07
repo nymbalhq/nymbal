@@ -183,7 +183,20 @@ export function adminPageOf(
   return undefined
 }
 
-function systemPrompt(
+/** What the model is offered: each tool's name, description and input schema, and the page read when it has values. */
+export function chatToolsOf(offered: readonly ToolDefinition[], page: boolean): ChatTool[] {
+  return [
+    ...offered.map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      inputSchema: tool.inputSchema,
+    })),
+    ...(page ? [PAGE_TOOL] : []),
+  ]
+}
+
+/** The model's instructions for a turn on `pattern`, with the placeholder rule when the turn masks. */
+export function systemPrompt(
   store: AssistantDeps['store'],
   pattern: string | undefined,
   masked: boolean,
@@ -383,14 +396,7 @@ export async function runAssistantTurn(
   const page = turn.page === undefined ? undefined : adminPageOf(turn.page)
   // The page's parameters are text a merchant or an import chose: they reach the model as a result, never the prompt.
   const withParams = page !== undefined && Object.keys(page.params).length > 0 ? page : undefined
-  const tools: ChatTool[] = [
-    ...offered.map((tool) => ({
-      name: tool.name,
-      description: tool.description,
-      inputSchema: tool.inputSchema,
-    })),
-    ...(withParams === undefined ? [] : [PAGE_TOOL]),
-  ]
+  const tools = chatToolsOf(offered, withParams !== undefined)
   const opts: ChatOptions = {
     system: systemPrompt(deps.store, page?.pattern, masking),
     tools,
