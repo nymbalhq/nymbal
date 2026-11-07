@@ -20,6 +20,7 @@ import {
   lifetime,
   post,
   recOf,
+  secretsOf,
   unreadable,
   type Lifetime,
 } from './chat.js'
@@ -246,7 +247,14 @@ export function createOpenAiAdapter(config: OpenAiAdapterConfig): AiAdapter {
       let status: number
       let text: string
       try {
-        const response = await post(PROVIDER, url, headers, request, life)
+        const response = await post(
+          PROVIDER,
+          url,
+          headers,
+          request,
+          life,
+          secretsOf(config.apiKey, messages, opts),
+        )
         status = response.status
         text = await bodyText(PROVIDER, response, life)
       } finally {
@@ -286,7 +294,14 @@ export function createOpenAiAdapter(config: OpenAiAdapterConfig): AiAdapter {
       const request = requestOf(messages, opts, true)
       const life = lifetime(PROVIDER, timeoutMs, opts?.signal)
       try {
-        const response = await post(PROVIDER, url, headers, request, life)
+        const response = await post(
+          PROVIDER,
+          url,
+          headers,
+          request,
+          life,
+          secretsOf(config.apiKey, messages, opts),
+        )
         if (response.body === null) throw unreadable(PROVIDER, response.status, 'with no body')
         yield* streamed(response.status, response.body, life)
       } finally {

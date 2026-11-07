@@ -7,8 +7,9 @@ import {
 } from '@nymbalhq/types'
 
 // What every ai provider's chat() does alike: the input it refuses before a request, the time it waits, and the
-// errors it throws. An error carries the provider and the HTTP status and nothing else: no cause, no headers, no
-// request and no provider message, which may echo the key or the conversation.
+// errors it throws. An error carries the provider and the HTTP status and nothing else: no cause, no headers and no
+// request. Of a non-2xx body it keeps only the provider's error type and message, capped, with the key, anything
+// shaped like a key and the conversation taken out, since a provider may echo any of them.
 
 export const DEFAULT_MAX_TOKENS = 1024
 export const DEFAULT_TIMEOUT_MS = 60_000
@@ -143,18 +144,99 @@ export const unreadable = (provider: string, status: number, what: string): Adap
     context: { provider, status },
   })
 
-function codeOf(status: number): string {
+/** The most of a provider's error message an error passes on. */
+export const MESSAGE_CAP = 200
+/** Conversation text shorter than this is not looked for in a provider's message. */
+const ECHO_MIN = 8
+const KEY_SHAPED = /\bsk-[A-Za-z0-9_-]{8,}/g
+const ERROR_TYPE = /^[A-Za-z0-9_.-]{1,64}$/
+// Anthropic's billing_error and a credit balance it reports on a 400; OpenAI's insufficient_quota (on a 429).
+const BILLING_TYPES = new Set(['billing_error', 'insufficient_quota', 'billing_hard_limit_reached'])
+const BILLING_TEXT = /credit balance/i
+const REDACTED = '[redacted]'
+
+/**
+ * What a provider's message must not carry for one request: the key raw, as base64 (padded or not) and as
+ * base64url, and the conversation's texts (a key-shaped token is taken out regardless).
+ */
+export function secretsOf(
+  apiKey: string,
+  messages: readonly ChatMessage[],
+  opts: ChatOptions | undefined,
+): string[] {
+  const bytes = Buffer.from(apiKey, 'utf8')
+  const texts = [opts?.system, ...messages.map((m) => m.content)].filter(
+    (t): t is string => typeof t === 'string' && t.length >= ECHO_MIN,
+  )
+  return [
+    apiKey,
+    bytes.toString('base64'),
+    bytes.toString('base64').replace(/=+$/, ''),
+    bytes.toString('base64url'),
+    ...texts,
+  ]
+}
+
+interface Said {
+  /** The provider's error type and code, where they are plain words. */
+  kinds: string[]
+  /** Its message on one line, the secrets taken out, not yet capped. */
+  message: string
+}
+
+/** What a non-2xx body says: Anthropic's `{error: {type, message}}` or OpenAI's `{error: {message, type, code}}`. */
+function saidOf(text: string, secrets: readonly string[]): Said {
+  const error = recOf(recOf(jsonOf(text))['error'])
+  const kinds = [error['type'], error['code']].filter(
+    (k): k is string => typeof k === 'string' && ERROR_TYPE.test(k),
+  )
+  let message = typeof error['message'] === 'string' ? error['message'] : ''
+  // Longest first, so a secret inside a longer one cannot leave the rest of the longer one behind.
+  for (const secret of [...secrets].filter((s) => s !== '').sort((a, b) => b.length - a.length)) {
+    message = message.split(secret).join(REDACTED)
+  }
+  message = message
+    .replace(KEY_SHAPED, REDACTED)
+    .replace(/[\p{Cc}\s]+/gu, ' ')
+    .trim()
+  return { kinds, message }
+}
+
+function codeOf(status: number, said: Said): string {
   if (status === 401 || status === 403) return 'auth_failed'
+  const billing =
+    said.kinds.some((k) => BILLING_TYPES.has(k)) ||
+    (status >= 400 && status < 500 && BILLING_TEXT.test(said.message))
+  if (billing) return 'quota_exceeded'
+  if (status === 529 || said.kinds.includes('overloaded_error')) return 'overloaded'
   if (status === 429) return 'rate_limited'
   if (status >= 400 && status < 500) return 'invalid_request'
   return 'unavailable'
 }
 
-/** A non-2xx answer, classified by its status. */
-export const answered = (provider: string, status: number): AdapterError =>
-  new AdapterError(codeOf(status), `${provider} answered ${status}`, {
-    context: { provider, status },
-  })
+function capped(message: string): string {
+  const chars = Array.from(message)
+  return chars.length <= MESSAGE_CAP ? message : `${chars.slice(0, MESSAGE_CAP - 1).join('')}…`
+}
+
+/**
+ * A non-2xx answer, classified by its status and the error type its body names, with the provider's message (or its
+ * type, when it gives no message) after the status.
+ */
+export function answered(
+  provider: string,
+  status: number,
+  body = '',
+  secrets: readonly string[] = [],
+): AdapterError {
+  const said = saidOf(body, secrets)
+  const detail = said.message !== '' ? capped(said.message) : said.kinds[0]
+  return new AdapterError(
+    codeOf(status, said),
+    `${provider} answered ${status}${detail === undefined ? '' : `: ${detail}`}`,
+    { context: { provider, status } },
+  )
+}
 
 /** A JSON body, or undefined when the text is not JSON. */
 export function jsonOf(text: string): unknown {
@@ -199,13 +281,17 @@ export function lifetime(provider: string, timeoutMs: number, caller?: AbortSign
   }
 }
 
-/** POSTs `body` as JSON: the 2xx response, or the error a failure or a non-2xx answer is. */
+/**
+ * POSTs `body` as JSON: the 2xx response, or the error a failure or a non-2xx answer is, the latter's message free of
+ * `secrets` (`secretsOf`).
+ */
 export async function post(
   provider: string,
   url: string,
   headers: Record<string, string>,
   body: string,
   life: Lifetime,
+  secrets: readonly string[],
 ): Promise<Response> {
   let response: Response
   try {
@@ -219,8 +305,18 @@ export async function post(
     // fetch's own error may quote the request's headers, the key among them: none of it goes on.
     throw life.ended() ?? unreachable(provider)
   }
-  // The body is left unread (it may echo the key or the conversation); close() drops the connection.
-  if (response.status < 200 || response.status > 299) throw answered(provider, response.status)
+  if (response.status < 200 || response.status > 299) {
+    let text = ''
+    try {
+      text = await response.text()
+    } catch {
+      // The timeout or the caller's abort ended the read: that, not the status, is why the request failed.
+      const ended = life.ended()
+      if (ended !== undefined) throw ended
+      // A body cut short otherwise: the status alone.
+    }
+    throw answered(provider, response.status, text, secrets)
+  }
   return response
 }
 
