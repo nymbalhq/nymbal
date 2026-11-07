@@ -1,6 +1,11 @@
 import { z, type ZodTypeAny } from 'zod'
 import { ASSISTANT_MASK_FIELDS } from '@nymbalhq/config'
-import { CART_LINE_MAX_QTY, PRODUCT_SORT_KEYS } from '@nymbalhq/types'
+import {
+  CART_LINE_MAX_QTY,
+  ORDER_STATUS_TRANSITIONS,
+  PRODUCT_SORT_KEYS,
+  type OrderStatus,
+} from '@nymbalhq/types'
 
 /**
  * The input of one route: what `registerAllRoutes` parses before the handler runs, and what a tool definition is
@@ -50,6 +55,24 @@ const cartHandle = { cart: 'nymbal.cart' }
 /** A query value as the HTTP layer hands it over: repeated keys arrive as an array. */
 const queryValue = z.union([z.string(), z.array(z.string())]).optional()
 const paging = { limit: queryValue, offset: queryValue }
+/** A list's paging, described for a tool: its default and maximum page size. */
+function pagingOf(size: number, max: number) {
+  return {
+    limit: queryValue.describe(`How many to answer: ${size} by default, at most ${max}.`),
+    offset: queryValue.describe('How many to skip, to page through the list (0 by default).'),
+  }
+}
+const orderStatus = z.enum(
+  Object.keys(ORDER_STATUS_TRANSITIONS) as [OrderStatus, ...OrderStatus[]],
+)
+const inventoryStatus = z.enum(['in_stock', 'low_stock', 'out_of_stock'])
+const isoDateTime = z.iso.datetime({ offset: true })
+/** An order date bound: an ISO date (from its UTC midnight) or a date-time with Z or an offset. */
+const dateFrom = z.union([z.iso.date(), isoDateTime])
+/** A date-only upper bound reaches the day's last millisecond, so dateFrom=dateTo=D is all of D. */
+const dateTo = z.union([z.iso.date().transform((d) => `${d}T23:59:59.999Z`), isoDateTime])
+const DATE_BOUND =
+  'An ISO date (a whole UTC day) or date-time with Z or an offset; orders placed on or after dateFrom and on or before dateTo (dateFrom=dateTo=2026-11-01 is all of 1 November, UTC).'
 /** A detail read as the event log folds it at `at`. */
 const asOfQuery = z.object({ at: queryValue })
 const historyQuery = z.object({ cursor: queryValue, limit: queryValue })
@@ -168,8 +191,17 @@ export const routeSchemas: Record<string, RouteSchema> = {
   'GET /api/products/search': {
     name: 'products.search',
     description:
-      'Search products by text, optionally in one category, in relevance order, with the total and the category facet.',
-    query: z.object({ q: queryValue, limit: queryValue, cursor: queryValue, category: queryValue }),
+      'Search the products the storefront lists by words (q is required), in relevance order, with the total and the category facet; to list a category without words, use products_list.',
+    query: z.object({
+      q: z
+        .string()
+        .trim()
+        .min(1, 'q needs words to search for')
+        .describe('The words to search for; required, not blank.'),
+      limit: queryValue.describe('How many to answer: 20 by default, at most 100.'),
+      cursor: queryValue.describe('The nextCursor of the previous page.'),
+      category: queryValue.describe('A category slug, to search within that category.'),
+    }),
   },
   'GET /api/products': {
     name: 'products.list',
@@ -401,14 +433,23 @@ export const routeSchemas: Record<string, RouteSchema> = {
   'GET /api/admin/orders': {
     name: 'admin.orders.list',
     personal: ALL_PERSONAL,
-    description: 'List orders, filtered by status, date, customer or text.',
+    description:
+      'List orders, newest first (50 by default, at most 200; page with offset). Each order carries its number, status, email, addresses, totalMinor, capturedMinor and refundedMinor.',
     query: z.object({
-      status: queryValue,
-      dateFrom: queryValue,
-      dateTo: queryValue,
-      customer: queryValue,
-      q: queryValue,
-      ...paging,
+      status: orderStatus
+        .describe(
+          'One of: pending (awaiting payment), confirmed, processing, shipped, delivered, cancelled, refunded, partially_refunded.',
+        )
+        .optional(),
+      dateFrom: dateFrom.describe(DATE_BOUND).optional(),
+      dateTo: dateTo.describe(DATE_BOUND).optional(),
+      customer: queryValue.describe(
+        'A customer id or an email (also finds orders placed as a guest with that email).',
+      ),
+      q: queryValue.describe(
+        'Part of the order number or the email only; names, postcodes and products are not searched.',
+      ),
+      ...pagingOf(50, 200),
     }),
   },
   'GET /api/admin/orders/:orderNumber': {
@@ -508,7 +549,11 @@ export const routeSchemas: Record<string, RouteSchema> = {
   'GET /api/admin/products': {
     name: 'admin.products.list',
     description: 'List products, filtered by status or name.',
-    query: z.object({ status: queryValue, q: queryValue, ...paging }),
+    query: z.object({
+      status: productStatus.describe('draft, active or archived.').optional(),
+      q: queryValue.describe("Part of the product's name."),
+      ...pagingOf(50, 200),
+    }),
   },
   'POST /api/admin/products': {
     name: 'admin.products.create',
@@ -524,7 +569,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   'GET /api/admin/products/:id': {
     name: 'admin.products.get',
     description:
-      'Get one product by id or slug; with `at`, the product as the event log folds it at that time.',
+      'Get one product by an id or slug a tool result gave; never guess a slug from a name: find the product with admin_products_list q=<name> first. With `at`, the product as the event log folds it at that time.',
     params: idParams,
     query: asOfQuery,
   },
@@ -592,7 +637,11 @@ export const routeSchemas: Record<string, RouteSchema> = {
   'GET /api/admin/inventory': {
     name: 'admin.inventory.list',
     description: 'List variant stock, most urgent first.',
-    query: z.object({ status: queryValue, q: queryValue, ...paging }),
+    query: z.object({
+      status: inventoryStatus.describe('in_stock, low_stock or out_of_stock.').optional(),
+      q: queryValue.describe('Part of the SKU or the product name.'),
+      ...pagingOf(100, 500),
+    }),
   },
   'POST /api/admin/inventory/:variantId/adjust': {
     name: 'admin.inventory.adjust',
@@ -642,7 +691,8 @@ export const routeSchemas: Record<string, RouteSchema> = {
   'GET /api/admin/customers/:id/orders': {
     name: 'admin.customers.orders',
     personal: ALL_PERSONAL,
-    description: "List one customer's orders.",
+    description:
+      'List the orders a customer placed while signed in. Orders placed as a guest with the same email are not here: find them with admin_orders_list customer=<email>.',
     params: idParams,
   },
   'POST /api/admin/customers/:id/notes': {
@@ -656,7 +706,8 @@ export const routeSchemas: Record<string, RouteSchema> = {
   // Admin: reviews
   'GET /api/admin/reviews': {
     name: 'admin.reviews.pending',
-    description: 'List reviews awaiting moderation.',
+    description:
+      "List reviews awaiting moderation, each with its product's name and slug (null when the product was deleted), the rating, title and body.",
   },
   'POST /api/admin/reviews/:id/moderate': {
     name: 'admin.reviews.moderate',
@@ -752,7 +803,8 @@ export const routeSchemas: Record<string, RouteSchema> = {
   // Admin: activity (the audit trail)
   'GET /api/admin/activity': {
     name: 'admin.activity.list',
-    description: 'List audit entries newest first, filtered, a page at a time.',
+    description:
+      'The audit trail of admin and agent commands (such as order.refund or product.update), newest first, filtered, a page at a time; for the current state of an order or product, read it directly.',
     query: z.object({
       actor: queryValue,
       command: queryValue,

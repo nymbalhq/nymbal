@@ -1,4 +1,5 @@
-import type { HttpAdapter, ReviewsAdapter } from '@nymbalhq/types'
+import type { HttpAdapter, Review, ReviewsAdapter } from '@nymbalhq/types'
+import type { ProductRepository } from '../repositories/product.js'
 import type { ReviewRepository } from '../repositories/review.js'
 import { ok, fail, renderError } from './envelope.js'
 import { audit } from '../audit/audit.js'
@@ -7,13 +8,20 @@ import { requireRole } from './role-middleware.js'
 export interface RegisterAdminReviewsRoutesDeps {
   reviewsAdapter: ReviewsAdapter
   reviewRepo: ReviewRepository
+  productRepo: ProductRepository
+}
+
+/** A pending review with its product as it is now; both null when the product was deleted. */
+export interface PendingReview extends Review {
+  productName: string | null
+  productSlug: string | null
 }
 
 export function registerAdminReviewsRoutes(
   adapter: HttpAdapter,
   deps: RegisterAdminReviewsRoutesDeps,
 ): void {
-  const { reviewRepo } = deps
+  const { reviewRepo, productRepo } = deps
 
   // GET /api/admin/reviews — list pending reviews
   adapter.registerRoute(
@@ -21,7 +29,21 @@ export function registerAdminReviewsRoutes(
     '/api/admin/reviews',
     requireRole('admin', async (ctx) => {
       try {
-        const pending = await reviewRepo.store.read((tx) => reviewRepo.listByStatus(tx, 'pending'))
+        const pending = await reviewRepo.store.read(async (tx): Promise<PendingReview[]> => {
+          const reviews = await reviewRepo.listByStatus(tx, 'pending')
+          const products = new Map<string, { name: string; slug: string } | null>()
+          for (const id of new Set(reviews.map((r) => r.productId))) {
+            products.set(id, await productRepo.findById(tx, id))
+          }
+          return reviews.map((review) => {
+            const product = products.get(review.productId)
+            return {
+              ...review,
+              productName: product?.name ?? null,
+              productSlug: product?.slug ?? null,
+            }
+          })
+        })
         return ok(pending)
       } catch (err) {
         return renderError(err, ctx.logger)
