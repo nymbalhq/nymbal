@@ -17,7 +17,8 @@ import { shopper } from '../../../platform/tests/support/shopper.js'
 
 // AC-10: `nymbal mcp`, the stdio bridge to a running store's `POST /api/mcp`. The store is `nymbal dev --api-only`
 // on a project of its own with `agents.mcp.writes: 'apply'`, whose first run seeds the admin named here; the bridge
-// and `nymbal mcp tools` are spawned from the built CLI (`pnpm build` first).
+// and `nymbal mcp tools` are spawned from the built CLI (`pnpm build` first). AC-7: what the bridge answers an admin is
+// what the endpoint answers, customer contact details withheld (the store's default agents.mcp.withhold).
 
 const ADMIN = { email: `admin-${randomUUID()}@mcp.test`, password: 'mcp-bridge-correct-horse' }
 const AGENT = { name: 'bridge-acceptance', version: '1.0.0' }
@@ -286,4 +287,100 @@ describe('AC-10: nymbal mcp, the stdio bridge', () => {
     expect(plain.stdout.split('\n').filter((line) => line !== '')).toEqual(listing)
     expect(JSON.parse(json.stdout) as unknown).toEqual(listing)
   }, 60_000)
+})
+
+describe('AC-7: nymbal mcp answers what POST /api/mcp answers, customer contact details withheld', () => {
+  type Called = { isError?: boolean | undefined; structuredContent?: unknown; content?: unknown }
+
+  const textOf = (result: Called): string =>
+    ((result.content ?? []) as Array<{ type: string; text?: string }>)[0]?.text ?? ''
+
+  /** An order an anonymous agent places through checkout_begin for a product the admin creates; its buyer's details. */
+  async function agentOrder(): Promise<{ orderNumber: string; values: string[] }> {
+    const tag = randomUUID()
+    const slug = `withheld-${tag}`
+    const buyer = {
+      email: `agent-${tag}@mcp.test`,
+      phone: `07700 9${String(parseInt(tag.slice(0, 5), 16) % 100_000).padStart(5, '0')}`,
+      addressLine1: `${tag.slice(0, 8)} Protocol Street`,
+      postalCode: 'E1 6AN',
+    }
+    const home = {
+      firstName: 'Agent',
+      lastName: 'Buyer',
+      addressLine1: buyer.addressLine1,
+      city: 'London',
+      region: 'England',
+      postalCode: buyer.postalCode,
+      country: 'GB',
+      phone: buyer.phone,
+    }
+    const created: Called = await overHttp(adminToken, (client) =>
+      client.callTool({
+        name: 'admin_products_create',
+        arguments: {
+          slug,
+          name: 'Withheld Widget',
+          status: 'active',
+          variants: [{ sku: slug, name: 'Default', priceMinor: 900, stock: 4, options: [] }],
+        },
+      }),
+    )
+    const variantId = (created.structuredContent as { variants: Array<{ id: string }> })
+      .variants[0]!.id
+    const placed: Called = await overHttp(undefined, async (client) => {
+      const cart = (
+        (await client.callTool({ name: 'cart_get', arguments: {} })).structuredContent as {
+          cartHandle: string
+        }
+      ).cartHandle
+      await vi.waitFor(
+        async () => {
+          const added = await client.callTool({
+            name: 'cart_addItem',
+            arguments: { cart, variantId, qty: 1 },
+          })
+          if (added.isError === true)
+            throw new Error(`cart_addItem: ${JSON.stringify(added.content)}`)
+        },
+        { timeout: 10_000, interval: 100 },
+      )
+      return client.callTool({
+        name: 'checkout_begin',
+        arguments: { cart, email: buyer.email, billingAddress: home, shippingAddress: home },
+      })
+    })
+    const orderNumber = (placed.structuredContent as { orderNumber?: string } | undefined)
+      ?.orderNumber
+    if (placed.isError === true || orderNumber === undefined) {
+      throw new Error(`checkout_begin: ${JSON.stringify(placed.content)}`)
+    }
+    return { orderNumber, values: Object.values(buyer) }
+  }
+
+  // Kills: the bridge reshaping or refetching a result, or reading a route the endpoint does not withhold.
+  it('AC-7: a tools/call of admin_orders_get over the bridge, signed in as the admin, holds none of the order’s email, phone, street line and postcode, holds withheld, and its structuredContent equals the same call’s over POST /api/mcp, while GET /api/admin/orders/:orderNumber answers all four', async () => {
+    const order = await agentOrder()
+    const read = (client: Client): Promise<Called> =>
+      client.callTool({ name: 'admin_orders_get', arguments: { orderNumber: order.orderNumber } })
+
+    const bridged = await overBridge(bridgeEnv(signedIn()), read)
+    const direct = await overHttp(adminToken, read)
+    const res = await fetch(`${dev.base}/api/admin/orders/${order.orderNumber}`, {
+      headers: { authorization: `Bearer ${adminToken}` },
+    })
+    const route = await res.text()
+    const held = JSON.stringify(bridged.structuredContent) + textOf(bridged)
+
+    expect([res.status, bridged.isError ?? false]).toEqual([200, false])
+    expect(order.values.filter((value) => route.includes(value))).toEqual(order.values)
+    expect(order.values.filter((value) => held.includes(value))).toEqual([])
+    expect((bridged.structuredContent as { withheld?: unknown }).withheld).toEqual([
+      'email',
+      'phone',
+      'address',
+      'postcode',
+    ])
+    expect(bridged.structuredContent).toEqual(direct.structuredContent)
+  }, 90_000)
 })

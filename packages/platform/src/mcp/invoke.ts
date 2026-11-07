@@ -1,4 +1,5 @@
 import { v7 as uuidv7 } from 'uuid'
+import type { CustomerField } from '@nymbalhq/config'
 import {
   IDEMPOTENCY_KEY_HEADER,
   isValidIdempotencyKey,
@@ -21,6 +22,7 @@ import { scrubDeep } from '../settings/secret-set.js'
 import { ProposalError, type Executed, type Policy } from './proposals.js'
 import { PARTS, partShape } from './registry.js'
 import type { RecordedRoute, RouteTable } from './route-table.js'
+import { withholdResult } from './withhold.js'
 
 export type { Caller, ToolResult } from '@nymbalhq/types'
 
@@ -30,6 +32,8 @@ export interface InvokerDeps {
   proposals: Pick<ProposalService, 'propose' | 'run'>
   policy: Policy
   logger: Logger
+  /** The customer fields an admin-scope tool's result never carries to the caller; [] sends them. */
+  withhold: readonly CustomerField[]
 }
 
 /** The tool surface, and how a stored proposal is run through its route (for the proposal service, not for agents). */
@@ -171,7 +175,7 @@ function storedArgs(entry: RouteSchema, args: Record<string, unknown>) {
  * kept for an admin to decide, a shopper's only when a policy approves it, and one a policy approves runs at once.
  */
 export function createInvoker(deps: InvokerDeps): Invoker {
-  const { table, tools, proposals, policy, logger } = deps
+  const { table, tools, proposals, policy, logger, withhold } = deps
   const byName = new Map(tools.map((tool) => [tool.name, tool]))
 
   function contextOf(
@@ -314,10 +318,12 @@ export function createInvoker(deps: InvokerDeps): Invoker {
       }
       const { tool, entry, route } = found
       const ctx = contextOf(tool, entry, args ?? {}, caller, options.correlationId)
-      if (tool.kind === 'command') {
-        return propose(tool, entry, route, args ?? {}, ctx, caller, options.proposeWrites === true)
-      }
-      return resultOfEnvelope(await run(route, ctx), entry)
+      const result =
+        tool.kind === 'command'
+          ? await propose(tool, entry, route, args ?? {}, ctx, caller, options.proposeWrites === true)
+          : resultOfEnvelope(await run(route, ctx), entry)
+      // By the route's scope, never the caller: a shopper's own data and public answers reach every caller whole.
+      return tool.scope === 'admin' ? withholdResult(result, withhold) : result
     },
 
     async execute(row, auth) {

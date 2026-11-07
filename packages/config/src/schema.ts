@@ -586,10 +586,16 @@ export const DEFAULT_AGENT_CRAWLERS: readonly string[] = Object.freeze([
 
 const CRAWL_OTHERS = ['allow', 'disallow'] as const
 
+/** The customer fields the store's AI surfaces name: what MCP withholds and what the assistant masks. */
+export const CUSTOMER_FIELDS = ['email', 'phone', 'address', 'postcode', 'name'] as const
+export type CustomerField = (typeof CUSTOMER_FIELDS)[number]
+/** The fields both surfaces keep from an AI by default: names are sent. */
+export const DEFAULT_CUSTOMER_FIELDS = ['email', 'phone', 'address', 'postcode'] as const
+
 /** The customer fields the admin's assistant can send to its AI provider as placeholders (`[email-1]`). */
-export const ASSISTANT_MASK_FIELDS = ['email', 'phone', 'address', 'postcode', 'name'] as const
-export type AssistantMaskField = (typeof ASSISTANT_MASK_FIELDS)[number]
-export const DEFAULT_ASSISTANT_MASK = ['email', 'phone', 'address', 'postcode'] as const
+export const ASSISTANT_MASK_FIELDS = CUSTOMER_FIELDS
+export type AssistantMaskField = CustomerField
+export const DEFAULT_ASSISTANT_MASK = DEFAULT_CUSTOMER_FIELDS
 
 /** The link types the Agentic Commerce Protocol (2026-04-17) names for a session's `links`. */
 export const ACP_LINK_TYPES = [
@@ -628,6 +634,11 @@ export const agentsSchema = z
                 : undefined,
           })
           .default('proposal'),
+        /** The customer fields no admin tool result sends an MCP client; [] sends them. */
+        withhold: z
+          .array(z.enum(CUSTOMER_FIELDS))
+          .transform((fields) => [...new Set(fields)])
+          .default(() => [...DEFAULT_CUSTOMER_FIELDS]),
       })
       .strict()
       .prefault({}),
@@ -694,9 +705,9 @@ export const agentsSchema = z
         customerData: z.boolean().default(true),
         /** The fields sent as placeholders; [] sends them as they are. */
         mask: z
-          .array(z.enum(ASSISTANT_MASK_FIELDS))
+          .array(z.enum(CUSTOMER_FIELDS))
           .transform((fields) => [...new Set(fields)])
-          .default(() => [...DEFAULT_ASSISTANT_MASK]),
+          .default(() => [...DEFAULT_CUSTOMER_FIELDS]),
       })
       .strict()
       .prefault({}),

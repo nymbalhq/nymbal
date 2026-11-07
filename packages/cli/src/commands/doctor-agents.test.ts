@@ -29,8 +29,14 @@ afterAll(() => {
   if (dir !== '') rmSync(dir, { recursive: true, force: true })
 })
 
-/** The repository's config on the default stores, with `agents.ucp` as given (absent, the repo's: no links). */
-function rawConfig(ucp?: { enabled: boolean; links: typeof LINKS }) {
+/**
+ * The repository's config on the default stores, with `agents.ucp` as given (absent, the repo's: no links) and the
+ * other `agents` blocks as given.
+ */
+function rawConfig(
+  ucp?: { enabled: boolean; links: typeof LINKS },
+  agents?: Record<string, unknown>,
+) {
   return {
     ...repoConfig,
     infrastructure: {
@@ -38,15 +44,20 @@ function rawConfig(ucp?: { enabled: boolean; links: typeof LINKS }) {
       documentStore: { provider: 'in-memory' },
       eventBus: { provider: 'in-process' },
     },
-    ...(ucp !== undefined && { agents: { ucp } }),
+    ...((ucp !== undefined || agents !== undefined) && {
+      agents: { ...(ucp !== undefined && { ucp }), ...agents },
+    }),
   }
 }
 
 /** `nymbal doctor` (text, then `--json`) in a fresh project for the config, with no public URL set. */
-async function doctor(ucp?: {
-  enabled: boolean
-  links: typeof LINKS
-}): Promise<{ text: CliRun; json: CliRun }> {
+async function doctor(
+  ucp?: {
+    enabled: boolean
+    links: typeof LINKS
+  },
+  agents?: Record<string, unknown>,
+): Promise<{ text: CliRun; json: CliRun }> {
   const project = mkdtempSync(join(dir, 'project-'))
   writeFileSync(
     join(project, 'package.json'),
@@ -54,7 +65,7 @@ async function doctor(ucp?: {
   )
   writeFileSync(
     join(project, 'nymbal.config.ts'),
-    `export default ${JSON.stringify(rawConfig(ucp), null, 2)}\n`,
+    `export default ${JSON.stringify(rawConfig(ucp, agents), null, 2)}\n`,
   )
   const sqlitePath = join(project, 'nymbal.db')
   await migratedSqlite(sqlitePath)
@@ -121,4 +132,39 @@ describe('AC-2: nymbal doctor reports how ready the agent surfaces are', () => {
     ).toEqual({ status: 'ok', off: true })
     expect(text.code).toBe(0)
   }, 60_000)
+})
+
+describe('AC-11: nymbal doctor names what MCP withholds and what the assistant masks', () => {
+  const DEFAULTS =
+    '; customer fields: mcp withholds email, phone, address, postcode; assistant masks email, phone, address, postcode'
+  const NOTHING = '; customer fields: mcp withholds nothing; assistant masks nothing'
+
+  it('AC-11: on the repository config the agents line ends with the default clause, --json holds the same detail, and doctor exits 0', async () => {
+    const { text, json } = await doctor()
+    const line = doctorLines(text.out).find((l) => l.name === 'agents')
+    const checked = doctorJson(json.stdout).checks.find((c) => c.name === 'agents')
+
+    expect(line?.detail.slice(-DEFAULTS.length), text.out.slice(-3000)).toBe(DEFAULTS)
+    expect(checked?.detail).toBe(line?.detail)
+    expect([text.code, json.code]).toEqual([0, 0])
+  }, 60_000)
+
+  it('AC-11: with agents.mcp.withhold [] and agents.assistant.mask [] the agents line ends "mcp withholds nothing; assistant masks nothing", in text and --json alike, with the same status and exit code as the repository config', async () => {
+    const repo = await doctor()
+    const { text, json } = await doctor(undefined, {
+      mcp: { withhold: [] },
+      assistant: { mask: [] },
+    })
+    const line = doctorLines(text.out).find((l) => l.name === 'agents')
+    const checked = doctorJson(json.stdout).checks.find((c) => c.name === 'agents')
+    const before = doctorLines(repo.text.out).find((l) => l.name === 'agents')
+
+    expect(line?.detail.slice(-NOTHING.length), text.out.slice(-3000)).toBe(NOTHING)
+    expect(checked?.detail).toBe(line?.detail)
+    expect([line?.status, text.code, json.code]).toEqual([
+      before?.status,
+      repo.text.code,
+      repo.json.code,
+    ])
+  }, 90_000)
 })

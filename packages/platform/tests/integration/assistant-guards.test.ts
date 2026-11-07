@@ -25,6 +25,7 @@ import {
   type Frame,
 } from '../support/assistant.js'
 import { auditRows } from '../support/audit.js'
+import { unaudited } from '../support/write-audit.js'
 import { adminSession } from '../support/audit-http.js'
 import { address, cartWith, type Seeded } from '../support/kernel.js'
 import { listedNames, toolSurface } from '../support/mcp.js'
@@ -56,8 +57,10 @@ import {
 // - AC-8: settings delete is no tool; the route still clears a value.
 // - AC-9: the system prompt names the page's route pattern only; the record reaches the model as a tool result.
 // - AC-16: two writes of one turn approved by two admins are each shown in History with their own approver.
-// - AC-18: the routes marked `personal` are exactly those whose answers carry a seeded customer's email, phone or
+// - AC-18: the read routes marked `personal` are exactly those whose answers carry a seeded customer's email, phone or
 //   address, field for field.
+// - AC-8 (the order commands): each order command whose applied answer carries the order is marked with exactly the
+//   fields it carries, and none is offered to the assistant under customerData false.
 // - AC-19: property, each call's log line counts the customer fields its result held, and logs none of them.
 // - AC-20: property, agents.assistant.customerData false keeps every `personal` tool off the assistant.
 
@@ -1110,13 +1113,17 @@ function seededArgs(tool: ToolDefinition, seed: Customer): Record<string, unknow
   return args
 }
 
-describe('AC-18: the routes marked personal are exactly those that answer customer fields', () => {
-  it('AC-18: on a store seeded with a customer whose email, phone and address are markers (an order with notes, a pending review and a proposal of theirs), calling every tool the assistant is offered with the seed’s ids, the tools whose result holds a marker are exactly those whose route is marked personal, each marked with exactly the fields its result held', async () => {
+describe('AC-18: the read routes marked personal are exactly those that answer customer fields', () => {
+  // The assistant proposes a command and reads nothing back (status proposed), so a command's marks are held to its
+  // applied answer under AC-8 below; here, the reads.
+  it('AC-18: on a store seeded with a customer whose email, phone and address are markers (an order with notes, a pending review and a proposal of theirs), calling every read tool the assistant is offered with the seed’s ids, the tools whose result holds a marker are exactly the read tools whose route is marked personal, each marked with exactly the fields its result held', async () => {
     const store = await assistantStore()
     try {
       const seed = await markedCustomer(store)
       const tools = store.kernel.app.assistantTools!
-      const offered = offeredBy(tools.list(adminCaller(store)))
+      const offered = offeredBy(tools.list(adminCaller(store))).filter(
+        (tool) => tool.kind === 'read',
+      )
       const marker: Record<Field, string> = {
         email: seed.email,
         phone: seed.phone,
@@ -1142,6 +1149,118 @@ describe('AC-18: the routes marked personal are exactly those that answer custom
 
       expect(held.has('admin_customers_get')).toBe(true)
       expect(Object.fromEntries(marked)).toEqual(Object.fromEntries(held))
+    } finally {
+      await store.close()
+    }
+  }, 120_000)
+})
+
+/** The eight order commands whose applied answer carries the order's customer fields, and those fields. */
+const ORDER_COMMANDS: Record<string, Field[]> = {
+  admin_orders_confirm: ['address', 'email', 'phone'],
+  admin_orders_process: ['address', 'email', 'phone'],
+  admin_orders_cancel: ['address', 'email', 'phone'],
+  admin_orders_markPaid: ['address', 'email', 'phone'],
+  admin_orders_markDelivered: ['address', 'email', 'phone'],
+  admin_orders_ship: ['address', 'email', 'phone'],
+  admin_orders_refund: ['address', 'email', 'phone'],
+  admin_orders_resendConfirmation: ['email'],
+}
+
+interface MarkedOrder {
+  orderId: string
+  marker: Record<Field, string>
+}
+
+/** An order of one unit whose email, phone and street line are markers no other record holds; unpaid when asked. */
+async function markedOrder(store: AssistantStore, unpaid: boolean): Promise<MarkedOrder> {
+  const hex = randomUUID().replaceAll('-', '')
+  const marker: Record<Field, string> = {
+    email: `pii-${hex}${unpaid ? '+stub-pending' : ''}@orders.test`,
+    phone: `07${String(parseInt(hex.slice(0, 8), 16))
+      .padStart(10, '0')
+      .slice(0, 9)}`,
+    address: `${hex.slice(8, 16)} Marker Lane`,
+  }
+  const home = { ...address, addressLine1: marker.address, phone: marker.phone }
+  const bought = await product(store)
+  const cartToken = await cartWith(store.kernel, { ...bought, initialStock: bought.stock }, 1)
+  const order = await store.kernel.services.checkout.beginCheckout({
+    cartToken,
+    email: marker.email,
+    billingAddress: home,
+    shippingAddress: home,
+  })
+  await store.kernel.app.relay.drain()
+  return { orderId: order.orderId, marker }
+}
+
+describe('AC-8: the order commands that answer the order are marked personal', () => {
+  // Kills: admin_orders_cancel (or any of the eight) offered under customerData false while its answer sends the email
+  // and both addresses to the provider; a command marked with a field its answer does not hold.
+  it('AC-8: on a store applying every write and withholding nothing, each order command applied to a seeded order answers exactly the customer fields its route is marked with (confirm, process, cancel, markPaid, markDelivered, ship and refund the email, phone and address; resendConfirmation the email), and under customerData false none of the eight is offered to the assistant, all eight being offered otherwise', async () => {
+    const store = await assistantStore({
+      configure: withAgents({
+        mcp: { enabled: true, writes: 'apply', withhold: [] },
+      } as Partial<NymbalConfig['agents']>),
+    })
+    try {
+      const tools = toolSurface(store.kernel.app)
+      const paid = await markedOrder(store, false)
+      const toCancel = await markedOrder(store, true)
+      const toMarkPaid = await markedOrder(store, true)
+      // An order money was taken for that is still pending: what confirm moves on.
+      const toConfirm = await markedOrder(store, true)
+      await unaudited(() =>
+        store.kernel.store.transaction((tx) =>
+          store.kernel.repos.order.recordCapture(tx, toConfirm.orderId, {
+            amountMinor: 1500,
+            method: 'manual',
+            at: new Date(),
+          }),
+        ),
+      )
+      const steps: Array<[string, Record<string, unknown>, MarkedOrder]> = [
+        ['admin_orders_confirm', { id: toConfirm.orderId }, toConfirm],
+        ['admin_orders_process', { id: paid.orderId }, paid],
+        [
+          'admin_orders_ship',
+          { id: paid.orderId, trackingNumber: 'TRK-1', carrier: 'Royal Mail' },
+          paid,
+        ],
+        ['admin_orders_markDelivered', { id: paid.orderId }, paid],
+        ['admin_orders_refund', { id: paid.orderId, amountMinor: 1 }, paid],
+        ['admin_orders_resendConfirmation', { id: paid.orderId }, paid],
+        ['admin_orders_cancel', { id: toCancel.orderId }, toCancel],
+        ['admin_orders_markPaid', { id: toMarkPaid.orderId }, toMarkPaid],
+      ]
+
+      const applied: Record<string, { ok: boolean; fields: Field[] }> = {}
+      for (const [name, args, order] of steps) {
+        const result = await tools.call(name, args, store.caller)
+        const text = result.content.map((c) => c.text).join('\n')
+        applied[name] = {
+          ok: result.isError !== true,
+          fields: FIELDS.filter((field) => text.includes(order.marker[field])).sort(),
+        }
+      }
+      const marks = personalMarks()
+      const listed = tools.list(store.caller) as ToolDefinition[]
+      const offered = (customerData?: boolean) =>
+        offeredBy(listed, customerData === undefined ? {} : { customerData })
+          .map((tool) => tool.name)
+          .filter((name) => Object.hasOwn(ORDER_COMMANDS, name))
+          .sort()
+
+      expect(
+        Object.fromEntries(Object.keys(ORDER_COMMANDS).map((name) => [name, marks.get(name)])),
+      ).toEqual(ORDER_COMMANDS)
+      expect(applied).toEqual(
+        Object.fromEntries(
+          Object.keys(ORDER_COMMANDS).map((name) => [name, { ok: true, fields: marks.get(name) }]),
+        ),
+      )
+      expect([offered(false), offered()]).toEqual([[], Object.keys(ORDER_COMMANDS).sort()])
     } finally {
       await store.close()
     }

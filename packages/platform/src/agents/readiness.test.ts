@@ -70,3 +70,76 @@ describe('AC-1: agentReadiness', () => {
     )
   })
 })
+
+// AC-10: the same line names what each AI surface is told of a customer: what an admin's MCP client never receives
+// (agents.mcp.withhold) and what the admin's assistant sends as placeholders (agents.assistant.mask), or that it sends
+// none under customerData false. The clause never changes the line's status.
+
+const FIELDS = ['email', 'phone', 'address', 'postcode', 'name'] as const
+const DEFAULT_FIELDS = ['email', 'phone', 'address', 'postcode'] as const
+
+/** The fields, in the config's order, joined as the line prints them; `nothing` for none. */
+function named(fields: readonly string[]): string {
+  const listed = FIELDS.filter((field) => fields.includes(field))
+  return listed.length === 0 ? 'nothing' : listed.join(', ')
+}
+
+describe('AC-10: the agents line names what each AI surface withholds', () => {
+  it('AC-10: on the default config the detail ends "; customer fields: mcp withholds email, phone, address, postcode; assistant masks email, phone, address, postcode"', () => {
+    const clause =
+      '; customer fields: mcp withholds email, phone, address, postcode; assistant masks email, phone, address, postcode'
+
+    const { detail } = agentReadiness(kernelConfig('sqlite'), {})
+
+    expect(detail.slice(-clause.length)).toBe(clause)
+  })
+
+  // Kills: the withhold list left out, a field printed out of the config's order, `masks` under customerData false,
+  // an absent key read as nothing, and a clause that changes the line's status.
+  it('AC-10: property: for any agents.mcp.withhold and agents.assistant customerData and mask, each set or left out, on any of the ok, degraded and ucp off cases, the detail ends with exactly "; customer fields: mcp withholds <W>; assistant <A>" and the status is the one the case gives without it', () => {
+    const base = kernelConfig('sqlite')
+    const { withhold: _withhold, ...mcp } = base.agents.mcp as typeof base.agents.mcp & {
+      withhold?: unknown
+    }
+    const fields = fc.option(fc.shuffledSubarray([...FIELDS]), { nil: undefined })
+    fc.assert(
+      fc.property(
+        fc.boolean(),
+        links,
+        fc.constantFrom(...ORIGINS),
+        fields,
+        fc.option(fc.boolean(), { nil: undefined }),
+        fields,
+        (enabled, ucpLinks, url, withhold, customerData, mask) => {
+          const config = {
+            ...base,
+            agents: {
+              ...base.agents,
+              ucp: { enabled, links: ucpLinks },
+              mcp: { ...mcp, ...(withhold !== undefined && { withhold }) },
+              assistant: {
+                ...(customerData !== undefined && { customerData }),
+                ...(mask !== undefined && { mask }),
+              },
+            },
+          } as typeof base
+          const env: NodeJS.ProcessEnv = url === undefined ? {} : { NYMBAL_PUBLIC_URL: url }
+          const present = new Set(ucpLinks.map((l) => l.type))
+          const degraded =
+            enabled && (REQUIRED.some((type) => !present.has(type)) || url === PUBLIC_HTTP)
+          const assistant =
+            customerData === false ? 'sends none' : `masks ${named(mask ?? DEFAULT_FIELDS)}`
+          const clause = `; customer fields: mcp withholds ${named(withhold ?? DEFAULT_FIELDS)}; assistant ${assistant}`
+
+          const check = agentReadiness(config, env)
+
+          expect({ status: check.status, end: check.detail.slice(-clause.length) }).toEqual({
+            status: degraded ? 'degraded' : 'ok',
+            end: clause,
+          })
+        },
+      ),
+      { numRuns: 400 },
+    )
+  })
+})

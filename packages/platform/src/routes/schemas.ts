@@ -39,7 +39,7 @@ export interface RouteSchema {
    */
   handles?: Record<string, string>
   /**
-   * The customer fields a read's answer can carry. The assistant sends a tool's result to the AI provider as it is, so
+   * The customer fields a route's answer can carry. The assistant sends a tool's result to the AI provider as it is, so
    * `agents.assistant.customerData: false` leaves every marked route off the assistant, and the docs list them.
    */
   personal?: readonly PersonalField[]
@@ -476,6 +476,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'POST /api/admin/orders/:id/confirm': {
     name: 'admin.orders.confirm',
+    personal: ALL_PERSONAL,
     command: 'order.confirm',
     description:
       'Move a paid order to confirmed; an unpaid order is refused (record its payment instead).',
@@ -483,12 +484,14 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'POST /api/admin/orders/:id/process': {
     name: 'admin.orders.process',
+    personal: ALL_PERSONAL,
     command: 'order.process',
     description: 'Move a confirmed order to processing.',
     params: orderIdParams,
   },
   'POST /api/admin/orders/:id/cancel': {
     name: 'admin.orders.cancel',
+    personal: ALL_PERSONAL,
     command: 'order.cancel',
     destructive: true,
     description: 'Cancel an order nothing was captured for, with an optional reason.',
@@ -497,6 +500,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'POST /api/admin/orders/:id/mark-paid': {
     name: 'admin.orders.markPaid',
+    personal: ALL_PERSONAL,
     command: 'order.markPaid',
     provider: true,
     description:
@@ -506,12 +510,14 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'POST /api/admin/orders/:id/mark-delivered': {
     name: 'admin.orders.markDelivered',
+    personal: ALL_PERSONAL,
     command: 'order.markDelivered',
     description: 'Move a shipped order to delivered.',
     params: orderIdParams,
   },
   'POST /api/admin/orders/:id/ship': {
     name: 'admin.orders.ship',
+    personal: ALL_PERSONAL,
     command: 'order.ship',
     description: 'Mark an order shipped with its tracking number and carrier.',
     params: orderIdParams,
@@ -519,6 +525,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'POST /api/admin/orders/:id/refund': {
     name: 'admin.orders.refund',
+    personal: ALL_PERSONAL,
     command: 'order.refund',
     destructive: true,
     provider: true,
@@ -550,6 +557,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'POST /api/admin/orders/:id/resend-confirmation': {
     name: 'admin.orders.resendConfirmation',
+    personal: ['email'],
     command: 'order.resendConfirmation',
     description: "Resend an order's confirmation email.",
     params: orderIdParams,

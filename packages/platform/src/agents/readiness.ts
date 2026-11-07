@@ -1,4 +1,4 @@
-import type { NymbalConfig } from '@nymbalhq/config'
+import { CUSTOMER_FIELDS, DEFAULT_CUSTOMER_FIELDS, type NymbalConfig } from '@nymbalhq/config'
 import type { DiagnosisCheck } from '../diagnose.js'
 import { UCP_CAPABILITIES } from './ucp-surface.js'
 
@@ -31,6 +31,24 @@ function capabilitiesText(): string {
     .join(', ')
 }
 
+/** The fields in the config's order, joined; `nothing` for none. */
+function fieldsText(fields: readonly string[]): string {
+  const named = CUSTOMER_FIELDS.filter((field) => fields.includes(field))
+  return named.length === 0 ? 'nothing' : named.join(', ')
+}
+
+/** What each AI surface is told of a customer: what MCP withholds and what the assistant masks or keeps back. */
+function customerFieldsText(agents: NymbalConfig['agents']): string {
+  // A config the schema never parsed may leave either out: each reads as its default.
+  const withhold = (agents.mcp as Partial<typeof agents.mcp>).withhold ?? DEFAULT_CUSTOMER_FIELDS
+  const assistant = (agents as Partial<typeof agents>).assistant
+  const told =
+    assistant?.customerData === false
+      ? 'sends none'
+      : `masks ${fieldsText(assistant?.mask ?? DEFAULT_CUSTOMER_FIELDS)}`
+  return `customer fields: mcp withholds ${fieldsText(withhold)}; assistant ${told}`
+}
+
 /**
  * How ready the agent surfaces are, from the config and the environment alone. UCP checkout advertised without a
  * privacy and a terms link, or on a public plain-HTTP origin, is a warning; it is never `down`, because the surface
@@ -39,7 +57,8 @@ function capabilitiesText(): string {
 export function agentReadiness(config: NymbalConfig, env: NodeJS.ProcessEnv): DiagnosisCheck {
   const { ucp, mcp } = config.agents
   const mcpText = `mcp ${mcp.enabled ? mcp.writes : 'off'}`
-  if (!ucp.enabled) return { name: NAME, status: 'ok', detail: `ucp off; ${mcpText}` }
+  const fields = customerFieldsText(config.agents)
+  if (!ucp.enabled) return { name: NAME, status: 'ok', detail: `ucp off; ${mcpText}; ${fields}` }
 
   const present = new Set(ucp.links.map((link) => link.type))
   const missing = REQUIRED_LINKS.filter((type) => !present.has(type))
@@ -51,6 +70,8 @@ export function agentReadiness(config: NymbalConfig, env: NodeJS.ProcessEnv): Di
       ? ['NYMBAL_PUBLIC_URL is plain http on a public host: serve agents over https']
       : []),
   ]
-  if (problems.length > 0) return { name: NAME, status: 'degraded', detail: problems.join('; ') }
-  return { name: NAME, status: 'ok', detail: `ucp: ${capabilitiesText()}; ${mcpText}` }
+  if (problems.length > 0) {
+    return { name: NAME, status: 'degraded', detail: [...problems, fields].join('; ') }
+  }
+  return { name: NAME, status: 'ok', detail: `ucp: ${capabilitiesText()}; ${mcpText}; ${fields}` }
 }

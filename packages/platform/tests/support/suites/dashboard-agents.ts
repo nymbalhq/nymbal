@@ -252,7 +252,7 @@ export function dashboardAgentsSuite(
         agents: {
           ...config.agents,
           ucp: { ...config.agents.ucp, enabled: false },
-          mcp: { enabled: false, writes: 'apply' },
+          mcp: { ...config.agents.mcp, enabled: false, writes: 'apply' },
         },
       }))
       const otherServed = await serveKernel(other)
@@ -273,13 +273,16 @@ export function dashboardAgentsSuite(
               { name: 'ucp', capabilities: { search: true, lookup: true, checkout: 'handoff' } },
             ],
             profilePath: '/.well-known/ucp',
-            mcp: k.config.agents.mcp,
+            mcp: { enabled: k.config.agents.mcp.enabled, writes: k.config.agents.mcp.writes },
             currency: k.config.store.currency,
           },
           {
             surfaces: [],
             profilePath: null,
-            mcp: other.config.agents.mcp,
+            mcp: {
+              enabled: other.config.agents.mcp.enabled,
+              writes: other.config.agents.mcp.writes,
+            },
             currency: other.config.store.currency,
           },
         ])
