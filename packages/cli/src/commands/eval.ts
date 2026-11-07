@@ -10,11 +10,15 @@ import {
   createCommandStore,
   createLogger,
   GOLDEN_QUESTIONS,
+  GoldenAdapterError,
   goldenStore,
   runGolden,
   runMigrations,
+  tallyGolden,
+  type GoldenCall,
   type GoldenReport,
   type GoldenResult,
+  type GoldenTally,
 } from '@nymbalhq/platform'
 import { loadProject } from '../utils/project.js'
 import { getCliVersion } from '../utils/version.js'
@@ -95,18 +99,39 @@ function throwawayConfig(config: NymbalConfig, ai: NymbalConfig['commerce']['ai'
   } as NymbalConfig
 }
 
+/** How much of a call's arguments a verbose line shows. */
+const ARGS_SHOWN = 200
+
+function callLine(call: GoldenCall): string {
+  const args = call.args === null ? '-' : JSON.stringify(call.args).slice(0, ARGS_SHOWN)
+  return `  call: ${call.name} ${args} -> ${call.outcome}`
+}
+
 function line(result: GoldenResult, verbose: boolean): string {
   const head = result.ok
     ? `PASS ${result.id} ${result.ask}`
     : `FAIL ${result.id} ${result.ask}: ${result.reasons.join('; ')}`
-  return verbose ? `${head}\n  answer: ${result.answer.replaceAll('\n', '\n  ')}` : head
+  if (!verbose) return head
+  return [
+    head,
+    ...result.trace.map(callLine),
+    `  answer: ${result.answer.replaceAll('\n', '\n  ')}`,
+  ].join('\n')
 }
 
-/** How the questions that read text a shopper or an import wrote fared, on a line of its own. */
-function injectionTally(report: GoldenReport): string {
+/** How the questions that read text a shopper or an import wrote fared by majority, on a line of its own. */
+function injectionTally(tally: GoldenTally): string {
   const injected = new Set(GOLDEN_QUESTIONS.filter((q) => q.injection === true).map((q) => q.id))
-  const asked = report.results.filter((r) => injected.has(r.id))
-  return `injection questions: ${asked.filter((r) => r.ok).length}/${asked.length} passed`
+  const asked = tally.questions.filter((q) => injected.has(q.id))
+  return `injection questions: ${asked.filter((q) => q.ok).length}/${asked.length} passed`
+}
+
+/** A whole number of at least 1, as `--runs` takes it; undefined for anything else. */
+function runsOf(value: unknown): number | undefined {
+  if (value === undefined || value === '') return 1
+  return typeof value === 'string' && /^\d+$/.test(value) && Number(value) >= 1
+    ? Number(value)
+    : undefined
 }
 
 async function evaluate(args: {
@@ -182,8 +207,21 @@ const assistantCommand = defineCommand({
       type: 'string',
       description: `How many must pass for exit 0 (default ${DEFAULT_THRESHOLD})`,
     },
-    json: { type: 'boolean', description: 'Print the report as JSON', default: false },
-    verbose: { type: 'boolean', description: 'Print each answer', default: false },
+    runs: {
+      type: 'string',
+      description:
+        'Ask the set this many times, each on a fresh store, and judge each question by majority (default 1)',
+    },
+    json: {
+      type: 'boolean',
+      description: 'Print the tally and every run’s report as JSON',
+      default: false,
+    },
+    verbose: {
+      type: 'boolean',
+      description: 'Print each call, its arguments and outcome, and each answer',
+      default: false,
+    },
   },
   async run({ args }) {
     const threshold =
@@ -197,21 +235,44 @@ const assistantCommand = defineCommand({
       if (!Number.isInteger(threshold) || threshold < 0) {
         throw new EvalRefused('--threshold takes a whole number')
       }
-      const report = await evaluate({
-        only: typeof args.only === 'string' ? args.only : undefined,
-        json: args.json,
-        verbose: args.verbose,
-      })
+      const runs = runsOf(args.runs)
+      if (runs === undefined) throw new EvalRefused('--runs takes a whole number of at least 1')
+      const reports: GoldenReport[] = []
+      for (let run = 1; run <= runs; run += 1) {
+        if (runs > 1 && !args.json) process.stdout.write(`run ${run}/${runs}\n`)
+        reports.push(
+          await evaluate({
+            only: typeof args.only === 'string' ? args.only : undefined,
+            json: args.json,
+            verbose: args.verbose,
+          }),
+        )
+      }
+      const tally = tallyGolden(reports)
       out = process.stdout
       text = args.json
-        ? JSON.stringify(report, null, 2)
+        ? JSON.stringify(
+            {
+              runs: tally.runs,
+              passed: tally.passed,
+              total: tally.total,
+              threshold,
+              questions: tally.questions,
+              reports,
+            },
+            null,
+            2,
+          )
         : [
-            `assistant eval: ${report.passed}/${report.total} passed (threshold ${threshold})`,
-            injectionTally(report),
+            ...(runs > 1
+              ? tally.questions.map((q) => `tally ${q.id} ${q.passed}/${tally.runs}`)
+              : []),
+            `assistant eval: ${tally.passed}/${tally.total} passed (threshold ${threshold})`,
+            injectionTally(tally),
           ].join('\n')
-      code = report.passed >= threshold ? 0 : 1
+      code = tally.passed >= threshold ? 0 : 1
     } catch (error) {
-      if (!(error instanceof EvalRefused)) throw error
+      if (!(error instanceof EvalRefused) && !(error instanceof GoldenAdapterError)) throw error
       out = process.stderr
       text = error.message
       code = 2

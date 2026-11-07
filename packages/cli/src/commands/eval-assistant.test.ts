@@ -4,8 +4,10 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
   startAiStandIn,
+  type AiScript,
   type AiStandIn,
   type AiWire,
+  type ScriptView,
 } from '../../../../tests/support/ai-stand-in.js'
 import { GOLDEN_ROWS, goldenScript, rowOf } from '../../../../tests/support/assistant-golden.js'
 import { cliEnv, migratedSqlite, runCli, type CliRun } from '../../../../tests/support/doctor.js'
@@ -17,6 +19,9 @@ import { leaks, settingsConfigInput } from '../../../platform/tests/support/sett
 // (tests/support/assistant-golden.ts, the scripted model of the golden set). The eval boots a throwaway store of its
 // own, so the project's database file is never opened for writing; the threshold decides the exit code; a missing
 // provider or key exits 2 before any question runs. Spawns the built CLI (`pnpm build` first).
+// AC-9, AC-11, AC-12, AC-14: `--verbose` prints each call with its arguments and outcome; `--runs <n>` asks the set n
+// times, each on a fresh throwaway store, and judges each question by majority; a bad `--runs` and a permanent provider
+// error exit 2 before any summary.
 
 const SUMMARY = /^assistant eval: (\d+)\/(\d+) passed \(threshold (\d+)\)$/m
 const INJECTION = /^injection questions: (\d+)\/(\d+) passed$/m
@@ -189,4 +194,203 @@ describe('AC-18: nymbal eval assistant', () => {
     expect(summaryOf(run.out)).toEqual({ passed: 25, total: 25, threshold: 22 })
     expect(openai.requests.length).toBeGreaterThanOrEqual(GOLDEN_ROWS.length)
   }, 240_000)
+})
+
+const TALLY = /^tally (\S+) (\d+)\/(\d+)$/
+const VERDICT = /^(PASS|FAIL) (\S+) /
+
+const linesIn = (text: string): string[] => text.split('\n')
+/** The question ids of the PASS and FAIL lines, in order. */
+const verdictIds = (lines: readonly string[]): string[] =>
+  lines.flatMap((line) => {
+    const m = VERDICT.exec(line)
+    return m === null ? [] : [m[2]!]
+  })
+
+type Rec = Record<string, unknown>
+
+/** The last user turn's text: the golden question a request belongs to. */
+const askOf = (view: ScriptView): string =>
+  view.turns[view.turns.map((t) => t.role).lastIndexOf('user')]?.content ?? ''
+
+/**
+ * `script`, recording the pending proposals each asking of the inbox question (row 9) was shown: the
+ * admin_proposals_list result it reads, once per asking.
+ */
+function watchInbox(script: AiScript): { script: AiScript; seen: Rec[][] } {
+  const seen: Rec[][] = []
+  return {
+    seen,
+    script: (view) => {
+      const last = view.turns.at(-1)
+      if (rowOf(askOf(view))?.row === 9 && last?.role === 'tool') {
+        let items: Rec[] = []
+        try {
+          items = ((JSON.parse(last.content) as Rec)['items'] as Rec[] | undefined) ?? []
+        } catch {
+          // A result that is not JSON shows no proposal, and the run's count of one fails.
+        }
+        seen.push(items)
+      }
+      return script(view)
+    },
+  }
+}
+
+describe('nymbal eval assistant: calls, runs and provider errors', () => {
+  it('AC-9: --verbose prints each call under its question: order-customer’s admin_orders_get with its orderNumber -> ok before its answer line, raise-mug-price’s admin_products_update -> proposed; without --verbose no line starts "  call:"', async () => {
+    const p = await storeProject(
+      block('anthropic', anthropic, `sk-ant-eval-${randomBytes(12).toString('hex')}`),
+    )
+    const only = ['--only', 'order-customer,raise-mug-price']
+
+    const verbose = await evalAssistant(p, [...only, '--verbose'])
+    const quiet = await evalAssistant(p, only)
+
+    const lines = linesIn(verbose.stdout)
+    const head = lines.findIndex((l) => VERDICT.exec(l)?.[2] === 'order-customer')
+    const number = /#\s*([A-Za-z0-9-]+)/.exec(lines[head] ?? '')?.[1] ?? ''
+    const answer = lines.findIndex((l, i) => i > head && l.startsWith('  answer:'))
+    const call = new RegExp(`^  call: admin_orders_get \\{.*"orderNumber":"${number}".*\\} -> ok$`)
+    const raise = lines.findIndex((l) => VERDICT.exec(l)?.[2] === 'raise-mug-price')
+    expect(verdictIds(lines), verbose.out).toEqual(['order-customer', 'raise-mug-price'])
+    expect(number).not.toBe('')
+    expect(lines.slice(head + 1, answer).filter((l) => call.test(l)).length, verbose.out).toBe(1)
+    expect(
+      lines.slice(raise + 1).filter((l) => /^  call: admin_products_update .* -> proposed$/.test(l))
+        .length,
+      verbose.out,
+    ).toBe(1)
+    expect(verdictIds(linesIn(quiet.stdout))).toEqual(verdictIds(lines))
+    expect(linesIn(quiet.stdout).filter((l) => l.startsWith('  call:'))).toEqual([])
+  }, 240_000)
+
+  it('AC-11: --runs 3, with books-count answered without its fact on its first asking and pending-orders on its first two, prints run 1/3 to 3/3, a tally per question in golden order (books-count 2/3, pending-orders 1/3, the rest 3/3) and 24/25, and exits 0; each run is on a fresh store: its inbox shows one pending proposal, its answer names it, and each run’s write questions keep a proposal of their own', async () => {
+    const p = await storeProject(
+      block('anthropic', anthropic, `sk-ant-eval-${randomBytes(12).toString('hex')}`),
+    )
+    const failing = () =>
+      goldenScript({
+        currency: CURRENCY,
+        deviate: { 1: 'no-fact', 4: 'no-fact' },
+        askings: { 1: [1], 4: [1, 2] },
+      })
+    const expected = (id: string) => (id === 'books-count' ? 2 : id === 'pending-orders' ? 1 : 3)
+    try {
+      const text = watchInbox(failing())
+      anthropic.script = text.script
+      const run = await evalAssistant(p, ['--runs', '3'])
+
+      const lines = linesIn(run.stdout)
+      const starts = lines.flatMap((l, i) => (/^run \d+\/\d+$/.test(l) ? [i] : []))
+      const firstRun = verdictIds(lines.slice(starts[0], starts[1]))
+      const tallies = lines.flatMap((l) => {
+        const m = TALLY.exec(l)
+        return m === null ? [] : [[m[1], Number(m[2]), Number(m[3])]]
+      })
+      expect(
+        starts.map((i) => lines[i]),
+        run.out,
+      ).toEqual(['run 1/3', 'run 2/3', 'run 3/3'])
+      expect(firstRun.length).toBe(GOLDEN_ROWS.length)
+      expect(tallies).toEqual(firstRun.map((id) => [id, expected(id), 3]))
+      expect(summaryOf(run.out)).toEqual({ passed: 24, total: 25, threshold: 22 })
+      expect(run.code, run.out).toBe(0)
+      expect(text.seen.map((items) => items.length)).toEqual([1, 1, 1])
+
+      const json = watchInbox(failing())
+      anthropic.script = json.script
+      const asJson = await evalAssistant(p, ['--runs', '3', '--json'])
+      const body = JSON.parse(asJson.stdout) as {
+        runs: number
+        passed: number
+        total: number
+        threshold: number
+        questions: Array<{ id: string; passed: number; ok: boolean }>
+        reports: Array<{
+          results: Array<{ id: string; ask: string; answer: string; proposals: string[] }>
+        }>
+      }
+      const kept = body.reports.map((report) =>
+        report.results.filter((r) => rowOf(r.ask)?.kind === 'write').map((r) => r.proposals),
+      )
+      const ids = kept.flat(2)
+      expect(asJson.code, asJson.out).toBe(0)
+      expect([body.runs, body.passed, body.total, body.threshold]).toEqual([3, 24, 25, 22])
+      expect(body.questions).toEqual(
+        firstRun.map((id) => ({ id, passed: expected(id), ok: expected(id) * 2 > 3 })),
+      )
+      expect(kept.map((run) => run.map((proposals) => proposals.length))).toEqual(
+        kept.map(() => GOLDEN_ROWS.filter((r) => r.kind === 'write').map(() => 1)),
+      )
+      expect(new Set(ids).size).toBe(ids.length)
+      expect(json.seen.map((items) => items.length)).toEqual([1, 1, 1])
+      expect(
+        body.reports.map((report, r) =>
+          report.results
+            .find((x) => x.id === 'inbox')
+            ?.answer.includes(String(json.seen[r]?.[0]?.['command'])),
+        ),
+      ).toEqual([true, true, true])
+    } finally {
+      anthropic.script = goldenScript({ currency: CURRENCY })
+    }
+  }, 600_000)
+
+  it('AC-12: with no --runs the output is today’s (25 PASS lines, the summary and the injection line, no run or tally line); --runs 0, two, 3x and 1.5 each exit 2 with "--runs takes a whole number of at least 1" and reach the provider not at all', async () => {
+    const p = await storeProject(
+      block('anthropic', anthropic, `sk-ant-eval-${randomBytes(12).toString('hex')}`),
+    )
+    const plain = await evalAssistant(p)
+
+    const lines = linesIn(plain.stdout).filter((l) => l !== '')
+    expect(lines.filter((l) => /^(run|tally) /.test(l))).toEqual([])
+    expect(linesOf(plain.out, 'PASS').length).toBe(GOLDEN_ROWS.length)
+    expect(lines.length).toBe(GOLDEN_ROWS.length + 2)
+    expect(summaryOf(plain.out)).toEqual({ passed: 25, total: 25, threshold: 22 })
+    expect(injectionOf(plain.out)).toEqual({ passed: 5, total: 5 })
+    expect(plain.code, plain.out).toBe(0)
+
+    for (const bad of ['0', 'two', '3x', '1.5']) {
+      anthropic.reset()
+      const run = await evalAssistant(p, ['--runs', bad])
+      expect(run.code, `--runs ${bad}: ${run.out}`).toBe(2)
+      expect(run.stderr, `--runs ${bad}`).toContain('--runs takes a whole number of at least 1')
+      expect(anthropic.requests.length, `--runs ${bad}`).toBe(0)
+    }
+  }, 360_000)
+
+  it('AC-14: a permanent provider error (400 on latest-order-total’s first request) exits 2 with "the ai provider failed on latest-order-total: adapter.invalid_request" on stderr, no summary, injection or tally line, the key in neither stream and no request after the refused one; with --runs 3 it stops in run 1', async () => {
+    const key = `sk-ant-eval-${randomBytes(18).toString('base64url')}`
+    const p = await storeProject(block('anthropic', anthropic, key))
+    try {
+      for (const args of [[], ['--runs', '3']]) {
+        const refused: number[] = []
+        const inner = goldenScript({ currency: CURRENCY, deviate: { 5: 'provider-refuses' } })
+        anthropic.script = async (view) => {
+          const reply = await inner(view)
+          if (reply.fail !== undefined) refused.push(view.index)
+          return reply
+        }
+        anthropic.reset()
+
+        const run = await evalAssistant(p, args)
+
+        const lines = linesIn(run.out)
+        expect(run.code, run.out).toBe(2)
+        expect(run.stderr).toContain(
+          'the ai provider failed on latest-order-total: adapter.invalid_request',
+        )
+        expect([summaryOf(run.out), injectionOf(run.out)]).toEqual([null, null])
+        expect(lines.filter((l) => TALLY.test(l))).toEqual([])
+        expect(lines.filter((l) => /^run \d+\/\d+$/.test(l))).toEqual(
+          args.length === 0 ? [] : ['run 1/3'],
+        )
+        expect(refused).toEqual([anthropic.requests.length - 1])
+        expect(leaks([run.stdout, run.stderr], key)).toEqual([])
+      }
+    } finally {
+      anthropic.script = goldenScript({ currency: CURRENCY })
+    }
+  }, 360_000)
 })
