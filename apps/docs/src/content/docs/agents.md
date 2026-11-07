@@ -49,6 +49,9 @@ result, or in a follow-up message, always waits in the Inbox, whatever `autoAppr
 review, an order note) cannot make it change the store. [The assistant and customer data](../assistant-data/) says
 what it sends to your AI provider.
 
+In one message Ask makes at most three deletions, archives, cancellations or refunds, does not carry out such a change
+to many records at once, and is not offered the store's settings.
+
 ## UCP
 
 The store publishes a Universal Commerce Protocol profile at `/.well-known/ucp`, and its UCP tools at

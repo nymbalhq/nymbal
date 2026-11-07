@@ -85,7 +85,7 @@ const ADMIN_PAGES = [
 ]
 
 const PERSONAL_DATA_RULE =
-  "Use a customer's email, phone or address only when the merchant's question needs it, and do not repeat it otherwise."
+  "The merchant may see every customer's details. Give a customer's email, phone or address when the question asks for it or needs it, and do not repeat one otherwise."
 
 const TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/
 
@@ -707,7 +707,7 @@ describe('AC-7: a turn makes at most ten writes', () => {
 })
 
 describe('AC-8: the assistant cannot clear a saved setting', () => {
-  it('AC-8: admin_settings_delete is not in the MCP listing, not offered to the assistant, and calling it answers tool.unknown with no proposal; DELETE /api/admin/settings/:slot/:path still clears a saved value for an admin', async () => {
+  it('AC-8: admin_settings_delete is not in the MCP listing, no admin_settings_* tool is offered to the assistant, and calling it answers tool.unknown with no proposal; DELETE /api/admin/settings/:slot/:path still clears a saved value for an admin', async () => {
     const restore = setEnv({ [SECRETS_KEY]: newSecretsKey() })
     const store = await assistantStore({
       configure: (config) =>
@@ -736,19 +736,12 @@ describe('AC-8: the assistant cannot clear a saved setting', () => {
       expect(listed.filter((name) => name.startsWith('admin_settings_'))).toEqual([
         'admin_settings_list',
       ])
-      expect(offered.filter((name) => name.startsWith('admin_settings_'))).toEqual([
-        'admin_settings_list',
-      ])
+      expect(offered.filter((name) => name.startsWith('admin_settings_'))).toEqual([])
       expect([called.isError, called.structuredContent?.['code']]).toEqual([true, 'tool.unknown'])
       expect(await freshSince(store, known)).toEqual([])
 
       const client = { call: store.admin.send.bind(store.admin) }
-      const saved = await putSetting(
-        client,
-        'email',
-        'smtp.user',
-        `shop-${randomUUID()}`,
-      )
+      const saved = await putSetting(client, 'email', 'smtp.user', `shop-${randomUUID()}`)
       expect(saved.status, JSON.stringify(saved.body)).toBe(200)
       const setBefore = settingsField(
         (await store.admin.send('GET', '/api/admin/settings')).body.data,
@@ -978,12 +971,16 @@ function personalMarks(): Map<string, Field[]> {
   return out
 }
 
-/** The tools the assistant is offered by default: the admin's admin-scope tools and the public reads with no handle. */
+/**
+ * The tools the assistant is offered by default: the admin's admin-scope tools and the public reads with no handle,
+ * less those kept from the assistant.
+ */
 function defaultOffer(store: AssistantStore): string[] {
   const listed = toolSurface(store.kernel.app).list(store.caller) as ToolDefinition[]
-  const handles = (t: ToolDefinition) =>
-    Object.keys(routeSchemas[`${t.route.method} ${t.route.path}`]?.handles ?? {}).length > 0
+  const entry = (t: ToolDefinition) => routeSchemas[`${t.route.method} ${t.route.path}`]
+  const handles = (t: ToolDefinition) => Object.keys(entry(t)?.handles ?? {}).length > 0
   return listed
+    .filter((t) => entry(t)?.agents?.assistant !== false)
     .filter(
       (t) => t.scope === 'admin' || (t.scope === 'public' && t.kind === 'read' && !handles(t)),
     )

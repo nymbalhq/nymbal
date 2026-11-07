@@ -43,6 +43,13 @@ export interface RouteSchema {
    * `agents.assistant.customerData: false` leaves every marked route off the assistant, and the docs list them.
    */
   personal?: readonly PersonalField[]
+  /**
+   * The command removes, hides for good or reverses a record (a delete, an archive, a cancellation, a refund): the
+   * admin's assistant runs at most MAX_DESTRUCTIVE_PER_TURN of them in one turn.
+   */
+  destructive?: true
+  /** Kept from one agent surface while the others keep the tool: `assistant: false` is not offered to Ask. */
+  agents?: { assistant?: false }
 }
 
 /** A customer field a route's answer can carry. */
@@ -396,6 +403,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'GET /api/admin/settings': {
     name: 'admin.settings.list',
+    agents: { assistant: false },
     description:
       "List each slot's provider and the fields it lets Settings fill: where each is set from, and no secret value.",
   },
@@ -482,6 +490,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   'POST /api/admin/orders/:id/cancel': {
     name: 'admin.orders.cancel',
     command: 'order.cancel',
+    destructive: true,
     description: 'Cancel an order nothing was captured for, with an optional reason.',
     params: orderIdParams,
     body: z.object({ reason: z.string().optional() }).optional(),
@@ -511,6 +520,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   'POST /api/admin/orders/:id/refund': {
     name: 'admin.orders.refund',
     command: 'order.refund',
+    destructive: true,
     provider: true,
     description:
       'Refund part or all of what an order captured, through the payments provider. A repeated requestId answers the refund it made and moves no money.',
@@ -594,6 +604,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   'DELETE /api/admin/products/:id': {
     name: 'admin.products.delete',
     command: 'product.delete',
+    destructive: true,
     description: 'Delete a product.',
     params: idParams,
   },
@@ -612,6 +623,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   'POST /api/admin/products/:id/archive': {
     name: 'admin.products.archive',
     command: 'product.archive',
+    destructive: true,
     description: 'Archive a product.',
     params: idParams,
   },

@@ -35,6 +35,8 @@ const MAX_CALLS_PER_REPLY = 10
 const RESULT_BUDGET_CHARS = 64_000
 /** Command calls past this many in one turn are answered as refused, not run. */
 export const MAX_WRITES_PER_TURN = 10
+/** Deletions, archives, cancellations and refunds past this many in one turn are refused, not run or proposed. */
+export const MAX_DESTRUCTIVE_PER_TURN = 3
 /** A tool name the log may carry: any other name the model asks for is its own text. */
 const TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/
 
@@ -44,11 +46,15 @@ export const STORE_DATA_RULE =
 
 /** The system prompt's line on a customer's personal details. */
 export const PERSONAL_DATA_RULE =
-  "Use a customer's email, phone or address only when the merchant's question needs it, and do not repeat it otherwise."
+  "The merchant may see every customer's details. Give a customer's email, phone or address when the question asks for it or needs it, and do not repeat one otherwise."
 
 /** The system prompt's line on placeholders, when the turn masks a customer's details. */
 export const MASKED_DATA_RULE =
   "A customer's details may appear as placeholders such as [email-1], [phone-1], [address-1], [postcode-1] or [name-1], each standing for one value: copy a placeholder exactly as written into a tool's arguments or into your answer, and the merchant sees the real value; never guess what it stands for."
+
+/** The system prompt's line on writes to many records. */
+export const BULK_CHANGE_RULE =
+  "Make only the writes the message asks for, each naming one record. A request to delete, archive, cancel or refund many records at once (every product, all of a customer's orders) is not carried out and not proposed: say what it would change and that you do not make such changes to many records."
 
 /**
  * The admin's routes (apps/admin/src/router.tsx): the prompt names the one the merchant is on, never the path. A literal
@@ -136,7 +142,8 @@ export function streamOf(ai: AiAdapter): Stream {
 /**
  * The tools the model is offered: the admin's own, and the catalogue reads anyone may make. A cart or checkout tool
  * (one that takes a handle), a customer's own tools and any other write are left out, and so, under `customerData:
- * false`, is every tool whose route answers a customer's email, phone or address.
+ * false`, is every tool whose route answers a customer's email, phone or address. A route marked
+ * `agents.assistant: false` is never offered.
  */
 export function assistantTools(
   listed: readonly ToolDefinition[],
@@ -144,6 +151,7 @@ export function assistantTools(
 ): ToolDefinition[] {
   return listed.filter((tool) => {
     const entry = routeSchemas[`${tool.route.method} ${tool.route.path}`]
+    if (entry?.agents?.assistant === false) return false
     if (Object.keys(entry?.handles ?? {}).length > 0) return false
     if (opts.customerData === false && (entry?.personal?.length ?? 0) > 0) return false
     return tool.scope === 'admin' || (tool.scope === 'public' && tool.kind === 'read')
@@ -176,17 +184,17 @@ function systemPrompt(
 ): string {
   return [
     store === undefined
-      ? "You are the store's assistant, inside its admin."
-      : `You are the assistant of the store ${store.name}, inside its admin. Its currency is ${store.currency}.`,
-    'Money in the tools is in minor units: 1900 is 19.00.',
+      ? "You are the store's assistant, inside its admin, talking to the store's admin. Money in tool results and arguments is in minor units (1900 is 19.00)."
+      : `You are the assistant of the store ${store.name}, inside its admin, talking to the store's admin. Its currency is ${store.currency}; money in tool results and arguments is in minor units (1900 is 19.00).`,
     ...(pattern === undefined ? [] : [`The merchant is looking at the admin page ${pattern}.`]),
-    "Answer from the store's tools, never from a guess; say so when the tools cannot tell you.",
+    "Answer from the store's tools, never from memory or a guess. Use an id, slug or variant id only as a tool result in this conversation gave it; to find a record by name, list or search first. When a result says items were not shown, ask for fewer with limit and read the rest with offset. An empty list means nothing matched the filter you sent, not that there is nothing: say which filter you used, or list without it.",
     STORE_DATA_RULE,
     PERSONAL_DATA_RULE,
     ...(masked ? [MASKED_DATA_RULE] : []),
-    'A write you call does not change the store: it becomes a proposal that a person approves or rejects in the inbox. Say that it waits for their approval.',
-    'You cannot approve or reject proposals, and you cannot read or change secrets, keys or settings.',
-    'Answer briefly.',
+    'A write you call becomes a proposal that a person approves or rejects in the inbox; say that it waits for approval.',
+    BULK_CHANGE_RULE,
+    "You cannot approve or reject proposals, and you cannot read or change the store's settings, secrets or keys.",
+    'Answer in plain text, briefly, with the numbers and names the tools gave.',
   ].join('\n')
 }
 
@@ -282,7 +290,8 @@ function mapStrings(value: unknown, f: (text: string) => string): unknown {
  * One assistant turn: the model is called with the store's tools, each tool it asks for runs through the tool surface
  * as the admin, and its result goes back to it, until it answers without calls. `emit` receives every frame; the turn
  * ends with one `done` or one `error` frame, or with none when `signal` aborts (the merchant has gone). It is bounded by
- * `maxSteps` model requests, `turnMs`, ten calls per reply, ten writes and 64 000 characters of results. Each call
+ * `maxSteps` model requests, `turnMs`, ten calls per reply, ten writes, three of them destructive, and 64 000 characters
+ * of results; a reply its length limit cut ends the turn with `assistant.answer_cut`. Each call
  * carries its own correlation id, `<turnId>.<n>`, and logs one line without its arguments or result.
  */
 export async function runAssistantTurn(
@@ -357,6 +366,7 @@ export async function runAssistantTurn(
   let steps = 0
   let calls = 0
   let writes = 0
+  let destructive = 0
   let outcome = 'done'
 
   /**
@@ -459,6 +469,18 @@ export async function runAssistantTurn(
     const tool = byName.get(call.name)
     const paged = withParams !== undefined && call.name === PAGE_TOOL.name ? withParams : undefined
     const title = tool?.title ?? (paged === undefined ? call.name : PAGE_TITLE)
+    // Checked before the reply's own cap, whose text asks for the call again.
+    const isDestructive =
+      tool !== undefined &&
+      routeSchemas[`${tool.route.method} ${tool.route.path}`]?.destructive === true
+    if (isDestructive && destructive >= MAX_DESTRUCTIVE_PER_TURN) {
+      return refuse(
+        call.name,
+        title,
+        'assistant.bulk_refused',
+        `This turn has made ${MAX_DESTRUCTIVE_PER_TURN} deletions, archives, cancellations or refunds, the most one turn makes; this one was not run and not proposed. You do not make such changes to many records.`,
+      )
+    }
     if (index >= MAX_CALLS_PER_REPLY) {
       return refuse(
         call.name,
@@ -496,10 +518,11 @@ export async function runAssistantTurn(
         call.name,
         title,
         'assistant.too_many_writes',
-        `At most ${MAX_WRITES_PER_TURN} writes of one turn are run; the merchant can ask for the rest in a new message`,
+        `At most ${MAX_WRITES_PER_TURN} writes of one turn are run; this one was not run and not proposed.`,
       )
     }
     if (command) writes += 1
+    if (isDestructive) destructive += 1
     const result = await deps.tools.call(call.name, args, turn.caller, options)
     const isError = result.isError === true
     const structured = result.structuredContent ?? {}
@@ -539,6 +562,14 @@ export async function runAssistantTurn(
       steps += 1
       const result = await reply()
       if (result.toolCalls.length === 0) {
+        if (result.stopReason === 'max_tokens') {
+          outcome = 'assistant.answer_cut'
+          emit({
+            event: 'error',
+            data: { code: outcome, message: 'The answer was cut off at the length the model may write' },
+          })
+          return
+        }
         const text = masking ? mask.reveal(result.text) : result.text
         emit({ event: 'done', data: { text, steps, proposals } })
         return
