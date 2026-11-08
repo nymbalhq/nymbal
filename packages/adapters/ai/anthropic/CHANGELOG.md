@@ -1,5 +1,18 @@
 # @nymbalhq/ai-anthropic
 
+## 1.8.0
+
+### Minor Changes
+
+- c347277: Breaking: a spent credit balance or quota is now `adapter.quota_exceeded` and an overloaded provider (529) `adapter.overloaded`; code that branched on `adapter.invalid_request`, `adapter.rate_limited` or `adapter.unavailable` for these must check the new codes, and an AI adapter certified with @nymbalhq/contract-tests must reject a 529 with `adapter.overloaded`.
+  AI errors also carry the provider's own message (up to 200 characters, keys and the conversation removed), so "anthropic answered 400" reads why.
+- 5811a80: Requests use Anthropic's prompt caching, so the assistant's system prompt, tools and earlier turns, resent on every step of a conversation, are billed as cache reads instead of full input. `usage.inputTokens` still counts every input token, cached or not.
+
+### Patch Changes
+
+- 5b51750: Anthropic requests cache the tool definitions and system prompt for later conversations too, so a new assistant conversation reads them from the cache instead of paying to write them again.
+  Chat `usage` adds `cacheReadTokens` and `cacheWriteTokens` where the provider reports them (OpenAI: cached prompt tokens), and `nymbal eval assistant` prints token usage per run and in total, also in `--json`.
+
 ## 1.7.0
 
 ### Minor Changes

@@ -1,5 +1,28 @@
 # @nymbalhq/stack
 
+## 1.8.0
+
+### Patch Changes
+
+- Updated dependencies [04e0cfe]
+- Updated dependencies [5b51750]
+- Updated dependencies [06e65ca]
+- Updated dependencies [71283b7]
+- Updated dependencies [ec032f4]
+- Updated dependencies [70380e7]
+- Updated dependencies [02133c3]
+- Updated dependencies [3991ca5]
+- Updated dependencies [ec032f4]
+- Updated dependencies [67a952e]
+  - @nymbalhq/config@1.8.0
+  - @nymbalhq/platform@1.8.0
+  - @nymbalhq/types@1.8.0
+  - nymbal@1.8.0
+  - @nymbalhq/http@1.8.0
+  - @nymbalhq/react@1.8.0
+  - @nymbalhq/sdk@1.8.0
+  - @nymbalhq/web-components@1.8.0
+
 ## 1.7.0
 
 ### Patch Changes

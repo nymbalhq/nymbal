@@ -1,5 +1,19 @@
 # @nymbalhq/contract-tests
 
+## 1.8.0
+
+### Minor Changes
+
+- c347277: Breaking: a spent credit balance or quota is now `adapter.quota_exceeded` and an overloaded provider (529) `adapter.overloaded`; code that branched on `adapter.invalid_request`, `adapter.rate_limited` or `adapter.unavailable` for these must check the new codes, and an AI adapter certified with @nymbalhq/contract-tests must reject a 529 with `adapter.overloaded`.
+  AI errors also carry the provider's own message (up to 200 characters, keys and the conversation removed), so "anthropic answered 400" reads why.
+
+### Patch Changes
+
+- Updated dependencies [5b51750]
+- Updated dependencies [70380e7]
+- Updated dependencies [3991ca5]
+  - @nymbalhq/types@1.8.0
+
 ## 1.7.0
 
 ### Patch Changes

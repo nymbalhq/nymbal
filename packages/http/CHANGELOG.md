@@ -1,5 +1,17 @@
 # @nymbalhq/http
 
+## 1.8.0
+
+### Patch Changes
+
+- Updated dependencies [04e0cfe]
+- Updated dependencies [5b51750]
+- Updated dependencies [70380e7]
+- Updated dependencies [3991ca5]
+- Updated dependencies [ec032f4]
+  - @nymbalhq/config@1.8.0
+  - @nymbalhq/types@1.8.0
+
 ## 1.7.0
 
 ### Patch Changes
