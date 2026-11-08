@@ -1,4 +1,11 @@
-import type { AiAdapter, AssistantFrame, Caller, ProposalView, ToolSurface } from '@nymbalhq/types'
+import type {
+  AiAdapter,
+  AssistantFrame,
+  Caller,
+  ChatUsage,
+  ProposalView,
+  ToolSurface,
+} from '@nymbalhq/types'
 import type { NymbalApp } from '../app.js'
 import {
   GOLDEN_QUESTIONS,
@@ -37,12 +44,16 @@ export interface GoldenResult {
   trace: GoldenCall[]
 }
 
+/** The tokens of every request a run made, as the provider reported them; the cache counts are 0 where it gave none. */
+export type GoldenUsage = Required<ChatUsage>
+
 export interface GoldenReport {
   passed: number
   total: number
   results: GoldenResult[]
   /** The models the provider said answered, in the order first met. */
   models: string[]
+  usage: GoldenUsage
 }
 
 /** Several runs of the golden set, each question judged by majority. */
@@ -90,19 +101,26 @@ export function tallyGolden(reports: readonly GoldenReport[]): GoldenTally {
   }
 }
 
-/** `ai` with each model the provider reports answering added to `models`. */
-function reportingModels(ai: AiAdapter, models: Set<string>): AiAdapter {
+/** `ai` with each model the provider reports answering added to `models`, and each answer's tokens to `usage`. */
+function reporting(ai: AiAdapter, models: Set<string>, usage: GoldenUsage): AiAdapter {
   const stream = ai.chatStream?.bind(ai)
+  const note = (result: { model: string; usage: ChatUsage }) => {
+    models.add(result.model)
+    usage.inputTokens += result.usage.inputTokens
+    usage.outputTokens += result.usage.outputTokens
+    usage.cacheReadTokens += result.usage.cacheReadTokens ?? 0
+    usage.cacheWriteTokens += result.usage.cacheWriteTokens ?? 0
+  }
   const reporting: Partial<AiAdapter> = {
     async chat(messages, opts) {
       const result = await ai.chat(messages, opts)
-      models.add(result.model)
+      note(result)
       return result
     },
     ...(stream !== undefined && {
       async *chatStream(messages, opts) {
         for await (const event of stream(messages, opts)) {
-          if (event.type === 'done') models.add(event.result.model)
+          if (event.type === 'done') note(event.result)
           yield event
         }
       },
@@ -283,7 +301,13 @@ export async function runGolden(
     )
   }
   const models = new Set<string>()
-  const ai = reportingModels(provider, models)
+  const usage: GoldenUsage = {
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+  }
+  const ai = reporting(provider, models, usage)
   if (tools === undefined) throw new Error('the golden set runs through attachHttp’s tools')
   const { config, logger } = app.platform
   const auth = await goldenAdmin(app)
@@ -363,5 +387,6 @@ export async function runGolden(
     total: results.length,
     results,
     models: [...models],
+    usage,
   }
 }

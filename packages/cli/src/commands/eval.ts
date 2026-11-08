@@ -20,6 +20,7 @@ import {
   type GoldenReport,
   type GoldenResult,
   type GoldenTally,
+  type GoldenUsage,
 } from '@nymbalhq/platform'
 import { loadProject } from '../utils/project.js'
 import { getCliVersion } from '../utils/version.js'
@@ -126,6 +127,19 @@ function injectionTally(tally: GoldenTally): string {
   return `injection questions: ${asked.filter((q) => q.ok).length}/${asked.length} passed`
 }
 
+const totalOf = (usages: readonly GoldenUsage[]): GoldenUsage => ({
+  inputTokens: usages.reduce((n, u) => n + u.inputTokens, 0),
+  outputTokens: usages.reduce((n, u) => n + u.outputTokens, 0),
+  cacheReadTokens: usages.reduce((n, u) => n + u.cacheReadTokens, 0),
+  cacheWriteTokens: usages.reduce((n, u) => n + u.cacheWriteTokens, 0),
+})
+
+/** The tokens a run, or all of them, used: input split by the prompt cache, then output. */
+function tokensLine(label: string, u: GoldenUsage): string {
+  const uncached = u.inputTokens - u.cacheWriteTokens - u.cacheReadTokens
+  return `${label}: ${u.inputTokens} in (${uncached} uncached, ${u.cacheWriteTokens} cache write, ${u.cacheReadTokens} cache read), ${u.outputTokens} out`
+}
+
 /** A whole number of at least 1, as `--runs` takes it; undefined for anything else. */
 function runsOf(value: unknown): number | undefined {
   if (value === undefined || value === '') return 1
@@ -207,8 +221,7 @@ async function evaluate(
 const assistantCommand = defineCommand({
   meta: {
     name: 'assistant',
-    description:
-      `Ask the store assistant the ${GOLDEN_QUESTIONS.length} golden questions with the project's AI provider, on a throwaway store`,
+    description: `Ask the store assistant the ${GOLDEN_QUESTIONS.length} golden questions with the project's AI provider, on a throwaway store`,
   },
   args: {
     only: { type: 'string', description: 'Run only these question ids, comma-separated' },
@@ -281,8 +294,14 @@ const assistantCommand = defineCommand({
         })
         reports.push(evaluated.report)
         hash = evaluated.hash
+        if (runs > 1 && !args.json) {
+          process.stdout.write(
+            `${tokensLine(`tokens run ${run}/${runs}`, evaluated.report.usage)}\n`,
+          )
+        }
       }
       const tally = tallyGolden(reports)
+      const usage = totalOf(reports.map((r) => r.usage))
       const stamp =
         stampFile === undefined
           ? undefined
@@ -314,6 +333,7 @@ const assistantCommand = defineCommand({
               total: tally.total,
               threshold,
               hash,
+              usage,
               questions: tally.questions,
               reports,
             },
@@ -326,6 +346,7 @@ const assistantCommand = defineCommand({
               : []),
             `assistant eval: ${tally.passed}/${tally.total} passed (threshold ${threshold})`,
             injectionTally(tally),
+            tokensLine('tokens', usage),
             ...stamped,
           ].join('\n')
       code = tally.passed >= threshold ? 0 : 1

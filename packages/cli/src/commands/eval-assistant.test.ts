@@ -238,6 +238,8 @@ describe('nymbal eval assistant --stamp', () => {
 })
 
 const TALLY = /^tally (\S+) (\d+)\/(\d+)$/
+const TOKENS =
+  /^tokens(?: run (\d+)\/(\d+))?: (\d+) in \((\d+) uncached, (\d+) cache write, (\d+) cache read\), (\d+) out$/
 const VERDICT = /^(PASS|FAIL) (\S+) /
 
 const linesIn = (text: string): string[] => text.split('\n')
@@ -378,16 +380,17 @@ describe('nymbal eval assistant: calls, runs and provider errors', () => {
     }
   }, 600_000)
 
-  it('AC-12: with no --runs the output is today’s (27 PASS lines, the summary and the injection line, no run or tally line); --runs 0, two, 3x and 1.5 each exit 2 with "--runs takes a whole number of at least 1" and reach the provider not at all', async () => {
+  it('AC-12: with no --runs the output is today’s (27 PASS lines, the summary, the injection line and one token line, no run, tally or per-run token line); --runs 0, two, 3x and 1.5 each exit 2 with "--runs takes a whole number of at least 1" and reach the provider not at all', async () => {
     const p = await storeProject(
       block('anthropic', anthropic, `sk-ant-eval-${randomBytes(12).toString('hex')}`),
     )
     const plain = await evalAssistant(p)
 
     const lines = linesIn(plain.stdout).filter((l) => l !== '')
-    expect(lines.filter((l) => /^(run|tally) /.test(l))).toEqual([])
+    expect(lines.filter((l) => /^(run|tally|tokens run) /.test(l))).toEqual([])
     expect(linesOf(plain.out, 'PASS').length).toBe(GOLDEN_ROWS.length)
-    expect(lines.length).toBe(GOLDEN_ROWS.length + 2)
+    expect(lines.filter((l) => TOKENS.test(l)).length).toBe(1)
+    expect(lines.length).toBe(GOLDEN_ROWS.length + 3)
     expect(summaryOf(plain.out)).toEqual({ passed: 27, total: 27, threshold: 24 })
     expect(injectionOf(plain.out)).toEqual({ passed: 5, total: 5 })
     expect(plain.code, plain.out).toBe(0)
@@ -433,5 +436,87 @@ describe('nymbal eval assistant: calls, runs and provider errors', () => {
     } finally {
       anthropic.script = goldenScript({ currency: CURRENCY })
     }
+  }, 360_000)
+})
+
+interface Usage {
+  inputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  outputTokens: number
+}
+
+/** A token line's run (0 for the total) and its counts, its uncached count checked against the others. */
+function tokensOf(line: string): { run: number; usage: Usage } | undefined {
+  const m = TOKENS.exec(line)
+  if (m === null) return undefined
+  const [input, uncached, write, read, out] = [3, 4, 5, 6, 7].map((i) => Number(m[i]))
+  expect(uncached, line).toBe(input! - write! - read!)
+  return {
+    run: m[1] === undefined ? 0 : Number(m[1]),
+    usage: {
+      inputTokens: input!,
+      cacheReadTokens: read!,
+      cacheWriteTokens: write!,
+      outputTokens: out!,
+    },
+  }
+}
+
+const sumOf = (usages: readonly Usage[]): Usage => ({
+  inputTokens: usages.reduce((n, u) => n + u.inputTokens, 0),
+  cacheReadTokens: usages.reduce((n, u) => n + u.cacheReadTokens, 0),
+  cacheWriteTokens: usages.reduce((n, u) => n + u.cacheWriteTokens, 0),
+  outputTokens: usages.reduce((n, u) => n + u.outputTokens, 0),
+})
+
+/** What the stand-in reported, summed over every request it answered since its reset. */
+const standInUsage = (): Usage =>
+  sumOf(
+    anthropic.answers.map((a) => ({
+      inputTokens: a.inputWords,
+      cacheReadTokens: a.cacheReadWords,
+      cacheWriteTokens: a.cacheWrittenWords,
+      outputTokens: a.outputWords,
+    })),
+  )
+
+describe('nymbal eval assistant: token usage', () => {
+  it('prints a token line per run and one for all of them: input split into uncached, cache write and cache read, and output, the provider’s own counts; --json carries the same per report and in total; each question’s first request after the first reads the shared tools from the cache', async () => {
+    const p = await storeProject(
+      block('anthropic', anthropic, `sk-ant-eval-${randomBytes(12).toString('hex')}`),
+    )
+    const args = [
+      '--only',
+      'books-count,product-price,pending-orders',
+      '--threshold',
+      '1',
+      '--runs',
+      '2',
+    ]
+    anthropic.reset()
+
+    const run = await evalAssistant(p, args)
+
+    const firsts = anthropic.requests.flatMap((r, i) =>
+      (r.body as { messages: unknown[] }).messages.length === 1 ? [anthropic.answers[i]!] : [],
+    )
+    const lines = linesIn(run.stdout).flatMap((l) => tokensOf(l) ?? [])
+    expect(run.code, run.out).toBe(0)
+    expect(
+      lines.map((l) => l.run),
+      run.out,
+    ).toEqual([1, 2, 0])
+    expect(lines[2]!.usage).toEqual(standInUsage())
+    expect(sumOf([lines[0]!.usage, lines[1]!.usage])).toEqual(lines[2]!.usage)
+    expect(firsts.map((a) => a.cacheReadWords > 0)).toEqual([false, true, true, true, true, true])
+
+    anthropic.reset()
+    const asJson = await evalAssistant(p, [...args, '--json'])
+    const body = JSON.parse(asJson.stdout) as { usage: Usage; reports: Array<{ usage: Usage }> }
+    expect(asJson.code, asJson.out).toBe(0)
+    expect(body.usage).toEqual(standInUsage())
+    expect(sumOf(body.reports.map((r) => r.usage))).toEqual(body.usage)
+    expect(body.reports).toHaveLength(2)
   }, 360_000)
 })

@@ -504,6 +504,77 @@ describe('AC-9: the OpenAI request shape', () => {
   })
 })
 
+describe('cached prompt tokens', () => {
+  it('usage reports the prompt tokens OpenAI read from its cache as cacheReadTokens, inputTokens still every prompt token; without prompt_tokens_details there is no cacheReadTokens', async () => {
+    const cached = await startAiStandIn('openai', 'script', (view) =>
+      view.index === 0 ? { text: 'Noted.', cachedTokens: 3 } : { text: 'Noted.' },
+    )
+    try {
+      const adapter = await build({ apiKey: KEY, baseUrl: `${cached.url}/v1` })
+      const conversation = [
+        { role: 'user', content: 'The code word is saffron512, noted?' },
+      ] as const
+
+      const reported = await adapter.chat(conversation)
+      const plain = await adapter.chat(conversation)
+
+      const [first, second] = cached.answers
+      expect(reported.usage).toEqual({
+        inputTokens: first!.inputWords,
+        outputTokens: first!.outputWords,
+        cacheReadTokens: 3,
+      })
+      expect(first!.inputWords).toBeGreaterThan(3)
+      expect(plain.usage).toEqual({
+        inputTokens: second!.inputWords,
+        outputTokens: second!.outputWords,
+      })
+    } finally {
+      await cached.close()
+    }
+  })
+
+  it('chatStream() reports the same cacheReadTokens from the final usage chunk, and none without prompt_tokens_details', async () => {
+    const cached = await startAiStandIn('openai', 'script', (view) =>
+      view.index === 0 ? { text: 'Noted.', cachedTokens: 3 } : { text: 'Noted.' },
+    )
+    // Only OpenAI's own host is asked for a usage chunk, so the default base URL is kept and routed to the stand-in.
+    const realFetch = globalThis.fetch
+    vi.stubGlobal('fetch', (input: string | URL | Request, init?: RequestInit) =>
+      realFetch(String(input).replace(DEFAULT_BASE_URL, `${cached.url}/v1`), init),
+    )
+    try {
+      const adapter = toolAware(await build({ apiKey: KEY }))
+      expect(typeof adapter.chatStream, 'the adapter has no chatStream()').toBe('function')
+      const conversation = [{ role: 'user', content: 'The code word is saffron512, noted?' }]
+      const usageOfStream = async () => {
+        const events: ToolAwareEvent[] = []
+        for await (const event of adapter.chatStream!(conversation)) events.push(event)
+        const last = events.at(-1)
+        return last?.type === 'done' ? last.result.usage : undefined
+      }
+
+      const reported = await usageOfStream()
+      const plain = await usageOfStream()
+
+      const [first, second] = cached.answers
+      expect(reported).toEqual({
+        inputTokens: first!.inputWords,
+        outputTokens: first!.outputWords,
+        cacheReadTokens: 3,
+      })
+      expect(first!.inputWords).toBeGreaterThan(3)
+      expect(plain).toEqual({
+        inputTokens: second!.inputWords,
+        outputTokens: second!.outputWords,
+      })
+    } finally {
+      vi.unstubAllGlobals()
+      await cached.close()
+    }
+  })
+})
+
 describe('AC-11: the adapter says where its requests go', () => {
   it("AC-11: property: endpoint is the baseUrl the block gives, OpenAI's DEFAULT_BASE_URL when it gives none or an empty one, and never holds the key", async () => {
     await fc.assert(
@@ -517,7 +588,9 @@ describe('AC-11: the adapter says where its requests go', () => {
           const key = `sk-${secret}`
           const adapter = await build({ apiKey: key, ...(baseUrl !== undefined && { baseUrl }) })
 
-          expect(adapter.endpoint).toBe(baseUrl === undefined || baseUrl === '' ? DEFAULT_BASE_URL : baseUrl)
+          expect(adapter.endpoint).toBe(
+            baseUrl === undefined || baseUrl === '' ? DEFAULT_BASE_URL : baseUrl,
+          )
           expect(String(adapter.endpoint).includes(key)).toBe(false)
         },
       ),

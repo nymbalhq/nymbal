@@ -145,6 +145,8 @@ describe('the Anthropic wire', () => {
       expect(result.usage).toEqual({
         inputTokens: answer.inputWords,
         outputTokens: answer.outputWords,
+        cacheReadTokens: answer.cacheReadWords,
+        cacheWriteTokens: answer.cacheWrittenWords,
       })
       expect(result.model).toBe(answer.model)
       expect(result.text).toBe(answer.text)
@@ -197,6 +199,7 @@ describe('the Anthropic wire', () => {
         name: LOOKUP_PRICE.name,
         description: LOOKUP_PRICE.description,
         input_schema: LOOKUP_PRICE.inputSchema,
+        cache_control: { type: 'ephemeral' },
       },
     ])
     expect(first.toolCalls).toEqual(given)
@@ -372,7 +375,7 @@ describe('the Anthropic wire', () => {
     expect(wire.answers[0]!.inputWords).toBeGreaterThan(0)
   })
 
-  it('usage counts every input token, read from the cache, written to it or neither, in chat() and in chatStream() alike', async () => {
+  it('usage counts every input token, read from the cache, written to it or neither, and reports the cache reads and writes apart, in chat() and in chatStream() alike', async () => {
     for (const streamed of [false, true]) {
       wire.reset()
       const results = await toolLoop(streamed)
@@ -389,9 +392,71 @@ describe('the Anthropic wire', () => {
       expect(answers[2]!.inputWords).toBeGreaterThan(0)
       expect(answers[2]!.inputWords).toBeLessThan(MIN_CACHED_WORDS)
       expect(results.map((r) => r.usage)).toEqual(
-        answers.map((a) => ({ inputTokens: a.inputWords, outputTokens: a.outputWords })),
+        answers.map((a) => ({
+          inputTokens: a.inputWords,
+          outputTokens: a.outputWords,
+          cacheReadTokens: a.cacheReadWords,
+          cacheWriteTokens: a.cacheWrittenWords,
+        })),
       )
     }
+  })
+
+  const LOOKUP_STOCK = {
+    name: 'lookup_stock',
+    description: 'How many units of one product are in stock, by its SKU.',
+    inputSchema: {
+      type: 'object',
+      properties: { sku: { type: 'string', description: 'The product SKU, e.g. B-4.' } },
+      required: ['sku'],
+      additionalProperties: false,
+    },
+  } as const
+  const TOOLS = [LOOKUP_PRICE, LOOKUP_STOCK]
+  const ON_ORDERS = 'You are the assistant of a shop. The admin is on the orders page.'
+  const ON_PRODUCTS = 'You are the assistant of a shop. The admin is on the products page.'
+  const wordCount = (text: string) => text.split(/\s+/).filter((w) => w !== '').length
+
+  it('the tools and system prompt, shared by every conversation, are read from the cache by the first request of a later conversation: all of them under the same system prompt, the tools alone under another', async () => {
+    const asks = [
+      [ON_ORDERS, 'How many orders are pending?'],
+      [ON_ORDERS, 'Which order is the newest?'],
+      [ON_PRODUCTS, 'Which product sells best?'],
+    ] as const
+
+    for (const [system, question] of asks) {
+      await ask(false, [{ role: 'user', content: question }], { system, tools: TOOLS })
+    }
+
+    const [first, sameSystem, otherSystem] = wire.answers
+    expect(first!.cacheReadWords).toBe(0)
+    expect(sameSystem!.cacheReadWords).toBe(sameSystem!.inputWords - wordCount(asks[1][1]))
+    expect(otherSystem!.cacheReadWords).toBe(
+      otherSystem!.inputWords - wordCount(ON_PRODUCTS) - wordCount(asks[2][1]),
+    )
+    expect(otherSystem!.cacheReadWords).toBeGreaterThanOrEqual(MIN_CACHED_WORDS)
+  })
+
+  it('a request with tools marks the last tool and the system prompt for the cache beside the top-level marker, and nothing else; one without tools is sent as before, the system prompt a plain string', async () => {
+    await ask(false, [{ role: 'user', content: ASK }], { system: ON_ORDERS, tools: TOOLS })
+    const withTools = lastBody()
+    await ask(false, [{ role: 'user', content: 'Say hello.' }], { system: ON_ORDERS })
+    const without = lastBody()
+    const marked = (blocks: unknown) => (blocks as Block[]).map((b) => b['cache_control'] ?? null)
+    const messageMarkers = (body: Record<string, unknown>) =>
+      messagesOf(body).flatMap((m) => (Array.isArray(m.content) ? marked(m.content) : [null]))
+
+    expect(marked(withTools['tools'])).toEqual([null, { type: 'ephemeral' }])
+    expect(withTools['system']).toEqual([
+      { type: 'text', text: ON_ORDERS, cache_control: { type: 'ephemeral' } },
+    ])
+    expect(messageMarkers(withTools)).toEqual([null])
+    expect(withTools['cache_control']).toEqual({ type: 'ephemeral' })
+    expect(without['tools']).toBeUndefined()
+    expect(without['system']).toBe(ON_ORDERS)
+    expect(messageMarkers(without)).toEqual([null])
+    expect(without['cache_control']).toEqual({ type: 'ephemeral' })
+    expect(wire.answers).toHaveLength(2)
   })
 })
 

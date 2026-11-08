@@ -100,6 +100,7 @@ export {
   type GoldenReport,
   type GoldenResult,
   type GoldenTally,
+  type GoldenUsage,
   type RunGoldenOptions,
 } from './assistant/eval.js'
 export { assistantEvalHash, type AssistantEvalStamp } from './assistant/stamp.js'
