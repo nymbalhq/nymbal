@@ -15,8 +15,6 @@ const STATUSES: OrderStatus[] = [
   'shipped',
   'delivered',
   'cancelled',
-  'refunded',
-  'partially_refunded',
 ]
 
 const address = {

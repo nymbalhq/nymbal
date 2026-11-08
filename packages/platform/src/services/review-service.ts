@@ -12,13 +12,12 @@ import type { CommandStore } from '../db/command-store.js'
 import type { EventPublisher } from '../events/publisher.js'
 import type { Repositories } from '../repositories/index.js'
 
-/** The order statuses that make a review verified: the order was paid and not wholly refunded or cancelled. */
+/** The order statuses that make a review verified: the order was paid and not cancelled. A wholly refunded one is out by its money. */
 export const REVIEW_VERIFYING_STATUSES: readonly OrderStatus[] = [
   'confirmed',
   'processing',
   'shipped',
   'delivered',
-  'partially_refunded',
 ]
 
 export interface ReviewSubmitInput {

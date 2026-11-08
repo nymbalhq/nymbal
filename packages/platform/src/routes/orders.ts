@@ -2,6 +2,7 @@ import {
   NotFoundError,
   ORDER_EMAIL_HEADER,
   ORDER_KEY_HEADER,
+  paymentState,
   type DocumentStoreAdapter,
   type HttpAdapter,
   type RequestContext,
@@ -24,6 +25,7 @@ export function keyedOrder(doc: OrderDoc): ShopperOrder {
   return {
     orderNumber: doc.orderNumber,
     status: doc.status,
+    payment: { state: paymentState(doc) },
     timeline: doc.timeline,
     lineItems: doc.lineItems,
     subtotalMinor: doc.subtotalMinor,
@@ -47,6 +49,7 @@ export function ownerOrder(doc: OrderDoc): ShopperOrder {
     id: doc.id,
     orderNumber: doc.orderNumber,
     status: doc.status,
+    payment: { state: paymentState(doc) },
     timeline: doc.timeline,
     lineItems: doc.lineItems,
     subtotalMinor: doc.subtotalMinor,

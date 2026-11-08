@@ -1,12 +1,19 @@
 import { randomUUID } from 'node:crypto'
 import fc from 'fast-check'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { ORDER_STATUS_TRANSITIONS, type Address, type OrderStatus } from '@nymbalhq/types'
+import {
+  ORDER_STATUS_TRANSITIONS,
+  paymentState,
+  type Address,
+  type OrderStatus,
+  type PaymentState,
+} from '@nymbalhq/types'
 import { adminSession, type AdminSession } from '../audit-http.js'
 import { serveKernel, type ServedKernel } from '../http.js'
 import { address, type Kernel } from '../kernel.js'
 import { insertOrders, type OrderSpec } from '../listed-orders.js'
 import { openRaw, type RawReader } from '../raw.js'
+import { routeSchemas } from '../../../src/routes/schemas.js'
 
 // The admin order list's filters run in the store's own query, on one dialect.
 // - AC-1: property, the repository's `list` and `count` against a reference built in the test from the orders it
@@ -518,6 +525,146 @@ export function orderListFilterSuite(
         { status: 400, code: 'validation.failed', at: ['query.country'] },
         { status: 400, code: 'validation.failed', at: ['query.country'] },
       ])
+    })
+  })
+  describe(`AC-11: the list filters by payment, and status is fulfilment only (${dialect})`, () => {
+    let k: Kernel
+    let served: ServedKernel
+    let admin: AdminSession
+
+    beforeAll(async () => {
+      k = await start()
+      served = await serveKernel(k)
+      admin = await adminSession(k, served.baseUrl)
+    }, 60_000)
+
+    afterAll(async () => {
+      await served?.stop()
+    })
+
+    const FULFILMENT: OrderStatus[] = [
+      'pending',
+      'confirmed',
+      'processing',
+      'shipped',
+      'delivered',
+      'cancelled',
+    ]
+    const PAYMENTS: PaymentState[] = ['unpaid', 'paid', 'partially_refunded', 'refunded']
+    const TOTAL = 1200
+
+    const moneyArb = fc
+      .record({
+        captured: fc.constantFrom(0, TOTAL),
+        share: fc.constantFrom(0, 0.25, 0.5, 1),
+      })
+      .map(({ captured, share }) => ({
+        capturedMinor: captured,
+        refundedMinor: Math.round(captured * share),
+      }))
+
+    const batch = fc.array(
+      fc.record({ status: fc.constantFrom(...FULFILMENT), money: moneyArb }),
+      { minLength: 1, maxLength: 10 },
+    )
+
+    // Defect: the payment filter is ignored, mirrors paymentState wrongly at a boundary, leaves out meta.total, or does
+    // not narrow beside status.
+    it(`AC-11: property: payment=p answers exactly the orders whose paymentState is p, and with status=s exactly those also at s, meta.total counting them, on generated amounts at every status (${dialect})`, async () => {
+      const mine: Array<{ id: string; status: OrderStatus; state: PaymentState }> = []
+      const tag = randomUUID()
+      await fc.assert(
+        fc.asyncProperty(batch, async (drafts) => {
+          const written = await insertOrders(
+            k,
+            drafts.map((d, i) => ({
+              status: d.status,
+              email: `pay-${tag}-${mine.length + i}@orders.test`,
+              capturedMinor: d.money.capturedMinor,
+              refundedMinor: d.money.refundedMinor,
+            })),
+          )
+          for (const [i, o] of written.entries()) {
+            mine.push({
+              id: o.id,
+              status: drafts[i]!.status,
+              state: paymentState(drafts[i]!.money),
+            })
+          }
+          const fetched = await Promise.all(
+            PAYMENTS.flatMap((p) => [
+              [p, undefined] as const,
+              ...FULFILMENT.map((status) => [p, status] as const),
+            ]).map(async ([p, status]) => ({
+              p,
+              status,
+              answer: await listed(
+                admin,
+                `q=${encodeURIComponent(`pay-${tag}`)}&limit=200&payment=${p}${status === undefined ? '' : `&status=${status}`}`,
+              ),
+            })),
+          )
+          for (const { p, status, answer } of fetched) {
+            const expected = mine
+              .filter((o) => o.state === p && (status === undefined || o.status === status))
+              .map((o) => o.id)
+            const context = `payment=${p}${status === undefined ? '' : ` status=${status}`}`
+            expect(answer.status, `${context}: ${JSON.stringify(answer)}`).toBe(200)
+            expect(sorted(answer.ids ?? []), context).toEqual(sorted(expected))
+            expect(answer.total, context).toBe(expected.length)
+          }
+        }),
+        { numRuns: dialect === 'sqlite' ? 15 : 6 },
+      )
+    }, 180_000)
+
+    /** Whether `text` names `value` as a word of its own: `refunded` is not named by `partially_refunded`. */
+    const names = (text: string, value: string) =>
+      new RegExp(`(^|[^A-Za-z_])${value}([^A-Za-z_]|$)`).test(text)
+
+    // Defect: an alias keeps the money statuses alive on the status filter, or a refused answer names the wrong field.
+    it(`AC-11: status=refunded and status=partially_refunded answer 400 validation.failed with one issue at query.status naming the six statuses and neither money value (${dialect})`, async () => {
+      const refusals = await Promise.all(
+        ['status=refunded', 'status=partially_refunded'].map(async (q) => {
+          const res = await admin.send<Array<{ id: string }>>('GET', `/api/admin/orders?${q}`)
+          const error = res.body.error as
+            | { code?: string; context?: { issues?: Issue[] } }
+            | undefined
+          const issues = (error?.context?.issues ?? []).filter(
+            (i) => i.path.join('.') === 'query.status',
+          )
+          return {
+            q,
+            status: res.status,
+            code: error?.code,
+            issues: issues.length,
+            named: issues.flatMap((i) => FULFILMENT.filter((s) => names(i.message, s))),
+            leaked: issues.flatMap((i) =>
+              ['refunded', 'partially_refunded'].filter((m) => names(i.message, m)),
+            ),
+          }
+        }),
+      )
+      expect(refusals).toEqual(
+        ['status=refunded', 'status=partially_refunded'].map((q) => ({
+          q,
+          status: 400,
+          code: 'validation.failed',
+          issues: 1,
+          named: FULFILMENT,
+          leaked: [],
+        })),
+      )
+    })
+
+    // Defect: the assistant tool keeps describing a filter that no longer exists, or no way to find a refunded order.
+    it(`AC-11: the admin order list tool’s description names the payment filter and its four values beside the status filter (${dialect})`, () => {
+      const route = routeSchemas['GET /api/admin/orders']!
+      const query = route.query as unknown as { shape: Record<string, { description?: string }> }
+      const paymentDescription = query.shape['payment']?.description ?? ''
+      const text = `${route.description} ${paymentDescription} ${query.shape['status']?.description ?? ''}`
+      expect(PAYMENTS.filter((p) => !names(paymentDescription, p))).toEqual([])
+      expect(['payment', 'status'].filter((f) => !names(text, f))).toEqual([])
     })
   })
 }

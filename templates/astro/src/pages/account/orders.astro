@@ -17,11 +17,13 @@ import AccountLayout from '../../layouts/AccountLayout.astro'
   import type { Order } from '@nymbalhq/types'
   import { client } from '../../lib/client.js'
   import { escapeHtml, formatPrice, formatDate } from '../../lib/format.js'
+  import { refundLabel } from '../../lib/order-status.js'
 
   const container = document.getElementById('orders-container')
 
   function renderOrder(order: Order): string {
     const number = escapeHtml(order.orderNumber)
+    const refund = refundLabel(order)
     const items = order.lineItems ?? []
     return `
       <a class="order-card" href="/account/orders/${encodeURIComponent(order.orderNumber)}" data-testid="order-${number}">
@@ -30,7 +32,10 @@ import AccountLayout from '../../layouts/AccountLayout.astro'
             <span class="order-card-number">#${number}</span>
             ${order.createdAt ? `<span class="order-card-date" style="margin-left: var(--nymbal-spacing-sm, 0.5rem);">${formatDate(order.createdAt)}</span>` : ''}
           </div>
-          <span class="order-status status-${escapeHtml(order.status)}">${escapeHtml(order.status)}</span>
+          <div>
+            <span class="order-status status-${escapeHtml(order.status)}">${escapeHtml(order.status)}</span>
+            ${refund ? `<span class="order-status status-cancelled" data-testid="order-payment-state-${number}">${refund}</span>` : ''}
+          </div>
         </div>
         <div class="order-card-body">
           <div class="order-card-items">

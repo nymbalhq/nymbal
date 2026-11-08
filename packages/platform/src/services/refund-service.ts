@@ -8,7 +8,7 @@ import {
   PaymentError,
   StatusTransitionError,
   ValidationError,
-  canTransitionOrder,
+  canRefund,
   paymentState,
   refundableMinor,
   type Logger,
@@ -164,7 +164,7 @@ export function createRefundService(deps: CreateRefundServiceDeps): RefundServic
         { context: { amountMinor: input.amountMinor, refundableMinor: refundable } },
       )
     }
-    if (!canTransitionOrder(order.status, 'refunded')) {
+    if (!canRefund(order.status)) {
       throw new StatusTransitionError('order', order.status, 'refunded')
     }
     const row: OrderRefundInsert = {
@@ -218,8 +218,8 @@ export function createRefundService(deps: CreateRefundServiceDeps): RefundServic
   }
 
   /**
-   * Step 3, under the order's lock again: the row is settled, `refunded_minor` recomputed from the rows, and the status
-   * moved. The money has moved by now, so a status that no longer allows the move is kept and logged, never an error.
+   * Step 3, under the order's lock again: the row is settled and `refunded_minor` recomputed from the rows. A refund
+   * is money, so the order's status stays what it is; the history row and the events say what happened.
    */
   async function settle(
     tx: Tx,
@@ -249,28 +249,12 @@ export function createRefundService(deps: CreateRefundServiceDeps): RefundServic
     now: Date,
   ): Promise<void> {
     const full = refundedMinor >= order.capturedMinor
-    const target = full ? 'refunded' : 'partially_refunded'
     const note = `${REFUND_NOTE_PREFIX}${formatMoney(refund.amountMinor, refund.currency)}${refund.reason ? `: ${refund.reason}` : ''}`
-    // `order` is the row locked before this refund was counted. A later partial refund keeps the status, so an order
-    // that moved on after its first partial refund never returns to `partially_refunded`.
-    const moves = full || order.refundedMinor === 0
-    let toStatus = order.status
-    if (moves && order.status !== target) {
-      if (canTransitionOrder(order.status, target)) {
-        await repos.order.setStatus(tx, order.id, target, now)
-        toStatus = target
-      } else {
-        logger.warn(
-          { orderId: order.id, refundId: refund.id, status: order.status, wanted: target },
-          'refund settled; the order status no longer allows the move and is kept',
-        )
-      }
-    }
     await repos.orderHistory.append(tx, {
       id: uuidv7(),
       orderId: order.id,
       fromStatus: order.status,
-      toStatus,
+      toStatus: order.status,
       actor: refund.actor,
       note,
       timestamp: now,

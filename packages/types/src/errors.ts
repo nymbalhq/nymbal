@@ -114,6 +114,7 @@ export class OrderConflictError extends NymbalError {
     code:
       | 'order.unpaid'
       | 'order.paid'
+      | 'order.refunded'
       | 'order.stock_unavailable'
       | 'order.payment_in_progress'
       | 'refund.not_captured'

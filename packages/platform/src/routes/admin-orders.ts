@@ -5,6 +5,7 @@ import {
   type Order,
   type OrderPayment,
   type OrderStatus,
+  type PaymentState,
 } from '@nymbalhq/types'
 import type { ReadTx } from '../db/command-store.js'
 import type { OrderService } from '../services/order-service.js'
@@ -106,6 +107,8 @@ export function registerAdminOrdersRoutes(
         const filter: OrderListFilter = {}
         const status = one('status')
         if (status !== undefined) filter.status = status as OrderStatus
+        const payment = one('payment')
+        if (payment !== undefined) filter.payment = payment as PaymentState
         for (const [key, into] of [
           ['dateFrom', 'from'],
           ['dateTo', 'to'],

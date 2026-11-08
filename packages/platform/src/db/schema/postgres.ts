@@ -170,8 +170,6 @@ export const orders = pgTable(
         'shipped',
         'delivered',
         'cancelled',
-        'refunded',
-        'partially_refunded',
       ],
     })
       .notNull()

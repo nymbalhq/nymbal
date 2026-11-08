@@ -1,4 +1,4 @@
-import type { Address, Order } from './order.js'
+import type { Address, Order, OrderPayment } from './order.js'
 
 /** The lifecycle events an order's timeline shows, each one from an `order_history` row. */
 export const ORDER_TIMELINE_KINDS = [
@@ -50,4 +50,6 @@ export interface ShopperOrder
     Partial<Pick<Order, OwnerOrStoreField>> {
   shippingAddress: ShopperAddress
   timeline?: OrderTimelineEntry[]
+  /** How the order's money stands, without amounts: `status` says only where the goods are. */
+  payment?: Pick<OrderPayment, 'state'>
 }

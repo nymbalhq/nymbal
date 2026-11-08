@@ -1,18 +1,17 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
-import { orderMovesFrom, type NymbalEvent, type Order, type OrderStatus } from '@nymbalhq/types'
+import { paymentState, type NymbalEvent, type Order, type OrderStatus, type PaymentState } from '@nymbalhq/types'
 import type { LoggedEvent } from '../repositories/event-log.js'
 import { foldHistory } from './fold.js'
 import type { OrderAsOf } from './views.js'
 
-// AC-10: the order's history fold settles a refund as the refund service does. The first partial refund (nothing
-// refunded before it) moves the folded status to partially_refunded; a later one leaves the status the order holds,
-// so an order that moved on after a partial refund reads as it is at every instant.
+// The order's history fold reads a refund as the kernel does: it changes the money and never the status, whatever
+// status it came at; and an imported order's stored snapshot holding a money status folds to confirmed.
 
 const ORDER_ID = '0195f3a2-0000-7000-8000-000000000001'
 const CREATED = new Date('2026-11-07T09:00:00.000Z')
 
-function placed(totalMinor: number): Order {
+function placed(totalMinor: number, status: Order['status'] = 'pending'): Order {
   const address = {
     firstName: 'Ada',
     lastName: 'Buyer',
@@ -27,7 +26,7 @@ function placed(totalMinor: number): Order {
     orderNumber: 'NYM-1001',
     sequence: 1000,
     customerId: null,
-    status: 'pending',
+    status,
     email: 'ada@fold.test',
     billingAddress: address,
     shippingAddress: address,
@@ -93,7 +92,8 @@ function log() {
   }
   return {
     rows,
-    place: (totalMinor: number) => append('order.placed.v1', { order: placed(totalMinor) }),
+    place: (totalMinor: number, status?: Order['status']) =>
+      append('order.placed.v1', { order: placed(totalMinor, status) }),
     pay: (amountMinor: number) => append('order.paid.v1', { orderId: ORDER_ID, amountMinor }),
     move(from: OrderStatus, to: OrderStatus) {
       if (to === 'shipped') {
@@ -108,35 +108,32 @@ function log() {
 
 const folded = (rows: LoggedEvent[]): OrderAsOf => foldHistory('order', rows) as OrderAsOf
 
-describe('AC-10: the history fold settles refunds as the record does', () => {
-  it('AC-10: refunded in part at confirmed, processed and shipped, a later partial refund leaves the folded status shipped; the first one folded to partially_refunded', () => {
-    const l = log()
-    l.place(2500)
-    l.pay(2500)
-    l.partial(500)
-    const first = folded(l.rows)
-    l.move('partially_refunded', 'processing')
-    l.move('processing', 'shipped')
-    const shipped = folded(l.rows)
-    l.partial(300)
-    const later = folded(l.rows)
-
-    expect(first.status).toBe('partially_refunded')
-    expect(shipped.status).toBe('shipped')
-    expect(later.status, 'a later partial refund keeps the status').toBe(shipped.status)
-    expect(later.payment).toMatchObject({
-      state: 'partially_refunded',
-      refundedMinor: shipped.payment.refundedMinor + 300,
-    })
-  })
-
-  type Op = { kind: 'refund'; percent: number } | { kind: 'move'; pick: number }
-  const op: fc.Arbitrary<Op> = fc.oneof(
-    fc.integer({ min: 1, max: 40 }).map((percent): Op => ({ kind: 'refund', percent })),
-    fc.nat({ max: 5 }).map((pick): Op => ({ kind: 'move', pick })),
+/** The moves the status table allows, and the two a full refund closes. */
+const TABLE: Record<string, readonly OrderStatus[]> = {
+  pending: ['confirmed', 'cancelled'],
+  confirmed: ['processing', 'cancelled'],
+  processing: ['shipped', 'cancelled'],
+  shipped: ['delivered'],
+  delivered: [],
+  cancelled: [],
+}
+const movesFrom = (status: OrderStatus, payment: PaymentState): OrderStatus[] =>
+  TABLE[status]!.filter(
+    (m) =>
+      ['processing', 'shipped', 'delivered'].includes(m) &&
+      !(payment === 'refunded' && (m === 'processing' || m === 'shipped')),
   )
 
-  it('AC-10: property: over partial refunds interleaved with the fulfilment moves orderMovesFrom allows, each partial refund folds to partially_refunded when nothing was refunded before it and leaves the folded status otherwise, refundedMinor is the sum so far, and a refund of the rest folds to refunded', () => {
+describe('AC-9: the history fold reads refunds as money', () => {
+  type Op = { kind: 'partial'; percent: number } | { kind: 'full' } | { kind: 'move'; pick: number }
+  const op: fc.Arbitrary<Op> = fc.oneof(
+    { weight: 3, arbitrary: fc.integer({ min: 1, max: 40 }).map((percent): Op => ({ kind: 'partial', percent })) },
+    { weight: 3, arbitrary: fc.nat({ max: 5 }).map((pick): Op => ({ kind: 'move', pick })) },
+    { weight: 1, arbitrary: fc.constant<Op>({ kind: 'full' }) },
+  )
+
+  // Defect: the fold still moves the status on a refund (the table consulted), or drops the amount from refundedMinor.
+  it('AC-9: property: over generated event logs, each refund event leaves the folded status as it was and moves refundedMinor by its amount, and each move folds to its own status with the money unchanged', () => {
     fc.assert(
       fc.property(
         fc.integer({ min: 200, max: 50_000 }),
@@ -146,53 +143,63 @@ describe('AC-10: the history fold settles refunds as the record does', () => {
           l.place(captured)
           l.pay(captured)
           let status: OrderStatus = 'confirmed'
-          let refundedAt: OrderStatus | null = null
           let sum = 0
           const seen: unknown[] = []
           const wanted: unknown[] = []
           for (const o of ops) {
-            const before = folded(l.rows)
+            const amounts = { capturedMinor: captured, refundedMinor: sum }
             if (o.kind === 'move') {
-              const allowed: OrderStatus[] = orderMovesFrom(status, refundedAt).filter(
-                (s: OrderStatus) => ['processing', 'shipped', 'delivered'].includes(s),
-              )
+              const allowed = movesFrom(status, paymentState(amounts))
               if (allowed.length === 0) continue
               const to = allowed[o.pick % allowed.length]!
               l.move(status, to)
-              seen.push(['move', folded(l.rows).status])
-              wanted.push(['move', to])
+              const after = folded(l.rows)
+              seen.push(['move', after.status, after.payment.refundedMinor])
+              wanted.push(['move', to, sum])
               status = to
               continue
             }
             const left = captured - sum
-            const amount = Math.min(left - 1, Math.max(1, Math.floor((left * o.percent) / 100)))
+            if (left === 0) break
+            const amount =
+              o.kind === 'full'
+                ? left
+                : Math.min(left - 1, Math.max(1, Math.floor((left * o.percent) / 100)))
             if (amount < 1) continue
-            l.partial(amount)
+            const before = folded(l.rows)
+            if (o.kind === 'full') l.full(amount)
+            else l.partial(amount)
             sum += amount
             const after = folded(l.rows)
-            const expected =
-              before.payment.refundedMinor === 0 ? 'partially_refunded' : before.status
-            if (refundedAt === null) refundedAt = status
-            status = expected
             seen.push(['refund', after.status, after.payment.refundedMinor, after.payment.state])
             wanted.push([
               'refund',
-              expected,
+              before.status,
               before.payment.refundedMinor + amount,
-              'partially_refunded',
+              paymentState({ capturedMinor: captured, refundedMinor: sum }),
             ])
           }
           expect(seen).toEqual(wanted)
-          l.full(captured - sum)
-          const end = folded(l.rows)
-          expect([end.status, end.payment.refundedMinor, end.payment.state]).toEqual([
-            'refunded',
-            captured,
-            'refunded',
-          ])
+          expect(folded(l.rows).status).toBe(status)
         },
       ),
       { numRuns: 300 },
     )
+  })
+
+  // Defect: a legacy snapshot leaks a money status onto the as-of read, disagreeing with the migrated live read.
+  it('AC-9: an order.placed snapshot with a stored refunded or partially_refunded status folds to confirmed, and the money events after it still count', () => {
+    for (const legacy of ['refunded', 'partially_refunded'] as unknown as Order['status'][]) {
+      const l = log()
+      l.place(2500, legacy)
+      const base = folded(l.rows)
+      l.partial(100)
+      const after = folded(l.rows)
+      expect([base.status, after.status, after.payment.refundedMinor], String(legacy)).toEqual([
+        'confirmed',
+        'confirmed',
+        base.payment.refundedMinor + 100,
+      ])
+    }
   })
 })

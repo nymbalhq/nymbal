@@ -19,7 +19,7 @@ const STATUS_MAP: Record<string, OrderStatus> = {
   'on-hold': 'pending',
   completed: 'delivered',
   cancelled: 'cancelled',
-  refunded: 'refunded',
+  refunded: 'confirmed',
   failed: 'cancelled',
 }
 

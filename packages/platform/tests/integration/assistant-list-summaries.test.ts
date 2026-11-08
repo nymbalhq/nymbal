@@ -67,7 +67,7 @@ beforeAll(async () => {
     if (i % 3 !== 0) paid.push(order.orderId)
   }
   await k.app.relay.drain()
-  // Every fifth paid order partly refunded.
+  // Every fifth paid order partly refunded, and every fifth another one moved on: a refund leaves the status alone.
   for (const orderId of paid.filter((_, j) => j % 5 === 0)) {
     await runAsActor({ kind: 'admin', id: store.admin.userId }, () =>
       k.services.refund.refund({
@@ -76,6 +76,11 @@ beforeAll(async () => {
         reason: 'A scuffed box',
         actor: 'system:test',
       }),
+    )
+  }
+  for (const orderId of paid.filter((_, j) => j % 5 === 1)) {
+    await runAsActor({ kind: 'admin', id: store.admin.userId }, () =>
+      k.services.order.updateStatus(orderId, 'processing', 'system:test'),
     )
   }
   await k.app.relay.drain()

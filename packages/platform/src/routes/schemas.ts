@@ -79,6 +79,7 @@ function pagingOf(size: number, max: number) {
 const orderStatus = z.enum(
   Object.keys(ORDER_STATUS_TRANSITIONS) as [OrderStatus, ...OrderStatus[]],
 )
+const orderPaymentState = z.enum(['unpaid', 'paid', 'partially_refunded', 'refunded'])
 const inventoryStatus = z.enum(['in_stock', 'low_stock', 'out_of_stock'])
 const isoDateTime = z.iso.datetime({ offset: true })
 /** An order date bound: an ISO date (from its UTC midnight) or a date-time with Z or an offset. */
@@ -460,13 +461,18 @@ export const routeSchemas: Record<string, RouteSchema> = {
     summary: 'order',
     record: 'order',
     description:
-      'List orders, newest first (50 by default, at most 200; page with offset), with total, the number of orders every filter matches. Each order carries its number, status, email, addresses, totalMinor, capturedMinor and refundedMinor. Revenue is the money kept: capturedMinor less refundedMinor (keptMinor where an order carries it); totalMinor includes orders not yet paid.',
+      'List orders, newest first (50 by default, at most 200; page with offset), with total, the number of orders every filter matches. Each order carries its number, status, email, addresses, totalMinor, capturedMinor and refundedMinor. Revenue is the money kept: capturedMinor less refundedMinor (keptMinor where an order carries it); totalMinor includes orders not yet paid. Filter by status for where the goods are and by payment for the money: a refund changes payment, never status.',
     query: z.object({
       status: orderStatus
         .describe(
-          'One of: pending (awaiting payment), confirmed, processing, shipped, delivered, cancelled, refunded, partially_refunded.',
+          'Where the goods are, one of: pending (awaiting payment), confirmed, processing, shipped, delivered, cancelled. A refunded order keeps its status: use payment to find it.',
         )
         .optional(),
+      payment: orderPaymentState
+        .optional()
+        .describe(
+          'Where the money stands, one of: unpaid, paid, partially_refunded, refunded. Combines with status.',
+        ),
       dateFrom: dateFrom.describe(DATE_BOUND).optional(),
       dateTo: dateTo.describe(DATE_BOUND).optional(),
       customer: queryValue.describe(

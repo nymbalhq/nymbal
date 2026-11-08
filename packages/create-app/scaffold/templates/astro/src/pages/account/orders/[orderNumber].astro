@@ -16,6 +16,7 @@ import AccountLayout from '../../../layouts/AccountLayout.astro'
   import { NymbalApiError } from '@nymbalhq/sdk/core'
   import { client } from '../../../lib/client.js'
   import { escapeHtml, formatPrice, formatDate } from '../../../lib/format.js'
+  import { refundLabel } from '../../../lib/order-status.js'
   import { NymbalOrderTimeline } from '@nymbalhq/web-components/elements/nymbal-order-timeline'
 
   NymbalOrderTimeline.define()
@@ -29,6 +30,7 @@ import AccountLayout from '../../../layouts/AccountLayout.astro'
     try {
       const order = await client.customer.orders.get(orderNumber)
       const ship = order.shippingAddress
+      const refund = refundLabel(order)
 
       container.innerHTML = `
         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--nymbal-spacing-lg, 1.5rem); flex-wrap: wrap; gap: var(--nymbal-spacing-sm, 0.5rem);">
@@ -36,7 +38,10 @@ import AccountLayout from '../../../layouts/AccountLayout.astro'
             <h1 class="account-page-title" style="margin-bottom: 0;">Order #${escapeHtml(order.orderNumber)}</h1>
             ${order.createdAt ? `<p class="account-page-subtitle" style="margin-top: var(--nymbal-spacing-xs, 0.25rem);">${formatDate(order.createdAt)}</p>` : ''}
           </div>
-          <span class="order-status status-${escapeHtml(order.status)}">${escapeHtml(order.status)}</span>
+          <div>
+            <span class="order-status status-${escapeHtml(order.status)}">${escapeHtml(order.status)}</span>
+            ${refund ? `<span class="order-status status-cancelled" data-testid="order-payment-state">${refund}</span>` : ''}
+          </div>
         </div>
 
         ${order.timeline?.length ? `<nymbal-order-timeline style="display: block; margin-bottom: var(--nymbal-spacing-lg, 1.5rem);" entries="${escapeHtml(JSON.stringify(order.timeline))}"></nymbal-order-timeline>` : ''}

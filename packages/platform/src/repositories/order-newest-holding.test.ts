@@ -32,8 +32,6 @@ const STATUSES: readonly OrderStatus[] = [
   'shipped',
   'delivered',
   'cancelled',
-  'refunded',
-  'partially_refunded',
 ]
 const T0 = Date.parse('2026-01-01T00:00:00.000Z')
 const PAGE = 50

@@ -108,14 +108,14 @@ describe('review submission', () => {
     }
   })
 
-  it('verifies by the newest order that paid for the product, and by none that was cancelled or refunded', async () => {
+  it('verifies by the newest order that paid for the product, and by none that was cancelled', async () => {
     const order = (id: string, status: OrderStatus): Order => ({
       id,
       customerId: 'c1',
       productId: 'p1',
       status,
     })
-    for (const status of ['pending', 'cancelled', 'refunded'] as OrderStatus[]) {
+    for (const status of ['pending', 'cancelled'] as OrderStatus[]) {
       const { service, stored } = world({ orders: [order('o-unpaid', status)] })
       await service.submit(input)
       expect(stored.map((s) => s.orderId)).toEqual([null])

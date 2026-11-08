@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import fc from 'fast-check'
 import { mapOrder } from '../../src/woocommerce/mappers/order.js'
 import type { WcOrder } from '../../src/woocommerce/client.js'
 
@@ -65,9 +66,43 @@ describe('mapOrder', () => {
     expect(result.status).toBe('cancelled')
   })
 
-  it('maps WC refunded to refunded', () => {
-    const result = mapOrder(makeOrder({ status: 'refunded' }), null, {}, 'GBP')
-    expect(result.status).toBe('refunded')
+  // Defect: a money status reaches importOrder, or the amounts stop telling the refund apart.
+  it('AC-14: property: a WooCommerce refunded order imports as confirmed with capturedMinor and refundedMinor equal to its total; a processing order with refunds keeps processing and those refunds', () => {
+    const asMoney = (minor: number) => (minor / 100).toFixed(2)
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1, max: 5_000_000 }),
+        fc.integer({ min: 1, max: 5_000_000 }),
+        (total, refund) => {
+          const refundedAmount = Math.min(total, refund)
+          const refunded = mapOrder(
+            makeOrder({ status: 'refunded', total: asMoney(total) }),
+            null,
+            {},
+            'GBP',
+          )
+          expect(refunded.status).toBe('confirmed')
+          expect(refunded.capturedMinor).toBe(refunded.totalMinor)
+          expect(refunded.refundedMinor).toBe(refunded.totalMinor)
+          expect(refunded.totalMinor).toBe(total)
+
+          const processing = mapOrder(
+            makeOrder({
+              status: 'processing',
+              total: asMoney(total),
+              refunds: [{ id: 1, reason: '', total: `-${asMoney(refundedAmount)}` }],
+            }),
+            null,
+            {},
+            'GBP',
+          )
+          expect(processing.status).toBe('processing')
+          expect(processing.capturedMinor).toBe(total)
+          expect(processing.refundedMinor).toBe(refundedAmount)
+        },
+      ),
+      { numRuns: 200 },
+    )
   })
 
   it('maps WC failed to cancelled', () => {

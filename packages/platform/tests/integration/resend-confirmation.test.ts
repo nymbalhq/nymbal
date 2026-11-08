@@ -210,9 +210,7 @@ const money = {
 /** What an order in `status` has been paid and refunded: nothing before payment or once cancelled. */
 function paymentFor(status: OrderStatus) {
   if (REFUSED.includes(status)) return {}
-  const refundedMinor =
-    status === 'refunded' ? money.totalMinor : status === 'partially_refunded' ? 1000 : 0
-  return { capturedMinor: money.totalMinor, refundedMinor, captureMethod: 'import' as const }
+  return { capturedMinor: money.totalMinor, refundedMinor: 0, captureMethod: 'import' as const }
 }
 
 /** A guest order in `status`, brought in by importOrder: no order.paid.v1, so no email of its own. */
@@ -462,7 +460,7 @@ describe('resending an order confirmation, with sends recorded (sqlite)', () => 
 
   // Kills: a pending or cancelled order mailed a confirmation; a refusal published or left unrecorded; a paid status
   // refused.
-  it('AC-6: property over statuses: a resend answers 200 and publishes one event and one email for confirmed, processing, shipped, delivered, partially_refunded and refunded orders, and for pending and cancelled answers 409 order.unpaid with context.status, publishes and sends nothing and leaves one refused entry', async () => {
+  it('AC-6: property over statuses: a resend answers 200 and publishes one event and one email for confirmed, processing, shipped and delivered orders, and for pending and cancelled answers 409 order.unpaid with context.status, publishes and sends nothing and leaves one refused entry', async () => {
     await fc.assert(
       fc.asyncProperty(fc.constantFrom(...STATUSES), async (status) => {
         const refused = REFUSED.includes(status)

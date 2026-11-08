@@ -7,55 +7,41 @@ export type OrderStatus =
   | 'shipped'
   | 'delivered'
   | 'cancelled'
-  | 'refunded'
-  | 'partially_refunded'
 
-// A captured order is refunded from any status between confirmed and delivered; a partial refund leaves room for more,
-// and the order may still be fulfilled from where it was refunded (`orderMovesFrom`).
+// Where the goods are. A refund is money: it never moves an order, and reads from `paymentState`.
 export const ORDER_STATUS_TRANSITIONS: Record<OrderStatus, readonly OrderStatus[]> = {
   pending: ['confirmed', 'cancelled'],
-  confirmed: ['processing', 'cancelled', 'refunded', 'partially_refunded'],
-  processing: ['shipped', 'cancelled', 'refunded', 'partially_refunded'],
-  shipped: ['delivered', 'refunded', 'partially_refunded'],
-  delivered: ['refunded', 'partially_refunded'],
+  confirmed: ['processing', 'cancelled'],
+  processing: ['shipped', 'cancelled'],
+  shipped: ['delivered'],
+  delivered: [],
   cancelled: [],
-  refunded: [],
-  partially_refunded: ['processing', 'shipped', 'delivered', 'refunded'],
-}
-
-const FULFILMENT_MOVES: readonly OrderStatus[] = ['processing', 'shipped', 'delivered']
-
-/**
- * The status an order was in when a partial refund moved it to `partially_refunded`: the `fromStatus` of the last row
- * into `partially_refunded` from another status. Null when no row says (an imported order).
- */
-export function statusBeforePartialRefund(
-  history: ReadonlyArray<Pick<OrderHistoryEntry, 'fromStatus' | 'toStatus'>>,
-): OrderStatus | null {
-  for (let i = history.length - 1; i >= 0; i--) {
-    const row = history[i]!
-    if (
-      row.toStatus === 'partially_refunded' &&
-      row.fromStatus !== null &&
-      row.fromStatus !== 'partially_refunded'
-    ) {
-      return row.fromStatus
-    }
-  }
-  return null
 }
 
 /**
- * Where an order may move. A partially refunded order moves on only as the status it was refunded at would, so
- * fulfilment never goes backwards or repeats; with that status unknown the table's row applies.
+ * The moves an order may take given its money: the table's row, less the fulfilment work a fully refunded order no
+ * longer owes. `delivered` stays: the parcel has left and the carrier's fact is true.
  */
-export function orderMovesFrom(
+export function fulfilmentMoves(
   status: OrderStatus,
-  before: OrderStatus | null,
+  payment: PaymentState,
 ): readonly OrderStatus[] {
-  if (status !== 'partially_refunded' || before === null) return ORDER_STATUS_TRANSITIONS[status]
-  const onward = ORDER_STATUS_TRANSITIONS[before]
-  return ['refunded', ...FULFILMENT_MOVES.filter((m) => onward.includes(m))]
+  const moves = ORDER_STATUS_TRANSITIONS[status]
+  return payment === 'refunded'
+    ? moves.filter((m) => m !== 'processing' && m !== 'shipped')
+    : moves
+}
+
+const REFUNDABLE: ReadonlySet<OrderStatus> = new Set([
+  'confirmed',
+  'processing',
+  'shipped',
+  'delivered',
+])
+
+/** Whether an order at this status takes a refund: a pending order is not sold yet and a cancelled one never was. */
+export function canRefund(status: OrderStatus): boolean {
+  return REFUNDABLE.has(status)
 }
 
 export function canTransitionOrder(from: OrderStatus, to: OrderStatus): boolean {

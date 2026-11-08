@@ -16,6 +16,9 @@ export interface OrderSpec {
   shippingAddress?: Address
   billingAddress?: Address
   orderNumber?: string
+  /** What was captured and refunded; nothing when absent. */
+  capturedMinor?: number
+  refundedMinor?: number
 }
 
 export interface WrittenOrder {
@@ -78,6 +81,14 @@ export async function insertOrders(
           notes: '',
           metadata: {},
           paymentIntentId: null,
+          ...((spec.capturedMinor ?? 0) > 0 && {
+            capture: {
+              amountMinor: spec.capturedMinor!,
+              method: 'import' as const,
+              at: order.createdAt,
+              refundedMinor: spec.refundedMinor ?? 0,
+            },
+          }),
           createdAt: order.createdAt,
           updatedAt: order.createdAt,
         })

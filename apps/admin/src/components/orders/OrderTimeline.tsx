@@ -16,7 +16,14 @@ export function OrderTimeline({ entries }: OrderTimelineProps) {
     <div className="flow-root">
       <ul className="-mb-8">
         {sorted.map((entry, idx) => (
-          <li key={entry.id} data-testid={tid('order', 'timeline-entry', entry.toStatus)}>
+          <li
+            key={entry.id}
+            data-testid={tid(
+              'order',
+              'timeline-entry',
+              entry.fromStatus === entry.toStatus ? 'refund' : entry.toStatus,
+            )}
+          >
             <div className="relative pb-8">
               {idx < sorted.length - 1 && (
                 <span
@@ -33,7 +40,7 @@ export function OrderTimeline({ entries }: OrderTimelineProps) {
                 {/* Content */}
                 <div className="min-w-0 flex-1 pt-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    {entry.fromStatus && (
+                    {entry.fromStatus && entry.fromStatus !== entry.toStatus && (
                       <>
                         <OrderStatusBadge status={entry.fromStatus} size="sm" />
                         <span className="text-zinc-400 text-xs">→</span>

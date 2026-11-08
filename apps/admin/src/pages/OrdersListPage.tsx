@@ -10,6 +10,13 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -37,8 +44,6 @@ const STATUS_FILTERS: { label: string; value: OrderStatus | 'all' }[] = [
   { label: 'Shipped', value: 'shipped' },
   { label: 'Delivered', value: 'delivered' },
   { label: 'Cancelled', value: 'cancelled' },
-  { label: 'Refunded', value: 'refunded' },
-  { label: 'Partially refunded', value: 'partially_refunded' },
 ]
 
 const PAYMENT_LABELS: Record<PaymentState, string> = {
@@ -48,14 +53,18 @@ const PAYMENT_LABELS: Record<PaymentState, string> = {
   refunded: 'Refunded',
 }
 
+const PAYMENT_FILTERS: PaymentState[] = ['unpaid', 'paid', 'partially_refunded', 'refunded']
+
 export function OrdersListPage() {
   const navigate = useNavigate()
   const [statusFilter, setStatusFilter] = useState<OrderStatus | 'all'>('all')
+  const [paymentFilter, setPaymentFilter] = useState<PaymentState | 'all'>('all')
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
 
   const { data: orders, isLoading } = useOrders({
     status: statusFilter === 'all' ? undefined : statusFilter,
+    payment: paymentFilter === 'all' ? undefined : paymentFilter,
     q: search || undefined,
     sort: 'createdAt:desc',
     limit: 100,
@@ -113,6 +122,27 @@ export function OrdersListPage() {
           ))}
         </div>
 
+        <Select
+          value={paymentFilter}
+          onValueChange={(value) => setPaymentFilter(value as PaymentState | 'all')}
+        >
+          <SelectTrigger
+            className="h-8 w-44 text-xs"
+            aria-label="Payment"
+            data-testid={tid('orders', 'payment-filter')}
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All payments</SelectItem>
+            {PAYMENT_FILTERS.map((state) => (
+              <SelectItem key={state} value={state}>
+                {PAYMENT_LABELS[state]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
         <div className="flex flex-1 items-center gap-2 sm:justify-end">
           <div className="relative flex-1 sm:max-w-xs">
             <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
@@ -168,7 +198,7 @@ export function OrdersListPage() {
             icon={<Package className="h-5 w-5" />}
             title="No orders found"
             description={
-              search || statusFilter !== 'all'
+              search || statusFilter !== 'all' || paymentFilter !== 'all'
                 ? 'Try adjusting your filters.'
                 : 'Orders will appear here as they come in.'
             }

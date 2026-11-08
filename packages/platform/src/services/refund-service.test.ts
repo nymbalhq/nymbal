@@ -35,8 +35,8 @@ import { createRefundService, settlementOf, PROVIDER_REFUND_REASON } from './ref
 
 // A refund moves money: the hold under the lock (requestId reuse, not_captured, exceeds_captured), the provider call
 // (key = row id, outcome mapping, manual and import captures move nothing) and the settlement (only on a matching
-// answer, Σ recomputed, a status that no longer allows the move kept). The integration suites pin the same through the
-// route; Stryker sees only these.
+// answer, Σ recomputed, the status never written). The integration suites pin the same through the route; Stryker sees
+// only these.
 
 const addr: Address = {
   firstName: 'Jane',
@@ -281,11 +281,7 @@ describe('RefundService: a refund moves money', () => {
       })),
     )
     expect(new Set(results.map((r) => r.refund.id)).size).toBe(amounts.length)
-    expect(results.map((r) => r.order.status)).toEqual([
-      'partially_refunded',
-      'partially_refunded',
-      'refunded',
-    ])
+    expect(results.map((r) => r.order.status)).toEqual(['confirmed', 'confirmed', 'confirmed'])
     expect(results.map((r) => r.order.refundedMinor)).toEqual([3000, 4500, 10_000])
     expect(results.map((r) => r.payment.refundableMinor)).toEqual([7000, 5500, 0])
     expect(results.at(-1)!.payment.state).toBe('refunded')
@@ -299,9 +295,9 @@ describe('RefundService: a refund moves money', () => {
 
     const history = (await historyOf(env, order.id)).slice(-3)
     expect(history.map((h) => [h.fromStatus, h.toStatus, h.actor])).toEqual([
-      ['confirmed', 'partially_refunded', 'admin:0'],
-      ['partially_refunded', 'partially_refunded', 'admin:1'],
-      ['partially_refunded', 'refunded', 'admin:2'],
+      ['confirmed', 'confirmed', 'admin:0'],
+      ['confirmed', 'confirmed', 'admin:1'],
+      ['confirmed', 'confirmed', 'admin:2'],
     ])
     expect(history[0]!.note).toBe(`refund of ${formatMoney(3000, 'GBP')}: damaged`)
     expect(history[1]!.note).toBe(`refund of ${formatMoney(1500, 'GBP')}`)
@@ -476,8 +472,8 @@ describe('RefundService: a refund moves money', () => {
     await env.store.close()
   })
 
-  // Defect: the status check is dropped, so an order whose status allows no refund (cancelled) gets one.
-  it('an order whose status cannot move to refunded refuses with StatusTransitionError and writes nothing', async () => {
+  // Defect: the status check is dropped, so an order canRefund refuses (cancelled) gets a refund.
+  it('an order canRefund refuses refuses with StatusTransitionError and writes nothing', async () => {
     const env = await setup()
     const order = await paidOrder(env, { method: 'manual', status: 'cancelled' })
     const err = await refusal(env.refunds.refund({ orderId: order.id, amountMinor: 1, actor: 'a' }))
@@ -486,8 +482,8 @@ describe('RefundService: a refund moves money', () => {
     await env.store.close()
   })
 
-  // Defect (B1): step 3 throws on a status that no longer allows the move, leaving money moved and the row unsettled.
-  it('AC-6 (B1): a status moved during the provider call is kept and logged, while the row and Σ are still written', async () => {
+  // Defect: step 3 reads the status again and refuses or rewrites it, leaving money moved and the row unsettled.
+  it('a status moved during the provider call stands, with one same-status refund row, the row and Σ written', async () => {
     const env = await setup()
     const order = await paidOrder(env, { totalMinor: 4000 })
     env.script.answer = async (c) => {
@@ -508,7 +504,7 @@ describe('RefundService: a refund moves money', () => {
 
   // Defect: refundable ignores pending rows or earlier refunds, Σ is taken from step 1's read or counts failed rows,
   // or the status disagrees with the amounts.
-  it('AC-3: over any sequence of refunds, Σ succeeded = refundedMinor <= capturedMinor, and the status is refunded exactly when refunded = captured', async () => {
+  it('AC-3: over any sequence of refunds, Σ succeeded = refundedMinor <= capturedMinor, and the status stays where it was', async () => {
     const env = await setup()
     await fc.assert(
       fc.asyncProperty(
@@ -554,76 +550,10 @@ describe('RefundService: a refund moves money', () => {
           expect(after.refundedMinor).toBe(refunded)
           expect(sum('pending')).toBe(pending)
           expect(after.refundedMinor).toBeLessThanOrEqual(after.capturedMinor)
-          expect(after.status === 'refunded').toBe(after.refundedMinor === after.capturedMinor)
-          expect(after.status === 'confirmed').toBe(after.refundedMinor === 0)
+          expect(after.status).toBe('confirmed')
         },
       ),
       { numRuns: 40 },
-    )
-    await env.store.close()
-  })
-})
-
-describe('RefundService: a partial refund after the order moved on', () => {
-  // Defect: every partial refund moves the status (not only the first), so an order processed, shipped or delivered
-  // after its first partial refund goes back to partially_refunded and fulfilment oscillates; or the kept-status refund
-  // drops its history row or event.
-  it('AC-4: a later partial refund keeps the status the order moved on to, with its history row and event; the rest moves it to refunded', async () => {
-    const env = await setup()
-    const onward = ['processing', 'shipped', 'delivered'] as const
-    await fc.assert(
-      fc.asyncProperty(
-        fc.integer({ min: 3, max: 50_000 }),
-        fc.integer({ min: 0, max: onward.length }),
-        fc.nat(),
-        fc.nat(),
-        async (captured, moves, rawFirst, rawSecond) => {
-          const first = 1 + (rawFirst % (captured - 2))
-          const second = 1 + (rawSecond % (captured - first - 1))
-          const order = await paidOrder(env, { totalMinor: captured })
-          const r1 = await env.refunds.refund({ orderId: order.id, amountMinor: first, actor: 'a' })
-          expect(r1.order.status).toBe('partially_refunded')
-          for (const to of onward.slice(0, moves)) {
-            if (to === 'shipped')
-              await env.orders.markShipped(order.id, `T-${order.id}`, 'DHL', 'a')
-            else if (to === 'delivered') await env.orders.markDelivered(order.id, 'a')
-            else await env.orders.updateStatus(order.id, to, 'a')
-          }
-          const held = (await orderOf(env, order.id)).status
-          expect(held).toBe(moves === 0 ? 'partially_refunded' : onward[moves - 1])
-          const historyBefore = await historyOf(env, order.id)
-          const partialBefore = await events(env, EVT_ORDER_PARTIALLY_REFUNDED, order.id)
-
-          const r2 = await env.refunds.refund({
-            orderId: order.id,
-            amountMinor: second,
-            actor: 'a',
-          })
-          expect(r2.order.status).toBe(held)
-          expect(r2.order.refundedMinor).toBe(first + second)
-          expect(r2.payment.state).toBe('partially_refunded')
-          const historyAfter = await historyOf(env, order.id)
-          expect(historyAfter.slice(0, -1)).toEqual(historyBefore)
-          expect([historyAfter.at(-1)!.fromStatus, historyAfter.at(-1)!.toStatus]).toEqual([
-            held,
-            held,
-          ])
-          expect(historyAfter.at(-1)!.note).toBe(`refund of ${formatMoney(second, 'GBP')}`)
-          const partialAfter = await events(env, EVT_ORDER_PARTIALLY_REFUNDED, order.id)
-          expect(partialAfter.map((p) => p.refundId)).toEqual([
-            ...partialBefore.map((p) => p.refundId),
-            r2.refund.id,
-          ])
-
-          const rest = captured - first - second
-          const r3 = await env.refunds.refund({ orderId: order.id, amountMinor: rest, actor: 'a' })
-          expect(r3.order.status).toBe('refunded')
-          expect(r3.order.refundedMinor).toBe(r3.order.capturedMinor)
-          const last = (await historyOf(env, order.id)).at(-1)!
-          expect([last.fromStatus, last.toStatus]).toEqual([held, 'refunded'])
-        },
-      ),
-      { numRuns: 30 },
     )
     await env.store.close()
   })

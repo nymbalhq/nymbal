@@ -209,6 +209,132 @@ test.describe('The order timeline', () => {
     ).toEqual(await lifecycleKinds(request, token, orderId))
   })
 
+  // Kills: shopper pages still branching on a money status (a refunded order reads "Order confirmed" and paid), or
+  // showing nothing of a refund once the status stays confirmed.
+  test('AC-19: a guest order refunded in full reads "Order refunded", shows no paid check, order-payment-state Refunded and order-status the fulfilment status, its timeline ending Refunded; a partly refunded one reads "Order confirmed" with order-payment-state Partially refunded', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(180_000)
+    const token = await adminToken(request)
+    const product = await ownProduct(request, token, 10)
+
+    const refunded = await placeThroughCheckout(page, product, email('ac19-full'))
+    const refundedOrder = await apiOrder(request, refunded.orderNumber, keyHeader(refunded.key))
+    expect(refundedOrder.status, 'the stub captured the payment').toBe('confirmed')
+    const refundedId = await orderIdOf(request, token, refunded.orderNumber)
+    await adminPost(request, token, refundedId, 'refund', { amountMinor: refundedOrder.totalMinor })
+    await expect
+      .poll(
+        async () =>
+          (await apiOrder(request, refunded.orderNumber, keyHeader(refunded.key))).timeline?.at(-1)
+            ?.kind,
+        { timeout: 10_000 },
+      )
+      .toBe('refunded')
+
+    await page.goto(keyedOrderPath(refunded.orderNumber, refunded.key))
+    await expect(page.getByTestId('order-heading')).toHaveText(/order refunded/i, {
+      timeout: 15_000,
+    })
+    await expect(page.locator('.confirmation-icon, [class*="checkCircle"]')).toHaveCount(0)
+    await expect(page.getByTestId('order-payment-state')).toHaveText(/^\s*Refunded\s*$/)
+    await expect(page.getByTestId('order-status')).toHaveText(/confirmed/i)
+    const entries = await shownEntries(page)
+    expect(entries.at(-1)?.kind).toBe('refunded')
+    expect(entries.at(-1)?.label).toBe(LABELS.refunded)
+
+    const partly = await placeThroughCheckout(page, product, email('ac19-part'))
+    const partlyOrder = await apiOrder(request, partly.orderNumber, keyHeader(partly.key))
+    const partlyId = await orderIdOf(request, token, partly.orderNumber)
+    await adminPost(request, token, partlyId, 'refund', {
+      amountMinor: Math.max(1, Math.floor(partlyOrder.totalMinor / 3)),
+    })
+    await page.goto(keyedOrderPath(partly.orderNumber, partly.key))
+    await expect(page.getByTestId('order-heading')).toHaveText(/order confirmed/i, {
+      timeout: 15_000,
+    })
+    await expect(page.getByTestId('order-payment-state')).toHaveText(/^\s*Partially refunded\s*$/)
+    await expect(page.getByTestId('order-status')).toHaveText(/confirmed/i)
+  })
+
+  // Kills: the account pages leaving the refund out now that the status no longer says it.
+  test('AC-19: a signed-in shopper’s account order list and order detail read the payment state of a refunded and of a partly refunded order, and the fulfilment status stays confirmed', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(180_000)
+    const token = await adminToken(request)
+    const product = await ownProduct(request, token, 5)
+    const buyer = email('ac19-account')
+    const password = 'TestPassword123!'
+    const shopper = await playwrightRequest.newContext()
+    try {
+      const reg = await shopper.post(`${API_URL}/api/auth/register`, {
+        headers: await csrf(shopper),
+        data: { email: buyer, password, firstName: 'Paige', lastName: 'Refund' },
+      })
+      expect(reg.ok(), `POST /api/auth/register: ${await reg.text()}`).toBe(true)
+      const { accessToken } = ((await reg.json()) as { data: { accessToken: string } }).data
+      const auth = { authorization: `Bearer ${accessToken}` }
+      const address = {
+        firstName: 'Paige',
+        lastName: 'Refund',
+        addressLine1: '9 Ledger Row',
+        city: 'York',
+        region: 'North Yorkshire',
+        postalCode: 'YO1 7HH',
+        country: 'GB',
+      }
+      const placeOne = async (): Promise<ApiOrder> => {
+        const add = await shopper.post(`${API_URL}/api/cart/items`, {
+          headers: { ...(await csrf(shopper)), ...auth },
+          data: { variantId: product.variantId, qty: 1 },
+        })
+        expect(add.ok(), `POST /api/cart/items: ${await add.text()}`).toBe(true)
+        const checkout = await shopper.post(`${API_URL}/api/checkout`, {
+          headers: { ...(await csrf(shopper)), ...auth },
+          data: { email: buyer, billingAddress: address, shippingAddress: address },
+        })
+        expect(checkout.ok(), `POST /api/checkout: ${await checkout.text()}`).toBe(true)
+        const { orderNumber } = ((await checkout.json()) as { data: { orderNumber: string } }).data
+        return apiOrder(shopper, orderNumber, auth)
+      }
+      const whole = await placeOne()
+      const part = await placeOne()
+      expect([whole.status, part.status]).toEqual(['confirmed', 'confirmed'])
+      await adminPost(request, token, whole.id, 'refund', { amountMinor: whole.totalMinor })
+      await adminPost(request, token, part.id, 'refund', {
+        amountMinor: Math.max(1, Math.floor(part.totalMinor / 3)),
+      })
+
+      await signIn(page, buyer, password)
+      await page.waitForURL((url) => url.pathname.replace(/\/$/, '') === '/account', {
+        timeout: 15_000,
+      })
+      await page.goto('/account/orders')
+      await expect(page.getByTestId(`order-payment-state-${whole.orderNumber}`)).toHaveText(
+        /^\s*Refunded\s*$/,
+        { timeout: 15_000 },
+      )
+      await expect(page.getByTestId(`order-payment-state-${part.orderNumber}`)).toHaveText(
+        /^\s*Partially refunded\s*$/,
+      )
+
+      await page.goto(`/account/orders/${encodeURIComponent(whole.orderNumber)}`)
+      await expect(page.getByTestId('order-payment-state')).toHaveText(/^\s*Refunded\s*$/, {
+        timeout: 15_000,
+      })
+      await page.goto(`/account/orders/${encodeURIComponent(part.orderNumber)}`)
+      await expect(page.getByTestId('order-payment-state')).toHaveText(
+        /^\s*Partially refunded\s*$/,
+        { timeout: 15_000 },
+      )
+    } finally {
+      await shopper.dispose()
+    }
+  })
+
   // Kills: Next's wrapper keeping its first `entries` after `router.refresh()`, a re-render from a doc with the new
   // status but not its row, and a poll that stops before the payment lands.
   test('AC-5: a +stub-pending guest order’s /order/<n> shows "Order placed"; the admin’s mark-paid brings in "Payment received" and the heading "Order confirmed" within the page’s poll, with no reload by the test', async ({

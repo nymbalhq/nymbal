@@ -68,8 +68,7 @@ export async function registerShippingTrackingHandler(
       return
     }
     for (const order of orders) {
-      // A partially refunded order is delivered only when it was refunded while shipped; the order service decides.
-      if (order.status !== 'shipped' && order.status !== 'partially_refunded') {
+      if (order.status !== 'shipped') {
         logger.info(
           { eventId: event.id, orderId: order.id, orderStatus: order.status },
           'the order is not shipped',

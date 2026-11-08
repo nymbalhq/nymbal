@@ -162,8 +162,6 @@ export const orders = sqliteTable(
         'shipped',
         'delivered',
         'cancelled',
-        'refunded',
-        'partially_refunded',
       ],
     })
       .notNull()

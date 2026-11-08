@@ -11,6 +11,7 @@ import type {
   SearchDocument,
   VariantOption,
 } from '@nymbalhq/types'
+import { paymentState } from '@nymbalhq/types'
 import { isSellable } from '../services/cart-service.js'
 import { orderTimeline } from './order-timeline.js'
 
@@ -224,7 +225,7 @@ export function buildOrderDoc(order: Order, history: OrderHistoryEntry[]): Order
     note: h.note,
     timestamp: String(h.timestamp),
   }))
-  return { ...order, history: rows, timeline: orderTimeline(rows) }
+  return { ...order, history: rows, timeline: orderTimeline(rows, paymentState(order)) }
 }
 
 /** The order's document, and its entry under its customer when it has one. */

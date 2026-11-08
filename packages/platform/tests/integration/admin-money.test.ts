@@ -373,16 +373,7 @@ describe('the admin tells the truth about money (sqlite)', () => {
               expect(sumOf(rows, 'succeeded')).toBe(stored.refundedMinor)
               expect(stored.refundedMinor).toBeLessThanOrEqual(stored.capturedMinor)
               expect(stored.capturedMinor).toBeLessThanOrEqual(stored.totalMinor)
-              expect(stored.status === 'refunded').toBe(
-                stored.refundedMinor === stored.capturedMinor && stored.capturedMinor > 0,
-              )
-              const statusOfAmounts =
-                stored.refundedMinor === 0
-                  ? start.status
-                  : stored.refundedMinor === stored.capturedMinor
-                    ? 'refunded'
-                    : 'partially_refunded'
-              expect(stored.status).toBe(statusOfAmounts)
+              expect(stored.status, 'a refund leaves the status alone').toBe(start.status)
               const read = await adminOrder(admin, order.orderNumber)
               expect(read.payment?.refundedMinor).toBe(stored.refundedMinor)
               expect(read.payment?.refundableMinor).toBe(
@@ -677,7 +668,7 @@ describe('the admin tells the truth about money (sqlite)', () => {
       expect(rows.map((r) => [r.status, r.amountMinor])).toEqual([['succeeded', amountMinor]])
       const stored = await storedMoney(raw, order.orderId)
       expect(stored.refundedMinor).toBe(sumOf(rows, 'succeeded'))
-      expect(stored.status).toBe('partially_refunded')
+      expect(stored.status).toBe('confirmed')
     })
 
     // Kills (B1): step 3 failing on a transition the status no longer allows, so the money moved and the row stays

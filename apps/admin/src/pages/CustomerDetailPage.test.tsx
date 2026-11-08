@@ -27,7 +27,7 @@ const CUSTOMER = {
 
 const ORDERS = [
   orderIn('delivered', { id: 'o-31', orderNumber: 'NYM-1031' }),
-  orderIn('partially_refunded', { id: 'o-32', orderNumber: 'NYM-1032' }),
+  orderIn('confirmed', { id: 'o-32', orderNumber: 'NYM-1032', refundedMinor: 1000 }),
   orderIn('pending', { id: 'o-33', orderNumber: 'NYM-1033' }),
 ].map((o) => ({ ...o, customerId: CUSTOMER.id }))
 

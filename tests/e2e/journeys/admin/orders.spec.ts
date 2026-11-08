@@ -318,12 +318,12 @@ test.describe('Admin orders', () => {
     expect(afterAll.payment.state).toBe('refunded')
     expect(afterAll.payment.refundedMinor).toBe(captured)
     expect(afterAll.payment.refundableMinor).toBe(0)
-    expect(afterAll.status).toBe('refunded')
+    expect(afterAll.status).toBe('confirmed')
     await expectPaymentPanel(page, afterAll)
     await expect(page.getByTestId('admin-order-net')).toHaveText(
       endsWithAmount(0, afterAll.payment.currency),
     )
-    await expect(page.getByTestId('admin-order-status-badge')).toHaveText('Refunded')
+    await expect(page.getByTestId('admin-order-status-badge')).toHaveText('Confirmed')
     for (const refund of afterAll.payment.refunds) {
       await expect(page.getByTestId(`admin-order-refund-row-${refund.id}`)).toContainText(
         money(refund.amountMinor, afterAll.payment.currency),
@@ -338,9 +338,9 @@ test.describe('Admin orders', () => {
     await expectPaymentPanel(page, await readOrder(request, token, order.orderNumber))
   })
 
-  // Kills: a partially refunded order the admin cannot move on (no move offered, or the move refused), and a move that
-  // loses what was refunded on the way.
-  test('AC-9: an order refunded in part through the refund dialog moves to Processing with the status select and ships through the ship dialog: the badge reads Shipped, the payment panel still reads Partially refunded with the refunded amount, and GET /api/admin/orders/:n gives shipped, partially_refunded and refundedMinor = the amount, before and after a reload', async ({
+  // Kills: a refund that still moves the status, a partially refunded order the admin cannot move on, a move that loses
+  // what was refunded on the way, or a fully refunded order the UI can still ship.
+  test('AC-18: an order refunded in part through the dialog keeps the badge Confirmed while the payment panel reads Partially refunded; it moves to Processing and ships through the dialog, badge Shipped, panel still Partially refunded, and GET /api/admin/orders/:n gives shipped, partially_refunded and refundedMinor = the amount, before and after a reload', async ({
     page,
     request,
   }) => {
@@ -359,13 +359,13 @@ test.describe('Admin orders', () => {
 
     const refunded = await readOrder(request, token, order.orderNumber)
     expect([refunded.status, refunded.payment.state, refunded.payment.refundedMinor]).toEqual([
-      'partially_refunded',
+      'confirmed',
       'partially_refunded',
       part,
     ])
     await expectPaymentPanel(page, refunded)
+    await expect(page.getByTestId('admin-order-status-badge')).toHaveText('Confirmed')
 
-    // A partially refunded order with no move to offer shows a plain label, not the select: wait for it no longer.
     await page.getByTestId('admin-order-status-select').click({ timeout: 15_000 })
     await page.getByTestId('admin-order-status-option-processing').click()
     await expect(page.getByTestId('admin-order-status-badge')).toHaveText('Processing', {
@@ -406,6 +406,48 @@ test.describe('Admin orders', () => {
     const reloaded = await readOrder(request, token, order.orderNumber)
     expect([reloaded.status, ...moneyOf(reloaded)]).toEqual([shipped.status, ...moneyOf(shipped)])
     await expectPaymentPanel(page, reloaded)
+  })
+
+  // Kills: a fully refunded order that can still be moved on through the select, or a refunded order the payment filter
+  // does not find now that no status says refunded.
+  test('AC-18: an order refunded in full keeps the badge Confirmed, the panel reads Refunded and the status is the plain label with no select; the orders list’s payment filter set to Refunded lists it', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(180_000)
+    const order = await placeOwnOrder(request, paidEmail('refunded-whole'))
+    const token = await adminToken(request)
+    const start = await readOrder(request, token, order.orderNumber)
+    const captured = start.payment.capturedMinor
+
+    await signInAsAdmin(page)
+    await openDetail(page, order.orderNumber)
+    await refundThroughDialog(page, captured)
+
+    const refunded = await readOrder(request, token, order.orderNumber)
+    expect([refunded.status, refunded.payment.state, refunded.payment.refundedMinor]).toEqual([
+      'confirmed',
+      'refunded',
+      captured,
+    ])
+    await expectPaymentPanel(page, refunded)
+    await expect(page.getByTestId('admin-order-status-badge')).toHaveText('Confirmed')
+    await expect(page.getByTestId('admin-order-status-select')).toHaveCount(0)
+
+    await page.getByTestId('admin-nav-orders').click()
+    const filter = page.getByTestId('admin-orders-payment-filter')
+    await expect(filter).toBeVisible({ timeout: 15_000 })
+    if ((await filter.evaluate((el) => el.tagName)) === 'SELECT') {
+      await filter.selectOption({ label: 'Refunded' })
+    } else {
+      await filter.click()
+      await page.getByRole('option', { name: 'Refunded', exact: true }).click()
+    }
+    const row = page.getByTestId(`admin-orders-row-${order.orderNumber}`)
+    await expect(row).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByTestId(`admin-orders-payment-${order.orderNumber}`)).toHaveText(
+      LABEL.refunded,
+    )
   })
 
   // A refund the server refuses shows its reason as money, not minor units. The dialog goes stale: the realtime

@@ -10,8 +10,8 @@ import {
 import { ShipOrderDialog } from '@/components/orders/ShipOrderDialog'
 import { useMarkPaidOrder, useUpdateOrderStatus } from '@/hooks/useOrders'
 import { ApiError } from '@/lib/api'
-import { orderMovesFrom } from '@nymbalhq/types'
-import type { OrderStatus } from '@nymbalhq/types'
+import { fulfilmentMoves } from '@nymbalhq/types'
+import type { OrderStatus, PaymentState } from '@nymbalhq/types'
 import { tid } from '@/lib/testid'
 import { cn } from '@/lib/utils'
 
@@ -21,8 +21,8 @@ interface OrderStatusSelectProps {
   orderNumber: string
   /** What the order captured: a paid order is refunded through the refund dialog, never cancelled. */
   capturedMinor: number
-  /** The status a partially refunded order was refunded at (`statusBeforePartialRefund`): it moves on only from there. */
-  statusBeforePartialRefund?: OrderStatus | null
+  /** Where the order's money stands: a fully refunded order takes no further fulfilment work. */
+  paymentState?: PaymentState
 }
 
 /** The select's value for recording a payment taken outside the store (mark-paid), which confirms a pending order. */
@@ -35,8 +35,6 @@ const STATUS_LABELS: Record<OrderStatus, string> = {
   shipped: 'Shipped',
   delivered: 'Delivered',
   cancelled: 'Cancelled',
-  refunded: 'Refunded',
-  partially_refunded: 'Partially Refunded',
 }
 
 const ACTION_MAP: Partial<Record<OrderStatus, string>> = {
@@ -53,14 +51,10 @@ const ACTION_MAP: Partial<Record<OrderStatus, string>> = {
 function offeredStatuses(
   currentStatus: OrderStatus,
   capturedMinor: number,
-  statusBeforePartialRefund: OrderStatus | null,
+  payment: PaymentState,
 ): OrderStatus[] {
-  return orderMovesFrom(currentStatus, statusBeforePartialRefund).filter(
-    (status) =>
-      status !== 'refunded' &&
-      status !== 'partially_refunded' &&
-      status !== 'confirmed' &&
-      !(status === 'cancelled' && capturedMinor > 0),
+  return fulfilmentMoves(currentStatus, payment).filter(
+    (status) => status !== 'confirmed' && !(status === 'cancelled' && capturedMinor > 0),
   )
 }
 
@@ -69,7 +63,7 @@ export function OrderStatusSelect({
   currentStatus,
   orderNumber,
   capturedMinor,
-  statusBeforePartialRefund = null,
+  paymentState = 'unpaid',
 }: OrderStatusSelectProps) {
   const queryClient = useQueryClient()
   const { mutateAsync: updateStatus, isPending: isUpdating } = useUpdateOrderStatus()
@@ -78,7 +72,7 @@ export function OrderStatusSelect({
   const [failure, setFailure] = useState<string | null>(null)
   const [shipping, setShipping] = useState(false)
 
-  const nextStatuses = offeredStatuses(currentStatus, capturedMinor, statusBeforePartialRefund)
+  const nextStatuses = offeredStatuses(currentStatus, capturedMinor, paymentState)
   const canRecordPayment = currentStatus === 'pending' && capturedMinor === 0
   const displayStatus = optimisticStatus ?? currentStatus
   const isPending = isUpdating || isRecording

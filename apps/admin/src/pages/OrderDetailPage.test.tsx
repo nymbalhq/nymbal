@@ -29,7 +29,7 @@ const ADDRESS = {
 
 function orderIn(status: OrderStatus) {
   const paid = !UNPAID.includes(status)
-  const refundedMinor = status === 'refunded' ? 2500 : status === 'partially_refunded' ? 1000 : 0
+  const refundedMinor = 0
   const capturedMinor = paid ? 2500 : 0
   return {
     id: 'o-1',
@@ -72,13 +72,7 @@ function orderIn(status: OrderStatus) {
     createdAt: AT,
     updatedAt: AT,
     payment: {
-      state: !paid
-        ? 'unpaid'
-        : refundedMinor === 0
-          ? 'paid'
-          : refundedMinor < capturedMinor
-            ? 'partially_refunded'
-            : 'refunded',
+      state: paid ? 'paid' : 'unpaid',
       capturedMinor,
       refundedMinor,
       refundableMinor: capturedMinor - refundedMinor,

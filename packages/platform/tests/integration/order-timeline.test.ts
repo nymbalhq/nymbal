@@ -39,7 +39,7 @@ type Command =
   | 'capture'
 
 /** The commands the state machine and the refund rules allow at a status. */
-function legalAt(status: string, refundableMinor: number): Command[] {
+function legalAt(status: string, refundableMinor: number, fullyRefunded: boolean): Command[] {
   const refunds: Command[] = [
     ...(refundableMinor >= 2 ? (['partial-refund'] as const) : []),
     ...(refundableMinor >= 1 ? (['full-refund'] as const) : []),
@@ -48,16 +48,15 @@ function legalAt(status: string, refundableMinor: number): Command[] {
     case 'pending':
       return ['mark-paid', 'cancel', 'capture']
     case 'confirmed':
-      return ['process', ...refunds, 'capture']
+      return [...(fullyRefunded ? [] : (['process'] as const)), ...refunds, 'capture']
     case 'processing':
-      return ['ship', ...refunds, 'capture']
+      return [...(fullyRefunded ? [] : (['ship'] as const)), ...refunds, 'capture']
     case 'shipped':
       return ['deliver', ...refunds, 'capture']
     case 'delivered':
-    case 'partially_refunded':
       return [...refunds, 'capture']
     default:
-      // cancelled and refunded are terminal; a capture can still arrive for the intent.
+      // cancelled is terminal; a capture can still arrive for the intent.
       return ['capture']
   }
 }
@@ -210,7 +209,7 @@ describe('AC-2: the served timeline is the order’s lifecycle events (sqlite)',
         for (const [pick, pct] of steps) {
           const read = await adminOrder(admin, order.orderNumber)
           const refundable = read.payment?.refundableMinor ?? 0
-          const legal = legalAt(read.status, refundable)
+          const legal = legalAt(read.status, refundable, read.payment?.state === 'refunded')
           await run(legal[pick % legal.length]!, order, refundable, pct)
           await caughtUp(order.orderId, order.orderNumber, order.orderKey)
         }

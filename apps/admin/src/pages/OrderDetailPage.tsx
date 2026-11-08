@@ -42,7 +42,6 @@ import { formatMoney } from '@/lib/money'
 import { formatDate } from '@/lib/dates'
 import { tid } from '@/lib/testid'
 import { cn } from '@/lib/utils'
-import { statusBeforePartialRefund } from '@nymbalhq/types'
 import type {
   CaptureMethod,
   Order,
@@ -365,7 +364,7 @@ export function OrderDetailPage() {
                 data-testid={tid('order', 'action', 'cancel')}
                 disabled={
                   order.payment.capturedMinor > 0 ||
-                  ['cancelled', 'refunded', 'delivered'].includes(order.status)
+                  ['cancelled', 'delivered'].includes(order.status)
                 }
               >
                 <XCircle className="h-4 w-4" />
@@ -388,7 +387,7 @@ export function OrderDetailPage() {
           currentStatus={order.status}
           orderNumber={order.orderNumber}
           capturedMinor={order.payment.capturedMinor}
-          statusBeforePartialRefund={statusBeforePartialRefund(order.history ?? [])}
+          paymentState={order.payment.state}
         />
       </div>
 

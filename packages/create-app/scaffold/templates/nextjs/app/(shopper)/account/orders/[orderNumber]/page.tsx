@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation'
 import { OrderTimeline, useNymbalClient } from '@nymbalhq/react'
 import type { ShopperOrder } from '@nymbalhq/types'
 import { formatPrice, formatDate } from '@/lib/format'
+import { refundLabel } from '@/lib/order-status'
 import styles from '@/styles/pages/account.module.css'
 import confirmStyles from '@/styles/pages/confirmation.module.css'
 
@@ -79,12 +80,22 @@ export default function OrderDetailPage() {
         <h2 className={styles.pageTitle} style={{ marginBottom: 0 }}>
           Order #{order.orderNumber}
         </h2>
-        <span
-          className={`${styles.orderStatus} ${styles.statusPending}`}
-          style={{ textTransform: 'capitalize' }}
-        >
-          {order.status}
-        </span>
+        <div>
+          <span
+            className={`${styles.orderStatus} ${styles.statusPending}`}
+            style={{ textTransform: 'capitalize' }}
+          >
+            {order.status}
+          </span>
+          {refundLabel(order) !== null && (
+            <span
+              className={`${styles.orderStatus} ${styles.statusRefunded}`}
+              data-testid="order-payment-state"
+            >
+              {refundLabel(order)}
+            </span>
+          )}
+        </div>
       </div>
 
       {order.createdAt && (

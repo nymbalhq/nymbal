@@ -2,7 +2,7 @@ import { NymbalApiError } from '@nymbalhq/sdk/core'
 import '@nymbalhq/sdk/ns/auth'
 import type { ShopperAddress, ShopperOrder } from '@nymbalhq/types'
 import { client } from '../lib/client.js'
-import { isPaid, orderHeading } from '../lib/order-status.js'
+import { isPaid, orderHeading, orderStanding, refundLabel } from '../lib/order-status.js'
 import { submitOnce } from '../lib/submit-once.js'
 
 // The order page's two forms, each sent once per click from the browser. The expired key's email prompt reads the
@@ -21,14 +21,15 @@ function subtitle(order: ShopperOrder): Node[] {
   number.dataset.testid = 'order-number'
   number.textContent = order.orderNumber
   const text = (value: string) => document.createTextNode(value)
-  if (isPaid(order.status)) {
+  if (isPaid(order)) {
     return [
       text('Thank you. Your order '),
       number,
       text(" is paid. We'll send a confirmation to the email you gave at checkout."),
     ]
   }
-  if (order.status === 'pending') {
+  const standing = orderStanding(order)
+  if (standing === 'pending') {
     return [
       text('Your order '),
       number,
@@ -37,7 +38,7 @@ function subtitle(order: ShopperOrder): Node[] {
       ),
     ]
   }
-  return [text('Your order '), number, text(` is ${order.status.replace(/_/g, ' ')}.`)]
+  return [text('Your order '), number, text(` is ${standing}.`)]
 }
 
 function addressLines(address: ShopperAddress): Node[] {
@@ -56,10 +57,10 @@ function addressLines(address: ShopperAddress): Node[] {
 /** Fills the page's empty confirmation with the order, as the server renders a key's order. */
 function fillOrder(view: HTMLElement, order: ShopperOrder): void {
   // The check mark is a flex box, which `hidden` does not hide: an unpaid order's is removed.
-  if (!isPaid(order.status)) field(view, 'paid')?.remove()
+  if (!isPaid(order)) field(view, 'paid')?.remove()
   const heading = field(view, 'heading')
   if (heading) {
-    heading.textContent = orderHeading(order.status)
+    heading.textContent = orderHeading(order)
     heading.dataset.testid = 'order-heading'
   }
   field(view, 'subtitle')?.replaceChildren(...subtitle(order))
@@ -69,6 +70,17 @@ function fillOrder(view: HTMLElement, order: ShopperOrder): void {
   if (status) {
     status.textContent = order.status
     status.dataset.testid = 'order-status'
+  }
+  const refund = refundLabel(order)
+  const payment = field(view, 'payment')
+  if (refund === null) {
+    payment?.remove()
+  } else if (payment) {
+    const state = field(payment, 'payment-state')
+    if (state) {
+      state.textContent = refund
+      state.dataset.testid = 'order-payment-state'
+    }
   }
   view
     .querySelector('nymbal-order-timeline')

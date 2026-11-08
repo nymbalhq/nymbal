@@ -12,6 +12,7 @@ import type {
 
 interface OrderFilters {
   status?: string | undefined
+  payment?: string | undefined
   dateFrom?: string | undefined
   dateTo?: string | undefined
   customer?: string | undefined

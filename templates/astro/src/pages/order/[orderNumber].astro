@@ -5,7 +5,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro'
 import NymbalElement from '@nymbalhq/web-components/astro'
 import type { ShopperOrder } from '@nymbalhq/types'
 import { fetchOrder, openExpiredOrder, requestOrderLink, shopperHeaders } from '../../lib/api'
-import { isPaid, orderHeading } from '../../lib/order-status'
+import { isPaid, orderHeading, orderStanding, refundLabel } from '../../lib/order-status'
 
 // The URL carries the order's key (`?key=`), so nothing this page links to or loads may be told the URL: a header,
 // the meta tag below and a canonical URL without the query. No shared cache may keep what a key opened.
@@ -70,8 +70,10 @@ const summary = order && {
 }
 
 const shippingAddress = order?.shippingAddress
-const heading = order ? orderHeading(order.status) : read === 'expired' ? 'Open your order' : 'Order not found'
-const paid = order ? isPaid(order.status) : false
+const heading = order ? orderHeading(order) : read === 'expired' ? 'Open your order' : 'Order not found'
+const paid = order ? isPaid(order) : false
+const standing = order ? orderStanding(order) : ''
+const refund = order ? refundLabel(order) : null
 ---
 
 <BaseLayout title={`${heading} | Nymbal`} description="Your order with Nymbal." canonical={canonical}>
@@ -116,6 +118,10 @@ const paid = order ? isPaid(order.status) : false
             <div class="confirmation-detail-row">
               <dt>Status</dt>
               <dd style="text-transform: capitalize;" data-order-field="status"></dd>
+            </div>
+            <div class="confirmation-detail-row" data-order-field="payment">
+              <dt>Payment</dt>
+              <dd data-order-field="payment-state"></dd>
             </div>
           </dl>
         </div>
@@ -180,14 +186,14 @@ const paid = order ? isPaid(order.status) : false
             Thank you. Your order <strong data-testid="order-number">{order.orderNumber}</strong> is paid.
             We'll send a confirmation to the email you gave at checkout.
           </p>
-        ) : order.status === 'pending' ? (
+        ) : standing === 'pending' ? (
           <p class="confirmation-subtitle">
             Your order <strong data-testid="order-number">{order.orderNumber}</strong> is waiting for its payment.
             We'll email the address you gave at checkout once it arrives.
           </p>
         ) : (
           <p class="confirmation-subtitle">
-            Your order <strong data-testid="order-number">{order.orderNumber}</strong> is {order.status.replace(/_/g, ' ')}.
+            Your order <strong data-testid="order-number">{order.orderNumber}</strong> is {standing}.
           </p>
         )}
 
@@ -203,6 +209,12 @@ const paid = order ? isPaid(order.status) : false
               <dt>Status</dt>
               <dd style="text-transform: capitalize;" data-testid="order-status">{order.status}</dd>
             </div>
+            {refund !== null && (
+              <div class="confirmation-detail-row">
+                <dt>Payment</dt>
+                <dd data-testid="order-payment-state">{refund}</dd>
+              </div>
+            )}
           </dl>
         </div>
 

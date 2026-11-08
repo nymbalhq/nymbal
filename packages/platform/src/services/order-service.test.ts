@@ -6,7 +6,6 @@ import {
   EVT_ORDER_DELIVERED,
   EVT_ORDER_CANCELLED,
   EVT_ORDER_CONFIRMATION_RESEND_REQUESTED,
-  EVT_ORDER_STATUS_CHANGED,
   NotFoundError,
   OrderConflictError,
   StatusTransitionError,
@@ -826,8 +825,7 @@ describe('OrderService.requestLink', () => {
       createdAt: new Date('2024-03-01T09:30:00Z'),
       ...(paid && {
         capturedMinor: totalMinor,
-        refundedMinor:
-          status === 'refunded' ? totalMinor : status === 'partially_refunded' ? 1000 : 0,
+        refundedMinor: 0,
         captureMethod: 'manual' as const,
       }),
     })
@@ -840,14 +838,7 @@ describe('OrderService.requestLink', () => {
       .map((l) => l.event.payload)
   }
 
-  const due: OrderStatus[] = [
-    'confirmed',
-    'processing',
-    'shipped',
-    'delivered',
-    'partially_refunded',
-    'refunded',
-  ]
+  const due: OrderStatus[] = ['confirmed', 'processing', 'shipped', 'delivered']
 
   // Defect: a confirmed-or-later order's link is never sent, is sent for the wrong order, or the order changes.
   it.each(due)(
@@ -918,8 +909,6 @@ describe('OrderService.resendConfirmation', () => {
   async function importIn(env: Env, status: OrderStatus) {
     const totalMinor = 2500
     const paid = status !== 'pending' && status !== 'cancelled'
-    const refundedMinor =
-      status === 'refunded' ? totalMinor : status === 'partially_refunded' ? 1000 : 0
     const line = await createLine(totalMinor, 1)
     return env.orderService.importOrder({
       orderId: uuidv7(),
@@ -937,7 +926,7 @@ describe('OrderService.resendConfirmation', () => {
       totalMinor,
       currency: 'GBP',
       createdAt: new Date('2024-03-01T09:30:00Z'),
-      ...(paid && { capturedMinor: totalMinor, refundedMinor, captureMethod: 'manual' as const }),
+      ...(paid && { capturedMinor: totalMinor, refundedMinor: 0, captureMethod: 'manual' as const }),
     })
   }
 
@@ -948,14 +937,7 @@ describe('OrderService.resendConfirmation', () => {
       .map((l) => l.event.payload)
   }
 
-  const due: OrderStatus[] = [
-    'confirmed',
-    'processing',
-    'shipped',
-    'delivered',
-    'partially_refunded',
-    'refunded',
-  ]
+  const due: OrderStatus[] = ['confirmed', 'processing', 'shipped', 'delivered']
 
   // Defect: a status a confirmation is due for is refused, the event is not published or names the wrong order, or the
   // order is changed by the resend.
@@ -1004,163 +986,6 @@ describe('OrderService.resendConfirmation', () => {
       NotFoundError,
     )
     expect(await resendEvents(env)).toEqual([])
-    await env.commandStore.close()
-  })
-})
-
-// A partially refunded order moves on only as the status it was refunded at would; with no history row saying (an
-// imported order) the table's row applies. A refused move throws before any write, shipment row or event.
-describe('OrderService: moves out of partially_refunded', () => {
-  type Env = Awaited<ReturnType<typeof setup>>
-  type Move = 'processing' | 'shipped' | 'delivered' | 'refunded'
-  const MOVES: readonly Move[] = ['processing', 'shipped', 'delivered', 'refunded']
-  type RefundedAt = 'confirmed' | 'processing' | 'shipped' | 'delivered' | 'imported'
-  // The spec's cells, pinned: refunded at X, the order may take only X's next fulfilment move, and a refund.
-  const ALLOWED: Record<RefundedAt, readonly Move[]> = {
-    confirmed: ['processing', 'refunded'],
-    processing: ['shipped', 'refunded'],
-    shipped: ['delivered', 'refunded'],
-    delivered: ['refunded'],
-    imported: ['processing', 'shipped', 'delivered', 'refunded'],
-  }
-  const EMITS: Record<Move, string> = {
-    processing: EVT_ORDER_STATUS_CHANGED,
-    shipped: EVT_ORDER_SHIPPED,
-    delivered: EVT_ORDER_DELIVERED,
-    refunded: EVT_ORDER_STATUS_CHANGED,
-  }
-
-  const tracking = (orderId: string) => `TRK-${orderId}`
-
-  /** An order walked through the service to `at`, then moved to partially_refunded as a refund settles one. */
-  async function partiallyRefunded(env: Env, at: RefundedAt): Promise<string> {
-    if (at === 'imported') {
-      const line = await createLine()
-      const order = await env.orderService.importOrder({
-        orderId: uuidv7(),
-        orderNumber: `WC-${uuidv7().slice(-12)}`,
-        status: 'partially_refunded',
-        customerId: null,
-        email: 'import@example.com',
-        billingAddress: addr,
-        shippingAddress: addr,
-        lineItems: [line],
-        subtotalMinor: line.lineTotalMinor,
-        taxTotalMinor: 0,
-        shippingTotalMinor: 0,
-        discountTotalMinor: 0,
-        totalMinor: line.lineTotalMinor,
-        currency: 'GBP',
-        createdAt: new Date('2024-03-01T09:30:00Z'),
-      })
-      return order.id
-    }
-    const id = uuidv7()
-    const line = await createLine()
-    await env.orderService.createFromCheckout({
-      orderId: id,
-      customerId: null,
-      email: 'pr@example.com',
-      billingAddress: addr,
-      shippingAddress: addr,
-      lineItems: [line],
-      subtotalMinor: line.lineTotalMinor,
-      taxTotalMinor: 0,
-      shippingTotalMinor: 0,
-      discountTotalMinor: 0,
-      totalMinor: line.lineTotalMinor,
-      currency: 'GBP',
-    })
-    const walk: OrderStatus[] = ['confirmed', 'processing', 'shipped', 'delivered']
-    for (const step of walk.slice(0, walk.indexOf(at) + 1)) {
-      if (step === 'shipped') await env.orderService.markShipped(id, tracking(id), 'DHL', 'admin')
-      else if (step === 'delivered') await env.orderService.markDelivered(id, 'admin')
-      else await env.orderService.updateStatus(id, step, 'admin')
-    }
-    await env.commandStore.transaction(async (tx) => {
-      const now = new Date()
-      await env.repos.order.setStatus(tx, id, 'partially_refunded', now)
-      await env.repos.orderHistory.append(tx, {
-        id: uuidv7(),
-        orderId: id,
-        fromStatus: at,
-        toStatus: 'partially_refunded',
-        actor: 'admin',
-        note: 'refund of £5.00',
-        timestamp: now,
-      })
-    })
-    return id
-  }
-
-  function move(env: Env, id: string, to: Move) {
-    if (to === 'shipped') return env.orderService.markShipped(id, tracking(id), 'DHL', 'admin')
-    if (to === 'delivered') return env.orderService.markDelivered(id, 'admin')
-    return env.orderService.updateStatus(id, to, 'admin')
-  }
-
-  async function snapshot(env: Env, id: string) {
-    const [order, history, shipments, log] = await env.commandStore.read(
-      async (tx) =>
-        [
-          await env.repos.order.findById(tx, id),
-          await env.repos.orderHistory.listByOrder(tx, id),
-          await env.repos.orderShipment.ordersByTrackingNumber(tx, tracking(id)),
-          await env.repos.eventLog.listAll(tx),
-        ] as const,
-    )
-    const events = log
-      .map((l) => l.event)
-      .filter((e) => (e.payload as { orderId?: string }).orderId === id)
-      .map((e) => e.type)
-    return { order: order!, history, shipments: shipments.length, events }
-  }
-
-  // Defect: the narrowing is skipped or inverted (only the table is read), so an order refunded after delivery is
-  // shipped again (a 500 on the shipment key) or delivered twice, or an allowed move is refused; or the refusal names
-  // another entity or status than the move it refused.
-  it('AC-5: a partially refunded order takes exactly the moves of the status it was refunded at (all when imported), and a refused one writes nothing', async () => {
-    const env = await setup()
-    for (const at of Object.keys(ALLOWED) as RefundedAt[]) {
-      for (const to of MOVES) {
-        const cell = `${at} -> ${to}`
-        const id = await partiallyRefunded(env, at)
-        const before = await snapshot(env, id)
-        expect(before.order.status, cell).toBe('partially_refunded')
-        const err = await move(env, id, to).then(
-          () => null,
-          (e: unknown) => e,
-        )
-        const after = await snapshot(env, id)
-        const allowed = ALLOWED[at].includes(to)
-        const refusal =
-          err instanceof StatusTransitionError ? { code: err.code, context: err.context } : err
-        expect(refusal, cell).toEqual(
-          allowed
-            ? null
-            : {
-                code: 'status.invalid_transition',
-                context: { entity: 'order', fromStatus: 'partially_refunded', toStatus: to },
-              },
-        )
-        expect(after.order, cell).toEqual(
-          allowed
-            ? { ...before.order, status: to, updatedAt: after.order.updatedAt }
-            : before.order,
-        )
-        const fromTo = (h: { fromStatus: OrderStatus | null; toStatus: OrderStatus }) => [
-          h.fromStatus,
-          h.toStatus,
-        ]
-        expect(after.history.map(fromTo), cell).toEqual([
-          ...before.history.map(fromTo),
-          ...(allowed ? [['partially_refunded', to]] : []),
-        ])
-        expect(after.history.slice(0, before.history.length), cell).toEqual(before.history)
-        expect(after.shipments, cell).toBe(before.shipments + (allowed && to === 'shipped' ? 1 : 0))
-        expect(after.events, cell).toEqual([...before.events, ...(allowed ? [EMITS[to]] : [])])
-      }
-    }
     await env.commandStore.close()
   })
 })

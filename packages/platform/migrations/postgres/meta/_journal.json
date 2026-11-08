@@ -162,6 +162,13 @@
       "when": 1793809830713,
       "tag": "0022_order_source",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1794163018457,
+      "tag": "0023_order_status_fulfilment",
+      "breakpoints": true
     }
   ]
 }

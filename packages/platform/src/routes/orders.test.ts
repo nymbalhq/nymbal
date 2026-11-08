@@ -182,8 +182,6 @@ const STATUSES: OrderStatus[] = [
   'shipped',
   'delivered',
   'cancelled',
-  'refunded',
-  'partially_refunded',
 ]
 /** Paths a shopper's order never carries: checkout's cart and stock bookkeeping, import provenance, store keys, the status history. */
 const INTERNAL_PATHS = [

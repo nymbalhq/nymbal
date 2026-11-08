@@ -64,8 +64,6 @@ const STATUSES: OrderStatus[] = [
   'shipped',
   'delivered',
   'cancelled',
-  'refunded',
-  'partially_refunded',
 ]
 
 const word = (min: number, max: number) =>
