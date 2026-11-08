@@ -6,6 +6,7 @@ import type {
   ChatStopReason,
   ChatStreamEvent,
   ChatToolCall,
+  ChatUsage,
   Logger,
 } from '@nymbalhq/types'
 import { AdapterError } from '@nymbalhq/types'
@@ -20,6 +21,7 @@ import {
   lifetime,
   post,
   recOf,
+  secretsOf,
   unreadable,
   type Lifetime,
 } from './chat.js'
@@ -48,6 +50,19 @@ function stopReasonOf(wire: unknown): ChatStopReason {
 }
 
 const count = (value: unknown): number => (typeof value === 'number' ? value : 0)
+
+/** Every input token the model read, and of those the ones Anthropic counts apart: read from or written to its cache. */
+function inputOf(usage: Record<string, unknown>): Omit<ChatUsage, 'outputTokens'> {
+  const read = usage['cache_read_input_tokens']
+  const written = usage['cache_creation_input_tokens']
+  return {
+    inputTokens: count(usage['input_tokens']) + count(written) + count(read),
+    ...(typeof read === 'number' && { cacheReadTokens: read }),
+    ...(typeof written === 'number' && { cacheWriteTokens: written }),
+  }
+}
+
+const EPHEMERAL = { type: 'ephemeral' } as const
 
 /** The conversation as Anthropic's turns: calls as `tool_use` blocks, each run of tool turns as one user turn. */
 function wireMessages(messages: readonly ChatMessage[]): unknown[] {
@@ -99,16 +114,28 @@ export function createAnthropicAiAdapter(config: AnthropicAiAdapterConfig): AiAd
     const maxTokens = checkChat(PROVIDER, messages, opts)
     const system = opts?.system
     const tools = opts?.tools ?? []
+    const shared = tools.length > 0
     return JSON.stringify({
       model,
       max_tokens: maxTokens,
+      // Automatic caching: the breakpoint follows the last block, so a tool loop's resent tools, system prompt and
+      // earlier turns are read from the cache instead of billed again in full.
+      cache_control: EPHEMERAL,
       messages: wireMessages(messages),
-      ...(system !== undefined && system !== '' && { system }),
-      ...(tools.length > 0 && {
-        tools: tools.map((t) => ({
+      // A cache read lands only where an earlier request put a breakpoint, and the automatic one falls after each
+      // conversation's own question. The tools, the same in every conversation, and the system prompt, the same on
+      // one page, get breakpoints of their own so a new conversation reads them too; one before the automatic
+      // breakpoint costs nothing, as its tokens are written either way.
+      ...(system !== undefined &&
+        system !== '' && {
+          system: shared ? [{ type: 'text', text: system, cache_control: EPHEMERAL }] : system,
+        }),
+      ...(shared && {
+        tools: tools.map((t, i) => ({
           name: t.name,
           description: t.description,
           input_schema: t.inputSchema,
+          ...(i === tools.length - 1 && { cache_control: EPHEMERAL }),
         })),
       }),
       ...(stream && { stream: true }),
@@ -120,7 +147,7 @@ export function createAnthropicAiAdapter(config: AnthropicAiAdapterConfig): AiAd
     text: string,
     toolCalls: ChatToolCall[],
     stop: unknown,
-    usage: { inputTokens: number; outputTokens: number },
+    usage: ChatUsage,
     reported: unknown,
   ): ChatResult {
     if (text === '' && toolCalls.length === 0) throw unreadable(PROVIDER, status, 'with no text')
@@ -140,7 +167,7 @@ export function createAnthropicAiAdapter(config: AnthropicAiAdapterConfig): AiAd
   ): AsyncGenerator<ChatStreamEvent> {
     const events = sseEvents(body)
     let reported: unknown
-    let inputTokens = 0
+    let input: Omit<ChatUsage, 'outputTokens'> = { inputTokens: 0 }
     let outputTokens = 0
     let stop: unknown
     let text = ''
@@ -162,7 +189,7 @@ export function createAnthropicAiAdapter(config: AnthropicAiAdapterConfig): AiAd
         if (e['type'] === 'message_start') {
           const message = recOf(e['message'])
           reported = message['model']
-          inputTokens = count(recOf(message['usage'])['input_tokens'])
+          input = inputOf(recOf(message['usage']))
         } else if (e['type'] === 'content_block_start') {
           const block = recOf(e['content_block'])
           if (block['type'] === 'tool_use') {
@@ -198,14 +225,7 @@ export function createAnthropicAiAdapter(config: AnthropicAiAdapterConfig): AiAd
         } else if (e['type'] === 'message_stop') {
           yield {
             type: 'done',
-            result: resultOf(
-              status,
-              text,
-              toolCalls,
-              stop,
-              { inputTokens, outputTokens },
-              reported,
-            ),
+            result: resultOf(status, text, toolCalls, stop, { ...input, outputTokens }, reported),
           }
           return
         }
@@ -251,7 +271,14 @@ export function createAnthropicAiAdapter(config: AnthropicAiAdapterConfig): AiAd
       let status: number
       let text: string
       try {
-        const response = await post(PROVIDER, url, headers, request, life)
+        const response = await post(
+          PROVIDER,
+          url,
+          headers,
+          request,
+          life,
+          secretsOf(config.apiKey, messages, opts),
+        )
         status = response.status
         text = await bodyText(PROVIDER, response, life)
       } finally {
@@ -277,10 +304,7 @@ export function createAnthropicAiAdapter(config: AnthropicAiAdapterConfig): AiAd
         answer,
         toolCalls,
         body['stop_reason'],
-        {
-          inputTokens: count(usage['input_tokens']),
-          outputTokens: count(usage['output_tokens']),
-        },
+        { ...inputOf(usage), outputTokens: count(usage['output_tokens']) },
         body['model'],
       )
     },
@@ -289,7 +313,14 @@ export function createAnthropicAiAdapter(config: AnthropicAiAdapterConfig): AiAd
       const request = requestOf(messages, opts, true)
       const life = lifetime(PROVIDER, timeoutMs, opts?.signal)
       try {
-        const response = await post(PROVIDER, url, headers, request, life)
+        const response = await post(
+          PROVIDER,
+          url,
+          headers,
+          request,
+          life,
+          secretsOf(config.apiKey, messages, opts),
+        )
         if (response.body === null) throw unreadable(PROVIDER, response.status, 'with no body')
         yield* streamed(response.status, response.body, life)
       } finally {

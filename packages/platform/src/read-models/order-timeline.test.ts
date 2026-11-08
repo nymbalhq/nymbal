@@ -1,6 +1,6 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
-import { ORDER_STATUS_TRANSITIONS, type OrderStatus } from '@nymbalhq/types'
+import { ORDER_STATUS_TRANSITIONS, orderMovesFrom, type OrderStatus } from '@nymbalhq/types'
 import { REFUND_NOTE_PREFIX } from '../order-history-notes.js'
 import { orderTimeline } from './order-timeline.js'
 
@@ -93,6 +93,7 @@ const history = fc
     ]
     const expected: Array<{ kind: Kind; at: string }> = [{ kind: 'placed', at: placedAt }]
     let status: OrderStatus = 'pending'
+    let refunded = false
     for (const [s, at, by, why] of steps) {
       if (s.kind === 'not-applied') {
         rows.push({
@@ -105,7 +106,8 @@ const history = fc
         continue
       }
       if (s.kind === 'further-refund') {
-        if (status !== 'partially_refunded') continue
+        // After the first partial refund, at whatever status the order has reached since.
+        if (!refunded) continue
         rows.push({
           fromStatus: status,
           toStatus: status,
@@ -113,7 +115,9 @@ const history = fc
           note: `${REFUND_NOTE_PREFIX}£4.20${why === '' ? '' : `: ${why}`}`,
           timestamp: at,
         })
-        expected.push({ kind: 'partially_refunded', at })
+        if (status !== 'refunded' && status !== 'cancelled') {
+          expected.push({ kind: 'partially_refunded', at })
+        }
         continue
       }
       const next: readonly OrderStatus[] = ORDER_STATUS_TRANSITIONS[status]
@@ -132,6 +136,7 @@ const history = fc
       rows.push({ fromStatus: status, toStatus: to, actor: by, note, timestamp: at })
       const kind = kindOfMove(status, to)
       if (kind !== null) expected.push({ kind, at })
+      if (to === 'partially_refunded') refunded = true
       status = to
     }
     return { rows, expected }
@@ -154,7 +159,7 @@ describe('AC-1: orderTimeline classifies order_history rows', () => {
     )
   })
 
-  it('AC-1: property: a stray capture at any status adds no entry, and a further partial refund adds exactly one partially_refunded, to the timeline of the same rows without it', () => {
+  it('AC-1: property: a stray capture at any status adds no entry, and after a first partial refund a further one adds exactly one partially_refunded at whatever status the order reached but refunded or cancelled (none there), to the timeline of the same rows without it', () => {
     fc.assert(
       fc.property(history, timestamp, notApplied, (h, at, why) => {
         const status = h.rows[h.rows.length - 1]!.toStatus
@@ -167,11 +172,13 @@ describe('AC-1: orderTimeline classifies order_history rows', () => {
         }
         expect(orderTimeline([...h.rows, stray])).toEqual(orderTimeline(h.rows))
 
+        // A further refund only follows a first one, at whatever status the order has reached since.
+        if (!h.rows.some((r) => r.toStatus === 'partially_refunded')) return
         const further: Row = { ...stray, actor: 'admin:u-1', note: `${REFUND_NOTE_PREFIX}£1.00` }
         expect(orderTimeline([...h.rows, further])).toEqual(
-          status === 'partially_refunded'
-            ? [...orderTimeline(h.rows), { kind: 'partially_refunded', at }]
-            : orderTimeline(h.rows),
+          status === 'refunded' || status === 'cancelled'
+            ? orderTimeline(h.rows)
+            : [...orderTimeline(h.rows), { kind: 'partially_refunded', at }],
         )
       }),
       { numRuns: 300 },
@@ -221,6 +228,169 @@ describe('AC-1: orderTimeline classifies order_history rows', () => {
     ]
     expect(cases.map(([r]) => orderTimeline([r]))).toEqual(
       cases.map(([, kind]) => (kind === null ? [] : [{ kind, at }])),
+    )
+  })
+})
+
+// AC-7: a partial refund after the order moved on from partially_refunded keeps the status where it is (a same-status
+// row with the refund note) and still shows on the shopper's timeline, except on a refunded or cancelled order.
+
+const REFUND_SHOWN: readonly OrderStatus[] = [
+  'processing',
+  'shipped',
+  'delivered',
+  'partially_refunded',
+]
+const REFUND_HIDDEN: readonly OrderStatus[] = ['refunded', 'cancelled']
+
+/**
+ * The rows the order service writes for a paid order: fulfilment moves as `orderMovesFrom` allows them, the first
+ * partial refund a move into partially_refunded, every later one a same-status row at whatever status the order holds,
+ * and a refund of the rest a move to refunded; stray captures between them. With the entries each row must give.
+ */
+type WalkStep =
+  | { kind: 'move'; pick: number }
+  | { kind: 'refund' }
+  | { kind: 'refund-rest' }
+  | { kind: 'not-applied'; reason: string }
+
+const walkStep: fc.Arbitrary<WalkStep> = fc.oneof(
+  { weight: 4, arbitrary: fc.nat({ max: 5 }).map((pick) => ({ kind: 'move' as const, pick })) },
+  { weight: 3, arbitrary: fc.constant({ kind: 'refund' as const }) },
+  { weight: 1, arbitrary: fc.constant({ kind: 'refund-rest' as const }) },
+  { weight: 1, arbitrary: notApplied.map((r) => ({ kind: 'not-applied' as const, reason: r })) },
+)
+
+const FULFIL: readonly OrderStatus[] = ['processing', 'shipped', 'delivered']
+
+const paidWalk = fc
+  .tuple(fc.array(fc.tuple(walkStep, timestamp), { maxLength: 16 }), timestamp, timestamp)
+  .map(([steps, placedAt, paidAt]) => {
+    const rows: Row[] = [
+      {
+        fromStatus: null,
+        toStatus: 'pending',
+        actor: 'system:checkout',
+        note: 'order draft created',
+        timestamp: placedAt,
+      },
+      {
+        fromStatus: 'pending',
+        toStatus: 'confirmed',
+        actor: 'system:checkout-finalize',
+        note: 'payment captured',
+        timestamp: paidAt,
+      },
+    ]
+    const expected: Array<{ kind: Kind; at: string }> = [
+      { kind: 'placed', at: placedAt },
+      { kind: 'paid', at: paidAt },
+    ]
+    let status: OrderStatus = 'confirmed'
+    let refundedAt: OrderStatus | null = null
+    const refund = `${REFUND_NOTE_PREFIX}£3.10: damaged`
+    for (const [s, at] of steps) {
+      if (status === 'refunded') break
+      if (s.kind === 'not-applied') {
+        rows.push({
+          fromStatus: status,
+          toStatus: status,
+          actor: 'system:checkout-finalize',
+          note: `captured payment not applied: ${s.reason}`,
+          timestamp: at,
+        })
+        continue
+      }
+      if (s.kind === 'move') {
+        const allowed: OrderStatus[] = orderMovesFrom(status, refundedAt).filter((m: OrderStatus) =>
+          FULFIL.includes(m),
+        )
+        if (allowed.length === 0) continue
+        const to = allowed[s.pick % allowed.length]!
+        rows.push({
+          fromStatus: status,
+          toStatus: to,
+          actor: 'admin:u-1',
+          note: to === 'shipped' ? 'Shipped via dpd: T-1' : '',
+          timestamp: at,
+        })
+        if (to !== 'processing') expected.push({ kind: to as Kind, at })
+        status = to
+        continue
+      }
+      if (s.kind === 'refund-rest') {
+        rows.push({
+          fromStatus: status,
+          toStatus: 'refunded',
+          actor: 'admin:u-1',
+          note: refund,
+          timestamp: at,
+        })
+        expected.push({ kind: 'refunded', at })
+        status = 'refunded'
+        continue
+      }
+      if (refundedAt === null) {
+        refundedAt = status
+        rows.push({
+          fromStatus: status,
+          toStatus: 'partially_refunded',
+          actor: 'admin:u-1',
+          note: refund,
+          timestamp: at,
+        })
+        status = 'partially_refunded'
+      } else {
+        rows.push({
+          fromStatus: status,
+          toStatus: status,
+          actor: 'admin:u-1',
+          note: refund,
+          timestamp: at,
+        })
+      }
+      expected.push({ kind: 'partially_refunded', at })
+    }
+    return { rows, expected }
+  })
+
+describe('AC-7: every partial refund is on the timeline, after the order moved on too', () => {
+  it('AC-7: a same-status row with a refund note gives one partially_refunded entry at its time at processing, shipped, delivered and partially_refunded, and none at refunded or cancelled; a same-status row with any other note gives none', () => {
+    const at = '2026-11-07T08:15:00.000Z'
+    const same = (status: OrderStatus, note: string): Row => ({
+      fromStatus: status,
+      toStatus: status,
+      actor: 'admin:u-1',
+      note,
+      timestamp: at,
+    })
+    const refundNote = `${REFUND_NOTE_PREFIX}£2.50: damaged`
+    const otherNotes = ['captured payment not applied: duplicate_capture_refunded', '', 'refunded']
+    const seen = [...REFUND_SHOWN, ...REFUND_HIDDEN].map((status) => ({
+      status,
+      refund: orderTimeline([same(status, refundNote)]),
+      other: otherNotes.flatMap((note) => orderTimeline([same(status, note)])),
+    }))
+    expect(seen).toEqual(
+      [...REFUND_SHOWN, ...REFUND_HIDDEN].map((status) => ({
+        status,
+        refund: REFUND_SHOWN.includes(status) ? [{ kind: 'partially_refunded', at }] : [],
+        other: [],
+      })),
+    )
+  })
+
+  it('AC-7: property: over the rows a paid order writes as it is partly refunded, moved on as orderMovesFrom allows and refunded again at whatever status it reached, the timeline has one partially_refunded entry per partial refund, at its time and in row order, and the entries the moves give', () => {
+    fc.assert(
+      fc.property(paidWalk, ({ rows, expected }) => {
+        const timeline = orderTimeline(rows)
+        expect(timeline).toEqual(expected)
+        const refunds = rows.filter(
+          (r) => r.note.startsWith(REFUND_NOTE_PREFIX) && r.toStatus !== 'refunded',
+        )
+        expect(timeline.filter((e) => e.kind === 'partially_refunded').length).toBe(refunds.length)
+      }),
+      { numRuns: 400 },
     )
   })
 })

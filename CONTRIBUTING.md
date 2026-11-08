@@ -29,6 +29,21 @@ pnpm build
 Every change comes with tests that fail without it. A test asserts what a user or caller gets back (a status, a row, a
 total), not that a function was called or an element exists.
 
+The assistant eval stamp records a passing run of the store assistant against Anthropic's or OpenAI's own API. A change
+to the assistant's instructions or to the tools it is offered merges without one: the stamp is recorded once per
+release, on the release candidate, and `pnpm release:check` holds a release until it matches. After `pnpm build`, run
+it from the assistant store in `tests/e2e/fixtures/assistant` (its `ai` block is Anthropic's, with `baseUrl` read
+from `NYMBAL_E2E_AI_BASE_URL`), giving the stamp's absolute path:
+
+```sh
+cd tests/e2e/fixtures/assistant
+NYMBAL_E2E_AI_BASE_URL=https://api.anthropic.com ANTHROPIC_API_KEY=<your key> \
+  node ../../../../packages/cli/bin/nymbal.mjs eval assistant --runs 5 \
+  --stamp "$(git rev-parse --show-toplevel)/packages/platform/assistant-eval.json"
+```
+
+The stamp is written only when the run passes; commit it on the release candidate.
+
 ## Changesets
 
 A change to a published package (anything under `packages/` or `apps/admin` that is not a test) needs a changeset:

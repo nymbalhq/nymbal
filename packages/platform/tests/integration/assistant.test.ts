@@ -59,6 +59,13 @@ type Loop = typeof LoopModule
 const loop = (): Promise<Loop> => import('../../src/assistant/loop.js')
 
 const LONG_DESCRIPTION_CHARS = 20_000
+/** The tools of the commands a turn runs at most three of. */
+const DESTRUCTIVE_TOOLS = new Set([
+  'admin_products_delete',
+  'admin_products_archive',
+  'admin_orders_cancel',
+  'admin_orders_refund',
+])
 const RESULT_CHARS = 16_000
 /** Room for the note a cut result carries. */
 const NOTE_CHARS = 400
@@ -149,7 +156,7 @@ afterAll(async () => {
 })
 
 describe('AC-9: a write the assistant asks for is a proposal', () => {
-  it('AC-9: property: for any 1-5 admin command calls with valid arguments, one turn leaves exactly one pending row per call by agent nymbal-assistant for the admin with the tool and arguments as called, one proposal frame per row equal to GET /api/admin/proposals/:id, the store unchanged, and the next model request carrying each status proposed result', async () => {
+  it('AC-9: property: for any 1-5 admin command calls with valid arguments, at most three of them deletions, archives, cancellations or refunds, one turn leaves exactly one pending row per call by agent nymbal-assistant for the admin with the tool and arguments as called, one proposal frame per row equal to GET /api/admin/proposals/:id, the store unchanged, and the next model request carrying each status proposed result', async () => {
     const { store, product, order } = main
     const tools = adminTools(store)
     const write = fc.oneof(
@@ -199,47 +206,52 @@ describe('AC-9: a write the assistant asks for is a proposal', () => {
     )
 
     await fc.assert(
-      fc.asyncProperty(fc.array(write, { minLength: 1, maxLength: 5 }), async (calls) => {
-        for (const call of calls) expect(tools.get(call.name)?.kind, call.name).toBe('command')
-        const before = await storeState(store.raw)
-        const known = await proposalsOf(store.admin)
-        store.standIn.reset()
-        store.standIn.script = callsThen(calls, 'I have proposed those changes.')
+      fc.asyncProperty(
+        fc
+          .array(write, { minLength: 1, maxLength: 5 })
+          .filter((calls) => calls.filter((c) => DESTRUCTIVE_TOOLS.has(c.name)).length <= 3),
+        async (calls) => {
+          for (const call of calls) expect(tools.get(call.name)?.kind, call.name).toBe('command')
+          const before = await storeState(store.raw)
+          const known = await proposalsOf(store.admin)
+          store.standIn.reset()
+          store.standIn.script = callsThen(calls, 'I have proposed those changes.')
 
-        const frames = await runTurn(store, ask('Make these changes to the store.'))
+          const frames = await runTurn(store, ask('Make these changes to the store.'))
 
-        const cards = framesOf(frames, 'proposal').map((f) => f.data as unknown as ProposalView)
-        const fresh = freshIds(known, await proposalsOf(store.admin))
-        expect(fresh.length).toBe(calls.length)
-        expect([...cards.map((c) => c.id)].sort()).toEqual([...fresh].sort())
-        expect(cards.map((c) => ({ tool: c.tool, args: c.args }))).toEqual(
-          calls.map((c) => ({ tool: c.name, args: c.args })),
-        )
-        for (const [i, card] of cards.entries()) {
-          expect(card.status).toBe('pending')
-          expect(card.command).toBe(tools.get(calls[i]!.name)!.route.command)
-          expect(card.proposer.userId).toBe(store.admin.userId)
-          expect(card.proposer.agent.name).toBe(ASSISTANT)
-          const read = await store.admin.send<ProposalView>(
-            'GET',
-            `/api/admin/proposals/${card.id}`,
+          const cards = framesOf(frames, 'proposal').map((f) => f.data as unknown as ProposalView)
+          const fresh = freshIds(known, await proposalsOf(store.admin))
+          expect(fresh.length).toBe(calls.length)
+          expect([...cards.map((c) => c.id)].sort()).toEqual([...fresh].sort())
+          expect(cards.map((c) => ({ tool: c.tool, args: c.args }))).toEqual(
+            calls.map((c) => ({ tool: c.name, args: c.args })),
           )
-          // A pending update, adjust, cancel or refund is also read with its preview; the rest is the frame.
-          const { preview: _preview, ...view } = read.body.data as ProposalView & {
-            preview?: unknown
+          for (const [i, card] of cards.entries()) {
+            expect(card.status).toBe('pending')
+            expect(card.command).toBe(tools.get(calls[i]!.name)!.route.command)
+            expect(card.proposer.userId).toBe(store.admin.userId)
+            expect(card.proposer.agent.name).toBe(ASSISTANT)
+            const read = await store.admin.send<ProposalView>(
+              'GET',
+              `/api/admin/proposals/${card.id}`,
+            )
+            // A pending update, adjust, cancel or refund is also read with its preview; the rest is the frame.
+            const { preview: _preview, ...view } = read.body.data as ProposalView & {
+              preview?: unknown
+            }
+            expect(view).toEqual(card)
           }
-          expect(view).toEqual(card)
-        }
-        expect(framesOf(frames, 'done').map((f) => f.data['proposals'])).toEqual([
-          cards.map((c) => c.id),
-        ])
-        expect(await storeState(store.raw)).toEqual(before)
-        const views = viewsOf(store.standIn)
-        expect(views.length).toBe(2)
-        expect(toolTurns(views[1]!).map((t) => [parsed(t)['status'], parsed(t)['id']])).toEqual(
-          cards.map((c) => ['proposed', c.id]),
-        )
-      }),
+          expect(framesOf(frames, 'done').map((f) => f.data['proposals'])).toEqual([
+            cards.map((c) => c.id),
+          ])
+          expect(await storeState(store.raw)).toEqual(before)
+          const views = viewsOf(store.standIn)
+          expect(views.length).toBe(2)
+          expect(toolTurns(views[1]!).map((t) => [parsed(t)['status'], parsed(t)['id']])).toEqual(
+            cards.map((c) => ['proposed', c.id]),
+          )
+        },
+      ),
       { numRuns: 25 },
     )
   }, 180_000)
@@ -500,9 +512,10 @@ describe('AC-12: the tools the model is offered', () => {
   it('AC-12: the offered tools are exactly the admin’s admin-scope tools and the public reads that take no handle: admin_products_update and admin_proposals_list among them, no approve, reject, settings put or delete, enhance, assistant route, cart, checkout, alert or order-link tool', async () => {
     const { store } = main
     const listed = [...adminTools(store).values()]
-    const handles = (t: (typeof listed)[number]) =>
-      Object.keys(routeSchemas[`${t.route.method} ${t.route.path}`]?.handles ?? {}).length > 0
+    const entry = (t: (typeof listed)[number]) => routeSchemas[`${t.route.method} ${t.route.path}`]
+    const handles = (t: (typeof listed)[number]) => Object.keys(entry(t)?.handles ?? {}).length > 0
     const expected = listed
+      .filter((t) => entry(t)?.agents?.assistant !== false)
       .filter(
         (t) => t.scope === 'admin' || (t.scope === 'public' && t.kind === 'read' && !handles(t)),
       )

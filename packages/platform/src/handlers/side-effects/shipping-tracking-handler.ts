@@ -42,9 +42,10 @@ export async function registerShippingTrackingHandler(
       )
       logger.info({ eventId, orderId }, 'a tracking update delivered the order')
     } catch (err) {
-      // The order moved between the read and the move: another update or the admin delivered it first.
+      // The order moved between the read and the move (another update or the admin delivered it first), or it was
+      // partly refunded after it was delivered.
       if (!(err instanceof StatusTransitionError)) throw err
-      logger.info({ eventId, orderId }, 'the order was no longer shipped')
+      logger.info({ eventId, orderId }, 'the order cannot be delivered')
     }
   }
 
@@ -67,7 +68,8 @@ export async function registerShippingTrackingHandler(
       return
     }
     for (const order of orders) {
-      if (order.status !== 'shipped') {
+      // A partially refunded order is delivered only when it was refunded while shipped; the order service decides.
+      if (order.status !== 'shipped' && order.status !== 'partially_refunded') {
         logger.info(
           { eventId: event.id, orderId: order.id, orderStatus: order.status },
           'the order is not shipped',

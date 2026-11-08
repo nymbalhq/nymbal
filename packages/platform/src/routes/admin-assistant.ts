@@ -188,7 +188,11 @@ export function registerAdminAssistantRoutes(
           tools,
           proposals: deps.proposals,
           logger: ctx.logger,
-          store: { name: config.store.name, currency: config.store.currency },
+          store: {
+            name: config.store.name,
+            currency: config.store.currency,
+            timezone: config.store.timezone,
+          },
           customerData: config.agents.assistant.customerData,
           mask: config.agents.assistant.mask,
         },

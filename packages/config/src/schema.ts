@@ -40,11 +40,24 @@ const shipFromSchema = z.object({
   phone: z.string().optional(),
 })
 
+/** Whether Intl.DateTimeFormat, which formats dates in the store's zone, knows the zone. */
+function isTimeZone(zone: string): boolean {
+  try {
+    new Intl.DateTimeFormat(undefined, { timeZone: zone })
+    return true
+  } catch (error) {
+    if (error instanceof RangeError) return false
+    throw error
+  }
+}
+
 export const storeSchema = z.object({
   name: z.string().min(1),
   currency: z.string().length(3),
   locale: z.string().min(2),
-  timezone: z.string().min(1),
+  timezone: z
+    .string()
+    .refine(isTimeZone, 'store.timezone must be an IANA time zone such as Europe/London'),
   /** The storefront's public URL, which the order email links from; with none, the email has no link. */
   url: z
     .string()
@@ -586,10 +599,16 @@ export const DEFAULT_AGENT_CRAWLERS: readonly string[] = Object.freeze([
 
 const CRAWL_OTHERS = ['allow', 'disallow'] as const
 
+/** The customer fields the store's AI surfaces name: what MCP withholds and what the assistant masks. */
+export const CUSTOMER_FIELDS = ['email', 'phone', 'address', 'postcode', 'name'] as const
+export type CustomerField = (typeof CUSTOMER_FIELDS)[number]
+/** The fields both surfaces keep from an AI by default: names are sent. */
+export const DEFAULT_CUSTOMER_FIELDS = ['email', 'phone', 'address', 'postcode'] as const
+
 /** The customer fields the admin's assistant can send to its AI provider as placeholders (`[email-1]`). */
-export const ASSISTANT_MASK_FIELDS = ['email', 'phone', 'address', 'postcode', 'name'] as const
-export type AssistantMaskField = (typeof ASSISTANT_MASK_FIELDS)[number]
-export const DEFAULT_ASSISTANT_MASK = ['email', 'phone', 'address', 'postcode'] as const
+export const ASSISTANT_MASK_FIELDS = CUSTOMER_FIELDS
+export type AssistantMaskField = CustomerField
+export const DEFAULT_ASSISTANT_MASK = DEFAULT_CUSTOMER_FIELDS
 
 /** The link types the Agentic Commerce Protocol (2026-04-17) names for a session's `links`. */
 export const ACP_LINK_TYPES = [
@@ -628,6 +647,11 @@ export const agentsSchema = z
                 : undefined,
           })
           .default('proposal'),
+        /** The customer fields no admin tool result sends an MCP client; [] sends them. */
+        withhold: z
+          .array(z.enum(CUSTOMER_FIELDS))
+          .transform((fields) => [...new Set(fields)])
+          .default(() => [...DEFAULT_CUSTOMER_FIELDS]),
       })
       .strict()
       .prefault({}),
@@ -694,9 +718,9 @@ export const agentsSchema = z
         customerData: z.boolean().default(true),
         /** The fields sent as placeholders; [] sends them as they are. */
         mask: z
-          .array(z.enum(ASSISTANT_MASK_FIELDS))
+          .array(z.enum(CUSTOMER_FIELDS))
           .transform((fields) => [...new Set(fields)])
-          .default(() => [...DEFAULT_ASSISTANT_MASK]),
+          .default(() => [...DEFAULT_CUSTOMER_FIELDS]),
       })
       .strict()
       .prefault({}),

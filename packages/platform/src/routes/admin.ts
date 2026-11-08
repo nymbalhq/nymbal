@@ -66,6 +66,7 @@ export function registerAdminRoutes(adapter: HttpAdapter, deps: RegisterAdminRou
   registerAdminReviewsRoutes(adapter, {
     reviewsAdapter: adapters.reviews,
     reviewRepo: repos.review,
+    productRepo: repos.product,
   })
   registerAdminSettingsRoutes(adapter, {
     config,

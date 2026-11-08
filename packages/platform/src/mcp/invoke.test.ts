@@ -4,7 +4,14 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { ToolResult } from '@nymbalhq/types'
 import { routeSchemas } from '../routes/schemas.js'
 import { addSecret } from '../settings/secret-set.js'
-import { address, createKernel, seedVariant, type Kernel } from '../../tests/support/kernel.js'
+import {
+  address,
+  cartWith,
+  createKernel,
+  seedVariant,
+  type Kernel,
+} from '../../tests/support/kernel.js'
+import { shopper } from '../../tests/support/shopper.js'
 import { serveKernel, type ServedKernel } from '../../tests/support/http.js'
 import {
   AGENT,
@@ -43,13 +50,18 @@ interface Store {
   variantId: string
 }
 
-async function openStore(writes?: 'apply'): Promise<Store> {
+/** A served store; `agents` replaces those blocks of the kernel config's `agents` after `writes` is applied. */
+async function openStore(writes?: 'apply', agents: Record<string, unknown> = {}): Promise<Store> {
   const kernel = await createKernel({
     dialect: 'sqlite',
-    ...(writes !== undefined && {
+    ...((writes !== undefined || Object.keys(agents).length > 0) && {
       configure: (config) => ({
         ...config,
-        agents: { ...config.agents, mcp: { enabled: true, writes } },
+        agents: {
+          ...config.agents,
+          ...(writes !== undefined && { mcp: { enabled: true, writes } }),
+          ...agents,
+        } as typeof config.agents,
       }),
     }),
   })
@@ -174,15 +186,19 @@ describe('AC-3: a read tool answers what its route answers', () => {
     expect(contentOf(got).text).toEqual(detail.data)
   })
 
-  it('AC-3: a route whose data is an array answers structuredContent { items }: admin_activity_list carries the entries GET /api/admin/activity answers, and a text block that parses to the same', async () => {
+  it('AC-3: a route whose data is an array answers structuredContent { items, ...meta }: admin_activity_list carries the entries GET /api/admin/activity answers and its nextCursor, and a text block that parses to the same', async () => {
     const store = proposal
     const route = await httpData(store, '/api/admin/activity', store.admin.token)
+    const meta = (JSON.parse(route.text) as { meta?: Record<string, unknown> }).meta
     const listed = await store.tools.call('admin_activity_list', {}, store.admin.caller)
 
     expect(route.status).toBe(200)
     expect(Array.isArray(route.data)).toBe(true)
     expect(listed.isError ?? false).toBe(false)
-    expect(listed.structuredContent).toEqual({ items: route.data })
+    expect(listed.structuredContent).toEqual({
+      items: route.data,
+      nextCursor: meta?.['nextCursor'],
+    })
     expect(contentOf(listed).text).toEqual(listed.structuredContent)
   })
 
@@ -535,3 +551,347 @@ describe('AC-13: a tool listed for nobody does not run', () => {
     expect(committedCount(store.file, 'audit_entries')).toBe(audit)
   })
 })
+
+// ─── Customer fields an admin's client never receives ───────────────────────────────────────────────────────────────
+
+// AC-4: under agents.mcp.withhold (its default here: email, phone, address, postcode) every result of an admin-scope
+// tool loses those values, whatever the route and however the call ran (a read, an applied command, its keyed replay),
+// while a shopper's own tools, the public ones, a proposal's run through the inbox and the routes over HTTP answer as
+// they did. Two more stores: one approving order.cancel by policy, one withholding all five fields.
+
+const WITHHELD_BY_DEFAULT = ['email', 'phone', 'address', 'postcode']
+
+interface Contact {
+  email: string
+  phone: string
+  street: string
+  postcode: string
+}
+
+/** A buyer's contact details, each a value no other record of the store holds. */
+function contact(pending = false): Contact {
+  const tag = randomUUID()
+  return {
+    email: `buyer-${tag}${pending ? '+stub-pending' : ''}@mcp.test`,
+    phone: `07700 9${String(parseInt(tag.slice(0, 5), 16) % 100_000).padStart(5, '0')}`,
+    street: `${tag.slice(0, 8)} Withheld Lane`,
+    postcode: `SW${1 + (parseInt(tag.slice(9, 10), 16) % 9)} 1AA`,
+  }
+}
+
+const values = (c: Contact): string[] => [c.email, c.phone, c.street, c.postcode]
+
+/** An order of one unit placed through checkout with `buyer`'s details on both addresses; pending when its email
+ *  says so (the payments stub leaves a `+stub-pending` address unpaid). */
+async function placedOrder(
+  store: Store,
+  buyer: Contact,
+  customerId?: string,
+): Promise<{ orderId: string; orderNumber: string }> {
+  const home = {
+    ...address,
+    addressLine1: buyer.street,
+    postalCode: buyer.postcode,
+    phone: buyer.phone,
+  }
+  const cartToken = await cartWith(
+    store.kernel,
+    {
+      productId: store.productId,
+      variantId: store.variantId,
+      priceMinor: 1000,
+      initialStock: 1000,
+    },
+    1,
+  )
+  const placed = await store.kernel.services.checkout.beginCheckout({
+    cartToken,
+    email: buyer.email,
+    billingAddress: home,
+    shippingAddress: home,
+    ...(customerId !== undefined && { customerId }),
+  })
+  return { orderId: placed.orderId, orderNumber: placed.orderNumber }
+}
+
+/** A customer registered over HTTP who saved an address and set a phone, then changed it. */
+async function editedCustomer(
+  store: Store,
+): Promise<{ account: Account; details: Contact; firstPhone: string }> {
+  const account = await customerAccount(store.kernel, store.baseUrl)
+  const details = { ...contact(), email: account.email }
+  const firstPhone = contact().phone
+  const shop = shopper(store.baseUrl)
+  const bearer = { headers: { authorization: `Bearer ${account.token}` } }
+  for (const phone of [firstPhone, details.phone]) {
+    const set = await shop.call('PATCH', '/api/customers/me', { phone }, bearer)
+    if (set.status !== 200) throw new Error(`PATCH /api/customers/me: ${set.status}`)
+  }
+  const saved = await shop.call(
+    'POST',
+    '/api/customers/me/addresses',
+    {
+      ...address,
+      addressLine1: details.street,
+      postalCode: details.postcode,
+      phone: details.phone,
+    },
+    bearer,
+  )
+  if (saved.status >= 300) throw new Error(`POST /api/customers/me/addresses: ${saved.status}`)
+  return { account, details, firstPhone }
+}
+
+const withheldOf = (result: ToolResult): unknown => contentOf(result).structured['withheld']
+
+/** Which of `wanted` a result's structured content or text block holds. */
+const heldBy = (result: ToolResult, wanted: readonly string[]): string[] =>
+  wanted.filter((value) => resultText(result).includes(value))
+
+describe('AC-4: an admin-scope tool’s result withholds customer fields, and nothing else does', () => {
+  let approving: Store
+  let everything: Store
+
+  beforeAll(async () => {
+    approving = await openStore(undefined, { autoApprove: ['order.cancel'] })
+    everything = await openStore(undefined, {
+      mcp: {
+        enabled: true,
+        writes: 'proposal',
+        withhold: ['email', 'phone', 'address', 'postcode', 'name'],
+      },
+    })
+  }, 60_000)
+
+  afterAll(async () => {
+    for (const store of [approving, everything]) await store?.served.stop()
+  })
+
+  // Kills: a read that answers the order or the customer whole, and a history change that keeps a phone.
+  it('AC-4: under the default withhold, an admin’s admin_orders_get, admin_customers_get and admin_customers_history (after the customer edits their phone) carry none of the email, phones, street line and postcode that the same routes answer over HTTP, and carry withheld', async () => {
+    const store = proposal
+    const buyer = contact()
+    const order = await placedOrder(store, buyer)
+    const customer = await editedCustomer(store)
+    const id = customer.account.userId
+    await vi.waitFor(
+      async () => {
+        const history = await httpData(
+          store,
+          `/api/admin/customers/${id}/history`,
+          store.admin.token,
+        )
+        if (!history.text.includes(customer.details.phone)) throw new Error('no phone change yet')
+      },
+      { timeout: 10_000, interval: 50 },
+    )
+    const reads: Array<[string, Record<string, unknown>, string, string[]]> = [
+      [
+        'admin_orders_get',
+        { orderNumber: order.orderNumber },
+        `/api/admin/orders/${order.orderNumber}`,
+        values(buyer),
+      ],
+      ['admin_customers_get', { id }, `/api/admin/customers/${id}`, values(customer.details)],
+      [
+        'admin_customers_history',
+        { id },
+        `/api/admin/customers/${id}/history`,
+        [customer.firstPhone, customer.details.phone],
+      ],
+    ]
+
+    const seen = []
+    for (const [name, args, path, wanted] of reads) {
+      const route = await httpData(store, path, store.admin.token)
+      const result = await store.tools.call(name, args, store.admin.caller)
+      seen.push({
+        name,
+        route: wanted.filter((value) => route.text.includes(value)).length,
+        tool: heldBy(result, wanted),
+        withheld: withheldOf(result),
+      })
+    }
+
+    expect(seen).toEqual([
+      { name: 'admin_orders_get', route: 4, tool: [], withheld: WITHHELD_BY_DEFAULT },
+      { name: 'admin_customers_get', route: 4, tool: [], withheld: WITHHELD_BY_DEFAULT },
+      {
+        name: 'admin_customers_history',
+        route: 2,
+        tool: [],
+        withheld: expect.arrayContaining(['phone']),
+      },
+    ])
+  })
+
+  // Kills: an applied command or its replay answering the whole order.
+  it('AC-4: under writes apply and under autoApprove [order.cancel], admin_orders_cancel’s applied result and its keyed replay cancel the order and carry none of its email, phone, street line and postcode, which GET /api/admin/orders/:orderNumber still answers, and carry withheld', async () => {
+    const seen = []
+    for (const store of [apply, approving]) {
+      const buyer = contact(true)
+      const order = await placedOrder(store, buyer)
+      const idempotencyKey = `mcp:${randomUUID()}`
+      const first = await store.tools.call(
+        'admin_orders_cancel',
+        { id: order.orderId, idempotencyKey },
+        store.admin.caller,
+      )
+      const replay = await store.tools.call(
+        'admin_orders_cancel',
+        { id: order.orderId, idempotencyKey },
+        store.admin.caller,
+      )
+      const route = await httpData(
+        store,
+        `/api/admin/orders/${order.orderNumber}`,
+        store.admin.token,
+      )
+      seen.push(
+        ...[first, replay].map((result) => ({
+          status: contentOf(result).structured['status'],
+          held: heldBy(result, values(buyer)),
+          withheld: withheldOf(result),
+          route: values(buyer).filter((value) => route.text.includes(value)).length,
+        })),
+      )
+    }
+
+    expect(seen).toEqual(
+      seen.map(() => ({ status: 'cancelled', held: [], withheld: WITHHELD_BY_DEFAULT, route: 4 })),
+    )
+  })
+
+  // Kills: a strip keyed on the route's personal marks, which leaves an unmarked route's note whole, or on the caller's
+  // rank, which strips the admin's own profile.
+  it('AC-4: the unmarked admin_orders_notes answers a note "ring 07700 900123" with [phone withheld] and withheld [phone]; an unknown order’s refusal answers the route’s error alone; the admin’s own customers_me answers what GET /api/customers/me does, the admin’s email in it', async () => {
+    const store = proposal
+    const order = await placedOrder(store, contact())
+    const noted = await shopper(store.baseUrl).call(
+      'POST',
+      `/api/admin/orders/${order.orderId}/notes`,
+      { body: 'ring 07700 900123' },
+      { headers: { authorization: `Bearer ${store.admin.token}` } },
+    )
+    const missing = `NYM-none-${randomUUID()}`
+
+    const notes = await store.tools.call(
+      'admin_orders_notes',
+      { id: order.orderId },
+      store.admin.caller,
+    )
+    const notesRoute = await httpData(
+      store,
+      `/api/admin/orders/${order.orderId}/notes`,
+      store.admin.token,
+    )
+    const refused = await store.tools.call(
+      'admin_orders_get',
+      { orderNumber: missing },
+      store.admin.caller,
+    )
+    const refusedRoute = await fetch(`${store.baseUrl}/api/admin/orders/${missing}`, {
+      headers: { authorization: `Bearer ${store.admin.token}` },
+    })
+    const error = ((await refusedRoute.json()) as { error: { code: string; message: string } })
+      .error
+    const me = await store.tools.call('customers_me', {}, store.admin.caller)
+    const meRoute = await httpData(store, '/api/customers/me', store.admin.token)
+    const bodies = (data: unknown) =>
+      ((data ?? []) as Array<{ body: string }>).map((note) => note.body)
+
+    expect(noted.status).toBe(200)
+    expect(bodies(contentOf(notes).structured['items'])).toEqual(
+      bodies(notesRoute.data).map((body) => body.replaceAll('07700 900123', '[phone withheld]')),
+    )
+    expect(bodies(notesRoute.data)).toContain('ring 07700 900123')
+    expect(withheldOf(notes)).toEqual(['phone'])
+    expect([refused.isError, refused.structuredContent]).toEqual([
+      true,
+      { code: error.code, message: error.message },
+    ])
+    expect(me.structuredContent).toEqual(meRoute.data)
+    expect(contentOf(me).structured['email']).toBe(store.admin.email)
+  })
+
+  // Kills: a strip keyed on the caller (a shopper's own data withheld) or on the data (a public result withheld).
+  it('AC-4: under the default and under all five fields withheld, a shopper’s own orders_list and customers_me answer what GET /api/orders and GET /api/customers/me answer them, their email and address in it, and capabilities_get what GET /api/capabilities answers, while the admin’s admin_customers_get of that shopper carries neither their email nor their phone', async () => {
+    const seen = []
+    for (const store of [proposal, everything]) {
+      const customer = await editedCustomer(store)
+      await placedOrder(store, customer.details, customer.account.userId)
+      const own = customer.account
+      const orders = await store.tools.call('orders_list', {}, own.caller)
+      const me = await store.tools.call('customers_me', {}, own.caller)
+      const capabilities = await store.tools.call('capabilities_get', {}, store.admin.caller)
+      const admin = await store.tools.call(
+        'admin_customers_get',
+        { id: own.userId },
+        store.admin.caller,
+      )
+      seen.push({
+        orders: orders.structuredContent,
+        ordersRoute: structuredOfRoute(await httpData(store, '/api/orders', own.token)),
+        ordersHold: heldBy(orders, [own.email, customer.details.street, customer.details.postcode]),
+        me: me.structuredContent,
+        meRoute: (await httpData(store, '/api/customers/me', own.token)).data,
+        meHolds: heldBy(me, [own.email]),
+        capabilities: capabilities.structuredContent,
+        capabilitiesRoute: (await httpData(store, '/api/capabilities')).data,
+        admin: heldBy(admin, [own.email, customer.details.phone]),
+      })
+    }
+
+    expect(seen).toEqual(
+      seen.map((one) => ({
+        ...one,
+        orders: one.ordersRoute,
+        ordersHold: [expect.any(String), expect.any(String), expect.any(String)],
+        me: one.meRoute,
+        meHolds: [expect.any(String)],
+        capabilities: one.capabilitiesRoute,
+        admin: [],
+      })),
+    )
+  })
+
+  // Kills: the inbox's run (the invoker's execute()) losing fields an admin approves on.
+  it('AC-4: under the default writes, admin_orders_cancel answers status proposed and nothing else; that proposal’s run through the invoker’s execute() returns the cancelled order with its email, phone, street line and postcode, while admin_orders_get of the same order carries none of them', async () => {
+    const store = proposal
+    const buyer = contact(true)
+    const order = await placedOrder(store, buyer)
+
+    const proposed = contentOf(
+      await store.tools.call('admin_orders_cancel', { id: order.orderId }, store.admin.caller),
+    ).structured
+    const executed = await store.kernel.app.services.proposals.run(
+      String(proposed['id']),
+      { kind: 'admin', id: store.admin.userId },
+      { userId: store.admin.userId, roles: ['admin'] },
+    )
+    const read = await store.tools.call(
+      'admin_orders_get',
+      { orderNumber: order.orderNumber },
+      store.admin.caller,
+    )
+
+    expect(proposed).toEqual({
+      status: 'proposed',
+      id: proposed['id'],
+      tool: 'admin_orders_cancel',
+      command: 'order.cancel',
+    })
+    expect({
+      status: contentOf(executed.result).structured['status'],
+      held: heldBy(executed.result, values(buyer)),
+      withheld: withheldOf(executed.result),
+    }).toEqual({ status: 'cancelled', held: values(buyer), withheld: undefined })
+    expect(heldBy(read, values(buyer))).toEqual([])
+  })
+})
+
+/** A route's answer as a tool answers it: an array becomes `{ items }`, its meta (a `nextCursor`) beside them. */
+function structuredOfRoute(answer: { data: unknown; text: string }): unknown {
+  const { meta } = JSON.parse(answer.text) as { meta?: Record<string, unknown> }
+  return Array.isArray(answer.data) ? { ...meta, items: answer.data } : answer.data
+}

@@ -30,7 +30,9 @@ export {
   ACP_KEY_MIN_LENGTH,
   ACP_LINK_TYPES,
   ASSISTANT_MASK_FIELDS,
+  CUSTOMER_FIELDS,
   DEFAULT_ASSISTANT_MASK,
+  DEFAULT_CUSTOMER_FIELDS,
   DEFAULT_JWT_SECRET,
   DEFAULT_AGENT_CRAWLERS,
   nymbalConfigSchema,
@@ -47,6 +49,7 @@ export {
   eventArchiveSchema,
   agentsSchema,
   type AssistantMaskField,
+  type CustomerField,
   type NymbalConfig,
   type NymbalConfigInput,
 } from './schema.js'

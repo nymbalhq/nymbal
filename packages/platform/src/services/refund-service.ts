@@ -251,15 +251,20 @@ export function createRefundService(deps: CreateRefundServiceDeps): RefundServic
     const full = refundedMinor >= order.capturedMinor
     const target = full ? 'refunded' : 'partially_refunded'
     const note = `${REFUND_NOTE_PREFIX}${formatMoney(refund.amountMinor, refund.currency)}${refund.reason ? `: ${refund.reason}` : ''}`
+    // `order` is the row locked before this refund was counted. A later partial refund keeps the status, so an order
+    // that moved on after its first partial refund never returns to `partially_refunded`.
+    const moves = full || order.refundedMinor === 0
     let toStatus = order.status
-    if (order.status !== target && canTransitionOrder(order.status, target)) {
-      await repos.order.setStatus(tx, order.id, target, now)
-      toStatus = target
-    } else if (order.status !== target) {
-      logger.warn(
-        { orderId: order.id, refundId: refund.id, status: order.status, wanted: target },
-        'refund settled; the order status no longer allows the move and is kept',
-      )
+    if (moves && order.status !== target) {
+      if (canTransitionOrder(order.status, target)) {
+        await repos.order.setStatus(tx, order.id, target, now)
+        toStatus = target
+      } else {
+        logger.warn(
+          { orderId: order.id, refundId: refund.id, status: order.status, wanted: target },
+          'refund settled; the order status no longer allows the move and is kept',
+        )
+      }
     }
     await repos.orderHistory.append(tx, {
       id: uuidv7(),

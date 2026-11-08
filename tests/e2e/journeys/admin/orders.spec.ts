@@ -338,6 +338,76 @@ test.describe('Admin orders', () => {
     await expectPaymentPanel(page, await readOrder(request, token, order.orderNumber))
   })
 
+  // Kills: a partially refunded order the admin cannot move on (no move offered, or the move refused), and a move that
+  // loses what was refunded on the way.
+  test('AC-9: an order refunded in part through the refund dialog moves to Processing with the status select and ships through the ship dialog: the badge reads Shipped, the payment panel still reads Partially refunded with the refunded amount, and GET /api/admin/orders/:n gives shipped, partially_refunded and refundedMinor = the amount, before and after a reload', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(180_000)
+    const order = await placeOwnOrder(request, paidEmail('ship-after-refund'))
+    const token = await adminToken(request)
+    const start = await readOrder(request, token, order.orderNumber)
+    const captured = start.payment.capturedMinor
+    expect(captured).toBe(start.totalMinor)
+    const part = Math.max(1, Math.floor(captured / 3))
+    expect(part).toBeLessThan(captured)
+
+    await signInAsAdmin(page)
+    await openDetail(page, order.orderNumber)
+    await refundThroughDialog(page, part)
+
+    const refunded = await readOrder(request, token, order.orderNumber)
+    expect([refunded.status, refunded.payment.state, refunded.payment.refundedMinor]).toEqual([
+      'partially_refunded',
+      'partially_refunded',
+      part,
+    ])
+    await expectPaymentPanel(page, refunded)
+
+    // A partially refunded order with no move to offer shows a plain label, not the select: wait for it no longer.
+    await page.getByTestId('admin-order-status-select').click({ timeout: 15_000 })
+    await page.getByTestId('admin-order-status-option-processing').click()
+    await expect(page.getByTestId('admin-order-status-badge')).toHaveText('Processing', {
+      timeout: 15_000,
+    })
+
+    await page.getByTestId('admin-order-status-select').click({ timeout: 15_000 })
+    await page.getByTestId('admin-order-status-option-shipped').click()
+    const dialog = page.getByTestId('admin-order-ship-dialog')
+    await expect(dialog).toBeVisible()
+    const trackingNumber = `RM${Date.now()}GB`
+    await page.getByTestId('admin-order-ship-carrier').fill('Royal Mail')
+    await page.getByTestId('admin-order-ship-tracking').fill(trackingNumber)
+    await page.getByTestId('admin-order-ship-submit').click()
+    await expect(dialog).toBeHidden({ timeout: 15_000 })
+    await expect(page.getByTestId('admin-order-status-badge')).toHaveText('Shipped', {
+      timeout: 15_000,
+    })
+
+    const shipped = await readOrder(request, token, order.orderNumber)
+    const moneyOf = (read: OrderRead) => [
+      read.payment.state,
+      read.payment.capturedMinor,
+      read.payment.refundedMinor,
+    ]
+    expect(shipped.status).toBe('shipped')
+    expect(moneyOf(shipped), 'the moves leave the money as the refund left it').toEqual(
+      moneyOf(refunded),
+    )
+    await expectPaymentPanel(page, shipped)
+
+    // After a full reload the page comes from the API's stored order, not the client's cache.
+    await page.reload()
+    await expect(page.getByTestId('admin-order-detail')).toContainText(order.orderNumber, {
+      timeout: 15_000,
+    })
+    await expect(page.getByTestId('admin-order-status-badge')).toHaveText('Shipped')
+    const reloaded = await readOrder(request, token, order.orderNumber)
+    expect([reloaded.status, ...moneyOf(reloaded)]).toEqual([shipped.status, ...moneyOf(shipped)])
+    await expectPaymentPanel(page, reloaded)
+  })
+
   // A refund the server refuses shows its reason as money, not minor units. The dialog goes stale: the realtime
   // stream is down, and the order is refunded elsewhere after the dialog opened, so the dialog still offers the whole
   // capture and the server refuses it.

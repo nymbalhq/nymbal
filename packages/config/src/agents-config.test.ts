@@ -4,10 +4,15 @@ import { readFileSync } from 'node:fs'
 import {
   ACP_LINK_TYPES,
   ASSISTANT_MASK_FIELDS,
+  CUSTOMER_FIELDS,
   DEFAULT_AGENT_CRAWLERS,
   DEFAULT_ASSISTANT_MASK,
+  DEFAULT_CUSTOMER_FIELDS,
 } from './index.js'
 import { nymbalConfigSchema, type NymbalConfigInput } from './schema.js'
+
+/** The customer fields agents.mcp.withhold holds when a config leaves it out. */
+const WITHHELD_BY_DEFAULT = ['email', 'phone', 'address', 'postcode']
 
 // AC-12: the `agents` block. A store that never mentions agents serves MCP with writes held as proposals; `writes`
 // takes `proposal` or `apply` and nothing else. AC-11: `autoApprove` lists the commands a policy approves at the call,
@@ -44,7 +49,11 @@ describe('AC-12: agents.mcp in the config', () => {
   it('AC-12: a config with no agents block parses to agents.mcp enabled with writes proposal', () => {
     const parsed = nymbalConfigSchema.parse(baseConfig())
 
-    expect(parsed.agents.mcp).toEqual({ enabled: true, writes: 'proposal' })
+    expect(parsed.agents.mcp).toEqual({
+      enabled: true,
+      writes: 'proposal',
+      withhold: WITHHELD_BY_DEFAULT,
+    })
   })
 
   it('AC-12: property: whatever part of agents.mcp a config sets is kept, and every part it leaves out takes its default', () => {
@@ -62,6 +71,7 @@ describe('AC-12: agents.mcp in the config', () => {
           expect(parsed.agents.mcp).toEqual({
             enabled: enabled ?? true,
             writes: writes ?? 'proposal',
+            withhold: WITHHELD_BY_DEFAULT,
           })
         },
       ),
@@ -110,7 +120,11 @@ describe('AC-11: agents.autoApprove in the config', () => {
         const parsed = nymbalConfigSchema.parse({ ...baseConfig(), agents: { autoApprove } })
 
         expect(parsed.agents.autoApprove).toEqual(autoApprove)
-        expect(parsed.agents.mcp).toEqual({ enabled: true, writes: 'proposal' })
+        expect(parsed.agents.mcp).toEqual({
+          enabled: true,
+          writes: 'proposal',
+          withhold: WITHHELD_BY_DEFAULT,
+        })
       }),
     )
   })
@@ -174,7 +188,7 @@ describe('AC-1: agents.ucp and agents.crawl in the config', () => {
     const parsed = nymbalConfigSchema.parse(baseConfig())
 
     expect(parsed.agents).toEqual({
-      mcp: { enabled: true, writes: 'proposal' },
+      mcp: { enabled: true, writes: 'proposal', withhold: WITHHELD_BY_DEFAULT },
       autoApprove: [],
       ucp: { enabled: true, links: [] },
       acp: { enabled: false, links: [] },
@@ -241,7 +255,11 @@ describe('AC-1: agents.ucp and agents.crawl in the config', () => {
             allow: crawlSet.allow ?? [...DEFAULT_AGENT_CRAWLERS],
             others: crawlSet.others ?? 'allow',
           })
-          expect(parsed.agents.mcp).toEqual({ enabled: true, writes: 'proposal' })
+          expect(parsed.agents.mcp).toEqual({
+            enabled: true,
+            writes: 'proposal',
+            withhold: WITHHELD_BY_DEFAULT,
+          })
         },
       ),
     )
@@ -390,11 +408,11 @@ describe('AC-10: agents.assistant.mask in the config', () => {
     ).assistant
 
   it('AC-10: a config with no agents block, with an empty assistant block, or with customerData alone parses mask to email, phone, address and postcode, which are DEFAULT_ASSISTANT_MASK, out of the five ASSISTANT_MASK_FIELDS', () => {
-    expect([{}, { assistant: {} }, { assistant: { customerData: false } }].map((a) => assistantOf(a)?.mask)).toEqual([
-      DEFAULT,
-      DEFAULT,
-      DEFAULT,
-    ])
+    expect(
+      [{}, { assistant: {} }, { assistant: { customerData: false } }].map(
+        (a) => assistantOf(a)?.mask,
+      ),
+    ).toEqual([DEFAULT, DEFAULT, DEFAULT])
     expect([...DEFAULT_ASSISTANT_MASK]).toEqual(DEFAULT)
     expect([...ASSISTANT_MASK_FIELDS]).toEqual([...FIVE])
   })
@@ -433,6 +451,96 @@ describe('AC-10: agents.assistant.mask in the config', () => {
           expect(refusals({ assistant: { mask } })).toEqual([
             expect.stringMatching(new RegExp(`^agents\\.assistant\\.mask\\.${index}: `)),
           ])
+        },
+      ),
+    )
+  })
+})
+
+// AC-5: `agents.mcp.withhold`, the customer fields an admin's MCP client never receives. It shares its five fields and
+// its default with `agents.assistant.mask`, so the store's two AI surfaces make one statement about what leaves it.
+
+describe('AC-5: agents.mcp.withhold in the config', () => {
+  const FIVE = ['email', 'phone', 'address', 'postcode', 'name'] as const
+
+  const mcpOf = (agents: unknown) =>
+    (
+      nymbalConfigSchema.parse({ ...baseConfig(), agents } as NymbalConfigInput).agents as {
+        mcp?: { withhold?: unknown }
+      }
+    ).mcp
+
+  it('AC-5: withhold is email, phone, address and postcode when the key, the mcp block or the whole agents block is left out; those are DEFAULT_CUSTOMER_FIELDS out of the five CUSTOMER_FIELDS, which the assistant mask’s constants are', () => {
+    const left = [
+      nymbalConfigSchema.parse(baseConfig()).agents as { mcp?: { withhold?: unknown } },
+      { mcp: mcpOf({ autoApprove: [] }) },
+      { mcp: mcpOf({ mcp: { writes: 'apply' } }) },
+    ].map((agents) => agents.mcp?.withhold)
+
+    expect(left).toEqual([WITHHELD_BY_DEFAULT, WITHHELD_BY_DEFAULT, WITHHELD_BY_DEFAULT])
+    expect([...DEFAULT_CUSTOMER_FIELDS]).toEqual(WITHHELD_BY_DEFAULT)
+    expect([...CUSTOMER_FIELDS]).toEqual([...FIVE])
+    expect(ASSISTANT_MASK_FIELDS).toBe(CUSTOMER_FIELDS)
+    expect(DEFAULT_ASSISTANT_MASK).toBe(DEFAULT_CUSTOMER_FIELDS)
+  })
+
+  it('AC-5: property: any list of the five fields, in any order and with repeats, [] included, parses to each field once in the order first given, beside enabled and writes as set', () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.constantFrom(...FIVE), { maxLength: 10 }),
+        fc.option(fc.constantFrom(...WRITES), { nil: undefined }),
+        (withhold, writes) => {
+          const mcp = mcpOf({ mcp: { withhold, ...(writes !== undefined && { writes }) } })
+
+          expect(mcp).toEqual({
+            enabled: true,
+            writes: writes ?? 'proposal',
+            withhold: [...new Set(withhold)],
+          })
+        },
+      ),
+    )
+  })
+
+  it('AC-5: property: a field outside the five is refused at agents.mcp.withhold.<its index>', () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.constantFrom(...FIVE), { maxLength: 5 }),
+        fc.constantFrom('Email', 'city', 'names', 'address1', 'zip', 'company', ''),
+        fc.nat(),
+        (good, bad, at) => {
+          const index = at % (good.length + 1)
+          const withhold = [...good.slice(0, index), bad, ...good.slice(index)]
+
+          expect(refusals({ mcp: { withhold } })).toEqual([
+            expect.stringMatching(new RegExp(`^agents\\.mcp\\.withhold\\.${index}: `)),
+          ])
+        },
+      ),
+    )
+  })
+
+  // Kills: the two surfaces' defaults drifting apart, one changed and not the other.
+  it('AC-5: property: for any config that sets neither agents.mcp.withhold nor agents.assistant.mask, whatever else of agents.mcp and agents.assistant it sets, the two parse to the same fields, and those are DEFAULT_CUSTOMER_FIELDS', () => {
+    fc.assert(
+      fc.property(
+        fc.option(fc.boolean(), { nil: undefined }),
+        fc.option(fc.constantFrom(...WRITES), { nil: undefined }),
+        fc.option(fc.boolean(), { nil: undefined }),
+        (enabled, writes, customerData) => {
+          const agents = nymbalConfigSchema.parse({
+            ...baseConfig(),
+            agents: {
+              mcp: {
+                ...(enabled !== undefined && { enabled }),
+                ...(writes !== undefined && { writes }),
+              },
+              assistant: { ...(customerData !== undefined && { customerData }) },
+            },
+          }).agents as { mcp: { withhold?: unknown }; assistant: { mask?: unknown } }
+
+          expect(agents.mcp.withhold).toEqual(agents.assistant.mask)
+          expect(agents.mcp.withhold).toEqual([...DEFAULT_CUSTOMER_FIELDS])
         },
       ),
     )

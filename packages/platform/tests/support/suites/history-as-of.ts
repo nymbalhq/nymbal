@@ -1,6 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import fc from 'fast-check'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import {
+  orderMovesFrom,
+  statusBeforePartialRefund,
+  type OrderHistoryEntry,
+  type OrderStatus,
+} from '@nymbalhq/types'
 import { adminSession, customerSession, type AdminSession, type Answer } from '../audit-http.js'
 import { serveKernel, type ServedKernel } from '../http.js'
 import { address, checkoutOf, type Kernel, type Seeded } from '../kernel.js'
@@ -243,6 +249,15 @@ export function historyAsOfSuite(
     }
 
     const statusOf = (run: Run, id: string) => run.orderReads.get(id)?.['status'] as string
+    /** Whether the order may move to `to` now: a partially refunded one as the status it was refunded at would. */
+    const mayMove = (run: Run, id: string, to: OrderStatus) => {
+      const read = run.orderReads.get(id)
+      const history = (read?.['history'] ?? []) as OrderHistoryEntry[]
+      return orderMovesFrom(
+        read?.['status'] as OrderStatus,
+        statusBeforePartialRefund(history),
+      ).includes(to)
+    }
     const paymentOf = (run: Run, id: string) =>
       run.orderReads.get(id)?.['payment'] as { capturedMinor: number; refundedMinor: number }
 
@@ -357,14 +372,14 @@ export function historyAsOfSuite(
           return orderCommand(
             run,
             step,
-            (id) => statusOf(run, id) === 'confirmed',
+            (id) => mayMove(run, id, 'processing'),
             (o) => admin.send('POST', orderPath(o.id, 'process'), {}),
           )
         case 'ship':
           return orderCommand(
             run,
             step,
-            (id) => statusOf(run, id) === 'processing',
+            (id) => mayMove(run, id, 'shipped'),
             (o) =>
               admin.send('POST', orderPath(o.id, 'ship'), {
                 trackingNumber: `TRK-${step.text}`,
@@ -375,7 +390,7 @@ export function historyAsOfSuite(
           return orderCommand(
             run,
             step,
-            (id) => statusOf(run, id) === 'shipped',
+            (id) => mayMove(run, id, 'delivered'),
             (o) => admin.send('POST', orderPath(o.id, 'mark-delivered'), {}),
           )
         case 'cancel':
@@ -514,6 +529,26 @@ export function historyAsOfSuite(
       })
       await verify(run)
     }, 180_000)
+
+    it('AC-10: an order refunded in part at confirmed, then processed, shipped and refunded in part again: every move is answered, it ends shipped, and each recorded ?at=t equals the read taken at t, the later refund’s instant reading shipped', async () => {
+      const kinds: Kind[] = ['placePaid', 'refundPartial', 'process', 'ship', 'refundPartial']
+      const run = await walk(
+        kinds.map((kind, i) => ({ kind, pick: 0, text: `Moved${i}`, delta: 1, categories: [] })),
+      )
+      const [order] = run.orders
+      expect(run.refused, 'every command of the walk is answered').toEqual([])
+      expect([
+        run.orders.length,
+        statusOf(run, order!.id),
+        paymentOf(run, order!.id).refundedMinor,
+      ]).toEqual([1, 'shipped', 2])
+      const last = run.records.filter((r) => r.kind === 'order').at(-1)!
+      expect([last.after, (last.view as { status?: unknown }).status]).toEqual([
+        'refundPartial',
+        'shipped',
+      ])
+      await verify(run)
+    }, 120_000)
 
     it(`AC-1: property (${opts.runs} runs): for generated command sequences across a product, its orders and a customer, every recorded ?at=t equals the admin read taken at t`, async () => {
       await fc.assert(

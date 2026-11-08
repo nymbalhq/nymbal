@@ -3,6 +3,7 @@ import {
   NymbalError,
   type AiAdapter,
   type AssistantFrame,
+  type AssistantRecord,
   type Caller,
   type ChatMessage,
   type ChatOptions,
@@ -10,12 +11,14 @@ import {
   type ChatStreamEvent,
   type ChatTool,
   type Logger,
+  type Order,
+  type ProductSnapshot,
   type ToolDefinition,
   type ToolCallOptions,
   type ToolResult,
   type ToolSurface,
 } from '@nymbalhq/types'
-import { routeSchemas } from '../routes/schemas.js'
+import { routeSchemas, type RouteSchema } from '../routes/schemas.js'
 import type { ProposalService } from '../services/proposal-service.js'
 import {
   createTurnMask,
@@ -24,6 +27,7 @@ import {
   type MaskField,
   type RevealedSpan,
 } from './mask.js'
+import { orderSummary, productSummary } from './summary.js'
 
 /** The agent name every tool call, proposal and audit entry of the assistant carries. */
 export const ASSISTANT_AGENT = 'nymbal-assistant'
@@ -35,6 +39,10 @@ const MAX_CALLS_PER_REPLY = 10
 const RESULT_BUDGET_CHARS = 64_000
 /** Command calls past this many in one turn are answered as refused, not run. */
 export const MAX_WRITES_PER_TURN = 10
+/** Deletions, archives, cancellations and refunds past this many in one turn are refused, not run or proposed. */
+export const MAX_DESTRUCTIVE_PER_TURN = 3
+/** Record frames past this many in one turn are not sent; a list longer than this sends none. */
+export const MAX_RECORDS_PER_TURN = 5
 /** A tool name the log may carry: any other name the model asks for is its own text. */
 const TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/
 
@@ -44,11 +52,15 @@ export const STORE_DATA_RULE =
 
 /** The system prompt's line on a customer's personal details. */
 export const PERSONAL_DATA_RULE =
-  "Use a customer's email, phone or address only when the merchant's question needs it, and do not repeat it otherwise."
+  "The merchant may see every customer's details. Give a customer's email, phone or address when the question asks for it or needs it, and do not repeat one otherwise."
 
 /** The system prompt's line on placeholders, when the turn masks a customer's details. */
 export const MASKED_DATA_RULE =
   "A customer's details may appear as placeholders such as [email-1], [phone-1], [address-1], [postcode-1] or [name-1], each standing for one value: copy a placeholder exactly as written into a tool's arguments or into your answer, and the merchant sees the real value; never guess what it stands for."
+
+/** The system prompt's line on writes to many records. */
+export const BULK_CHANGE_RULE =
+  "Make only the writes the message asks for, each naming one record. A request to delete, archive, cancel or refund many records at once (every product, all of a customer's orders) is not carried out and not proposed: say what it would change and that you do not make such changes to many records."
 
 /**
  * The admin's routes (apps/admin/src/router.tsx): the prompt names the one the merchant is on, never the path. A literal
@@ -84,8 +96,10 @@ export interface AssistantDeps {
   tools: ToolSurface
   proposals: Pick<ProposalService, 'get'>
   logger: Logger
-  /** The store's name and currency, for the model's instructions. */
-  store?: { name: string; currency: string }
+  /** The store's name, currency and IANA time zone, for the model's instructions. */
+  store?: { name: string; currency: string; timezone: string }
+  /** The clock the turn's date is read from, once at its start; `Date.now` when absent. */
+  now?: () => number
   limits?: { maxSteps?: number; turnMs?: number; resultChars?: number }
   /** `agents.assistant.customerData`: false leaves out every tool whose answer carries a customer's details. */
   customerData?: boolean
@@ -136,7 +150,8 @@ export function streamOf(ai: AiAdapter): Stream {
 /**
  * The tools the model is offered: the admin's own, and the catalogue reads anyone may make. A cart or checkout tool
  * (one that takes a handle), a customer's own tools and any other write are left out, and so, under `customerData:
- * false`, is every tool whose route answers a customer's email, phone or address.
+ * false`, is every tool whose route answers a customer's email, phone or address. A route marked
+ * `agents.assistant: false` is never offered.
  */
 export function assistantTools(
   listed: readonly ToolDefinition[],
@@ -144,6 +159,7 @@ export function assistantTools(
 ): ToolDefinition[] {
   return listed.filter((tool) => {
     const entry = routeSchemas[`${tool.route.method} ${tool.route.path}`]
+    if (entry?.agents?.assistant === false) return false
     if (Object.keys(entry?.handles ?? {}).length > 0) return false
     if (opts.customerData === false && (entry?.personal?.length ?? 0) > 0) return false
     return tool.scope === 'admin' || (tool.scope === 'public' && tool.kind === 'read')
@@ -169,24 +185,56 @@ export function adminPageOf(
   return undefined
 }
 
-function systemPrompt(
+/** What the model is offered: each tool's name, description and input schema, and the page read when it has values. */
+export function chatToolsOf(offered: readonly ToolDefinition[], page: boolean): ChatTool[] {
+  return [
+    ...offered.map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      inputSchema: tool.inputSchema,
+    })),
+    ...(page ? [PAGE_TOOL] : []),
+  ]
+}
+
+/** The calendar day of instant `at` in `zone`, as its English weekday and `yyyy-mm-dd`. */
+function todayLine(at: number, zone: string): string {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: zone,
+    weekday: 'long',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(at)
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === type)?.value ?? ''
+  return `Today is ${part('weekday')} ${part('year')}-${part('month')}-${part('day')} in the store's time zone (${zone}); work out dates such as "the last 30 days" from today.`
+}
+
+/**
+ * The model's instructions for a turn on `pattern` at instant `today`, with the placeholder rule when the turn masks.
+ * The date is the store's calendar day, in UTC with no store.
+ */
+export function systemPrompt(
   store: AssistantDeps['store'],
   pattern: string | undefined,
   masked: boolean,
+  today: number,
 ): string {
   return [
     store === undefined
-      ? "You are the store's assistant, inside its admin."
-      : `You are the assistant of the store ${store.name}, inside its admin. Its currency is ${store.currency}.`,
-    'Money in the tools is in minor units: 1900 is 19.00.',
+      ? "You are the store's assistant, inside its admin, talking to the store's admin. Money in tool results and arguments is in minor units (1900 is 19.00)."
+      : `You are the assistant of the store ${store.name}, inside its admin, talking to the store's admin. Its currency is ${store.currency}; money in tool results and arguments is in minor units (1900 is 19.00).`,
+    todayLine(today, store?.timezone ?? 'UTC'),
     ...(pattern === undefined ? [] : [`The merchant is looking at the admin page ${pattern}.`]),
-    "Answer from the store's tools, never from a guess; say so when the tools cannot tell you.",
+    "Answer from the store's tools, never from memory or a guess. Use an existing record's id, slug or variant id only as a tool result in this conversation gave it; to find a record by name, list or search first. When a result says items were not shown, ask for fewer with limit and read the rest with offset. An empty list means nothing matched the filter you sent, not that there is nothing: say which filter you used, or list without it.",
     STORE_DATA_RULE,
     PERSONAL_DATA_RULE,
     ...(masked ? [MASKED_DATA_RULE] : []),
-    'A write you call does not change the store: it becomes a proposal that a person approves or rejects in the inbox. Say that it waits for their approval.',
-    'You cannot approve or reject proposals, and you cannot read or change secrets, keys or settings.',
-    'Answer briefly.',
+    'A write you call becomes a proposal that a person approves or rejects in the inbox; say that it waits for approval.',
+    BULK_CHANGE_RULE,
+    "You cannot approve or reject proposals, and you cannot read or change the store's settings, secrets or keys.",
+    'Answer in plain text, briefly, with the numbers and names the tools gave.',
   ].join('\n')
 }
 
@@ -265,6 +313,44 @@ function cut(result: ToolResult, max: number): string {
   return `${text.slice(0, max)}\n[cut: ${text.length - max} of ${text.length} characters not shown]`
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** A list result with each of its `items` replaced by its summary; every other key kept. */
+function summarised(result: ToolResult, kind: NonNullable<RouteSchema['summary']>): ToolResult {
+  const structured = result.structuredContent
+  const items = structured?.['items']
+  if (structured === undefined || !Array.isArray(items)) return result
+  const shape = (item: Record<string, unknown>) =>
+    kind === 'order'
+      ? orderSummary(item as unknown as Order)
+      : productSummary(item as unknown as ProductSnapshot)
+  const next = { ...structured, items: items.map((item) => (isRecord(item) ? shape(item) : item)) }
+  return { ...result, content: [{ type: 'text', text: JSON.stringify(next) }], structuredContent: next }
+}
+
+/**
+ * The orders or customers a successful read answered, as the route's `record` mark reads them: a detail's own number
+ * or id, or each item's of a list holding at most MAX_RECORDS_PER_TURN; an empty or missing value names none.
+ */
+function recordsOf(
+  kind: NonNullable<RouteSchema['record']>,
+  structured: Record<string, unknown>,
+): AssistantRecord[] {
+  const list = kind === 'order' ? structured['items'] : structured['customers']
+  const read = Array.isArray(list)
+    ? list.length <= MAX_RECORDS_PER_TURN
+      ? list
+      : []
+    : [kind === 'order' ? structured : structured['customer']]
+  return read.flatMap((item): AssistantRecord[] => {
+    const value = isRecord(item) ? item[kind === 'order' ? 'orderNumber' : 'id'] : undefined
+    if (typeof value !== 'string' || value === '') return []
+    return [kind === 'order' ? { kind, orderNumber: value } : { kind, id: value }]
+  })
+}
+
 const UNKNOWN_PLACEHOLDER =
   'A placeholder in the arguments stands for no value of this turn: copy it exactly as a tool result gave it'
 
@@ -282,7 +368,8 @@ function mapStrings(value: unknown, f: (text: string) => string): unknown {
  * One assistant turn: the model is called with the store's tools, each tool it asks for runs through the tool surface
  * as the admin, and its result goes back to it, until it answers without calls. `emit` receives every frame; the turn
  * ends with one `done` or one `error` frame, or with none when `signal` aborts (the merchant has gone). It is bounded by
- * `maxSteps` model requests, `turnMs`, ten calls per reply, ten writes and 64 000 characters of results. Each call
+ * `maxSteps` model requests, `turnMs`, ten calls per reply, ten writes, three of them destructive, and 64 000 characters
+ * of results; a reply its length limit cut ends the turn with `assistant.answer_cut`. Each call
  * carries its own correlation id, `<turnId>.<n>`, and logs one line without its arguments or result.
  */
 export async function runAssistantTurn(
@@ -330,16 +417,9 @@ export async function runAssistantTurn(
   const page = turn.page === undefined ? undefined : adminPageOf(turn.page)
   // The page's parameters are text a merchant or an import chose: they reach the model as a result, never the prompt.
   const withParams = page !== undefined && Object.keys(page.params).length > 0 ? page : undefined
-  const tools: ChatTool[] = [
-    ...offered.map((tool) => ({
-      name: tool.name,
-      description: tool.description,
-      inputSchema: tool.inputSchema,
-    })),
-    ...(withParams === undefined ? [] : [PAGE_TOOL]),
-  ]
+  const tools = chatToolsOf(offered, withParams !== undefined)
   const opts: ChatOptions = {
-    system: systemPrompt(deps.store, page?.pattern, masking),
+    system: systemPrompt(deps.store, page?.pattern, masking, (deps.now ?? Date.now)()),
     tools,
     signal: stopped,
   }
@@ -353,10 +433,13 @@ export async function runAssistantTurn(
   // An earlier answer may quote a tool result, so a follow-up's first reply may already obey store data.
   const quotesStoreData = turn.messages.some((m) => m.role === 'assistant')
   const proposals: string[] = []
+  /** `<kind>:<number or id>` of each record frame sent this turn. */
+  const recorded = new Set<string>()
   let used = 0
   let steps = 0
   let calls = 0
   let writes = 0
+  let destructive = 0
   let outcome = 'done'
 
   /**
@@ -459,6 +542,18 @@ export async function runAssistantTurn(
     const tool = byName.get(call.name)
     const paged = withParams !== undefined && call.name === PAGE_TOOL.name ? withParams : undefined
     const title = tool?.title ?? (paged === undefined ? call.name : PAGE_TITLE)
+    const entry =
+      tool === undefined ? undefined : routeSchemas[`${tool.route.method} ${tool.route.path}`]
+    // Checked before the reply's own cap, whose text asks for the call again.
+    const isDestructive = entry?.destructive === true
+    if (isDestructive && destructive >= MAX_DESTRUCTIVE_PER_TURN) {
+      return refuse(
+        call.name,
+        title,
+        'assistant.bulk_refused',
+        `This turn has made ${MAX_DESTRUCTIVE_PER_TURN} deletions, archives, cancellations or refunds, the most one turn makes; this one was not run and not proposed. You do not make such changes to many records.`,
+      )
+    }
     if (index >= MAX_CALLS_PER_REPLY) {
       return refuse(
         call.name,
@@ -496,10 +591,11 @@ export async function runAssistantTurn(
         call.name,
         title,
         'assistant.too_many_writes',
-        `At most ${MAX_WRITES_PER_TURN} writes of one turn are run; the merchant can ask for the rest in a new message`,
+        `At most ${MAX_WRITES_PER_TURN} writes of one turn are run; this one was not run and not proposed.`,
       )
     }
     if (command) writes += 1
+    if (isDestructive) destructive += 1
     const result = await deps.tools.call(call.name, args, turn.caller, options)
     const isError = result.isError === true
     const structured = result.structuredContent ?? {}
@@ -528,7 +624,19 @@ export async function runAssistantTurn(
         },
       })
     }
-    const answered = toModel(result)
+    if (!isError && entry?.record !== undefined) {
+      for (const record of recordsOf(entry.record, structured)) {
+        if (recorded.size >= MAX_RECORDS_PER_TURN) break
+        const key = record.kind === 'order' ? `order:${record.orderNumber}` : `customer:${record.id}`
+        if (recorded.has(key)) continue
+        recorded.add(key)
+        emit({ event: 'record', data: record })
+      }
+    }
+    // Summarised before the mask, under the record's own key names, so the mask reads them as it reads the record.
+    const answered = toModel(
+      !isError && entry?.summary !== undefined ? summarised(result, entry.summary) : result,
+    )
     used += answered.content.length
     // Counted over the whole result: what the model is sent is at most this.
     return { ...answered, isError, fields: fieldsIn(structured) }
@@ -539,6 +647,14 @@ export async function runAssistantTurn(
       steps += 1
       const result = await reply()
       if (result.toolCalls.length === 0) {
+        if (result.stopReason === 'max_tokens') {
+          outcome = 'assistant.answer_cut'
+          emit({
+            event: 'error',
+            data: { code: outcome, message: 'The answer was cut off at the length the model may write' },
+          })
+          return
+        }
         const text = masking ? mask.reveal(result.text) : result.text
         emit({ event: 'done', data: { text, steps, proposals } })
         return

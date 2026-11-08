@@ -293,14 +293,16 @@ Subcommands: `nymbal eval assistant`.
 
 ## `nymbal eval assistant`
 
-Ask the store assistant the 25 golden questions with the project's AI provider, on a throwaway store
+Ask the store assistant the 27 golden questions with the project's AI provider, on a throwaway store
 
 | Argument | Type | Description | Default |
 | --- | --- | --- | --- |
 | `--only` | string | Run only these question ids, comma-separated |  |
-| `--threshold` | string | How many must pass for exit 0 (default 22) |  |
-| `--json` | boolean | Print the report as JSON | `false` |
-| `--verbose` | boolean | Print each answer | `false` |
+| `--threshold` | string | How many must pass for exit 0 (default 24) |  |
+| `--runs` | string | Ask the set this many times, each on a fresh store, and judge each question by majority (default 1) |  |
+| `--json` | boolean | Print the tally and every run’s report as JSON | `false` |
+| `--verbose` | boolean | Print each call, its arguments and outcome, and each answer | `false` |
+| `--stamp` | string | Write the eval stamp to this file when the run passes: the hash of the prompt and tools, the provider, model and tally. Anthropic or OpenAI’s own API only, every question, the default threshold or above |  |
 
 ## `nymbal test`
 

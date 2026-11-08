@@ -109,6 +109,8 @@ export interface AiContractOptions {
 }
 
 const HANG_TIMEOUT_MS = 300
+/** The most of a provider's own error message an adapter passes on after `<provider> answered <status>: `. */
+const PROVIDER_MESSAGE_CAP = 200
 /** The hanging build's `timeoutMs`, and the room a rejection has after it. */
 const HANG_BOUND_MS = HANG_TIMEOUT_MS + 2000
 
@@ -118,7 +120,7 @@ const STATUS_CODES: ReadonlyArray<readonly [AiFailureMode, string]> = [
   ['status:403', 'adapter.auth_failed'],
   ['status:429', 'adapter.rate_limited'],
   ['status:500', 'adapter.unavailable'],
-  ['status:529', 'adapter.unavailable'],
+  ['status:529', 'adapter.overloaded'],
   ['html:502', 'adapter.unavailable'],
   ['no-text', 'adapter.unexpected_response'],
   ['not-json', 'adapter.unexpected_response'],
@@ -444,7 +446,7 @@ const STREAMED: ReadonlyArray<{
 const STREAM_STATUS: ReadonlyArray<readonly [AiFailureMode, string]> = [
   ['status:401', 'adapter.auth_failed'],
   ['status:429', 'adapter.rate_limited'],
-  ['status:529', 'adapter.unavailable'],
+  ['status:529', 'adapter.overloaded'],
 ]
 
 /** The failures a stream can meet, beyond those of a plain request. */
@@ -753,8 +755,11 @@ export function runAiContract(
               if (mode.startsWith('status:')) {
                 const status = Number(mode.slice('status:'.length))
                 expect(context['status']).toBe(status)
-                // The provider's own message is dropped: it may echo the key or the conversation.
-                expect(message).toBe(`${provider} answered ${status}`)
+                // The provider's own message may follow the status, capped; the properties below hold it free of
+                // the key and the conversation it echoes.
+                const said = `${provider} answered ${status}`
+                expect(message.slice(0, said.length)).toBe(said)
+                expect(message.length).toBeLessThanOrEqual(`${said}: `.length + PROVIDER_MESSAGE_CAP)
               } else if (mode === 'html:502') {
                 expect(context['status']).toBe(502)
                 expect(message).toBe(`${provider} answered 502`)

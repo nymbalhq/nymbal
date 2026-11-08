@@ -1,4 +1,7 @@
 import type { AssistantMaskField } from '@nymbalhq/config'
+import { freeTextSpans, kindOfKey, replaceIn, wholeSpans, type Piece } from '../customer-fields.js'
+
+export { FREE_TEXT_EMAIL, FREE_TEXT_PHONE } from '../customer-fields.js'
 
 /**
  * Reversible masking of a customer's details for one assistant turn: the AI provider reads `[email-1]` where a tool
@@ -30,40 +33,6 @@ export function neutralise(text: string): string {
   return text.replace(TOKENS(), '[$1 $2]')
 }
 
-/** An email in prose: no local-part character just before it, and a last label of two or more letters. */
-export const FREE_TEXT_EMAIL =
-  /(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}(?![A-Za-z0-9-])/g
-
-/**
- * A phone number in prose: from `+`, `(` or `0` and a digit, digits joined by single separators (a parenthesis may
- * sit beside a space, as in `(555) 123-4567`), ending in a digit. Its digits are counted, and its neighbours checked,
- * by `phoneAt`.
- */
-export const FREE_TEXT_PHONE = /(?:[+(]|0(?=[0-9]))[0-9]+(?:(?:\)[ .-]?|[ .-]?\(|[ .-])[0-9]+)*/g
-
-const WORDISH = /[\p{L}\p{N}]/u
-const PHONE_JOINERS = new Set(['-', '.', '(', ')'])
-
-/** Whether `text[at]`, looking past `-`, `.` and parentheses in direction `step`, is a letter or digit. */
-function wordishBeside(text: string, at: number, step: 1 | -1): boolean {
-  let i = at
-  while (i >= 0 && i < text.length && PHONE_JOINERS.has(text[i]!)) i += step
-  return i >= 0 && i < text.length && WORDISH.test(text[i]!)
-}
-
-function isPhone(text: string, start: number, match: string): boolean {
-  const digits = match.replace(/[^0-9]/g, '').length
-  if (digits < 10 || digits > 15) return false
-  // A UUID's all-digit groups sit between hex groups: looking past the hyphens keeps them out.
-  return !wordishBeside(text, start - 1, -1) && !wordishBeside(text, start + match.length, 1)
-}
-
-const standsWhole = (text: string, start: number, end: number): boolean =>
-  !WORDISH.test(text[start - 1] ?? '') && !WORDISH.test(text[end] ?? '')
-
-/** A string cut into free text and the tokens placed in it, so no later step rewrites inside a token. */
-type Piece = { free: string } | { token: string }
-
 export interface TurnMask {
   result(value: Record<string, unknown>): { value: Record<string, unknown>; masked: number }
   text(text: string, revealed?: readonly RevealedSpan[]): string
@@ -72,16 +41,6 @@ export interface TurnMask {
   revealArgs(args: Record<string, unknown>): Record<string, unknown>
   revealer(): { push(delta: string): Revealed; flush(): Revealed }
   stillHolds(args: Record<string, unknown>): boolean
-}
-
-/** The kind a key masks; undefined for every other key. */
-function kindOfKey(key: string): MaskField | undefined {
-  if (/email$/i.test(key)) return 'email'
-  if (/phone$/i.test(key)) return 'phone'
-  if (key === 'addressLine1' || key === 'addressLine2') return 'address'
-  if (key === 'postalCode') return 'postcode'
-  if (key === 'firstName' || key === 'lastName') return 'name'
-  return undefined
 }
 
 function mapStrings(
@@ -128,25 +87,6 @@ export function createTurnMask(fields: readonly MaskField[]): TurnMask {
     return token
   }
 
-  /** Each free piece's matches of `find` replaced by the token `toToken` gives for the matched text. */
-  const replaceIn = (
-    pieces: Piece[],
-    find: (free: string) => Array<{ start: number; end: number }>,
-    toToken: (match: string) => string,
-  ): Piece[] =>
-    pieces.flatMap((piece) => {
-      if (!('free' in piece)) return [piece]
-      const out: Piece[] = []
-      let last = 0
-      for (const { start, end } of find(piece.free)) {
-        if (start > last) out.push({ free: piece.free.slice(last, start) })
-        out.push({ token: toToken(piece.free.slice(start, end)) })
-        last = end
-      }
-      if (last < piece.free.length) out.push({ free: piece.free.slice(last) })
-      return out
-    })
-
   /** The table's values of a listed kind, at least three characters, longest first. */
   const tableValues = () =>
     [...valueOf.entries()]
@@ -156,22 +96,7 @@ export function createTurnMask(fields: readonly MaskField[]): TurnMask {
   const knownValues = (pieces: Piece[]): Piece[] => {
     let out = pieces
     for (const [token, { value }] of tableValues()) {
-      out = replaceIn(
-        out,
-        (free) => {
-          const found: Array<{ start: number; end: number }> = []
-          for (let at = free.indexOf(value); at !== -1; at = free.indexOf(value, at)) {
-            if (standsWhole(free, at, at + value.length)) {
-              found.push({ start: at, end: at + value.length })
-              at += value.length
-            } else {
-              at += 1
-            }
-          }
-          return found
-        },
-        () => token,
-      )
+      out = replaceIn(out, (free) => wholeSpans(free, value), () => token)
     }
     return out
   }
@@ -181,21 +106,14 @@ export function createTurnMask(fields: readonly MaskField[]): TurnMask {
     if (listed.has('email')) {
       out = replaceIn(
         out,
-        (free) =>
-          [...free.matchAll(FREE_TEXT_EMAIL)].map((m) => ({
-            start: m.index,
-            end: m.index + m[0].length,
-          })),
+        (free) => freeTextSpans(free, 'email'),
         (match) => mint('email', match),
       )
     }
-    if (listed.has('phone') && /\s/.test(whole)) {
+    if (listed.has('phone')) {
       out = replaceIn(
         out,
-        (free) =>
-          [...free.matchAll(FREE_TEXT_PHONE)]
-            .filter((m) => isPhone(free, m.index, m[0]))
-            .map((m) => ({ start: m.index, end: m.index + m[0].length })),
+        (free) => freeTextSpans(free, 'phone', whole),
         (match) => mint('phone', match),
       )
     }

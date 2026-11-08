@@ -20,8 +20,17 @@ import type { AddressInfo } from 'node:net'
 //   provider's length stop reason.
 // A conversation the provider itself would refuse with 400 is refused the same way: a tool result whose id is not a
 // call of the assistant turn just before it, or a call left unanswered when the next turn starts.
-// Usage is counted in words. Every request is recorded with its headers, its body, the key it carried and whether the
-// client closed the connection before the stand-in finished answering.
+// Usage is counted in words; on Anthropic's wire the tool definitions count too. Anthropic's prompt cache is modelled by
+// its breakpoints: the blocks render as tools, system, then each turn's blocks, and a breakpoint is a block carrying
+// `cache_control` or, with a top-level `cache_control`, the last block. Each breakpoint whose prefix holds at least
+// `MIN_CACHED_WORDS` words (the provider's minimum cacheable length) writes an entry for that prefix (model and blocks,
+// markers aside); a request reads the longest prefix ending on a block an earlier request wrote an entry at, writes the
+// rest up to its last breakpoint, and reports them as `cache_read_input_tokens` and `cache_creation_input_tokens` apart
+// from `input_tokens`. A request with no breakpoint is not cached. More than four breakpoints, or a marker on the last
+// block whose lifetime is not the top-level one, is refused 400 as the provider does. The provider's 20-block lookback is
+// not modelled. OpenAI's wire reports cached tokens only when a script reply gives `cachedTokens`. Every request is
+// recorded with its headers, its body, the key it carried and whether the client closed the connection before the
+// stand-in finished answering.
 //
 // `stream: true` answers as server-sent events in the wire's own format, one word per text delta (the deltas
 // concatenate to the text), a call's arguments split over several deltas, usage where the wire reports it (OpenAI only
@@ -89,6 +98,8 @@ export interface ScriptReply {
   delayMs?: number
   /** Answers this request as that mode instead. */
   fail?: Exclude<AiStandInMode, 'model' | 'script'>
+  /** OpenAI's wire: report this many of the prompt's tokens as cached (`prompt_tokens_details.cached_tokens`). */
+  cachedTokens?: number
 }
 
 export type AiScript = (view: ScriptView) => ScriptReply | Promise<ScriptReply>
@@ -118,7 +129,12 @@ export interface AiStandInAnswer {
   text: string
   /** The model name it reported, which is not the one it was asked for. */
   model: string
+  /** Every input word, cached or not (on Anthropic's wire the tool definitions too). */
   inputWords: number
+  /** Of `inputWords`, those read from the prompt cache and those written to it (Anthropic's wire; on OpenAI's, the
+   * read is a script reply's `cachedTokens`, else 0). */
+  cacheReadWords: number
+  cacheWrittenWords: number
   outputWords: number
   /** The wire stop reason it sent. */
   stop: string
@@ -489,6 +505,139 @@ const sse = (res: ServerResponse, event: string | undefined, data: unknown): voi
   )
 }
 
+/** The stand-in's minimum cacheable prompt, in words: Anthropic caches no shorter prefix. */
+export const MIN_CACHED_WORDS = 8
+
+/** At most this many breakpoints in one request, the automatic one included. */
+const MAX_BREAKPOINTS = 4
+
+/** One block of an Anthropic request in render order: the prefix that ends on it, its words and its marker. */
+interface Block {
+  key: string
+  words: number
+  marker: Rec | undefined
+}
+
+const unmarked = (value: unknown): unknown => {
+  const { cache_control: _, ...rest } = recOf(value)
+  return rest
+}
+
+/** The words a tool definition costs: its name, description and schema, punctuation aside. */
+const toolWords = (tool: unknown): number =>
+  words(JSON.stringify(unmarked(tool)).replace(/[^A-Za-z0-9_.-]+/g, ' ')).length
+
+function blockWords(block: Rec): number {
+  if (block['type'] === 'text') return words(textOf(block['text'])).length
+  if (block['type'] === 'tool_result') return words(textOf(block['content'])).length
+  return 0
+}
+
+/** The blocks of an Anthropic request as the provider renders them: tools, system, then each turn's blocks. */
+function anthropicBlocks(body: unknown): Block[] {
+  const b = recOf(body)
+  const parts: Array<{ value: unknown; words: number; marker: unknown }> = []
+  for (const tool of Array.isArray(b['tools']) ? (b['tools'] as unknown[]) : []) {
+    parts.push({
+      value: ['tool', unmarked(tool)],
+      words: toolWords(tool),
+      marker: recOf(tool)['cache_control'],
+    })
+  }
+  const system = b['system']
+  if (typeof system === 'string' && system !== '') {
+    parts.push({ value: ['system', system], words: words(system).length, marker: undefined })
+  } else if (Array.isArray(system)) {
+    for (const block of system.map(recOf)) {
+      parts.push({
+        value: ['system', unmarked(block)],
+        words: blockWords(block),
+        marker: block['cache_control'],
+      })
+    }
+  }
+  const messages = Array.isArray(b['messages']) ? (b['messages'] as unknown[]).map(recOf) : []
+  messages.forEach((m, i) => {
+    const content = m['content']
+    if (typeof content === 'string') {
+      parts.push({
+        value: [i, m['role'], content],
+        words: words(content).length,
+        marker: undefined,
+      })
+      return
+    }
+    for (const block of (Array.isArray(content) ? content : []).map(recOf)) {
+      parts.push({
+        value: [i, m['role'], unmarked(block)],
+        words: blockWords(block),
+        marker: block['cache_control'],
+      })
+    }
+  })
+  let key = createHash('sha256')
+    .update(JSON.stringify(b['model'] ?? null))
+    .digest('hex')
+  return parts.map((part) => {
+    key = createHash('sha256').update(key).update(JSON.stringify(part.value)).digest('hex')
+    const marker = recOf(part.marker)
+    return { key, words: part.words, marker: marker['type'] === 'ephemeral' ? marker : undefined }
+  })
+}
+
+const lifetimeOf = (marker: Rec): string =>
+  typeof marker['ttl'] === 'string' ? marker['ttl'] : '5m'
+
+/** The positions of `blocks` that are breakpoints: each marked block, and the last block under top-level caching. */
+function breakpointsOf(body: unknown, blocks: Block[]): number[] {
+  const points = blocks.flatMap((block, i) => (block.marker === undefined ? [] : [i]))
+  const automatic = recOf(recOf(body)['cache_control'])['type'] === 'ephemeral'
+  if (automatic && blocks.length > 0 && points.at(-1) !== blocks.length - 1)
+    points.push(blocks.length - 1)
+  return points
+}
+
+/** Why Anthropic would refuse this request's cache markers with a 400, or undefined when it would not. */
+function cacheRefusal(body: unknown): string | undefined {
+  const blocks = anthropicBlocks(body)
+  const points = breakpointsOf(body, blocks)
+  if (points.length > MAX_BREAKPOINTS) {
+    return `A maximum of ${MAX_BREAKPOINTS} blocks with cache_control may be provided. Found ${points.length}.`
+  }
+  const top = recOf(recOf(body)['cache_control'])
+  const last = blocks.at(-1)?.marker
+  if (top['type'] === 'ephemeral' && last !== undefined && lifetimeOf(last) !== lifetimeOf(top)) {
+    return "the last block's cache_control ttl differs from the top-level cache_control ttl"
+  }
+  return undefined
+}
+
+/**
+ * What Anthropic's prompt cache reads and writes for `body`, in words, recording an entry at each of its breakpoints in
+ * `cache`; nothing when it has no breakpoint whose prefix reaches `MIN_CACHED_WORDS`.
+ */
+function cachedOf(
+  body: unknown,
+  cache: Set<string>,
+): { total: number; read: number; written: number } {
+  const blocks = anthropicBlocks(body)
+  const upTo: number[] = []
+  blocks.reduce((n, block, i) => (upTo[i] = n + block.words), 0)
+  const total = upTo.at(-1) ?? 0
+  const points = breakpointsOf(body, blocks).filter((i) => upTo[i]! >= MIN_CACHED_WORDS)
+  const last = points.at(-1)
+  if (last === undefined) return { total, read: 0, written: 0 }
+  let read = 0
+  for (let i = last; i >= 0; i--) {
+    if (cache.has(blocks[i]!.key)) {
+      read = upTo[i]!
+      break
+    }
+  }
+  for (const i of points) cache.add(blocks[i]!.key)
+  return { total, read, written: Math.max(upTo[last]! - read, 0) }
+}
+
 /** A stand-in for `wire`'s API on a free port of 127.0.0.1, answering as `mode` until the test changes it. */
 export async function startAiStandIn(
   wire: AiWire,
@@ -496,6 +645,7 @@ export async function startAiStandIn(
   script?: AiScript,
 ): Promise<AiStandIn> {
   let scriptCalls = 0
+  const promptCache = new Set<string>()
   const standIn: AiStandIn = {
     wire,
     url: '',
@@ -509,6 +659,7 @@ export async function startAiStandIn(
       standIn.requests.length = 0
       standIn.answers.length = 0
       standIn.scriptErrors.length = 0
+      promptCache.clear()
     },
     close: async () => undefined,
   }
@@ -600,7 +751,8 @@ export async function startAiStandIn(
         )
       }
       if (now === 'not-json') return send(200, `Key ${key} is not JSON <html>`)
-      const refusal = toolTurnRefusal(c.turns)
+      const refusal =
+        toolTurnRefusal(c.turns) ?? (wire === 'anthropic' ? cacheRefusal(body) : undefined)
       if (refusal !== undefined) return refuse(400, refusal)
 
       const answered: Reply =
@@ -651,10 +803,30 @@ export async function startAiStandIn(
               ? 'end_turn'
               : 'stop'
       const outputWords = words(text).length
+      const cached =
+        wire === 'anthropic'
+          ? cachedOf(body, promptCache)
+          : { total: answered.inputWords, read: scripted?.cachedTokens ?? 0, written: 0 }
+      const inputWords = cached.total
+      const inputUsage = {
+        input_tokens: inputWords - cached.read - cached.written,
+        cache_creation_input_tokens: cached.written,
+        cache_read_input_tokens: cached.read,
+      }
+      const openaiUsage = {
+        prompt_tokens: inputWords,
+        completion_tokens: outputWords,
+        total_tokens: inputWords + outputWords,
+        ...(scripted?.cachedTokens !== undefined && {
+          prompt_tokens_details: { cached_tokens: scripted.cachedTokens },
+        }),
+      }
       const answer: AiStandInAnswer = {
         text,
         model,
-        inputWords: answered.inputWords,
+        inputWords,
+        cacheReadWords: cached.read,
+        cacheWrittenWords: cached.written,
         outputWords,
         stop: wireStop,
         toolCalls: calls,
@@ -689,7 +861,7 @@ export async function startAiStandIn(
               ],
               stop_reason: wireStop,
               stop_sequence: null,
-              usage: { input_tokens: answered.inputWords, output_tokens: outputWords },
+              usage: { ...inputUsage, output_tokens: outputWords },
             }),
           )
         }
@@ -717,11 +889,7 @@ export async function startAiStandIn(
                 finish_reason: wireStop,
               },
             ],
-            usage: {
-              prompt_tokens: answered.inputWords,
-              completion_tokens: outputWords,
-              total_tokens: answered.inputWords + outputWords,
-            },
+            usage: openaiUsage,
           }),
         )
       }
@@ -752,7 +920,7 @@ export async function startAiStandIn(
             content: [],
             stop_reason: null,
             stop_sequence: null,
-            usage: { input_tokens: answered.inputWords, output_tokens: 0 },
+            usage: { ...inputUsage, output_tokens: 0 },
           },
         })
         sse(res, 'ping', { type: 'ping' })
@@ -857,11 +1025,7 @@ export async function startAiStandIn(
             created: Math.floor(Date.now() / 1000),
             model,
             choices: [],
-            usage: {
-              prompt_tokens: answered.inputWords,
-              completion_tokens: outputWords,
-              total_tokens: answered.inputWords + outputWords,
-            },
+            usage: openaiUsage,
           })
         }
         sse(res, undefined, '[DONE]')

@@ -93,11 +93,17 @@ export {
   type GoldenQuestion,
 } from './assistant/golden.js'
 export {
+  GoldenAdapterError,
   runGolden,
+  tallyGolden,
+  type GoldenCall,
   type GoldenReport,
   type GoldenResult,
+  type GoldenTally,
+  type GoldenUsage,
   type RunGoldenOptions,
 } from './assistant/eval.js'
+export { assistantEvalHash, type AssistantEvalStamp } from './assistant/stamp.js'
 export { ucpProfile, UCP_VERSION } from './agents/profile.js'
 export { agentNameOf } from './agents/agent-name.js'
 export { createUcpSurface, type UcpSurfaceDeps } from './agents/ucp-surface.js'

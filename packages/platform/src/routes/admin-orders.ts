@@ -10,7 +10,7 @@ import type { ReadTx } from '../db/command-store.js'
 import type { OrderService } from '../services/order-service.js'
 import type { CheckoutService, ManualPayments } from '../services/checkout-service.js'
 import { orderPayment, type RefundService } from '../services/refund-service.js'
-import type { Repositories } from '../repositories/index.js'
+import type { OrderListFilter, Repositories } from '../repositories/index.js'
 import { ok, fail, renderError } from './envelope.js'
 import { audit } from '../audit/audit.js'
 import { idempotencyKeyOf } from '../audit/idempotency.js'
@@ -92,50 +92,39 @@ export function registerAdminOrdersRoutes(
     requireRole('admin', async (ctx) => {
       try {
         const q = ctx.query
-        const statusRaw = Array.isArray(q.status) ? q.status[0] : q.status
-        const dateFrom = Array.isArray(q.dateFrom) ? q.dateFrom[0] : q.dateFrom
-        const dateTo = Array.isArray(q.dateTo) ? q.dateTo[0] : q.dateTo
-        const customer = Array.isArray(q.customer) ? q.customer[0] : q.customer
-        const search = Array.isArray(q.q) ? q.q[0] : q.q
-        const limitRaw = Array.isArray(q.limit) ? q.limit[0] : q.limit
-        const offsetRaw = Array.isArray(q.offset) ? q.offset[0] : q.offset
+        const one = (key: string): string | undefined => {
+          const value = q[key]
+          const first = Array.isArray(value) ? value[0] : value
+          return first === '' ? undefined : first
+        }
+        const limitRaw = one('limit')
+        const offsetRaw = one('offset')
+        // Clamped: a negative LIMIT is an error on Postgres and no limit at all on SQLite.
+        const limit = limitRaw ? Math.max(1, Math.min(parseInt(limitRaw, 10) || 50, 200)) : 50
+        const offset = offsetRaw ? Math.max(0, parseInt(offsetRaw, 10) || 0) : 0
 
-        const limit = limitRaw ? Math.min(parseInt(limitRaw, 10) || 50, 200) : 50
-        const offset = offsetRaw ? parseInt(offsetRaw, 10) || 0 : 0
-
-        const listOpts: { status?: OrderStatus; limit?: number; offset?: number } = {
-          limit: limit + offset + 200, // over-fetch for in-memory filtering
-          offset: 0,
+        const filter: OrderListFilter = {}
+        const status = one('status')
+        if (status !== undefined) filter.status = status as OrderStatus
+        for (const [key, into] of [
+          ['dateFrom', 'from'],
+          ['dateTo', 'to'],
+          ['customer', 'customer'],
+          ['q', 'q'],
+          ['postcode', 'postcode'],
+          ['country', 'country'],
+        ] as const) {
+          const value = one(key)
+          if (value !== undefined) filter[into] = value
         }
-        if (statusRaw) listOpts.status = statusRaw as OrderStatus
-        let orders = await store.read((tx) => repos.order.list(tx, listOpts))
-
-        // In-memory filters
-        if (dateFrom) {
-          const from = new Date(dateFrom)
-          orders = orders.filter((o) => new Date(o.createdAt) >= from)
-        }
-        if (dateTo) {
-          const to = new Date(dateTo)
-          orders = orders.filter((o) => new Date(o.createdAt) <= to)
-        }
-        if (customer) {
-          const lc = customer.toLowerCase()
-          orders = orders.filter(
-            (o) =>
-              (o.customerId ?? '').toLowerCase().includes(lc) || o.email.toLowerCase().includes(lc),
-          )
-        }
-        if (search) {
-          const lc = search.toLowerCase()
-          orders = orders.filter(
-            (o) => o.orderNumber.toLowerCase().includes(lc) || o.email.toLowerCase().includes(lc),
-          )
-        }
-
-        // Pagination slice
-        const page = orders.slice(offset, offset + limit)
-        return ok(await store.read((tx) => withPayments(tx, page)))
+        const { page, total } = await store.read(async (tx) => {
+          const listed = await repos.order.list(tx, { ...filter, limit, offset })
+          return {
+            page: await withPayments(tx, listed),
+            total: await repos.order.count(tx, filter),
+          }
+        })
+        return ok(page, { total })
       } catch (err) {
         return renderError(err, ctx.logger)
       }

@@ -1,10 +1,17 @@
+import { randomUUID } from 'node:crypto'
 import { createServer } from 'node:net'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import type { NymbalConfig } from '@nymbalhq/config'
 import { createHttpServer } from './server.js'
 import { mountMcp } from './mcp-route.js'
-import { createKernel, type Kernel } from '../../platform/tests/support/kernel.js'
+import {
+  address,
+  cartWith,
+  createKernel,
+  seedVariant,
+  type Kernel,
+} from '../../platform/tests/support/kernel.js'
 import {
   AGENT,
   ANONYMOUS,
@@ -13,7 +20,7 @@ import {
   toolSurface,
 } from '../../platform/tests/support/mcp.js'
 
-// AC-9 and AC-13: `POST /api/mcp` over HTTP, mounted beside the routes `attachHttp` registers on a kernel built from
+// AC-9, AC-13 and AC-6 (customer fields withheld from an admin's client): `POST /api/mcp` over HTTP, mounted beside the routes `attachHttp` registers on a kernel built from
 // source. Raw requests where only the status matters (an `initialize`, which any MCP server answers); the SDK client
 // where the protocol does.
 
@@ -278,4 +285,84 @@ describe('AC-9: POST /api/mcp', () => {
 
     expect([mcp.status, products.status]).toEqual([404, 200])
   }, 30_000)
+})
+
+/** An order placed through checkout by a guest whose email, phone, street line and postcode are its own. */
+async function placedOrder(kernel: Kernel): Promise<{
+  orderNumber: string
+  values: { email: string; phone: string; addressLine1: string; postalCode: string }
+}> {
+  const tag = randomUUID()
+  const values = {
+    email: `buyer-${tag}@mcp.test`,
+    phone: `07700 9${String(parseInt(tag.slice(0, 5), 16) % 100_000).padStart(5, '0')}`,
+    addressLine1: `${tag.slice(0, 8)} Withheld Lane`,
+    postalCode: 'SW1A 1AA',
+  }
+  const home = {
+    ...address,
+    addressLine1: values.addressLine1,
+    postalCode: values.postalCode,
+    phone: values.phone,
+  }
+  const cartToken = await cartWith(kernel, await seedVariant(kernel, 10), 1)
+  const placed = await kernel.services.checkout.beginCheckout({
+    cartToken,
+    email: values.email,
+    billingAddress: home,
+    shippingAddress: home,
+  })
+  return { orderNumber: placed.orderNumber, values }
+}
+
+/** `GET /api/admin/orders/:orderNumber` with the bearer: its status, its body as text, and its data. */
+async function adminOrderRoute(store: Served, orderNumber: string, token: string) {
+  const res = await fetch(`${store.base}/api/admin/orders/${orderNumber}`, {
+    headers: { authorization: `Bearer ${token}` },
+  })
+  const text = await res.text()
+  return { status: res.status, text, data: (JSON.parse(text) as { data?: unknown }).data }
+}
+
+describe('AC-6: POST /api/mcp withholds customer contact details from an admin', () => {
+  // Kills: the strip landing in the route (the admin UI loses the fields), or the transport answering around it.
+  it('AC-6: on a default-config store, an admin bearer’s admin_orders_get holds none of the order’s email, phone, street line and postcode and holds withheld email, phone, address, postcode, while GET /api/admin/orders/:orderNumber with the same bearer answers all four; on a store with agents.mcp.withhold [] the tool’s structuredContent equals that route’s data, with no withheld', async () => {
+    const store = await served()
+    const open = await served((config) => ({
+      ...config,
+      agents: { ...config.agents, mcp: { ...config.agents.mcp, withhold: [] } },
+    }))
+    const reads = []
+    for (const one of [store, open]) {
+      const admin = await adminAccount(one.kernel, one.base)
+      const order = await placedOrder(one.kernel)
+      const { client } = await connect(one, admin.token)
+      const result = await client.callTool({
+        name: 'admin_orders_get',
+        arguments: { orderNumber: order.orderNumber },
+      })
+      reads.push({
+        values: Object.values(order.values),
+        result,
+        route: await adminOrderRoute(one, order.orderNumber, admin.token),
+      })
+    }
+    const [withheld, sent] = reads as [(typeof reads)[number], (typeof reads)[number]]
+    const read = JSON.stringify(withheld.result.structuredContent)
+
+    expect([withheld.route.status, withheld.result.isError ?? false]).toEqual([200, false])
+    expect(withheld.values.filter((value) => withheld.route.text.includes(value))).toEqual(
+      withheld.values,
+    )
+    expect(withheld.values.filter((value) => read.includes(value))).toEqual([])
+    expect((withheld.result.structuredContent as { withheld?: unknown }).withheld).toEqual([
+      'email',
+      'phone',
+      'address',
+      'postcode',
+    ])
+    expect(sent.route.status).toBe(200)
+    expect(sent.result.structuredContent).toEqual(sent.route.data)
+    expect(Object.keys(sent.result.structuredContent ?? {})).not.toContain('withheld')
+  }, 60_000)
 })

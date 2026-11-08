@@ -8,7 +8,8 @@ import { StdioClientTransport } from '@modelcontextprotocol/client/stdio'
 // AC-11, run by scripts/scaffold-clean.sh in the `scaffold-clean` project once it has scaffolded `shop`, written
 // `agents: { mcp: { writes: 'apply' } }` into its config and started `nymbal dev`. An agent, as the seeded admin, adds
 // a product and places an order through the published packages alone: once through `nymbal mcp` on stdio, once
-// straight to the store's `POST /api/mcp`.
+// straight to the store's `POST /api/mcp`. AC-12: on the stdio journey, the admin's read of that order carries none of
+// the buyer's contact details, which the admin API still answers.
 //
 //   NYMBAL_SCAFFOLD_DIR  the scaffolded project directory
 //   NYMBAL_API_URL       the API its `nymbal dev` serves
@@ -91,6 +92,24 @@ interface Journey {
   orderLines: Array<{ variantId: string; qty: number }>
   variantId: string
   listed: boolean
+  /** The order as the agent read it with admin_orders_get: its structured content and its text block. */
+  order: { orderNumber: string; structured: Structured; text: string }
+  /** The buyer's details the agent placed the order with. */
+  buyer: { email: string; addressLine1: string; postalCode: string }
+}
+
+/** The order as `GET /api/admin/orders/:orderNumber` answers it to the admin's bearer, as text. */
+async function adminOrderText(orderNumber: string, token: string): Promise<string> {
+  const res = await fetch(
+    new URL(`/api/admin/orders/${encodeURIComponent(orderNumber)}`, API_URL),
+    {
+      headers: { authorization: `Bearer ${token}` },
+    },
+  )
+  const text = await res.text()
+  if (res.status !== 200)
+    throw new Error(`GET /api/admin/orders/${orderNumber}: ${res.status} ${text}`)
+  return text
 }
 
 /** Connect, create a product of one variant at STOCK, publish it, find it listed, cart QTY, check out, read the order. */
@@ -128,15 +147,15 @@ async function journey(
 
     const cart = (await call(client, 'cart_get', {})).structuredContent?.cartHandle
     await call(client, 'cart_addItem', { cart, variantId, qty: QTY })
+    const email = `agent-${tag}@nymbal.dev`
     const placed = await call(client, 'checkout_begin', {
       cart,
-      email: `agent-${tag}@nymbal.dev`,
+      email,
       billingAddress: address,
       shippingAddress: address,
     })
-    const order = await call(client, 'admin_orders_get', {
-      orderNumber: placed.structuredContent?.['orderNumber'],
-    })
+    const orderNumber = placed.structuredContent?.['orderNumber'] as string
+    const order = await call(client, 'admin_orders_get', { orderNumber })
     const seconds = (performance.now() - started) / 1000
 
     const after = await call(client, 'admin_products_get', { id: productId })
@@ -154,39 +173,46 @@ async function journey(
       orderLines: lineItems.map(({ variantId: id, qty }) => ({ variantId: id, qty })),
       variantId,
       listed,
+      order: {
+        orderNumber,
+        structured: order.structuredContent ?? {},
+        text: (order.content as Array<{ type: string; text?: string }>)[0]?.text ?? '',
+      },
+      buyer: { email, addressLine1: address.addressLine1, postalCode: address.postalCode },
     }
   } finally {
     await client.close()
   }
 }
 
+/** `nymbal mcp` from the scaffold's own install, signed in as the seeded admin, bridging to the store's endpoint. */
+function bridge(): StdioClientTransport {
+  const admin = seededAdmin()
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter(
+      (entry): entry is [string, string] =>
+        entry[1] !== undefined && !entry[0].startsWith('npm_') && !entry[0].startsWith('VITEST'),
+    ),
+  )
+  return new StdioClientTransport({
+    command: join(DIR, 'node_modules', '.bin', 'nymbal'),
+    args: ['mcp'],
+    cwd: DIR,
+    env: {
+      ...env,
+      NYMBAL_MCP_URL: ENDPOINT,
+      NYMBAL_MCP_EMAIL: admin.email,
+      NYMBAL_MCP_PASSWORD: admin.password,
+    },
+    stderr: 'pipe',
+  })
+}
+
 describe('AC-11: an agent adds a product and places an order against a fresh scaffold', () => {
   it(
     `AC-11: through nymbal mcp as the seeded admin, the agent creates a product of stock ${STOCK}, publishes it, sees it listed, carts ${QTY}, places the order and reads it with that line, stock falling by ${QTY}, inside ${BUDGET_SECONDS} s`,
     async () => {
-      const admin = seededAdmin()
-      const env = Object.fromEntries(
-        Object.entries(process.env).filter(
-          (entry): entry is [string, string] =>
-            entry[1] !== undefined &&
-            !entry[0].startsWith('npm_') &&
-            !entry[0].startsWith('VITEST'),
-        ),
-      )
-      const run = await journey(
-        new StdioClientTransport({
-          command: join(DIR, 'node_modules', '.bin', 'nymbal'),
-          args: ['mcp'],
-          cwd: DIR,
-          env: {
-            ...env,
-            NYMBAL_MCP_URL: ENDPOINT,
-            NYMBAL_MCP_EMAIL: admin.email,
-            NYMBAL_MCP_PASSWORD: admin.password,
-          },
-          stderr: 'pipe',
-        }),
-      )
+      const run = await journey(bridge())
       const proof = `mcp-proof: ${Math.ceil(run.seconds)}s`
       // eslint-disable-next-line no-console
       console.log(proof)
@@ -214,6 +240,27 @@ describe('AC-11: an agent adds a product and places an order against a fresh sca
       expect(run.orderLines).toEqual([{ variantId: run.variantId, qty: QTY }])
       expect(run.stockAfter).toBe(run.stockBefore - QTY)
       expect(run.seconds).toBeLessThan(BUDGET_SECONDS)
+    },
+    (BUDGET_SECONDS + 60) * 1000,
+  )
+})
+
+describe('AC-12: an admin agent reads no customer contact details from a fresh scaffold', () => {
+  it(
+    'AC-12: through nymbal mcp as the seeded admin, the order the agent placed through checkout_begin reads with its lineItems and withheld, and neither its email, its street line nor its postcode is anywhere in structuredContent or the text block, while GET /api/admin/orders/:orderNumber answers all three to the same admin',
+    async () => {
+      const run = await journey(bridge())
+      const route = await adminOrderText(run.order.orderNumber, await adminToken())
+      const values = Object.values(run.buyer)
+      const read = JSON.stringify(run.order.structured)
+
+      expect(run.orderLines).toEqual([{ variantId: run.variantId, qty: QTY }])
+      expect(values.filter((value) => route.includes(value))).toEqual(values)
+      expect(
+        values.filter((value) => read.includes(value) || run.order.text.includes(value)),
+      ).toEqual([])
+      expect(run.order.structured['withheld']).toEqual(['email', 'address', 'postcode'])
+      expect(JSON.parse(run.order.text) as unknown).toEqual(run.order.structured)
     },
     (BUDGET_SECONDS + 60) * 1000,
   )

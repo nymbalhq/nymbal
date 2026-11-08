@@ -1,4 +1,5 @@
 import {
+  DEFAULT_CUSTOMER_FIELDS,
   DEFAULT_JWT_SECRET,
   resolveOriginLock,
   resolveTrustedProxies,
@@ -457,13 +458,25 @@ export async function createApp(
           assistantTools: () => assistantTools,
         })
         const tools = toolsOf(table)
-        mcp = createInvoker({ table, tools, proposals: services.proposals, policy, logger })
+        mcp = createInvoker({
+          table,
+          tools,
+          proposals: services.proposals,
+          policy,
+          logger,
+          // A config the schema never parsed (as tests build one) withholds the default too.
+          withhold:
+            (config.agents.mcp as Partial<typeof config.agents.mcp>).withhold ??
+            DEFAULT_CUSTOMER_FIELDS,
+        })
+        // The assistant reads every value: its own mask mints the placeholders and reveals them to the admin.
         assistantTools = createInvoker({
           table,
           tools,
           proposals: services.proposals,
           policy: assistantPolicy,
           logger,
+          withhold: [],
         })
         agents = createAgentSurfaces({
           config,

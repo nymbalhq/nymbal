@@ -28,6 +28,37 @@ NYMBAL_MCP_URL=http://localhost:8080/api/mcp npx nymbal mcp tools
 The [quickstart](../quickstart/#3-connect-an-agent) shows a host's config. A request from a browser origin outside
 `http.cors.allowedOrigins` is refused.
 
+A tool whose route answers a list answers `{ items }` with the route's paging beside them: `admin_orders_list`
+answers `total`, the number of orders every filter matches, and `admin_activity_list` and `orders_list` answer
+`nextCursor`. `admin_orders_list` filters by `postcode`, the start of the shipping postcode with case and spaces
+ignored (`SW1` matches `SW1A 1AA` and `SW10 9AB`), and by `country`, the shipping country's two-letter ISO code (`UK`
+is read as `GB`); a store whose orders hold country names instead of codes, as an import may leave them, matches none.
+
+### Customer details agents are not sent
+
+An admin agent's tool results carry no customer email, phone, street line or postcode, over `POST /api/mcp` and
+`nymbal mcp` alike. `agents.mcp.withhold` lists the fields withheld: any of `email`, `phone`, `address` (street lines),
+`postcode` and `name` (first and last names). The default is `['email', 'phone', 'address', 'postcode']`, the fields
+the admin's assistant masks by default: names are sent.
+
+A result that lost a value names its kind in `withheld` (`withheld: ['email', 'address']`), so an agent can tell a
+withheld email from a missing one. Emails and phones typed into text, such as an order note or a proposal's reason, are
+replaced with `[email withheld]` and `[phone withheld]`. A street line or postcode typed into a note is replaced only
+where it repeats a value the same result withheld; other addresses typed into notes are not detected.
+
+```ts
+agents: {
+  mcp: { withhold: [] },
+},
+```
+
+`withhold: []` sends every field as the admin API answers it.
+
+Only admin tools are withheld: a shopper's agent still reads its own orders and account in full, and UCP and ACP
+checkouts are unchanged. The admin's assistant is not affected by `agents.mcp.withhold`: it still reads each value and
+masks it for its provider, as [The assistant and customer data](../assistant-data/) explains. `nymbal doctor` names
+both on its `agents` line.
+
 ## Proposals and the inbox
 
 By default an agent's admin write does not run. It answers `status: proposed` and waits in the admin's **Inbox**
@@ -48,6 +79,9 @@ The admin's own assistant (**Ask**) proposes its writes the same way. A write it
 result, or in a follow-up message, always waits in the Inbox, whatever `autoApprove` lists, so text a shopper wrote (a
 review, an order note) cannot make it change the store. [The assistant and customer data](../assistant-data/) says
 what it sends to your AI provider.
+
+In one message Ask makes at most three deletions, archives, cancellations or refunds, does not carry out such a change
+to many records at once, and is not offered the store's settings.
 
 ## UCP
 

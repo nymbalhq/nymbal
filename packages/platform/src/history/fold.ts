@@ -81,9 +81,15 @@ function applyProduct(view: Folded, row: LoggedEvent): Folded {
   }
 }
 
-/** A settled refund moves the status only where the transition table allows it, as settling does. */
-function refundedStatus(status: OrderStatus, target: OrderStatus): OrderStatus {
-  return status !== target && canTransitionOrder(status, target) ? target : status
+/**
+ * A settled refund moves the status as settling does: only where the transition table allows it, and a partial refund
+ * only when nothing was refunded before it.
+ */
+function refundedStatus(order: OrderAsOf, target: OrderStatus): OrderStatus {
+  const moves = target === 'refunded' || order.refundedMinor === 0
+  return moves && order.status !== target && canTransitionOrder(order.status, target)
+    ? target
+    : order.status
 }
 
 /**
@@ -142,7 +148,7 @@ function applyOrder(view: Folded, row: LoggedEvent, context: FoldContext): Folde
         ...order,
         refundedMinor: order.refundedMinor + (payload['amountMinor'] as number),
         status: refundedStatus(
-          order.status,
+          order,
           name === 'order.refunded' ? 'refunded' : 'partially_refunded',
         ),
       }

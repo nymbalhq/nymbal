@@ -1,5 +1,10 @@
 import { create } from 'zustand'
-import type { AssistantFrame, AssistantTurnIssued, ProposalView } from '@nymbalhq/types'
+import type {
+  AssistantFrame,
+  AssistantRecord,
+  AssistantTurnIssued,
+  ProposalView,
+} from '@nymbalhq/types'
 import { api, ApiError } from '@/lib/api'
 
 type FrameData<E extends AssistantFrame['event']> = Extract<AssistantFrame, { event: E }>['data']
@@ -28,6 +33,8 @@ export interface AssistantExchange {
   state: AnswerState
   steps: AssistantStep[]
   proposals: ProposalView[]
+  /** The orders and customers the turn read, each once: their cards are read from the store, never sent back. */
+  records: AssistantRecord[]
   error?: { code: string; message: string }
   /** The store has no AI provider that can run the assistant. */
   unavailable?: boolean
@@ -70,6 +77,11 @@ function conversationOf(exchanges: AssistantExchange[], question: string) {
   while (recent[0]?.role !== 'user') recent.shift()
   return recent
 }
+
+const sameRecord = (a: AssistantRecord, b: AssistantRecord) =>
+  a.kind === 'order'
+    ? b.kind === 'order' && a.orderNumber === b.orderNumber
+    : b.kind === 'customer' && a.id === b.id
 
 function parsed<T>(event: Event): T | undefined {
   try {
@@ -124,6 +136,14 @@ export const useAssistant = create<AssistantStore>((set, get) => {
       const data = parsed<FrameData<'proposal'>>(event)
       if (live() && data !== undefined) patch(id, (e) => ({ proposals: [...e.proposals, data] }))
     })
+    es.addEventListener('record', (event) => {
+      const data = parsed<FrameData<'record'>>(event)
+      if (live() && data !== undefined) {
+        patch(id, (e) =>
+          e.records.some((r) => sameRecord(r, data)) ? {} : { records: [...e.records, data] },
+        )
+      }
+    })
     es.addEventListener('done', () => {
       if (live()) finish(id, { state: 'done' })
     })
@@ -162,6 +182,7 @@ export const useAssistant = create<AssistantStore>((set, get) => {
             state: 'streaming',
             steps: [],
             proposals: [],
+            records: [],
           },
         ],
       }))

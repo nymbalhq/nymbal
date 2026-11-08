@@ -23,11 +23,16 @@ import {
   SOAK,
   SOAK_JOB_PREFIX,
   SOAK_RUNS,
+  STAMP_COMMAND,
+  stampAt,
+  STAMP_FILE,
   STORE_JOBS,
   type Gh,
   type Job,
   type Run,
 } from '../../scripts/release-check'
+import { DEFAULT_THRESHOLD } from '../../packages/cli/src/commands/eval-stamp'
+import { GOLDEN_QUESTIONS } from '../../packages/platform/src/assistant/golden'
 import { cleanupScratch, git, scratchRepo, write } from './scratch-gate'
 import { parseYaml, type Yaml } from './workflow-yaml'
 
@@ -36,7 +41,7 @@ import { parseYaml, type Yaml } from './workflow-yaml'
 // list instead of each run's head_sha reads the other commit's runs, which are newer and green.
 
 const REPO = fileURLToPath(new URL('../../', import.meta.url))
-const ITEMS = ['ci', 'budgets', 'postgres-redis', 'mutation', 'adapters', 'soak']
+const ITEMS = ['ci', 'budgets', 'postgres-redis', 'mutation', 'adapters', 'soak', 'assistant-eval']
 
 type Fixture = {
   sha: string
@@ -87,6 +92,24 @@ type Overrides = {
   head?: string
   target?: { code: number; output: string }
   history?: Commit[]
+  stamp?: string | undefined
+  /** The hash of the prompt and tools at the candidate; the stamp's own by default. */
+  hash?: string
+}
+
+/** The questions the eval asks. */
+const QUESTIONS = GOLDEN_QUESTIONS.length
+
+/** A stamp as a passing run against a real provider writes it. */
+const STAMPED = {
+  hash: 'sha256:0f',
+  provider: 'anthropic',
+  model: 'claude-sonnet-4-6',
+  runs: 5,
+  passed: QUESTIONS - 1,
+  total: QUESTIONS,
+  threshold: DEFAULT_THRESHOLD,
+  date: '2026-11-07',
 }
 
 /** The candidate's own commit, a product change, and nothing earlier: no run can be carried to it. */
@@ -103,6 +126,9 @@ function runCheck(f: Fixture, o: Overrides = {}) {
       o.target ?? { code: 0, output: 'mutation target: 70 files at or above their floor' },
     adapters: ADAPTERS,
     history: o.history ?? ALONE(f),
+    stamp: 'stamp' in o ? o.stamp : JSON.stringify(STAMPED),
+    hash: o.hash ?? STAMPED.hash,
+    questions: QUESTIONS,
   })
   const { text, code } = render(result)
   const verdicts = Object.fromEntries(result.items.map((i) => [i.item, i.verdict]))
@@ -133,7 +159,9 @@ describe('AC-4: release:check against recorded gh output', () => {
     expect(code, text).toBe(0)
     expectOnly(verdicts, {})
     expect(text.trimEnd().split('\n').at(-1)).toBe('release-check: ready')
-    const runUrls = new Set(items.flatMap((i) => i.urls))
+    // The eval stamp is a file of the checkout, not a run.
+    const runItems = items.filter((i) => i.item !== 'assistant-eval')
+    const runUrls = new Set(runItems.flatMap((i) => i.urls))
     const atSha = new Set(
       f.runs.workflow_runs.filter((r) => r.head_sha === f.sha).map((r) => r.html_url),
     )
@@ -280,6 +308,9 @@ describe('AC-4: release:check against recorded gh output', () => {
       },
       adapters: ADAPTERS,
       history: ALONE(f),
+      stamp: JSON.stringify(STAMPED),
+      hash: STAMPED.hash,
+      questions: QUESTIONS,
     })
     const mutation = result.items.find((i) => i.item === 'mutation')!
     expect(mutation.what).toEqual([`checkout at ${'b'.repeat(40)}`])
@@ -353,6 +384,93 @@ const NOTHING_CARRIED = {
   'postgres-redis': 'red',
   mutation: 'missing',
 }
+
+describe('release:check holds a release whose assistant eval stamp records no passing real run of the candidate’s prompt and tools', () => {
+  const PENDING = {
+    ...STAMPED,
+    provider: 'pending',
+    model: null,
+    runs: null,
+    passed: null,
+    total: null,
+    threshold: null,
+    date: null,
+  }
+  const cases: Array<{
+    name: string
+    stamp: string | undefined
+    hash?: string
+    verdict: string
+    says: string
+  }> = [
+    {
+      name: 'a passing real run of the prompt and tools before a change to them',
+      stamp: JSON.stringify(STAMPED),
+      hash: 'sha256:1e',
+      verdict: 'missing',
+      says: `the stamp records a run of another prompt or tools (${STAMPED.hash}; the candidate's is sha256:1e): run \`${STAMP_COMMAND}\` on the candidate`,
+    },
+    {
+      name: 'a pending stamp',
+      stamp: JSON.stringify(PENDING),
+      verdict: 'missing',
+      says: `no real eval run recorded for this prompt: run \`${STAMP_COMMAND}\``,
+    },
+    {
+      name: 'no stamp file',
+      stamp: undefined,
+      verdict: 'missing',
+      says: `no ${STAMP_FILE} at ${short(recorded().sha)}`,
+    },
+    {
+      name: 'a stamp whose run passed under its threshold',
+      stamp: JSON.stringify({ ...STAMPED, passed: DEFAULT_THRESHOLD - 1 }),
+      verdict: 'red',
+      says: `the stamp's run passed ${DEFAULT_THRESHOLD - 1}, under its threshold ${DEFAULT_THRESHOLD}`,
+    },
+    {
+      name: 'a stamp recorded at a threshold under the default',
+      stamp: JSON.stringify({
+        ...STAMPED,
+        passed: DEFAULT_THRESHOLD - 1,
+        threshold: DEFAULT_THRESHOLD - 1,
+      }),
+      verdict: 'red',
+      says: `the stamp's threshold ${DEFAULT_THRESHOLD - 1} is under the default ${DEFAULT_THRESHOLD}`,
+    },
+    {
+      name: 'a stamp whose run asked fewer questions than the eval does',
+      stamp: JSON.stringify({ ...STAMPED, passed: DEFAULT_THRESHOLD, total: QUESTIONS - 1 }),
+      verdict: 'red',
+      says: `the stamp's run asked ${QUESTIONS - 1} questions, not the ${QUESTIONS} the eval asks`,
+    },
+    {
+      name: 'a malformed stamp',
+      stamp: '{"hash": "sha256:0f", "provider": ',
+      verdict: 'red',
+      says: `${STAMP_FILE} at ${short(recorded().sha)} is not a stamp: `,
+    },
+    {
+      name: 'a stamp that is not an object',
+      stamp: '[]',
+      verdict: 'red',
+      says: `${STAMP_FILE} at ${short(recorded().sha)} is not a stamp: not a JSON object`,
+    },
+  ]
+  for (const c of cases) {
+    it(`${c.name}: assistant-eval alone is ${c.verdict}, named on its line, and the release is not ready`, () => {
+      const f = recorded()
+      const { text, code, verdicts, items } = runCheck(f, {
+        stamp: c.stamp,
+        ...(c.hash !== undefined && { hash: c.hash }),
+      })
+      expect(code, text).toBe(1)
+      expectOnly(verdicts, { 'assistant-eval': c.verdict })
+      expect(items.find((i) => i.item === 'assistant-eval')!.what[0]).toContain(c.says)
+      expect(text.trimEnd().split('\n').at(-1)).toBe('release-check: not ready (1)')
+    })
+  }
+})
 
 describe('release:check carries the nightly and the Lighthouse dispatch across a test-only move', () => {
   it('unit tests, a sentinel and the ratchet since the earlier candidate: ready, each carried line naming both shas and the earlier run, the rest read at the candidate', () => {
@@ -604,6 +722,30 @@ describe('release:check reads the push run of every commit in the release', () =
     expect(line).toContain(`push run at ${short(shas[1]!)} in_progress ${going.html_url}`)
     expect(line).toContain('wait for it')
     expect(line).not.toContain(FULL_DISPATCH)
+  })
+})
+
+describe('the stamp release:check reads is the candidate’s', () => {
+  afterEach(cleanupScratch)
+
+  it('the stamp committed at the sha, not the working tree’s: a real stamp written over a committed pending one leaves assistant-eval missing, and a sha with no stamp reads none though the tree has one', () => {
+    const pending = `${JSON.stringify({ ...STAMPED, provider: 'pending', passed: null }, null, 2)}\n`
+    const { root } = scratchRepo({ 'packages/a/src/a.ts': 'export const a = 1\n' })
+    const before = git(root, 'rev-parse', 'HEAD')
+    write(root, STAMP_FILE, pending)
+    git(root, 'add', '-A')
+    git(root, 'commit', '-q', '-m', 'stamp')
+    const sha = git(root, 'rev-parse', 'HEAD')
+    write(root, STAMP_FILE, `${JSON.stringify(STAMPED, null, 2)}\n`)
+
+    const f = recorded()
+    const { verdicts, items } = runCheck(f, { stamp: stampAt(root, sha) })
+
+    expect([stampAt(root, sha), stampAt(root, before)]).toEqual([pending, undefined])
+    expectOnly(verdicts, { 'assistant-eval': 'missing' })
+    expect(items.find((i) => i.item === 'assistant-eval')!.what[0]).toContain(
+      'no real eval run recorded for this prompt',
+    )
   })
 })
 

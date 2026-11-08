@@ -11,6 +11,8 @@ import {
   StatusTransitionError,
   ValidationError,
   assertOrderTransition,
+  orderMovesFrom,
+  statusBeforePartialRefund,
   type Address,
   type CaptureMethod,
   type CartSource,
@@ -126,6 +128,12 @@ export function createOrderService(deps: CreateOrderServiceDeps): OrderService {
     note: string,
   ): Promise<Order> {
     assertOrderTransition(order.status, toStatus)
+    if (order.status === 'partially_refunded') {
+      const before = statusBeforePartialRefund(await repos.orderHistory.listByOrder(tx, order.id))
+      if (!orderMovesFrom(order.status, before).includes(toStatus)) {
+        throw new StatusTransitionError('order', order.status, toStatus)
+      }
+    }
     const now = new Date()
     await repos.order.setStatus(tx, order.id, toStatus, now)
     await repos.orderHistory.append(tx, {

@@ -330,12 +330,22 @@ export interface ChatOptions {
 /** Why the answer ended: complete, cut at `maxTokens`, waiting on its tool calls, or anything else reported. */
 export type ChatStopReason = 'end' | 'max_tokens' | 'tool_use' | 'other'
 
+/** Tokens one request used, as the provider reports them; 0 where it reports none. */
+export interface ChatUsage {
+  /** Every input token, those read from or written to a prompt cache included. */
+  inputTokens: number
+  outputTokens: number
+  /** Of `inputTokens`, those read from the provider's prompt cache, when it reports them. */
+  cacheReadTokens?: number
+  /** Of `inputTokens`, those written to the provider's prompt cache, when it reports them. */
+  cacheWriteTokens?: number
+}
+
 export interface ChatResult {
   /** '' when the answer is calls only. */
   text: string
   stopReason: ChatStopReason
-  /** 0 where the provider reports none. */
-  usage: { inputTokens: number; outputTokens: number }
+  usage: ChatUsage
   /** The model as the provider reports it. */
   model: string
   /** The calls the model asked for, in its order; [] when none. */

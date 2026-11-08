@@ -6,6 +6,7 @@ import type {
   ChatStopReason,
   ChatStreamEvent,
   ChatToolCall,
+  ChatUsage,
   Logger,
 } from '@nymbalhq/types'
 import { AdapterError } from '@nymbalhq/types'
@@ -20,6 +21,7 @@ import {
   lifetime,
   post,
   recOf,
+  secretsOf,
   unreadable,
   type Lifetime,
 } from './chat.js'
@@ -57,6 +59,16 @@ function stopReasonOf(wire: unknown): ChatStopReason {
 }
 
 const count = (value: unknown): number => (typeof value === 'number' ? value : 0)
+
+/** The tokens a response used; `prompt_tokens` counts those OpenAI read from its prompt cache too. */
+function usageOf(usage: Record<string, unknown>): ChatUsage {
+  const cached = recOf(usage['prompt_tokens_details'])['cached_tokens']
+  return {
+    inputTokens: count(usage['prompt_tokens']),
+    outputTokens: count(usage['completion_tokens']),
+    ...(typeof cached === 'number' && { cacheReadTokens: cached }),
+  }
+}
 
 const hostOf = (url: string): string => (URL.canParse(url) ? new URL(url).hostname : '')
 
@@ -122,7 +134,7 @@ export function createOpenAiAdapter(config: OpenAiAdapterConfig): AiAdapter {
     text: string,
     toolCalls: ChatToolCall[],
     finish: unknown,
-    usage: { inputTokens: number; outputTokens: number },
+    usage: ChatUsage,
     reported: unknown,
   ): ChatResult {
     if (text === '' && toolCalls.length === 0) throw unreadable(PROVIDER, status, 'with no text')
@@ -142,8 +154,7 @@ export function createOpenAiAdapter(config: OpenAiAdapterConfig): AiAdapter {
   ): AsyncGenerator<ChatStreamEvent> {
     const events = sseEvents(body)
     let reported: unknown
-    let inputTokens = 0
-    let outputTokens = 0
+    let usage: ChatUsage = { inputTokens: 0, outputTokens: 0 }
     let finish: unknown
     let text = ''
     const toolCalls: ChatToolCall[] = []
@@ -162,10 +173,7 @@ export function createOpenAiAdapter(config: OpenAiAdapterConfig): AiAdapter {
         if (!isRecord(chunk)) throw unreadable(PROVIDER, status, 'with a chunk that is not JSON')
         if (chunk['error'] !== undefined) throw brokenOff(PROVIDER)
         if (chunk['model'] !== undefined) reported = chunk['model']
-        if (isRecord(chunk['usage'])) {
-          inputTokens = count(chunk['usage']['prompt_tokens'])
-          outputTokens = count(chunk['usage']['completion_tokens'])
-        }
+        if (isRecord(chunk['usage'])) usage = usageOf(chunk['usage'])
         const choice = recOf(Array.isArray(chunk['choices']) ? chunk['choices'][0] : undefined)
         const delta = recOf(choice['delta'])
         const content = delta['content']
@@ -206,7 +214,7 @@ export function createOpenAiAdapter(config: OpenAiAdapterConfig): AiAdapter {
       if (finish === undefined) throw life.ended() ?? brokenOff(PROVIDER)
       yield {
         type: 'done',
-        result: resultOf(status, text, toolCalls, finish, { inputTokens, outputTokens }, reported),
+        result: resultOf(status, text, toolCalls, finish, usage, reported),
       }
     } finally {
       await events.return(undefined)
@@ -246,7 +254,14 @@ export function createOpenAiAdapter(config: OpenAiAdapterConfig): AiAdapter {
       let status: number
       let text: string
       try {
-        const response = await post(PROVIDER, url, headers, request, life)
+        const response = await post(
+          PROVIDER,
+          url,
+          headers,
+          request,
+          life,
+          secretsOf(config.apiKey, messages, opts),
+        )
         status = response.status
         text = await bodyText(PROVIDER, response, life)
       } finally {
@@ -268,16 +283,12 @@ export function createOpenAiAdapter(config: OpenAiAdapterConfig): AiAdapter {
         }
         toolCalls.push(call)
       }
-      const usage = recOf(body['usage'])
       return resultOf(
         status,
         typeof message['content'] === 'string' ? message['content'] : '',
         toolCalls,
         choice['finish_reason'],
-        {
-          inputTokens: count(usage['prompt_tokens']),
-          outputTokens: count(usage['completion_tokens']),
-        },
+        usageOf(recOf(body['usage'])),
         body['model'],
       )
     },
@@ -286,7 +297,14 @@ export function createOpenAiAdapter(config: OpenAiAdapterConfig): AiAdapter {
       const request = requestOf(messages, opts, true)
       const life = lifetime(PROVIDER, timeoutMs, opts?.signal)
       try {
-        const response = await post(PROVIDER, url, headers, request, life)
+        const response = await post(
+          PROVIDER,
+          url,
+          headers,
+          request,
+          life,
+          secretsOf(config.apiKey, messages, opts),
+        )
         if (response.body === null) throw unreadable(PROVIDER, response.status, 'with no body')
         yield* streamed(response.status, response.body, life)
       } finally {

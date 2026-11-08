@@ -6,10 +6,12 @@ import { renderWithProviders } from '@/tests/render'
 import {
   STATUS_LABEL,
   fakeOrderApi,
+  movedTo,
   orderIn,
   polyfillRadix,
   refusal,
   renderOrderPage,
+  type OrderFixture,
 } from '@/tests/order-page'
 import { OrderStatusSelect } from './OrderStatusSelect'
 
@@ -129,5 +131,149 @@ describe('a status move the server refuses', () => {
     expect(api.writesTo('mark-paid').length, 'mark-paid POSTs').toBe(1)
     expect(screen.getByTestId('admin-order-status-error')).toHaveTextContent(message)
     expect(screen.getByTestId('admin-order-status-error')).toHaveAttribute('role', 'alert')
+  })
+})
+
+// A partially refunded order moves on only as the status it was refunded at would; refunds stay with the refund dialog.
+
+type User = ReturnType<typeof userEvent.setup>
+
+const OPTION = 'admin-order-status-option-'
+const SHIP_DIALOG = 'admin-order-ship-dialog'
+/** The select's own label for a partially refunded order it offers no move for. */
+const PLAIN_LABEL = 'Partially Refunded'
+
+/** The moves the select offers (its enabled options), or null when it is the plain label. */
+async function offeredMoves(user: User): Promise<string[] | null> {
+  const select = screen.queryByTestId('admin-order-status-select')
+  if (select === null) return null
+  await user.click(select)
+  await screen.findByRole('listbox')
+  return screen
+    .getAllByTestId(new RegExp(`^${OPTION}`))
+    .filter((option) => !option.hasAttribute('data-disabled'))
+    .map((option) => option.getAttribute('data-testid')!.slice(OPTION.length))
+    .sort()
+}
+
+function renderPartlyRefunded(refundedAt: OrderStatus | null) {
+  return renderWithProviders(
+    <OrderStatusSelect
+      orderId="o-1"
+      currentStatus="partially_refunded"
+      orderNumber="NYM-1001"
+      capturedMinor={2500}
+      statusBeforePartialRefund={refundedAt}
+    />,
+  )
+}
+
+describe('the status select on a partially refunded order', () => {
+  // Kills: the select rendering partially_refunded terminal whatever the history says; offering a move the status it
+  // was refunded at has already passed (a delivered order shipped again); offering a refund or a cancel.
+  it('AC-8: refunded at confirmed it offers exactly Processing, at processing Shipped, at shipped Delivered, at delivered nothing (the plain label), with no history all three; never Refunded, Partially Refunded, Confirmed or Cancelled', async () => {
+    const cells: Array<[OrderStatus | null, string[] | null]> = [
+      ['confirmed', ['processing']],
+      ['processing', ['shipped']],
+      ['shipped', ['delivered']],
+      ['delivered', null],
+      [null, ['delivered', 'processing', 'shipped']],
+    ]
+    const seen: Array<[OrderStatus | null, string[] | null, string | null]> = []
+    for (const [refundedAt] of cells) {
+      fakeOrderApi(orderIn('partially_refunded'), () =>
+        refusal(500, 'test.unexpected', 'no write expected'),
+      )
+      const user = userEvent.setup()
+      const view = renderPartlyRefunded(refundedAt)
+      const offered = await offeredMoves(user)
+      seen.push([refundedAt, offered, offered === null ? view.container.textContent : null])
+      await user.keyboard('{Escape}')
+      view.unmount()
+      vi.unstubAllGlobals()
+    }
+    expect(seen).toEqual(
+      cells.map(([refundedAt, offered]) => [
+        refundedAt,
+        offered,
+        offered === null ? PLAIN_LABEL : null,
+      ]),
+    )
+    const never = ['refunded', 'partially_refunded', 'confirmed', 'cancelled']
+    expect(seen.flatMap(([, offered]) => (offered ?? []).filter((s) => never.includes(s)))).toEqual(
+      [],
+    )
+  })
+
+  // Kills: a pick that posts the wrong action, posts twice, or ships without asking for a carrier and tracking number.
+  it('AC-8: picking Processing posts one …/process, Delivered one …/mark-delivered, and Shipped opens the ship dialog and posts nothing', async () => {
+    const picks: Array<{
+      refundedAt: OrderStatus
+      pick: OrderStatus
+      posts: string[]
+      dialog: boolean
+    }> = [
+      { refundedAt: 'confirmed', pick: 'processing', posts: ['process'], dialog: false },
+      { refundedAt: 'shipped', pick: 'delivered', posts: ['mark-delivered'], dialog: false },
+      { refundedAt: 'processing', pick: 'shipped', posts: [], dialog: true },
+    ]
+    const seen: typeof picks = []
+    for (const { refundedAt, pick } of picks) {
+      const order = orderIn('partially_refunded')
+      const api = fakeOrderApi(order, () => movedTo(order, pick))
+      const user = userEvent.setup()
+      const view = renderPartlyRefunded(refundedAt)
+      await user.click(await screen.findByTestId('admin-order-status-select'))
+      await user.click(await screen.findByTestId(`${OPTION}${pick}`))
+      // Settled: the dialog is open for Shipped, the one write answered for any other pick.
+      await waitFor(() =>
+        expect(screen.queryByTestId(SHIP_DIALOG) !== null || api.answered === 1).toBe(true),
+      )
+      seen.push({
+        refundedAt,
+        pick,
+        posts: api.writes.map((w) => w.action),
+        dialog: screen.queryByTestId(SHIP_DIALOG) !== null,
+      })
+      view.unmount()
+      vi.unstubAllGlobals()
+    }
+    expect(seen).toEqual(picks)
+  })
+
+  // Kills: the order page not deriving the refunded-at status from the detail's history, so the select offers every
+  // fulfilment move (or none).
+  it('AC-8: on the order page, a detail whose history holds processing → partially_refunded offers Shipped and nothing else', async () => {
+    const at = (minute: number) => `2026-10-20T10:${String(minute).padStart(2, '0')}:00.000Z`
+    const row = (
+      minute: number,
+      fromStatus: OrderStatus | null,
+      toStatus: OrderStatus,
+      note = '',
+    ) => ({
+      id: `h-${minute}`,
+      orderId: 'o-1',
+      fromStatus,
+      toStatus,
+      actor: 'admin:u-1',
+      note,
+      timestamp: at(minute),
+    })
+    const order = {
+      ...orderIn('partially_refunded'),
+      history: [
+        row(0, null, 'pending', 'order draft created'),
+        row(1, 'pending', 'confirmed', 'payment captured'),
+        row(2, 'confirmed', 'processing'),
+        row(3, 'processing', 'partially_refunded', 'refund of £10.00'),
+      ],
+    } as unknown as OrderFixture
+    const api = fakeOrderApi(order, () => refusal(500, 'test.unexpected', 'no write expected'))
+    const user = userEvent.setup()
+    renderOrderPage(order)
+    await screen.findByTestId('admin-order-status-badge', undefined, { timeout: 5000 })
+
+    expect(await offeredMoves(user)).toEqual(['shipped'])
+    expect(api.writes).toEqual([])
   })
 })

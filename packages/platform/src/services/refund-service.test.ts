@@ -564,6 +564,71 @@ describe('RefundService: a refund moves money', () => {
   })
 })
 
+describe('RefundService: a partial refund after the order moved on', () => {
+  // Defect: every partial refund moves the status (not only the first), so an order processed, shipped or delivered
+  // after its first partial refund goes back to partially_refunded and fulfilment oscillates; or the kept-status refund
+  // drops its history row or event.
+  it('AC-4: a later partial refund keeps the status the order moved on to, with its history row and event; the rest moves it to refunded', async () => {
+    const env = await setup()
+    const onward = ['processing', 'shipped', 'delivered'] as const
+    await fc.assert(
+      fc.asyncProperty(
+        fc.integer({ min: 3, max: 50_000 }),
+        fc.integer({ min: 0, max: onward.length }),
+        fc.nat(),
+        fc.nat(),
+        async (captured, moves, rawFirst, rawSecond) => {
+          const first = 1 + (rawFirst % (captured - 2))
+          const second = 1 + (rawSecond % (captured - first - 1))
+          const order = await paidOrder(env, { totalMinor: captured })
+          const r1 = await env.refunds.refund({ orderId: order.id, amountMinor: first, actor: 'a' })
+          expect(r1.order.status).toBe('partially_refunded')
+          for (const to of onward.slice(0, moves)) {
+            if (to === 'shipped')
+              await env.orders.markShipped(order.id, `T-${order.id}`, 'DHL', 'a')
+            else if (to === 'delivered') await env.orders.markDelivered(order.id, 'a')
+            else await env.orders.updateStatus(order.id, to, 'a')
+          }
+          const held = (await orderOf(env, order.id)).status
+          expect(held).toBe(moves === 0 ? 'partially_refunded' : onward[moves - 1])
+          const historyBefore = await historyOf(env, order.id)
+          const partialBefore = await events(env, EVT_ORDER_PARTIALLY_REFUNDED, order.id)
+
+          const r2 = await env.refunds.refund({
+            orderId: order.id,
+            amountMinor: second,
+            actor: 'a',
+          })
+          expect(r2.order.status).toBe(held)
+          expect(r2.order.refundedMinor).toBe(first + second)
+          expect(r2.payment.state).toBe('partially_refunded')
+          const historyAfter = await historyOf(env, order.id)
+          expect(historyAfter.slice(0, -1)).toEqual(historyBefore)
+          expect([historyAfter.at(-1)!.fromStatus, historyAfter.at(-1)!.toStatus]).toEqual([
+            held,
+            held,
+          ])
+          expect(historyAfter.at(-1)!.note).toBe(`refund of ${formatMoney(second, 'GBP')}`)
+          const partialAfter = await events(env, EVT_ORDER_PARTIALLY_REFUNDED, order.id)
+          expect(partialAfter.map((p) => p.refundId)).toEqual([
+            ...partialBefore.map((p) => p.refundId),
+            r2.refund.id,
+          ])
+
+          const rest = captured - first - second
+          const r3 = await env.refunds.refund({ orderId: order.id, amountMinor: rest, actor: 'a' })
+          expect(r3.order.status).toBe('refunded')
+          expect(r3.order.refundedMinor).toBe(r3.order.capturedMinor)
+          const last = (await historyOf(env, order.id)).at(-1)!
+          expect([last.fromStatus, last.toStatus]).toEqual([held, 'refunded'])
+        },
+      ),
+      { numRuns: 30 },
+    )
+    await env.store.close()
+  })
+})
+
 // A service notes the command it runs and the records it touches into the open command, and writes no row itself.
 // Under an actor with no opener (an import), each transaction a service notes in is a command of its own.
 const importer = { kind: 'import', id: 'woocommerce' } as const

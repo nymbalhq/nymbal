@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, gte, inArray, lt, notInArray, or, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, gte, inArray, lt, lte, notInArray, or, sql, type SQL } from 'drizzle-orm'
 import type {
   Address,
   CaptureMethod,
@@ -48,6 +48,73 @@ export interface AgentTotals {
 // Every `agent:<name>` and nothing else, as a range a (source, created_at) btree serves; ';' follows ':' in byte order.
 const AGENT_FROM = 'agent:'
 const AGENT_TO = 'agent;'
+
+/** The admin order list's filters, each run in the query. */
+export interface OrderListFilter {
+  status?: OrderStatus
+  /**
+   * ISO instants in any form the route admits (a date, seconds without milliseconds, an offset), compared as instants:
+   * createdAt >= from, createdAt <= to.
+   */
+  from?: string
+  to?: string
+  /** The customerId or the email holds it, case-insensitive, every character literal (% and _ are not wildcards). */
+  customer?: string
+  /** The orderNumber or the email holds it, case-insensitive, every character literal. */
+  q?: string
+  /**
+   * The shipping postalCode, upper-cased without spaces (U+0020 only), starts with this upper-cased without spaces,
+   * every character literal; a missing or empty shipping postalCode matches nothing.
+   */
+  postcode?: string
+  /** The shipping country equals this, case-insensitive; a missing or empty shipping country matches nothing. */
+  country?: string
+}
+
+type OrdersTable = typeof sqliteSchema.orders | typeof postgresSchema.orders
+
+/** The `where` of an order list and of its count, on one dialect. */
+function listWhere(
+  kind: CommandStore['kind'],
+  t: OrdersTable,
+  f: OrderListFilter,
+): SQL | undefined {
+  const at = (bound: string) =>
+    kind === 'sqlite' ? new Date(bound).toISOString() : new Date(bound)
+  const text = (value: string) => sql`cast(${value} as text)`
+  // instr and strpos compare characters, so a % or _ in the needle matches only itself.
+  const holds = (column: SQL, needle: string) =>
+    kind === 'sqlite'
+      ? sql`instr(lower(${column}), lower(${text(needle)})) > 0`
+      : sql`strpos(lower(${column}), lower(${text(needle)})) > 0`
+  const shipped = (key: 'postalCode' | 'country') =>
+    kind === 'sqlite'
+      ? sql`json_extract(${t.shippingAddress}, ${sql.raw(`'$.${key}'`)})`
+      : sql`(${t.shippingAddress} ->> ${sql.raw(`'${key}'`)})`
+  const email = sql`${t.email}`
+  const conditions: Array<SQL | undefined> = [
+    f.status === undefined ? undefined : eq(t.status, f.status),
+    f.from === undefined ? undefined : gte(t.createdAt, at(f.from)),
+    f.to === undefined ? undefined : lte(t.createdAt, at(f.to)),
+    f.customer === undefined
+      ? undefined
+      : or(holds(sql`coalesce(${t.customerId}, '')`, f.customer), holds(email, f.customer)),
+    f.q === undefined ? undefined : or(holds(sql`${t.orderNumber}`, f.q), holds(email, f.q)),
+  ]
+  if (f.postcode !== undefined) {
+    const stored = shipped('postalCode')
+    const want = sql`upper(${text(f.postcode.replaceAll(' ', ''))})`
+    conditions.push(
+      sql`${stored} <> ''`,
+      sql`substr(upper(replace(${stored}, ' ', '')), 1, length(${want})) = ${want}`,
+    )
+  }
+  if (f.country !== undefined) {
+    const stored = shipped('country')
+    conditions.push(sql`${stored} <> ''`, sql`upper(${stored}) = upper(${text(f.country)})`)
+  }
+  return and(...conditions)
+}
 
 export interface OrderInsert {
   id: string
@@ -140,10 +207,10 @@ export interface OrderRepository extends StoreRepository {
   totalsByCustomer(tx: ReadTx, customerId: string): Promise<CustomerOrderTotals>
   /** The `agent:` orders created at or after `since`, any status, and the `top` agents among them. */
   agentTotals(tx: ReadTx, since: Date, top: number): Promise<AgentTotals>
-  list(
-    tx: ReadTx,
-    opts?: { status?: OrderStatus; limit?: number; offset?: number },
-  ): Promise<Order[]>
+  /** The orders the filter matches, createdAt descending, then sequence descending. */
+  list(tx: ReadTx, opts?: OrderListFilter & { limit?: number; offset?: number }): Promise<Order[]>
+  /** How many orders the filter matches. */
+  count(tx: ReadTx, filter?: OrderListFilter): Promise<number>
   /** Rows by id after `page.after`: a walk over the table that a concurrent write cannot make skip a row. */
   listPage(tx: ReadTx, page: KeysetPage): Promise<Order[]>
   insert(tx: Tx, o: OrderInsert): Promise<void>
@@ -452,29 +519,46 @@ export function createOrderRepository(store: CommandStore): OrderRepository {
       return rows.map((r) => rowToOrder('postgres', r as Record<string, unknown>))
     },
     async list(tx, opts = {}) {
-      const limit = opts.limit ?? 100
-      const offset = opts.offset ?? 0
+      const { limit = 100, offset = 0, ...filter } = opts
       if (tx.kind === 'sqlite') {
-        const base = sqliteDb(tx).select().from(sqliteSchema.orders)
-        const filtered = opts.status
-          ? base.where(eq(sqliteSchema.orders.status, opts.status))
-          : base
-        const rows = filtered
-          .orderBy(desc(sqliteSchema.orders.createdAt))
+        const t = sqliteSchema.orders
+        const rows = sqliteDb(tx)
+          .select()
+          .from(t)
+          .where(listWhere('sqlite', t, filter))
+          .orderBy(desc(t.createdAt), desc(t.sequence))
           .limit(limit)
           .offset(offset)
           .all()
         return rows.map((r) => rowToOrder('sqlite', r as Record<string, unknown>))
       }
-      const base = postgresDb(tx).select().from(postgresSchema.orders)
-      const filtered = opts.status
-        ? base.where(eq(postgresSchema.orders.status, opts.status))
-        : base
-      const rows = await filtered
-        .orderBy(desc(postgresSchema.orders.createdAt))
+      const t = postgresSchema.orders
+      const rows = await postgresDb(tx)
+        .select()
+        .from(t)
+        .where(listWhere('postgres', t, filter))
+        .orderBy(desc(t.createdAt), desc(t.sequence))
         .limit(limit)
         .offset(offset)
       return rows.map((r) => rowToOrder('postgres', r as Record<string, unknown>))
+    },
+    async count(tx, filter = {}) {
+      const n = sql<number | string>`count(*)`
+      if (tx.kind === 'sqlite') {
+        const t = sqliteSchema.orders
+        const row = sqliteDb(tx)
+          .select({ n })
+          .from(t)
+          .where(listWhere('sqlite', t, filter))
+          .get()
+        return Number(row?.n ?? 0)
+      }
+      const t = postgresSchema.orders
+      const [row] = await postgresDb(tx)
+        .select({ n })
+        .from(t)
+        .where(listWhere('postgres', t, filter))
+      return Number(row?.n ?? 0)
     },
     async insert(tx, o) {
       const common = {
