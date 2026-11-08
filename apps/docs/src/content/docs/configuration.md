@@ -43,6 +43,9 @@ export default defineConfig({
 | `agents`                           | MCP and UCP, whether an agent's admin writes apply or wait as proposals, and what crawlers may read. See [Agents](../agents/). |
 | `events`, `deployment`, `features` | Event retention and archiving, the deployment strategy, optional features.                                                     |
 
+`store.timezone` must be an IANA time zone, such as `Europe/London`, `America/New_York` or `UTC`; a name like
+`London` or `GMT+1` is refused at startup.
+
 `nymbal add` edits this file for you: `npx nymbal add postgres` sets the command store, `npx nymbal add stripe`
 the payments provider, and each lists the variables it needs in `.env.example`. See [Adapters](../adapters/).
 

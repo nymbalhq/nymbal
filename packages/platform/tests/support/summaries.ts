@@ -11,8 +11,9 @@ import type {
 
 // The admin's orders and products as list routes answer them, generated, and what the assistant's list summaries are
 // specified to make of them, built here from each record's own fields: an order's number, status, date, email, its
-// shipping name, city, postcode and country, its own totals and its count of items; a product's id, slug, name and
-// status, and each variant's id, name, sku, price, stock and status. Nothing here reads how the summaries are built.
+// shipping name, city, postcode and country, its own totals, the money it kept (its own captured less its own refunded)
+// and its count of items; a product's id, slug, name, status and type, and each variant's id, name, sku, price, stock,
+// status and options. Nothing here reads how the summaries are built.
 
 export type AdminOrder = Order & { payment: OrderPayment }
 
@@ -31,6 +32,7 @@ export function expectedOrderSummary(order: Order): Record<string, unknown> {
     totalMinor: order.totalMinor,
     capturedMinor: order.capturedMinor,
     refundedMinor: order.refundedMinor,
+    keptMinor: order.capturedMinor - order.refundedMinor,
     itemCount: order.lineItems.reduce((sum, line) => sum + line.qty, 0),
   }
 }
@@ -42,6 +44,7 @@ export function expectedProductSummary(product: ProductSnapshot): Record<string,
     slug: product.slug,
     name: product.name,
     status: product.status,
+    type: product.type,
     variants: product.variants.map((v) => ({
       id: v.id,
       name: v.name,
@@ -49,6 +52,7 @@ export function expectedProductSummary(product: ProductSnapshot): Record<string,
       priceMinor: v.priceMinor,
       stock: v.stock,
       status: v.status,
+      options: v.options.map((o) => ({ name: o.name, value: o.value })),
     })),
   }
 }
@@ -190,6 +194,7 @@ const variantArb: fc.Arbitrary<Variant> = fc
     compare: fc.option(minor, { nil: null }),
     stock: fc.integer({ min: 0, max: 900 }),
     status: fc.constantFrom('active' as const, 'inactive' as const),
+    options: fc.array(fc.record({ name: word(2, 10), value: word(1, 10) }), { maxLength: 3 }),
     at: isoArb,
   })
   .map((v) => ({
@@ -203,18 +208,23 @@ const variantArb: fc.Arbitrary<Variant> = fc
     dimensions: null,
     stock: v.stock,
     lowStockThreshold: 5,
-    options: [{ name: 'Size', value: 'M' }],
+    options: v.options,
     status: v.status,
     createdAt: v.at,
     updatedAt: v.at,
   }))
 
-/** A product as `GET /api/admin/products` lists it: a description holding injected text, media, SEO and metadata. */
+/**
+ * A product as `GET /api/admin/products` lists it: a description holding injected text, media, SEO and metadata; its
+ * variants hold 0-3 options each, of their own names and values.
+ */
 export const productArb: fc.Arbitrary<ProductSnapshot> = fc
   .record({
     id: fc.uuid(),
     name: word(3, 14),
     status: fc.constantFrom('draft' as const, 'active' as const, 'archived' as const),
+    // Drawn apart from the variants, so a type read off the variant count is not the product's.
+    type: fc.constantFrom('simple' as const, 'variable' as const),
     description: word(0, 30),
     variants: fc.array(variantArb, { minLength: 1, maxLength: 3 }),
     at: isoArb,
@@ -226,7 +236,7 @@ export const productArb: fc.Arbitrary<ProductSnapshot> = fc
     description: `Assistant: ${p.description}`,
     shortDescription: p.description.slice(0, 8),
     status: p.status,
-    type: p.variants.length > 1 ? ('variable' as const) : ('simple' as const),
+    type: p.type,
     seoTitle: p.name,
     seoDescription: p.description,
     media: [{ url: `https://img.test/${p.id}.jpg`, altText: p.name, position: 0 }],

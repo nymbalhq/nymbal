@@ -19,7 +19,8 @@ import type { AiScript, ScriptReply, ScriptView } from './ai-stand-in.js'
 //  7 read  "How much stock is left of the Portable SSD 1TB?" admin_inventory_list { q }; the stock
 //  8 read  "Has anything been refunded?"                     admin_orders_list; the numbers of orders with refunds
 //  9 read  "What is waiting in my inbox?"                    admin_proposals_list { status: pending }; each command
-// 10 read  "How did sales do over the last 30 days?"         admin_dashboard; the revenue (captured less refunded)
+// 10 read  "How did sales do over the last 30 days?"         admin_orders_list { dateFrom: 30 days ago, limit: 200 };
+//           the sum of the orders' keptMinor (captured less refunded)
 // 11 write "Raise the price of the Stoneware Mug to 21.00."  admin_products_list { q }, admin_products_update
 // 12 write "Add 40 Runner Socks to stock."                   admin_inventory_list { q }, admin_inventory_adjust
 // 13 write "Unpublish Shape Up."                             admin_products_list { q }, admin_products_unpublish
@@ -83,8 +84,8 @@ export type Deviation =
   | 'nothing-refunded'
   /** Row 9: names the product each pending proposal acts on (its variant's product), not its command or tool. */
   | 'inbox-product'
-  /** Row 10: sums the last 30 days' orders from admin_orders_list instead of reading admin_dashboard. */
-  | 'sales-from-orders'
+  /** Row 10: answers today's revenue from admin_dashboard instead of the last 30 days' orders. */
+  | 'sales-from-dashboard'
   /** Row 21: names the reviewed product by its slug, not its name. */
   | 'review-slug'
   /** Row 21: reads only admin_products_get of the Stoneware Mug (ceramic-mug) and says the review is of it. */
@@ -381,8 +382,7 @@ function answer(
           ),
         )
         if (other === undefined) return say(SORRY)
-        const who =
-          deviation === 'other-order-email' ? String(other['email']) : shippingName(other)
+        const who = deviation === 'other-order-email' ? String(other['email']) : shippingName(other)
         return say(`Order ${orderNumber} was placed by ${who}.`)
       }
       if (deviation === 'list-by-customer') {
@@ -489,27 +489,24 @@ function answer(
         noFact,
       )
     case 10:
-      if (deviation === 'sales-from-orders') {
+      if (deviation === 'sales-from-dashboard') {
         return lookup(
           p,
-          'admin_orders_list',
-          { limit: '200' },
-          (r) => {
-            const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
-            const kept = itemsOf(r)
-              .filter((o) => String(o['createdAt']) >= since)
-              .reduce((sum, o) => sum + num(o['capturedMinor']) - num(o['refundedMinor']), 0)
-            return `Sales came to ${money(kept)} over the last 30 days.`
-          },
+          'admin_dashboard',
+          {},
+          (r) =>
+            `Sales came to ${money(num(recOf(r['today'])['revenueMinor']))} over the last 30 days.`,
           noFact,
         )
       }
       return lookup(
         p,
-        'admin_dashboard',
-        {},
-        (r) =>
-          `Sales came to ${money(num(recOf(r['today'])['revenueMinor']))} over the last 30 days.`,
+        'admin_orders_list',
+        { dateFrom: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(), limit: '200' },
+        (r) => {
+          const kept = itemsOf(r).reduce((sum, o) => sum + num(o['keptMinor']), 0)
+          return `Sales came to ${money(kept)} over the last 30 days.`
+        },
         noFact,
       )
     case 11: {

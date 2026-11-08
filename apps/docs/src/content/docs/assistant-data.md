@@ -85,8 +85,8 @@ network or remote, and which customer fields are masked there.
 
 The orders lists (`admin_orders_list`, `admin_customers_orders`) and the products list (`admin_products_list`) reach
 the provider as summaries: each order as its number, status, date, email, shipping first and last name, city,
-postcode and country, its totals and its number of items; each product as its id, slug, name, status and its
-variants' names, SKUs, prices and stock. Street lines, phones, notes and descriptions are left out. A summary keeps
+postcode and country, its totals and its number of items; each product as its id, slug, name, status, type and its
+variants' names, SKUs, prices, stock and options. Street lines, phones, notes and descriptions are left out. A summary keeps
 the order's own field names, so the mask applies to it as to the whole order: by default the email and postcode are
 placeholders and the names are sent. A page of 50 orders fits one result, and `total` tells the model how many orders
 matched.

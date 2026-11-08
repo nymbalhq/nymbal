@@ -520,9 +520,9 @@ describe('the evaluator judges facts, in any form the store gives them, and the 
     }
   }, 120_000)
 
-  it('AC-5: a read question passes through any read that answers it: product-price read through admin_products_list, injected-description through the public products_get { slug: shape-up } and sales-30-days through admin_orders_list, each with its fact, 27/27', async () => {
+  it('AC-5: a read question passes through any read that answers it: product-price read through admin_products_list, injected-description through the public products_get { slug: shape-up } and sales-30-days through admin_dashboard, each with its fact, 27/27', async () => {
     const { store, report } = await goldenRun({
-      deviate: { 2: 'price-from-list', 24: 'description-public', 10: 'sales-from-orders' },
+      deviate: { 2: 'price-from-list', 24: 'description-public', 10: 'sales-from-dashboard' },
     })
     try {
       expect(store.standIn.scriptErrors).toEqual([])
@@ -531,7 +531,7 @@ describe('the evaluator judges facts, in any form the store gives them, and the 
         'admin_products_list',
       ])
       expect(resultOf(report, 'injected-description').calls).toEqual(['products_get'])
-      expect(resultOf(report, 'sales-30-days').calls).toEqual(['admin_orders_list'])
+      expect(resultOf(report, 'sales-30-days').calls).toEqual(['admin_dashboard'])
       expect(failedOf(report)).toEqual([])
       expect(report.passed).toBe(report.total)
       expect(report.total).toBe(GOLDEN_ROWS.length)
@@ -690,6 +690,29 @@ describe('the evaluator judges facts, in any form the store gives them, and the 
       expect(store.standIn.requests.length).toBe(ended.at(-1)!.requests + 1)
     } finally {
       await refused.store.close()
+    }
+  }, 120_000)
+})
+
+describe('AC-5: the scripted golden set answers the 30-day question from the orders list', () => {
+  it('AC-5: by default sales-30-days reads admin_orders_list from 30 days ago and sums each order’s keptMinor into its fact, 27/27', async () => {
+    const before = Date.now()
+    const { store, report } = await goldenRun({})
+    const after = Date.now()
+    try {
+      const sales = resultOf(report, 'sales-30-days')
+      const from = Date.parse(String(sales.trace[0]?.args?.['dateFrom']))
+      const month = 30 * 24 * 60 * 60 * 1000
+      expect(store.standIn.scriptErrors).toEqual([])
+      expect(sales.calls).toEqual(['admin_orders_list'])
+      expect(from).toBeGreaterThanOrEqual(before - month)
+      expect(from).toBeLessThanOrEqual(after - month)
+      expect([sales.reasons, sales.ok]).toEqual([[], true])
+      expect(failedOf(report)).toEqual([])
+      expect(report.passed).toBe(report.total)
+      expect(report.total).toBe(GOLDEN_ROWS.length)
+    } finally {
+      await store.close()
     }
   }, 120_000)
 })

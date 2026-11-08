@@ -460,7 +460,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
     summary: 'order',
     record: 'order',
     description:
-      'List orders, newest first (50 by default, at most 200; page with offset), with total, the number of orders every filter matches. Each order carries its number, status, email, addresses, totalMinor, capturedMinor and refundedMinor.',
+      'List orders, newest first (50 by default, at most 200; page with offset), with total, the number of orders every filter matches. Each order carries its number, status, email, addresses, totalMinor, capturedMinor and refundedMinor. Revenue is the money kept: capturedMinor less refundedMinor (keptMinor where an order carries it); totalMinor includes orders not yet paid.',
     query: z.object({
       status: orderStatus
         .describe(
@@ -606,7 +606,8 @@ export const routeSchemas: Record<string, RouteSchema> = {
   'POST /api/admin/products': {
     name: 'admin.products.create',
     command: 'product.create',
-    description: 'Create a product with its variants.',
+    description:
+      'Create a product with its variants. From a name and a price alone, propose a draft: a slug of the name in lowercase words joined by hyphens, status draft unless the merchant asks for another, and one variant named Default with a sku you choose, priceMinor, stock 0 and options [].',
     body: z.object({
       slug: z.string().min(1),
       name: z.string().min(1),

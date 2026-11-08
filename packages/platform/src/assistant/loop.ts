@@ -96,8 +96,10 @@ export interface AssistantDeps {
   tools: ToolSurface
   proposals: Pick<ProposalService, 'get'>
   logger: Logger
-  /** The store's name and currency, for the model's instructions. */
-  store?: { name: string; currency: string }
+  /** The store's name, currency and IANA time zone, for the model's instructions. */
+  store?: { name: string; currency: string; timezone: string }
+  /** The clock the turn's date is read from, once at its start; `Date.now` when absent. */
+  now?: () => number
   limits?: { maxSteps?: number; turnMs?: number; resultChars?: number }
   /** `agents.assistant.customerData`: false leaves out every tool whose answer carries a customer's details. */
   customerData?: boolean
@@ -195,18 +197,37 @@ export function chatToolsOf(offered: readonly ToolDefinition[], page: boolean): 
   ]
 }
 
-/** The model's instructions for a turn on `pattern`, with the placeholder rule when the turn masks. */
+/** The calendar day of instant `at` in `zone`, as its English weekday and `yyyy-mm-dd`. */
+function todayLine(at: number, zone: string): string {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: zone,
+    weekday: 'long',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(at)
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === type)?.value ?? ''
+  return `Today is ${part('weekday')} ${part('year')}-${part('month')}-${part('day')} in the store's time zone (${zone}); work out dates such as "the last 30 days" from today.`
+}
+
+/**
+ * The model's instructions for a turn on `pattern` at instant `today`, with the placeholder rule when the turn masks.
+ * The date is the store's calendar day, in UTC with no store.
+ */
 export function systemPrompt(
   store: AssistantDeps['store'],
   pattern: string | undefined,
   masked: boolean,
+  today: number,
 ): string {
   return [
     store === undefined
       ? "You are the store's assistant, inside its admin, talking to the store's admin. Money in tool results and arguments is in minor units (1900 is 19.00)."
       : `You are the assistant of the store ${store.name}, inside its admin, talking to the store's admin. Its currency is ${store.currency}; money in tool results and arguments is in minor units (1900 is 19.00).`,
+    todayLine(today, store?.timezone ?? 'UTC'),
     ...(pattern === undefined ? [] : [`The merchant is looking at the admin page ${pattern}.`]),
-    "Answer from the store's tools, never from memory or a guess. Use an id, slug or variant id only as a tool result in this conversation gave it; to find a record by name, list or search first. When a result says items were not shown, ask for fewer with limit and read the rest with offset. An empty list means nothing matched the filter you sent, not that there is nothing: say which filter you used, or list without it.",
+    "Answer from the store's tools, never from memory or a guess. Use an existing record's id, slug or variant id only as a tool result in this conversation gave it; to find a record by name, list or search first. When a result says items were not shown, ask for fewer with limit and read the rest with offset. An empty list means nothing matched the filter you sent, not that there is nothing: say which filter you used, or list without it.",
     STORE_DATA_RULE,
     PERSONAL_DATA_RULE,
     ...(masked ? [MASKED_DATA_RULE] : []),
@@ -398,7 +419,7 @@ export async function runAssistantTurn(
   const withParams = page !== undefined && Object.keys(page.params).length > 0 ? page : undefined
   const tools = chatToolsOf(offered, withParams !== undefined)
   const opts: ChatOptions = {
-    system: systemPrompt(deps.store, page?.pattern, masking),
+    system: systemPrompt(deps.store, page?.pattern, masking, (deps.now ?? Date.now)()),
     tools,
     signal: stopped,
   }

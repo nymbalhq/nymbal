@@ -19,6 +19,8 @@ export type OrderSummary = {
   totalMinor: number
   capturedMinor: number
   refundedMinor: number
+  /** capturedMinor less refundedMinor: the order's revenue. */
+  keptMinor: number
   /** Σ of the line quantities. */
   itemCount: number
 }
@@ -28,7 +30,8 @@ export type ProductSummary = {
   slug: string
   name: string
   status: ProductSnapshot['status']
-  variants: Array<Pick<Variant, 'id' | 'name' | 'sku' | 'priceMinor' | 'stock' | 'status'>>
+  type: ProductSnapshot['type']
+  variants: Array<Pick<Variant, 'id' | 'name' | 'sku' | 'priceMinor' | 'stock' | 'status' | 'options'>>
 }
 
 /** An order of a list as the assistant's model reads it. */
@@ -49,6 +52,7 @@ export function orderSummary(order: Order): OrderSummary {
     totalMinor: order.totalMinor,
     capturedMinor: order.capturedMinor,
     refundedMinor: order.refundedMinor,
+    keptMinor: order.capturedMinor - order.refundedMinor,
     itemCount: lines.reduce((sum, line) => sum + line.qty, 0),
   }
 }
@@ -61,6 +65,7 @@ export function productSummary(product: ProductSnapshot): ProductSummary {
     slug: product.slug,
     name: product.name,
     status: product.status,
+    type: product.type,
     variants: variants.map((v) => ({
       id: v.id,
       name: v.name,
@@ -68,6 +73,7 @@ export function productSummary(product: ProductSnapshot): ProductSummary {
       priceMinor: v.priceMinor,
       stock: v.stock,
       status: v.status,
+      options: v.options,
     })),
   }
 }

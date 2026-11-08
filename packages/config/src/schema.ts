@@ -40,11 +40,24 @@ const shipFromSchema = z.object({
   phone: z.string().optional(),
 })
 
+/** Whether Intl.DateTimeFormat, which formats dates in the store's zone, knows the zone. */
+function isTimeZone(zone: string): boolean {
+  try {
+    new Intl.DateTimeFormat(undefined, { timeZone: zone })
+    return true
+  } catch (error) {
+    if (error instanceof RangeError) return false
+    throw error
+  }
+}
+
 export const storeSchema = z.object({
   name: z.string().min(1),
   currency: z.string().length(3),
   locale: z.string().min(2),
-  timezone: z.string().min(1),
+  timezone: z
+    .string()
+    .refine(isTimeZone, 'store.timezone must be an IANA time zone such as Europe/London'),
   /** The storefront's public URL, which the order email links from; with none, the email has no link. */
   url: z
     .string()

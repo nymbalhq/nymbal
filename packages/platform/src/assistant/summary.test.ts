@@ -31,7 +31,7 @@ const NEVER = [
 ]
 
 describe('AC-6: an order or product summary is the record’s own fields, under its own key names', () => {
-  it('AC-6: property: for any order, orderSummary deep-equals its number, status, createdAt, email, shipping first and last name, city, postcode and country, its own totalMinor, capturedMinor and refundedMinor (never the payment’s), and itemCount the sum of its line quantities', () => {
+  it('AC-6: property: for any order, orderSummary deep-equals its number, status, createdAt, email, shipping first and last name, city, postcode and country, its own totalMinor, capturedMinor and refundedMinor (never the payment’s), keptMinor its own capturedMinor less refundedMinor, and itemCount the sum of its line quantities', () => {
     fc.assert(
       fc.property(adminOrderArb, (order) => {
         expect(orderSummary(order)).toEqual(expectedOrderSummary(order))
@@ -40,7 +40,7 @@ describe('AC-6: an order or product summary is the record’s own fields, under 
     )
   })
 
-  it('AC-6: property: for any product with variants, productSummary deep-equals its id, slug, name and status and each variant’s id, name, sku, priceMinor, stock and status, in order', () => {
+  it('AC-6: property: for any product with variants, productSummary deep-equals its id, slug, name, status and type and each variant’s id, name, sku, priceMinor, stock, status and options, in order', () => {
     fc.assert(
       fc.property(productArb, (product) => {
         expect(productSummary(product)).toEqual(expectedProductSummary(product))
@@ -76,6 +76,38 @@ describe('AC-6: an order or product summary is the record’s own fields, under 
         expect(held.length).toBe(4)
         expect(keysIn(summary).filter((key) => NEVER.includes(key))).toEqual([])
         expect(keysIn(productSummary(product)).filter((key) => NEVER.includes(key))).toEqual([])
+      }),
+      { numRuns: 200 },
+    )
+  })
+})
+
+describe('AC-1: an order summary carries the money the order kept', () => {
+  it('AC-1: property (money): for any listed order whose payment’s figures differ from its own, keptMinor is the order’s own capturedMinor less its own refundedMinor, never a payment figure or totalMinor, and the summary deep-equals the oracle with keptMinor', () => {
+    fc.assert(
+      fc.property(adminOrderArb, (order) => {
+        const summary = orderSummary(order)
+
+        expect(summary.keptMinor).toBe(order.capturedMinor - order.refundedMinor)
+        expect(summary.keptMinor).toBe(summary.capturedMinor - summary.refundedMinor)
+        expect(summary).toEqual(expectedOrderSummary(order))
+      }),
+      { numRuns: 200 },
+    )
+  })
+})
+
+describe('AC-2: a product summary carries its type and each variant’s options as stored', () => {
+  it('AC-2: property: for any product, simple or variable whatever its variant count, with variants of 0-3 options each, the summary’s type is the product’s and each summary variant’s options deep-equal its source variant’s, variants in order, and no key the summaries exclude appears at any depth', () => {
+    fc.assert(
+      fc.property(productArb, (product) => {
+        const summary = productSummary(product)
+
+        expect(summary.type).toBe(product.type)
+        expect(summary.variants.map((v) => [v.id, v.options])).toEqual(
+          product.variants.map((v) => [v.id, v.options]),
+        )
+        expect(keysIn(summary).filter((key) => NEVER.includes(key))).toEqual([])
       }),
       { numRuns: 200 },
     )

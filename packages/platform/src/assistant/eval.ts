@@ -313,7 +313,11 @@ export async function runGolden(
         tools: surface,
         proposals: app.services.proposals,
         logger,
-        store: { name: config.store.name, currency: config.store.currency },
+        store: {
+          name: config.store.name,
+          currency: config.store.currency,
+          timezone: config.store.timezone,
+        },
         customerData: config.agents.assistant.customerData,
         mask: config.agents.assistant.mask,
       },

@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_CUSTOMER_FIELDS } from '@nymbalhq/config'
 import type {
   AiAdapter,
@@ -10,6 +10,7 @@ import type {
   ToolSurface,
 } from '@nymbalhq/types'
 import { createKernel, type Kernel } from '../../tests/support/kernel.js'
+import { todayLineOf } from '../../tests/support/today-line.js'
 import {
   assistantTools,
   BULK_CHANGE_RULE,
@@ -18,7 +19,13 @@ import {
   runAssistantTurn,
   STORE_DATA_RULE,
 } from './loop.js'
-import { assistantEvalHash, assistantEvalInput, canonicalJson, EVAL_STAMP_STORE } from './stamp.js'
+import {
+  assistantEvalHash,
+  assistantEvalInput,
+  canonicalJson,
+  EVAL_STAMP_STORE,
+  EVAL_STAMP_TODAY,
+} from './stamp.js'
 
 // The eval stamp: a hash of the system prompt (masked and not) and of the tools the assistant is offered. A release is
 // held until the committed record of the last real eval run carries the hash of what the assistant is sent then.
@@ -81,7 +88,10 @@ function recordingModel(): { ai: AiAdapter; sent: ChatOptions[] } {
   return { ai, sent }
 }
 
-/** What the loop sends the model on an order's page, with `mask` as the turn's mask. */
+/** The instant the stamped prompts are dated, whether the constant is a day, a timestamp or a Date. */
+const STAMP_AT = new Date(EVAL_STAMP_TODAY).getTime()
+
+/** What the loop sends the model on an order's page on the stamp's day, with `mask` as the turn's mask. */
 async function sentBy(mask: readonly (typeof DEFAULT_CUSTOMER_FIELDS)[number][]) {
   const { ai, sent } = recordingModel()
   await runAssistantTurn(
@@ -91,6 +101,7 @@ async function sentBy(mask: readonly (typeof DEFAULT_CUSTOMER_FIELDS)[number][])
       proposals: { get: async () => null },
       logger: silent,
       store: { ...EVAL_STAMP_STORE },
+      now: () => STAMP_AT,
       mask,
     },
     { caller: ADMIN, messages: [{ role: 'user', content: 'Hello' }], page: '/orders/1001' },
@@ -166,5 +177,36 @@ describe('the eval stamp', () => {
     expect(assistantEvalHash(listing(schema))).not.toBe(base)
     expect(assistantEvalHash(listing(unoffered))).toBe(base)
     expect(assistantEvalHash(listing(reordered))).toBe(base)
+  })
+
+  it('AC-9a: the stamp does not move with the clock: under system clocks a year apart the hash and both prompts are equal, and each prompt’s second line is the date line of the stamp’s fixed day in the stamp store’s time zone', () => {
+    const DATE_LINE =
+      /^Today is [A-Z][a-z]+day \d{4}-\d{2}-\d{2} in the store's time zone \(.+\); work out dates such as "the last 30 days" from today\.$/
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const at = (iso: string) => {
+      vi.setSystemTime(Date.parse(iso))
+      return { input: assistantEvalInput(surface), hash: assistantEvalHash(surface) }
+    }
+    let early: ReturnType<typeof at>
+    let late: ReturnType<typeof at>
+    try {
+      early = at('2026-11-07T12:00:00Z')
+      late = at('2027-11-07T12:00:00Z')
+    } finally {
+      vi.useRealTimers()
+    }
+    const secondLines = (prompts: { masked: string; plain: string }) => [
+      prompts.masked.split('\n')[1],
+      prompts.plain.split('\n')[1],
+    ]
+
+    expect(secondLines(early.input.prompts)).toEqual([
+      expect.stringMatching(DATE_LINE),
+      expect.stringMatching(DATE_LINE),
+    ])
+    const stamped = todayLineOf(STAMP_AT, EVAL_STAMP_STORE.timezone)
+    expect(secondLines(early.input.prompts)).toEqual([stamped, stamped])
+    expect(late.input.prompts).toEqual(early.input.prompts)
+    expect(late.hash).toBe(early.hash)
   })
 })

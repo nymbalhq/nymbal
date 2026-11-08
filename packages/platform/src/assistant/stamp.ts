@@ -4,10 +4,16 @@ import { ASSISTANT_AGENT, assistantTools, chatToolsOf, systemPrompt } from './lo
 
 // The eval stamp: a hash of what the model is sent, so a change to the assistant's instructions or to the tools it is
 // offered is seen as one that no eval run has scored yet. The store, page and caller are fixed: the hash moves with
-// the prompt's wording and the tools' definitions, never with a store's own name or data.
+// the prompt's wording and the tools' definitions, never with a store's own name or data, nor with the day.
 
 /** The store the stamped prompt names. */
-export const EVAL_STAMP_STORE = { name: 'Nymbal Eval', currency: 'GBP' } as const
+export const EVAL_STAMP_STORE = {
+  name: 'Nymbal Eval',
+  currency: 'GBP',
+  timezone: 'Europe/London',
+} as const
+/** The instant the stamped prompt is dated: midday UTC, Saturday 7 November 2026. */
+export const EVAL_STAMP_TODAY = Date.parse('2026-11-07T12:00:00Z')
 /** A page with a parameter, so the prompt names it and the page read is offered. */
 export const EVAL_STAMP_PAGE = '/orders/:orderNumber'
 
@@ -42,8 +48,8 @@ export function assistantEvalInput(surface: Pick<ToolSurface, 'list'>): Assistan
   const offered = assistantTools(surface.list(ADMIN), { customerData: true })
   return {
     prompts: {
-      masked: systemPrompt(EVAL_STAMP_STORE, EVAL_STAMP_PAGE, true),
-      plain: systemPrompt(EVAL_STAMP_STORE, EVAL_STAMP_PAGE, false),
+      masked: systemPrompt(EVAL_STAMP_STORE, EVAL_STAMP_PAGE, true, EVAL_STAMP_TODAY),
+      plain: systemPrompt(EVAL_STAMP_STORE, EVAL_STAMP_PAGE, false, EVAL_STAMP_TODAY),
     },
     tools: chatToolsOf(offered, true).sort((a, b) =>
       a.name < b.name ? -1 : a.name > b.name ? 1 : 0,

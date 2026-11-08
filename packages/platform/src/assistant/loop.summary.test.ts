@@ -281,3 +281,60 @@ describe('AC-7: list results reach the model as summaries, then masked', () => {
     )
   }, 90_000)
 })
+
+describe('AC-3: the model reads each listed order’s kept money and each listed product’s type and options', () => {
+  it('AC-3: property: under the default mask, and with name masked too, the request after admin_orders_list and admin_customers_orders holds each order’s keptMinor equal to its capturedMinor less refundedMinor on the surface, emails still placeholders, and the request after admin_products_list holds each product’s type and its variants’ options as the surface answered them', async () => {
+    await fc.assert(
+      fc.asyncProperty(scenarioArb, async (s) => {
+        const orders = ordersOf(s)
+        // The mask matches a known value of three characters or more wherever it sits.
+        const customerValues = orders
+          .flatMap((o) =>
+            [o.shippingAddress, o.billingAddress].flatMap((a) => [
+              a.firstName,
+              a.lastName,
+              a.postalCode,
+              a.addressLine1,
+              o.email,
+            ]),
+          )
+          .filter((value) => value.length >= 3)
+        const optionTexts = s.products.flatMap((p) =>
+          p.variants.flatMap((v) => v.options.flatMap((o) => [o.name, o.value])),
+        )
+        fc.pre(
+          optionTexts.every((text) =>
+            customerValues.every((value) => !text.toLowerCase().includes(value.toLowerCase())),
+          ),
+        )
+        const keptOf = (list: AdminOrder[]) =>
+          list.map((o) => [o.orderNumber, o.capturedMinor - o.refundedMinor])
+
+        for (const mask of [DEFAULT_MASK, [...DEFAULT_MASK, 'name']]) {
+          const read = readOf((await runScenario(s, mask)).model.requests)
+          const listed = read[0]!['items'] as Array<Record<string, unknown>>
+          const customers = read[1]!['items'] as Array<Record<string, unknown>>
+          const products = read[2]!['items'] as Array<Record<string, unknown>>
+          const label = `mask ${JSON.stringify(mask)}`
+
+          expect(
+            [...listed, ...customers].map((item) => [item['orderNumber'], item['keptMinor']]),
+            label,
+          ).toEqual(keptOf([...s.listed, ...s.customerOrders]))
+          expect(
+            [...listed, ...customers].map((item) => /^\[email-\d+\]$/.test(String(item['email']))),
+            label,
+          ).toEqual([...s.listed, ...s.customerOrders].map(() => true))
+          expect(
+            products.map((item) => [
+              item['type'],
+              (item['variants'] as Array<Record<string, unknown>>).map((v) => v['options']),
+            ]),
+            label,
+          ).toEqual(s.products.map((p) => [p.type, json(p.variants.map((v) => v.options))]))
+        }
+      }),
+      { numRuns: 25 },
+    )
+  }, 90_000)
+})
