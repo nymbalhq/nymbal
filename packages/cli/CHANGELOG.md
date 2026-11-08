@@ -1,5 +1,36 @@
 # nymbal
 
+## 1.8.0
+
+### Minor Changes
+
+- 5b51750: Anthropic requests cache the tool definitions and system prompt for later conversations too, so a new assistant conversation reads them from the cache instead of paying to write them again.
+  Chat `usage` adds `cacheReadTokens` and `cacheWriteTokens` where the provider reports them (OpenAI: cached prompt tokens), and `nymbal eval assistant` prints token usage per run and in total, also in `--json`.
+- 71283b7: `nymbal eval assistant --stamp <file>` records a passing run against Anthropic's or OpenAI's own API: the hash of the assistant's prompt and tools, the provider, the model and the tally. `--json` now includes that hash, and each run's report lists the models that answered.
+- 70380e7: The admin's assistant shows a card for each order or customer it read, filled from the store, and sends order and product lists to the AI provider as summaries. `AssistantFrame` gains a `record` event.
+  `GET /api/admin/orders` filters by shipping `postcode` and `country` in the store's query and answers `meta.total`; `customer`, `q` and date filters now find orders of any age. MCP tool results of a paged list are `{ items, total }` or `{ items, nextCursor }`, where they were `{ items }`.
+  `nymbal eval assistant` asks 27 questions; its default threshold is 24.
+- 02133c3: `nymbal eval assistant` accepts a fact in any form its record gives (an order's number, email or shipping name), any read that answers, and reads on questions that need no tool; `--runs <n>` judges each question by majority, `--verbose` prints each call, and an AI provider error on the key, balance or request exits 2. Breaking: `--json` now prints `{ runs, passed, total, threshold, questions, reports }` in place of one report.
+
+### Patch Changes
+
+- Updated dependencies [04e0cfe]
+- Updated dependencies [5b51750]
+- Updated dependencies [06e65ca]
+- Updated dependencies [71283b7]
+- Updated dependencies [ec032f4]
+- Updated dependencies [70380e7]
+- Updated dependencies [02133c3]
+- Updated dependencies [3991ca5]
+- Updated dependencies [ec032f4]
+- Updated dependencies [67a952e]
+  - @nymbalhq/config@1.8.0
+  - @nymbalhq/platform@1.8.0
+  - @nymbalhq/types@1.8.0
+  - @nymbalhq/admin@1.8.0
+  - @nymbalhq/http@1.8.0
+  - @nymbalhq/importers@0.4.2
+
 ## 1.7.0
 
 ### Patch Changes

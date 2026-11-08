@@ -1,5 +1,17 @@
 # @nymbalhq/types
 
+## 1.8.0
+
+### Minor Changes
+
+- 5b51750: Anthropic requests cache the tool definitions and system prompt for later conversations too, so a new assistant conversation reads them from the cache instead of paying to write them again.
+  Chat `usage` adds `cacheReadTokens` and `cacheWriteTokens` where the provider reports them (OpenAI: cached prompt tokens), and `nymbal eval assistant` prints token usage per run and in total, also in `--json`.
+- 70380e7: The admin's assistant shows a card for each order or customer it read, filled from the store, and sends order and product lists to the AI provider as summaries. `AssistantFrame` gains a `record` event.
+  `GET /api/admin/orders` filters by shipping `postcode` and `country` in the store's query and answers `meta.total`; `customer`, `q` and date filters now find orders of any age. MCP tool results of a paged list are `{ items, total }` or `{ items, nextCursor }`, where they were `{ items }`.
+  `nymbal eval assistant` asks 27 questions; its default threshold is 24.
+- 3991ca5: An order refunded in part can still be processed, shipped and marked delivered (in the admin, the API or by a carrier's delivered update), moving on only from the status it was refunded at; its payment keeps reading partially refunded.
+  A further partial refund no longer moves the order's status, and still shows on the order's timeline. New in `@nymbalhq/types`: `orderMovesFrom` and `statusBeforePartialRefund`.
+
 ## 1.7.0
 
 ### Minor Changes

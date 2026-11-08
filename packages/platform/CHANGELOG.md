@@ -1,5 +1,36 @@
 # @nymbalhq/platform
 
+## 1.8.0
+
+### Minor Changes
+
+- 04e0cfe: Admin MCP tool results no longer carry customers' emails, phones, street lines or postcodes; `agents.mcp.withhold` lists what is withheld and each result names it in `withheld`. Breaking for admin MCP clients that read those fields: set `agents.mcp.withhold: []` to send them.
+- 5b51750: Anthropic requests cache the tool definitions and system prompt for later conversations too, so a new assistant conversation reads them from the cache instead of paying to write them again.
+  Chat `usage` adds `cacheReadTokens` and `cacheWriteTokens` where the provider reports them (OpenAI: cached prompt tokens), and `nymbal eval assistant` prints token usage per run and in total, also in `--json`.
+- 06e65ca: Ask makes at most three deletions, archives, cancellations or refunds per message and refuses bulk ones, and is no longer offered the store's settings; a route marks these with `destructive: true` and `agents: { assistant: false }`.
+  A `runAssistantTurn` answer cut at the model's length limit now ends with an `error` frame `assistant.answer_cut` instead of `done`.
+- 71283b7: `nymbal eval assistant --stamp <file>` records a passing run against Anthropic's or OpenAI's own API: the hash of the assistant's prompt and tools, the provider, the model and the tally. `--json` now includes that hash, and each run's report lists the models that answered.
+- 70380e7: The admin's assistant shows a card for each order or customer it read, filled from the store, and sends order and product lists to the AI provider as summaries. `AssistantFrame` gains a `record` event.
+  `GET /api/admin/orders` filters by shipping `postcode` and `country` in the store's query and answers `meta.total`; `customer`, `q` and date filters now find orders of any age. MCP tool results of a paged list are `{ items, total }` or `{ items, nextCursor }`, where they were `{ items }`.
+  `nymbal eval assistant` asks 27 questions; its default threshold is 24.
+- 02133c3: `nymbal eval assistant` accepts a fact in any form its record gives (an order's number, email or shipping name), any read that answers, and reads on questions that need no tool; `--runs <n>` judges each question by majority, `--verbose` prints each call, and an AI provider error on the key, balance or request exits 2. Breaking: `--json` now prints `{ runs, passed, total, threshold, questions, reports }` in place of one report.
+- 3991ca5: An order refunded in part can still be processed, shipped and marked delivered (in the admin, the API or by a carrier's delivered update), moving on only from the status it was refunded at; its payment keeps reading partially refunded.
+  A further partial refund no longer moves the order's status, and still shows on the order's timeline. New in `@nymbalhq/types`: `orderMovesFrom` and `statusBeforePartialRefund`.
+- 67a952e: `GET /api/admin/orders`, `/api/admin/products` and `/api/admin/inventory` answer 400 `validation.failed` naming the allowed statuses for an unknown, empty or repeated `status` (and the orders list for an unreadable or repeated `dateFrom`/`dateTo`; a date-only `dateTo` now covers its whole UTC day), where they answered 200. Pending reviews in `GET /api/admin/reviews` carry `productName` and `productSlug`.
+  `GET /api/products/search` answers 400 for a missing, blank or repeated `q`, so `client.products.search('')` now rejects with `validation.failed`: a store's own search box should skip an empty input.
+
+### Patch Changes
+
+- ec032f4: The assistant reads each listed order's revenue (captured less refunded) and each listed product's type and variant options.
+  The assistant knows today's date in the store's time zone.
+- Updated dependencies [04e0cfe]
+- Updated dependencies [5b51750]
+- Updated dependencies [70380e7]
+- Updated dependencies [3991ca5]
+- Updated dependencies [ec032f4]
+  - @nymbalhq/config@1.8.0
+  - @nymbalhq/types@1.8.0
+
 ## 1.7.0
 
 ### Minor Changes

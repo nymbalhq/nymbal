@@ -1,5 +1,16 @@
 # @nymbalhq/react
 
+## 1.8.0
+
+### Patch Changes
+
+- Updated dependencies [5b51750]
+- Updated dependencies [70380e7]
+- Updated dependencies [3991ca5]
+  - @nymbalhq/types@1.8.0
+  - @nymbalhq/sdk@1.8.0
+  - @nymbalhq/web-components@1.8.0
+
 ## 1.7.0
 
 ### Patch Changes

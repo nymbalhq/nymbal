@@ -1,6 +1,6 @@
 {
   "name": "@nymbalhq/ai-anthropic",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "description": "Anthropic AI for Nymbal: the `anthropic` ai provider",
   "license": "MIT",
   "repository": {

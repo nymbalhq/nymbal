@@ -1,5 +1,19 @@
 # @nymbalhq/config
 
+## 1.8.0
+
+### Minor Changes
+
+- 04e0cfe: Admin MCP tool results no longer carry customers' emails, phones, street lines or postcodes; `agents.mcp.withhold` lists what is withheld and each result names it in `withheld`. Breaking for admin MCP clients that read those fields: set `agents.mcp.withhold: []` to send them.
+
+### Patch Changes
+
+- ec032f4: Breaking: a `store.timezone` that is not an IANA time zone (such as `London` or `GMT+1`) is now refused at startup; use a zone such as `Europe/London`.
+- Updated dependencies [5b51750]
+- Updated dependencies [70380e7]
+- Updated dependencies [3991ca5]
+  - @nymbalhq/types@1.8.0
+
 ## 1.7.0
 
 ### Minor Changes
