@@ -11,6 +11,7 @@ import {
   StatusTransitionError,
   ValidationError,
   type CaptureMethod,
+  type CartSource,
   type OrderStatus,
 } from '@nymbalhq/types'
 import { InMemoryDocumentStore } from '../document-store/in-memory.js'
@@ -114,6 +115,54 @@ describe('OrderService', () => {
     expect(order.status).toBe('pending')
     expect(received).toHaveLength(1)
     await commandStore.close()
+  })
+
+  describe('createFromCheckout: what the placed order carries', () => {
+    async function place(
+      orderService: Awaited<ReturnType<typeof setup>>['orderService'],
+      source?: CartSource,
+    ) {
+      const line = await createLine()
+      return orderService.createFromCheckout({
+        orderId: uuidv7(),
+        customerId: null,
+        email: 'test@example.com',
+        billingAddress: addr,
+        shippingAddress: addr,
+        lineItems: [line],
+        subtotalMinor: line.lineTotalMinor,
+        taxTotalMinor: 0,
+        shippingTotalMinor: 0,
+        discountTotalMinor: 0,
+        totalMinor: line.lineTotalMinor,
+        currency: 'GBP',
+        ...(source !== undefined && { source }),
+      })
+    }
+
+    it('numbers each order one above the sequence it was given', async () => {
+      const { commandStore, orderService } = await setup()
+      const first = await place(orderService)
+      const second = await place(orderService)
+      expect([first.orderNumber, second.orderNumber]).toEqual(['TEST-1001', 'TEST-1002'])
+      await commandStore.close()
+    })
+
+    it('persists the source it is given', async () => {
+      const { commandStore, orderService } = await setup()
+      const placed = await place(orderService, 'agent:shopping-bot')
+      const stored = await orderService.getById(placed.id)
+      expect(stored.source).toBe('agent:shopping-bot')
+      await commandStore.close()
+    })
+
+    it("leaves an absent source as the store's default", async () => {
+      const { commandStore, orderService } = await setup()
+      const placed = await place(orderService)
+      const stored = await orderService.getById(placed.id)
+      expect(stored.source).toBe('storefront')
+      await commandStore.close()
+    })
   })
 
   it('getById returns created order', async () => {
