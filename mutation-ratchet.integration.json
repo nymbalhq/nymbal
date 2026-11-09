@@ -16,6 +16,7 @@
     "packages/platform/src/repositories/order-sequence.ts": 93.33,
     "packages/platform/src/repositories/processed-event.ts": 65.31,
     "packages/platform/src/repositories/proposal.ts": 69.08,
+    "packages/platform/src/repositories/report-rollup.ts": 63.04,
     "packages/platform/src/repositories/review.ts": 63.71,
     "packages/platform/src/services/alert-service.ts": 74.26,
     "packages/platform/src/services/description.ts": 73.33,

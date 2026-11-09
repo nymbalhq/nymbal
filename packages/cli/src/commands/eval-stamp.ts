@@ -4,7 +4,7 @@ import { DEFAULT_CUSTOMER_FIELDS } from '@nymbalhq/config'
 import type { AssistantEvalStamp, GoldenTally, GoldenUsage } from '@nymbalhq/platform'
 
 /** How many golden questions must pass for exit 0: three misses allowed. The least a stamp may record. */
-export const DEFAULT_THRESHOLD = 24
+export const DEFAULT_THRESHOLD = 25
 
 /** The hosted APIs a stamp may record a run against: a stand-in or a proxy answers on another host. */
 const PROVIDER_HOSTS: Record<string, string> = {

@@ -59,6 +59,11 @@ export function createImportRemovalService(deps: ImportRemovalServiceDeps): Impo
           orderNumber: order.orderNumber,
           customerId: order.customerId,
           createdAt: order.createdAt,
+          source: order.source,
+          currency: order.currency,
+          capturedMinor: order.capturedMinor,
+          refundedMinor: order.refundedMinor,
+          lineItems: order.lineItems,
         })
         logger.debug({ orderId: id }, 'imported order removed')
         return 'removed'

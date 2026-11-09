@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { SearchAdapter, SearchParams, SearchResult } from '@nymbalhq/types'
+import {
+  EVT_SEARCH_ZERO_RESULTS,
+  type SearchAdapter,
+  type SearchParams,
+  type SearchResult,
+} from '@nymbalhq/types'
+import type { EventPublisher } from '../events/publisher.js'
 import { createSearchService } from './search-service.js'
 import { createLogger } from '../logger.js'
 
@@ -19,10 +25,12 @@ function makeAdapter(): SearchAdapter {
   }
 }
 
+const publisher = { publish: vi.fn() } as unknown as EventPublisher
+
 describe('SearchService', () => {
   it('products delegates query to SearchAdapter.search', async () => {
     const adapter = makeAdapter()
-    const service = createSearchService({ adapter, logger: createLogger({ pretty: false, level: 'error' }) })
+    const service = createSearchService({ adapter, publisher, logger: createLogger({ pretty: false, level: 'error' }) })
     const result = await service.products('widget')
     expect(adapter.search).toHaveBeenCalledWith('widget', undefined)
     expect(result.items).toHaveLength(1)
@@ -42,8 +50,44 @@ describe('SearchService', () => {
       nextCursor: `${params?.cursor ?? 'start'}+${params?.limit ?? 20}`,
     })
     vi.mocked(adapter.search).mockImplementation(async (query, params) => pageFor(query, params))
-    const service = createSearchService({ adapter, logger: createLogger({ pretty: false, level: 'error' }) })
+    const service = createSearchService({ adapter, publisher, logger: createLogger({ pretty: false, level: 'error' }) })
     const params = { limit: 5, cursor: 'abc' }
     expect(await service.products('shoes', params)).toEqual(pageFor('shoes', params))
+  })
+
+  describe('recordZeroResult', () => {
+    async function recorded(query: string): Promise<Array<{ type: string; payload: unknown }>> {
+      const published: Array<{ type: string; payload: unknown }> = []
+      const recording = {
+        publish: async (type: string, payload: unknown) => {
+          published.push({ type, payload })
+        },
+      } as unknown as EventPublisher
+      const service = createSearchService({
+        adapter: makeAdapter(),
+        publisher: recording,
+        logger: createLogger({ pretty: false, level: 'error' }),
+      })
+      await service.recordZeroResult(query)
+      return published
+    }
+
+    // Defect: the same miss typed with other spacing or case counts as a second term in the report.
+    it('publishes one zero-result event carrying only the term, trimmed and lowercased', async () => {
+      expect(await recorded('  Blue  SHOES\t')).toEqual([
+        { type: EVT_SEARCH_ZERO_RESULTS, payload: { term: 'blue  shoes' } },
+      ])
+    })
+
+    // Defect: padding counts towards the cut, or a pasted paragraph is kept whole in the report.
+    it('cuts the term at 100 characters after trimming, and leaves one of exactly 100 whole', async () => {
+      const hundred = 'a'.repeat(100)
+      expect(await recorded(`   ${hundred}`)).toEqual([
+        { type: EVT_SEARCH_ZERO_RESULTS, payload: { term: hundred } },
+      ])
+      expect(await recorded(`${hundred}b`)).toEqual([
+        { type: EVT_SEARCH_ZERO_RESULTS, payload: { term: hundred } },
+      ])
+    })
   })
 })

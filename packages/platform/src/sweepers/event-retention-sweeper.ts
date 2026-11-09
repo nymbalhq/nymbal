@@ -4,6 +4,7 @@ import type { Logger } from '@nymbalhq/types'
 import type { CommandStore } from '../db/command-store.js'
 import type { EventLogRepository, LoggedEvent } from '../repositories/event-log.js'
 import type { ProcessedEventRepository } from '../repositories/processed-event.js'
+import type { ReportRollupRepository } from '../repositories/report-rollup.js'
 import type { SweeperHandle } from './inventory-reservation-sweeper.js'
 
 /** Where retention writes events before it deletes them: one object per batch, private to the operator. */
@@ -15,6 +16,8 @@ export interface EventRetentionSweeperDeps {
   store: CommandStore
   eventLog: EventLogRepository
   processedEvents: ProcessedEventRepository
+  /** The report digests that deduplicate the same days of the log; they go when it does. */
+  reportRollup?: ReportRollupRepository
   logger: Logger
   retentionDays?: number
   intervalMs?: number
@@ -90,14 +93,18 @@ export function startEventRetentionSweeper(deps: EventRetentionSweeperDeps): Swe
       const cutoff = new Date(Date.now() - retentionDays * DAY_MS)
       let deleted: { events: number; processed: number }
       if (archive === undefined) {
-        deleted = await deps.store.transaction(async (tx) => ({
-          events: await deps.eventLog.deleteDeliveredBefore(tx, cutoff),
-          processed: await deps.processedEvents.deleteBefore(tx, cutoff),
-        }))
+        deleted = await deps.store.transaction(async (tx) => {
+          await deps.reportRollup?.deleteMembersBefore(tx, cutoff)
+          return {
+            events: await deps.eventLog.deleteDeliveredBefore(tx, cutoff),
+            processed: await deps.processedEvents.deleteBefore(tx, cutoff),
+          }
+        })
       } else {
-        const processed = await deps.store.transaction((tx) =>
-          deps.processedEvents.deleteBefore(tx, cutoff),
-        )
+        const processed = await deps.store.transaction(async (tx) => {
+          await deps.reportRollup?.deleteMembersBefore(tx, cutoff)
+          return deps.processedEvents.deleteBefore(tx, cutoff)
+        })
         deleted = { processed, events: await archiveThenDelete(archive, cutoff) }
       }
       if (deleted.events > 0 || deleted.processed > 0) {

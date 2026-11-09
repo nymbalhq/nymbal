@@ -32,6 +32,7 @@ test-results/
 
 # Generated reports (mutation, census) and Stryker sandbox
 reports/
+!packages/platform/src/reports/
 .stryker-tmp/
 
 # Next 16 writes an AGENTS.md into the app on `next dev`/`next build`; it is not ours to ship.

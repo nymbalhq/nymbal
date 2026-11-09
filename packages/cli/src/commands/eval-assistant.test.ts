@@ -15,7 +15,7 @@ import { project, workspace } from '../../../../tests/support/project.js'
 import { currentAssistantEvalHash } from '../../../platform/tests/support/eval-hash.js'
 import { leaks, settingsConfigInput } from '../../../platform/tests/support/settings.js'
 
-// AC-15: the twenty-seven golden questions, the threshold at 24 and the injection questions' tally on a line of its own.
+// AC-15: the twenty-eight golden questions, the threshold at 25 and the injection questions' tally on a line of its own.
 // AC-18: `nymbal eval assistant` in a store project whose `ai` block points at a provider stand-in in `script` mode
 // (tests/support/assistant-golden.ts, the scripted model of the golden set). The eval boots a throwaway store of its
 // own, so the project's database file is never opened for writing; the threshold decides the exit code; a missing
@@ -102,7 +102,7 @@ const summaryOf = (out: string) => {
 }
 
 describe('AC-18: nymbal eval assistant', () => {
-  it('AC-15: against the scripted stand-in all 27 pass: 27 PASS lines, "assistant eval: 27/27 passed (threshold 24)" and "injection questions: 5/5 passed", exit 0; the project database is byte-identical before and after and no output carries the key', async () => {
+  it('AC-15: against the scripted stand-in all 28 pass: 28 PASS lines, "assistant eval: 28/28 passed (threshold 25)" and "injection questions: 5/5 passed", exit 0; the project database is byte-identical before and after and no output carries the key', async () => {
     const key = `sk-ant-eval-${randomBytes(18).toString('base64url')}`
     const p = await storeProject(block('anthropic', anthropic, key))
     const before = digest(p.db)
@@ -112,11 +112,11 @@ describe('AC-18: nymbal eval assistant', () => {
 
     expect(run.code, run.out).toBe(0)
     expect(linesOf(run.out, 'PASS').length).toBe(GOLDEN_ROWS.length)
-    expect(GOLDEN_ROWS.length).toBe(27)
+    expect(GOLDEN_ROWS.length).toBe(28)
     expect(summaryOf(run.out)).toEqual({
       passed: GOLDEN_ROWS.length,
       total: GOLDEN_ROWS.length,
-      threshold: 24,
+      threshold: 25,
     })
     expect(injectionOf(run.out)).toEqual({
       passed: INJECTION_ROWS.length,
@@ -128,7 +128,7 @@ describe('AC-18: nymbal eval assistant', () => {
     expect(leaks([run.stdout, run.stderr], key)).toEqual([])
   }, 240_000)
 
-  it('AC-15: with the script failing four questions, two of them injection questions, it prints 23/27, "injection questions: 3/5 passed" and four FAIL lines for exactly those questions and exits 1; with --threshold 23 the same run exits 0', async () => {
+  it('AC-15: with the script failing four questions, two of them injection questions, it prints 24/28 at threshold 25, "injection questions: 3/5 passed" and four FAIL lines for exactly those questions and exits 1; with --threshold 24 the same run exits 0', async () => {
     const failing = [1, 3, 21, 24]
     const p = await storeProject(
       block('anthropic', anthropic, `sk-ant-eval-${randomBytes(12).toString('hex')}`),
@@ -144,7 +144,7 @@ describe('AC-18: nymbal eval assistant', () => {
     })
     try {
       const strict = await evalAssistant(p)
-      const lenient = await evalAssistant(p, ['--threshold', '23'])
+      const lenient = await evalAssistant(p, ['--threshold', '24'])
 
       const failedRows = linesOf(strict.out, 'FAIL')
         .map((line) => rowOf(line.replace(/^FAIL \S+ /, '').replace(/: .*$/, ''))?.row)
@@ -155,14 +155,14 @@ describe('AC-18: nymbal eval assistant', () => {
       expect(summaryOf(strict.out)).toEqual({
         passed: GOLDEN_ROWS.length - failing.length,
         total: GOLDEN_ROWS.length,
-        threshold: 24,
+        threshold: 25,
       })
       expect(injectionOf(strict.out)).toEqual({
         passed: INJECTION_ROWS.length - injectedFailing,
         total: INJECTION_ROWS.length,
       })
       expect(strict.code, strict.out).toBe(1)
-      expect(summaryOf(lenient.out)).toEqual({ passed: 23, total: 27, threshold: 23 })
+      expect(summaryOf(lenient.out)).toEqual({ passed: 24, total: 28, threshold: 24 })
       expect(lenient.code, lenient.out).toBe(0)
     } finally {
       anthropic.script = goldenScript({ currency: CURRENCY })
@@ -185,14 +185,14 @@ describe('AC-18: nymbal eval assistant', () => {
     expect(anthropic.requests.length).toBe(0)
   }, 120_000)
 
-  it('AC-15: an OpenAI-compatible server on a host other than api.openai.com needs no key: with none in the block or the environment the eval runs and passes 27/27 against it', async () => {
+  it('AC-15: an OpenAI-compatible server on a host other than api.openai.com needs no key: with none in the block or the environment the eval runs and passes 28/28 against it', async () => {
     const p = await storeProject(block('openai', openai))
     openai.reset()
 
     const run = await evalAssistant(p)
 
     expect(run.code, run.out).toBe(0)
-    expect(summaryOf(run.out)).toEqual({ passed: 27, total: 27, threshold: 24 })
+    expect(summaryOf(run.out)).toEqual({ passed: 28, total: 28, threshold: 25 })
     expect(openai.requests.length).toBeGreaterThanOrEqual(GOLDEN_ROWS.length)
   }, 240_000)
 })
@@ -308,7 +308,7 @@ describe('nymbal eval assistant: calls, runs and provider errors', () => {
     expect(linesIn(quiet.stdout).filter((l) => l.startsWith('  call:'))).toEqual([])
   }, 240_000)
 
-  it('AC-11: --runs 3, with books-count answered without its fact on its first asking and pending-orders on its first two, prints run 1/3 to 3/3, a tally per question in golden order (books-count 2/3, pending-orders 1/3, the rest 3/3) and 26/27, and exits 0; each run is on a fresh store: its inbox shows one pending proposal, its answer names it, and each run’s write questions keep a proposal of their own', async () => {
+  it('AC-11: --runs 3, with books-count answered without its fact on its first asking and pending-orders on its first two, prints run 1/3 to 3/3, a tally per question in golden order (books-count 2/3, pending-orders 1/3, the rest 3/3) and 27/28, and exits 0; each run is on a fresh store: its inbox shows one pending proposal, its answer names it, and each run’s write questions keep a proposal of their own', async () => {
     const p = await storeProject(
       block('anthropic', anthropic, `sk-ant-eval-${randomBytes(12).toString('hex')}`),
     )
@@ -337,7 +337,7 @@ describe('nymbal eval assistant: calls, runs and provider errors', () => {
       ).toEqual(['run 1/3', 'run 2/3', 'run 3/3'])
       expect(firstRun.length).toBe(GOLDEN_ROWS.length)
       expect(tallies).toEqual(firstRun.map((id) => [id, expected(id), 3]))
-      expect(summaryOf(run.out)).toEqual({ passed: 26, total: 27, threshold: 24 })
+      expect(summaryOf(run.out)).toEqual({ passed: 27, total: 28, threshold: 25 })
       expect(run.code, run.out).toBe(0)
       expect(text.seen.map((items) => items.length)).toEqual([1, 1, 1])
 
@@ -359,7 +359,7 @@ describe('nymbal eval assistant: calls, runs and provider errors', () => {
       )
       const ids = kept.flat(2)
       expect(asJson.code, asJson.out).toBe(0)
-      expect([body.runs, body.passed, body.total, body.threshold]).toEqual([3, 26, 27, 24])
+      expect([body.runs, body.passed, body.total, body.threshold]).toEqual([3, 27, 28, 25])
       expect(body.questions).toEqual(
         firstRun.map((id) => ({ id, passed: expected(id), ok: expected(id) * 2 > 3 })),
       )
@@ -380,7 +380,7 @@ describe('nymbal eval assistant: calls, runs and provider errors', () => {
     }
   }, 600_000)
 
-  it('AC-12: with no --runs the output is today’s (27 PASS lines, the summary, the injection line and one token line, no run, tally or per-run token line); --runs 0, two, 3x and 1.5 each exit 2 with "--runs takes a whole number of at least 1" and reach the provider not at all', async () => {
+  it('AC-12: with no --runs the output is today’s (28 PASS lines, the summary, the injection line and one token line, no run, tally or per-run token line); --runs 0, two, 3x and 1.5 each exit 2 with "--runs takes a whole number of at least 1" and reach the provider not at all', async () => {
     const p = await storeProject(
       block('anthropic', anthropic, `sk-ant-eval-${randomBytes(12).toString('hex')}`),
     )
@@ -391,7 +391,7 @@ describe('nymbal eval assistant: calls, runs and provider errors', () => {
     expect(linesOf(plain.out, 'PASS').length).toBe(GOLDEN_ROWS.length)
     expect(lines.filter((l) => TOKENS.test(l)).length).toBe(1)
     expect(lines.length).toBe(GOLDEN_ROWS.length + 3)
-    expect(summaryOf(plain.out)).toEqual({ passed: 27, total: 27, threshold: 24 })
+    expect(summaryOf(plain.out)).toEqual({ passed: 28, total: 28, threshold: 25 })
     expect(injectionOf(plain.out)).toEqual({ passed: 5, total: 5 })
     expect(plain.code, plain.out).toBe(0)
 

@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm'
 import {
   pgTable,
+  bigint,
   bigserial,
   text,
   integer,
@@ -603,6 +604,88 @@ export const proposals = pgTable(
   }),
 )
 
+// --- Report rollups ---------------------------------------------------------
+
+export const reportSalesHours = pgTable(
+  'report_sales_hours',
+  {
+    hourStart: timestamp('hour_start', { withTimezone: true }).notNull(),
+    localDay: text('local_day').notNull(),
+    timezone: text('timezone').notNull(),
+    currency: text('currency').notNull(),
+    source: text('source').notNull(),
+    capturedMinor: bigint('captured_minor', { mode: 'number' }).notNull().default(0),
+    refundedMinor: bigint('refunded_minor', { mode: 'number' }).notNull().default(0),
+    paidOrders: bigint('paid_orders', { mode: 'number' }).notNull().default(0),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.hourStart, t.currency, t.source] }),
+    localDayIdx: index('report_sales_hours_local_day_idx').on(t.localDay),
+  }),
+)
+
+export const reportFunnelDays = pgTable(
+  'report_funnel_days',
+  {
+    localDay: text('local_day').notNull(),
+    source: text('source').notNull(),
+    timezone: text('timezone').notNull(),
+    viewers: bigint('viewers', { mode: 'number' }).notNull().default(0),
+    cartsWithItems: bigint('carts_with_items', { mode: 'number' }).notNull().default(0),
+    checkoutsStarted: bigint('checkouts_started', { mode: 'number' }).notNull().default(0),
+    paymentsFailed: bigint('payments_failed', { mode: 'number' }).notNull().default(0),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.localDay, t.source] }),
+  }),
+)
+
+export const reportProductDays = pgTable(
+  'report_product_days',
+  {
+    localDay: text('local_day').notNull(),
+    variantId: text('variant_id').notNull(),
+    currency: text('currency').notNull(),
+    source: text('source').notNull(),
+    timezone: text('timezone').notNull(),
+    productId: text('product_id').notNull(),
+    productName: text('product_name').notNull(),
+    variantName: text('variant_name').notNull(),
+    sku: text('sku').notNull(),
+    units: bigint('units', { mode: 'number' }).notNull().default(0),
+    lineSubtotalMinor: bigint('line_subtotal_minor', { mode: 'number' }).notNull().default(0),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.localDay, t.variantId, t.currency, t.source] }),
+  }),
+)
+
+export const reportSearchDays = pgTable(
+  'report_search_days',
+  {
+    localDay: text('local_day').notNull(),
+    term: text('term').notNull(),
+    timezone: text('timezone').notNull(),
+    searches: bigint('searches', { mode: 'number' }).notNull().default(0),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.localDay, t.term] }),
+  }),
+)
+
+export const reportMembers = pgTable(
+  'report_members',
+  {
+    kind: text('kind').notNull(),
+    localDay: text('local_day').notNull(),
+    member: text('member').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.kind, t.localDay, t.member] }),
+  }),
+)
+
 export const schema = {
   categories,
   products,
@@ -626,4 +709,9 @@ export const schema = {
   emailSuppressions,
   orderShipments,
   proposals,
+  reportSalesHours,
+  reportFunnelDays,
+  reportProductDays,
+  reportSearchDays,
+  reportMembers,
 }

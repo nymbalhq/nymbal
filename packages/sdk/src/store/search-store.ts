@@ -1,5 +1,5 @@
 import type { CommerceAdapter } from '../adapter/commerce-adapter.js'
-import type { SearchState } from '../types.js'
+import type { ProductSearchParams, SearchState } from '../types.js'
 import { createStore } from './create-store.js'
 
 const INITIAL_STATE: SearchState = {
@@ -12,11 +12,19 @@ const INITIAL_STATE: SearchState = {
   loading: false,
 }
 
+export interface SearchOptions {
+  category?: string | null
+  origin?: ProductSearchParams['origin']
+}
+
 export interface SearchStore {
   getState(): SearchState
   subscribe(listener: () => void): () => void
-  /** Page 1 of `query`, in `options.category` (a slug) when given, otherwise in every category. */
-  search(query: string, options?: { category?: string | null }): Promise<void>
+  /**
+   * Page 1 of `query`, in `options.category` (a slug) when given, otherwise in every category. `options.origin` marks
+   * the search page's own request, the one a miss is counted from; every other caller leaves it out.
+   */
+  search(query: string, options?: SearchOptions): Promise<void>
   /** Appends the next page; a no-op when every match is loaded or a page is loading. */
   loadMore(): Promise<void>
   /** Page 1 of the current query in `category` (a slug), or in every category when null. */
@@ -30,18 +38,27 @@ export function createSearchStore(adapter: CommerceAdapter): SearchStore {
   // Each search supersedes the last: an answer for an older one is dropped.
   let generation = 0
 
-  async function search(query: string, options?: { category?: string | null }): Promise<void> {
+  async function search(query: string, options?: SearchOptions): Promise<void> {
+    const category = options?.category ?? null
+    const current = store.getState()
+    // React's Strict Mode runs a mount effect twice; the repeat of a marked search still loading would count a miss twice.
+    if (options?.origin !== undefined && current.loading && current.query === query && current.category === category) {
+      return
+    }
     const run = ++generation
     if (!query.trim()) {
       store.setState({ ...INITIAL_STATE })
       return
     }
-    const category = options?.category ?? null
     store.setState({ query, category, loading: true })
     try {
-      const result = await (category === null
+      const params: ProductSearchParams = {
+        ...(category !== null && { category }),
+        ...(options?.origin !== undefined && { origin: options.origin }),
+      }
+      const result = await (Object.keys(params).length === 0
         ? adapter.products.search(query)
-        : adapter.products.search(query, { category }))
+        : adapter.products.search(query, params))
       if (run !== generation) return
       store.setState({
         results: result.items,

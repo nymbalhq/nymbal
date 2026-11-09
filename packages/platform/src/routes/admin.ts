@@ -7,6 +7,7 @@ import type { EventPublisher } from '../events/publisher.js'
 import type { DeclaredSlot } from '../settings/load.js'
 import { registerAdminMeRoute } from './admin-me.js'
 import { registerAdminDashboardRoute } from './admin-dashboard.js'
+import { registerAdminReportsRoute } from './admin-reports.js'
 import { registerAdminOrdersRoutes } from './admin-orders.js'
 import { registerAdminProductsRoutes } from './admin-products.js'
 import { registerAdminInventoryRoutes } from './admin-inventory.js'
@@ -35,6 +36,7 @@ export function registerAdminRoutes(adapter: HttpAdapter, deps: RegisterAdminRou
 
   registerAdminMeRoute(adapter, { config })
   registerAdminDashboardRoute(adapter, { repos, config })
+  registerAdminReportsRoute(adapter, { repos, config })
   registerAdminOrdersRoutes(adapter, {
     order: services.order,
     checkout: services.checkout,

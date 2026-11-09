@@ -324,12 +324,12 @@ Subcommands: `nymbal eval assistant`.
 
 ## `nymbal eval assistant`
 
-Ask the store assistant the 27 golden questions with the project's AI provider, on a throwaway store
+Ask the store assistant the 28 golden questions with the project's AI provider, on a throwaway store
 
 | Argument | Type | Description | Default |
 | --- | --- | --- | --- |
 | `--only` | string | Run only these question ids, comma-separated |  |
-| `--threshold` | string | How many must pass for exit 0 (default 24) |  |
+| `--threshold` | string | How many must pass for exit 0 (default 25) |  |
 | `--runs` | string | Ask the set this many times, each on a fresh store, and judge each question by majority (default 1) |  |
 | `--json` | boolean | Print the tally and every run’s report as JSON | `false` |
 | `--verbose` | boolean | Print each call, its arguments and outcome, and each answer | `false` |

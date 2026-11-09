@@ -27,6 +27,7 @@ export default {
     'packages/platform/src/services/import-removal-service.ts',
     'packages/platform/src/services/description.ts',
     'packages/platform/src/repositories/audit-entry.ts',
+    'packages/platform/src/repositories/report-rollup.ts',
     'packages/platform/src/assistant/loop.ts',
     'packages/platform/src/assistant/mask.ts',
     'packages/platform/src/mcp/invoke.ts',

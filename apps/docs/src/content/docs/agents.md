@@ -119,6 +119,12 @@ agents: {
 The key is `NYMBAL_ACP_API_KEY` (or `agents.acp.apiKey`), at least 32 characters (`openssl rand -base64 32`); the
 store refuses to start without it, or on a payments provider that cannot charge a delegated token (Stripe can).
 
+## Reports
+
+`GET /api/admin/reports` serves the store's daily figures to the admin assistant and MCP (`admin_reports_get`):
+sales by day and hour, the funnel, top products, what shoppers searched for and did not find, and stock runway. Viewers
+are counted as aggregates; no visitor or customer id is stored in a report.
+
 ## Crawlers
 
 `agents.crawl` sets what `robots.txt`, `llms.txt` and the product feed (`/agents/products.json`) serve, and which AI

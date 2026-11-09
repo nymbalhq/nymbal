@@ -144,6 +144,8 @@ export interface ProductSearchParams {
   cursor?: string
   /** A category slug, as on the listing. */
   category?: string
+  /** Marks the search page's own request, the one a miss is counted from. Everything else leaves it out. */
+  origin?: 'page'
 }
 
 export interface ProductSearchResult {

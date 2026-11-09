@@ -591,6 +591,88 @@ export const proposals = sqliteTable(
   }),
 )
 
+// --- Report rollups ---------------------------------------------------------
+
+export const reportSalesHours = sqliteTable(
+  'report_sales_hours',
+  {
+    hourStart: text('hour_start').notNull(),
+    localDay: text('local_day').notNull(),
+    timezone: text('timezone').notNull(),
+    currency: text('currency').notNull(),
+    source: text('source').notNull(),
+    capturedMinor: integer('captured_minor').notNull().default(0),
+    refundedMinor: integer('refunded_minor').notNull().default(0),
+    paidOrders: integer('paid_orders').notNull().default(0),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.hourStart, t.currency, t.source] }),
+    localDayIdx: index('report_sales_hours_local_day_idx').on(t.localDay),
+  }),
+)
+
+export const reportFunnelDays = sqliteTable(
+  'report_funnel_days',
+  {
+    localDay: text('local_day').notNull(),
+    source: text('source').notNull(),
+    timezone: text('timezone').notNull(),
+    viewers: integer('viewers').notNull().default(0),
+    cartsWithItems: integer('carts_with_items').notNull().default(0),
+    checkoutsStarted: integer('checkouts_started').notNull().default(0),
+    paymentsFailed: integer('payments_failed').notNull().default(0),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.localDay, t.source] }),
+  }),
+)
+
+export const reportProductDays = sqliteTable(
+  'report_product_days',
+  {
+    localDay: text('local_day').notNull(),
+    variantId: text('variant_id').notNull(),
+    currency: text('currency').notNull(),
+    source: text('source').notNull(),
+    timezone: text('timezone').notNull(),
+    productId: text('product_id').notNull(),
+    productName: text('product_name').notNull(),
+    variantName: text('variant_name').notNull(),
+    sku: text('sku').notNull(),
+    units: integer('units').notNull().default(0),
+    lineSubtotalMinor: integer('line_subtotal_minor').notNull().default(0),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.localDay, t.variantId, t.currency, t.source] }),
+  }),
+)
+
+export const reportSearchDays = sqliteTable(
+  'report_search_days',
+  {
+    localDay: text('local_day').notNull(),
+    term: text('term').notNull(),
+    timezone: text('timezone').notNull(),
+    searches: integer('searches').notNull().default(0),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.localDay, t.term] }),
+  }),
+)
+
+export const reportMembers = sqliteTable(
+  'report_members',
+  {
+    kind: text('kind').notNull(),
+    localDay: text('local_day').notNull(),
+    member: text('member').notNull(),
+    createdAt: text('created_at').notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.kind, t.localDay, t.member] }),
+  }),
+)
+
 export const schema = {
   categories,
   products,
@@ -614,4 +696,9 @@ export const schema = {
   emailSuppressions,
   orderShipments,
   proposals,
+  reportSalesHours,
+  reportFunnelDays,
+  reportProductDays,
+  reportSearchDays,
+  reportMembers,
 }

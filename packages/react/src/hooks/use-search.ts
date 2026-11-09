@@ -3,7 +3,7 @@ import type { SearchState } from '@nymbalhq/sdk'
 import { useNymbalClient } from '../context.js'
 
 export interface UseSearchReturn extends SearchState {
-  search: (query: string, options?: { category?: string | null }) => Promise<void>
+  search: (query: string, options?: { category?: string | null; origin?: 'page' }) => Promise<void>
   loadMore: () => Promise<void>
   setCategory: (category: string | null) => Promise<void>
   clearSearch: () => void

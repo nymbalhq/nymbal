@@ -66,6 +66,8 @@ export interface NymbalEventMap {
   [C.EVT_PROPOSAL_APPLIED]: P.ProposalAppliedV1Payload
   [C.EVT_PROPOSAL_FAILED]: P.ProposalFailedV1Payload
 
+  [C.EVT_SEARCH_ZERO_RESULTS]: P.SearchZeroResultsV1Payload
+
   [C.EVT_ADAPTER_ERROR]: P.AdapterErrorV1Payload
   [C.EVT_SETTINGS_CHANGED]: P.SettingsChangedV1Payload
 }

@@ -225,6 +225,10 @@ export const routeSchemas: Record<string, RouteSchema> = {
       limit: queryValue.describe('How many to answer: 20 by default, at most 100.'),
       cursor: queryValue.describe('The nextCursor of the previous page.'),
       category: queryValue.describe('A category slug, to search within that category.'),
+      origin: z
+        .enum(['page'])
+        .optional()
+        .describe('Marks the search page’s own request, which a miss counts from; leave it out.'),
     }),
   },
   'GET /api/products': {
@@ -448,6 +452,17 @@ export const routeSchemas: Record<string, RouteSchema> = {
     name: 'admin.dashboard',
     personal: ALL_PERSONAL,
     description: "Today's order figures, recent orders and low stock.",
+  },
+  'GET /api/admin/reports': {
+    name: 'admin.reports.get',
+    description:
+      'Sales, conversion, top products, zero-result searches and stock runway over store days. Quote the basis with a rate; never divide fields yourself. Money is in minor units of the row’s currency. Ask with grain=day for a series or for today; for a long range or a busy store, narrow the range.',
+    query: z.object({
+      from: z.iso.date().optional().describe('First store day, YYYY-MM-DD; the last 30 closed days by default.'),
+      to: z.iso.date().optional().describe('Last store day, YYYY-MM-DD; today by default.'),
+      grain: z.enum(['day', 'hour']).optional().describe('Asks for a series by day or hour.'),
+      limit: queryValue.describe('How many of each list to answer: 10 by default, at most 50; a large limit on a busy store may be cut.'),
+    }),
   },
   'GET /api/admin/search': {
     name: 'admin.search',

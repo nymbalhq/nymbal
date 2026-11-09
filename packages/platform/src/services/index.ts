@@ -180,6 +180,7 @@ export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
     }),
     search: createSearchService({
       adapter: searchAdapter,
+      publisher,
       logger: logger.child({ service: 'search' }),
     }),
     recentlyViewed: createRecentlyViewedService({

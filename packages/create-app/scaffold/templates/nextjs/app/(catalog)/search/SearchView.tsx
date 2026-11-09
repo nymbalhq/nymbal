@@ -38,7 +38,7 @@ export function SearchView({
     if (!query) {
       if (searched) clearSearch()
     } else if (query !== searched || category !== searchedCategory) {
-      void search(query, { category })
+      void search(query, { category, origin: 'page' })
     }
   }, [query, category, search, clearSearch])
 

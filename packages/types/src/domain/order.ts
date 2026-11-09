@@ -81,8 +81,11 @@ export interface OrderLineItem {
   imageUrl: string
 }
 
-/** Where an order came from: the storefront, an import, or the shopping agent that opened its cart. */
-export type OrderSource = 'storefront' | 'import' | `agent:${string}`
+/**
+ * Where an order came from: the storefront, an import, or the shopping agent that opened its cart. `synthetic` marks
+ * an order made to exercise the store, which no report counts.
+ */
+export type OrderSource = 'storefront' | 'import' | 'synthetic' | `agent:${string}`
 
 /** The source a cart or order opened by the named agent carries. */
 export function agentSource(name: string): `agent:${string}` {

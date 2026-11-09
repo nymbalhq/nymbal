@@ -12,6 +12,7 @@ import { registerOrderProjection } from './projections/order-projection.js'
 import { registerCustomerProjection } from './projections/customer-projection.js'
 import { registerInventoryProjection } from './projections/inventory-projection.js'
 import { registerRecentlyViewedProjection } from './projections/recently-viewed-projection.js'
+import { registerReportRollupProjection } from './projections/report-rollup-projection.js'
 import { registerEmailHandler } from './side-effects/email-handler.js'
 import { registerSearchHandler } from './side-effects/search-handler.js'
 import { registerReviewsHandler } from './side-effects/reviews-handler.js'
@@ -81,6 +82,12 @@ export async function registerHandlers(deps: RegisterHandlersDeps): Promise<void
     eventBus,
     documentStore,
     logger: handlerLogger.child({ projection: 'recently-viewed' }),
+  })
+  await registerReportRollupProjection({
+    eventBus,
+    repos,
+    timeZone: config.store.timezone,
+    logger: handlerLogger.child({ projection: 'report-rollups' }),
   })
 
   await registerEmailHandler({

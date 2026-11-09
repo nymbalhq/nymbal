@@ -1,6 +1,6 @@
 import type { Category } from '../domain/category.js'
 import type { CustomerAddress } from '../domain/customer.js'
-import type { Order, OrderStatus } from '../domain/order.js'
+import type { Order, OrderLineItem, OrderSource, OrderStatus } from '../domain/order.js'
 import type { Product, Variant } from '../domain/product.js'
 import type { StockAdjustmentReason } from '../domain/inventory.js'
 import type { AlertKind } from '../alerts.js'
@@ -123,6 +123,11 @@ export interface OrderDeletedV1Payload {
   orderNumber: string
   customerId: string | null
   createdAt: string
+  source: OrderSource
+  currency: string
+  capturedMinor: number
+  refundedMinor: number
+  lineItems: OrderLineItem[]
 }
 export interface OrderNoteAddedV1Payload {
   orderId: string
@@ -233,6 +238,10 @@ export interface PaymentFailedV1Payload {
   orderId: string
   reason: string
 }
+export interface SearchZeroResultsV1Payload {
+  term: string
+}
+
 export interface PaymentRefundedV1Payload {
   paymentId: string
   orderId: string

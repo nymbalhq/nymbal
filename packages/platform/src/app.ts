@@ -407,6 +407,7 @@ export async function createApp(
         store: platform.commandStore,
         eventLog: repos.eventLog,
         processedEvents: repos.processedEvent,
+        reportRollup: repos.reportRollup,
         logger,
         retentionDays: config.events.retentionDays,
         ...(archive !== undefined && { archive }),

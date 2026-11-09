@@ -22,7 +22,7 @@ import { withRatings } from './product-ratings.js'
 export const VISITOR_COOKIE = 'nymbal.visitor'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-const BOT = /bot|crawl|spider|slurp/i
+export const BOT = /bot|crawl|spider|slurp/i
 const NOT_STORED = { 'Cache-Control': 'private, no-store' }
 
 function visitorCookie(id: string, secure: boolean): ResponseCookie {

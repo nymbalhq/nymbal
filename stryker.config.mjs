@@ -28,6 +28,7 @@ export default {
     '!packages/platform/src/repositories/alert-subscription.ts',
     '!packages/platform/src/repositories/email-suppression.ts',
     '!packages/platform/src/repositories/proposal.ts',
+    '!packages/platform/src/repositories/report-rollup.ts',
     '!packages/platform/src/repositories/review.ts',
     '!**/*.test.ts',
     '!**/*.d.ts',

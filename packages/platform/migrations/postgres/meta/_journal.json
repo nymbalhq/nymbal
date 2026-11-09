@@ -169,6 +169,13 @@
       "when": 1794163018457,
       "tag": "0023_order_status_fulfilment",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1794219012972,
+      "tag": "0024_report_rollups",
+      "breakpoints": true
     }
   ]
 }

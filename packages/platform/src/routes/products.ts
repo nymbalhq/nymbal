@@ -8,6 +8,7 @@ import {
   type HttpAdapter,
   type PublicReview,
   type PublicReviewsResult,
+  type RequestContext,
   type Review,
   type ReviewsAdapter,
   type SearchAdapter,
@@ -15,6 +16,7 @@ import {
 import type { SearchService } from '../services/search-service.js'
 import { ok, renderError, fail } from './envelope.js'
 import { withRatings } from './product-ratings.js'
+import { BOT } from './recently-viewed.js'
 
 const ORDER_BY: Record<ProductSortKey, NonNullable<QueryParams['orderBy']>> = {
   newest: { field: 'createdAt', direction: 'desc' },
@@ -94,6 +96,18 @@ async function searchCategoryFacet(
   }
 }
 
+/** A miss the report counts: the search page's own request for the whole catalogue, from a shopper, finding nothing. */
+function isCountedMiss(
+  ctx: RequestContext,
+  total: number,
+  cursor: string | undefined,
+  category: string | undefined,
+): boolean {
+  if (ctx.query['origin'] !== 'page' || total !== 0 || cursor || category) return false
+  const agent = ctx.headers['user-agent']
+  return !(typeof agent === 'string' && BOT.test(agent))
+}
+
 export function registerProductRoutes(
   adapter: HttpAdapter,
   documentStore: DocumentStoreAdapter,
@@ -132,6 +146,13 @@ export function registerProductRoutes(
         ...(cursor !== undefined && { cursor }),
         ...(filters !== undefined && { filters }),
       })
+      if (isCountedMiss(ctx, searchResult.total, cursor, categorySlug)) {
+        try {
+          await searchService.recordZeroResult(q)
+        } catch (err) {
+          ctx.logger.error({ err }, 'could not record a zero-result search')
+        }
+      }
       const slugs = searchResult.items
         .map((doc) => String((doc.fields as Record<string, unknown>)?.slug ?? ''))
         .filter(Boolean)
