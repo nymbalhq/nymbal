@@ -247,7 +247,7 @@ const assistantCommand = defineCommand({
     stamp: {
       type: 'string',
       description:
-        'Write the eval stamp to this file when the run passes: the hash of the prompt and tools, the provider, model and tally. Anthropic or OpenAI’s own API only, every question, the default threshold or above',
+        'Write the eval stamp to this file when the run passes: the hash of the prompt and tools, the provider, model and tally. Anthropic or OpenAI’s own API only, every question, the default threshold or above. The stamp is a statement about the default model on our prompt; the safety boundary holds for every provider and model because it is code',
     },
   },
   async run({ args }) {
@@ -312,6 +312,7 @@ const assistantCommand = defineCommand({
               tally,
               threshold,
               date: new Date(),
+              usage,
             })
       if (stampFile !== undefined && stamp !== undefined) {
         writeFileSync(stampFile, `${JSON.stringify(stamp, null, 2)}\n`)

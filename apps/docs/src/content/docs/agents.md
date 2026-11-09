@@ -79,8 +79,10 @@ their source, and the admin's Agents tile counts them.
 
 The admin's own assistant (**Ask**) proposes its writes the same way. A write it asks for after reading any tool
 result, or in a follow-up message, always waits in the Inbox, whatever `autoApprove` lists, so text a shopper wrote (a
-review, an order note) cannot make it change the store. [The assistant and customer data](../assistant-data/) says
-what it sends to your AI provider.
+review, an order note) cannot make it change the store. The exception is your own first message: a command listed in
+`autoApprove` that Ask requests in its first reply applies at once, with no person involved, so a customer's detail you
+pasted into that message can reach a public field such as a product description. [The assistant and customer
+data](../assistant-data/) says what it sends to your AI provider.
 
 In one message Ask makes at most three deletions, archives, cancellations or refunds, does not carry out such a change
 to many records at once, and is not offered the store's settings.

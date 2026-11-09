@@ -113,7 +113,7 @@ describe('stampFileRefusal: the stamp’s path is checked before any question is
 })
 
 describe('stampOf: a run under its threshold records nothing', () => {
-  it('for any tally and threshold, a stamp is made exactly when passed reaches the threshold, and then carries the tally, threshold, hash, provider, the models once each and the run’s day', () => {
+  it('for any tally and threshold, a stamp is made exactly when passed reaches the threshold, and then carries the tally, threshold, hash, provider, the models once each, the run’s day and its tokens', () => {
     fc.assert(
       fc.property(
         fc.integer({ min: 0, max: 30 }).chain((total) =>
@@ -123,6 +123,12 @@ describe('stampOf: a run under its threshold records nothing', () => {
             threshold: fc.integer({ min: 0, max: 30 }),
             runs: fc.integer({ min: 1, max: 9 }),
             models: fc.array(fc.constantFrom('claude-a', 'claude-b'), { maxLength: 4 }),
+            usage: fc.record({
+              inputTokens: fc.nat(),
+              outputTokens: fc.nat(),
+              cacheReadTokens: fc.nat(),
+              cacheWriteTokens: fc.nat(),
+            }),
             date: fc.date({
               min: new Date('2026-01-01T00:00:00Z'),
               max: new Date('2030-12-31T23:59:59Z'),
@@ -130,7 +136,7 @@ describe('stampOf: a run under its threshold records nothing', () => {
             }),
           }),
         ),
-        ({ total, passed, threshold, runs, models, date }) => {
+        ({ total, passed, threshold, runs, models, date, usage }) => {
           const stamp = stampOf({
             hash: 'sha256:abc',
             provider: 'anthropic',
@@ -138,6 +144,7 @@ describe('stampOf: a run under its threshold records nothing', () => {
             tally: { runs, passed, total, questions: [] },
             threshold,
             date,
+            usage,
           })
           expect(stamp === undefined).toBe(passed < threshold)
           if (stamp === undefined) return
@@ -150,6 +157,7 @@ describe('stampOf: a run under its threshold records nothing', () => {
             total,
             threshold,
             date: date.toISOString().slice(0, 10),
+            usage,
           })
         },
       ),
@@ -174,7 +182,13 @@ describe('the committed stamp', () => {
       },
       threshold: DEFAULT_THRESHOLD,
       date: new Date('2026-11-07T12:00:00Z'),
+      usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
     })!
-    expect(Object.keys(committed).sort()).toEqual(Object.keys(written).sort())
+    // A stamp from before it recorded tokens has no `usage`; the release check does not read it.
+    const fields = (stamp: object) =>
+      Object.keys(stamp)
+        .filter((key) => key !== 'usage')
+        .sort()
+    expect(fields(committed)).toEqual(fields(written))
   })
 })

@@ -57,6 +57,10 @@ const INTEGRATION_FILES = [
   'packages/platform/src/services/import-removal-service.ts',
   'packages/platform/src/services/description.ts',
   'packages/platform/src/repositories/audit-entry.ts',
+  'packages/platform/src/assistant/loop.ts',
+  'packages/platform/src/assistant/mask.ts',
+  'packages/platform/src/mcp/invoke.ts',
+  'packages/platform/src/mcp/withhold.ts',
 ]
 
 /** The files no unit test reaches: the integration config alone mutates them, the unit config leaves them out. */
@@ -70,6 +74,10 @@ const INTEGRATION_ONLY = [
   'packages/platform/src/services/import-removal-service.ts',
   'packages/platform/src/services/proposal-service.ts',
   'packages/platform/src/services/recently-viewed-service.ts',
+  'packages/platform/src/assistant/loop.ts',
+  'packages/platform/src/assistant/mask.ts',
+  'packages/platform/src/mcp/invoke.ts',
+  'packages/platform/src/mcp/withhold.ts',
 ]
 
 /** Integration tests that fail in Stryker's sandbox, or import from outside it. */
@@ -270,7 +278,7 @@ const writeReport = (dir: string, files: Record<string, Status[]>): string => {
 // ---------------------------------------------------------------------------------------------------------------
 
 describe('AC-1: the integration Stryker config and its test set', () => {
-  it('AC-1: the integration config mutates exactly its sixteen files, each tracked, the unit mutate set holding those a unit test reaches and none of the others, and runs its own Vitest config', async () => {
+  it('AC-1: the integration config mutates exactly its twenty files, each tracked, the unit mutate set holding those a unit test reaches and none of the others, and runs its own Vitest config', async () => {
     expect(SET).toEqual([...INTEGRATION_FILES].sort())
     const tracked = execFileSync('git', ['ls-files', '--', ...SET], { cwd: REPO, encoding: 'utf8' })
       .split('\n')

@@ -33,6 +33,16 @@ export default defineConfig({
       'packages/platform/tests/integration/audit-*.test.ts',
       'packages/platform/src/events/*.test.ts',
       'packages/platform/src/services/proposal-service.test.ts',
+      // The assistant's boundary: what its loop and the tool surface refuse, mask and keep for a person. The golden set's
+      // own runs are left out (27 questions per test, a full run per mutant it reaches).
+      'packages/platform/tests/integration/assistant-safety.test.ts',
+      'packages/platform/tests/integration/assistant-guards.test.ts',
+      'packages/platform/tests/integration/assistant-bulk.test.ts',
+      'packages/platform/tests/integration/assistant-masking.test.ts',
+      'packages/platform/src/assistant/loop*.test.ts',
+      'packages/platform/src/assistant/mask.test.ts',
+      'packages/platform/src/mcp/invoke*.test.ts',
+      'packages/platform/src/mcp/withhold.test.ts',
       'packages/platform/src/repositories/email-suppression.test.ts',
     ],
     testTimeout: 30000,

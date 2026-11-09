@@ -1,10 +1,12 @@
 import { createHash } from 'node:crypto'
 import type { Caller, ChatTool, ToolSurface } from '@nymbalhq/types'
+import type { GoldenUsage } from './eval.js'
 import { ASSISTANT_AGENT, assistantTools, chatToolsOf, systemPrompt } from './loop.js'
 
 // The eval stamp: a hash of what the model is sent, so a change to the assistant's instructions or to the tools it is
 // offered is seen as one that no eval run has scored yet. The store, page and caller are fixed: the hash moves with
-// the prompt's wording and the tools' definitions, never with a store's own name or data, nor with the day.
+// the prompt's wording, the tools' definitions and the default model, never with a store's own name or data, nor with
+// the day.
 
 /** The store the stamped prompt names. */
 export const EVAL_STAMP_STORE = {
@@ -16,6 +18,8 @@ export const EVAL_STAMP_STORE = {
 export const EVAL_STAMP_TODAY = Date.parse('2026-11-07T12:00:00Z')
 /** A page with a parameter, so the prompt names it and the page read is offered. */
 export const EVAL_STAMP_PAGE = '/orders/:orderNumber'
+/** The model a stamp scores: the Anthropic adapter's default, which `tests/contracts/anthropic-ai.test.ts` holds equal. */
+export const EVAL_STAMP_MODEL = 'claude-sonnet-4-6'
 
 const ADMIN: Caller = {
   auth: { userId: 'assistant-eval-stamp', roles: ['admin'] },
@@ -34,9 +38,13 @@ export interface AssistantEvalStamp {
   threshold: number | null
   /** The day of the run, `YYYY-MM-DD`. */
   date: string | null
+  /** Every run's tokens added up, so a stamp says what it cost; null only in a stamp from before it recorded them. */
+  usage: GoldenUsage | null
 }
 
 export interface AssistantEvalInput {
+  /** The model a run is scored on, so a change of the default model needs a new stamp. */
+  model: string
   /** The system prompt with customer details masked (the default) and with masking off. */
   prompts: { masked: string; plain: string }
   /** The tools an admin's assistant is offered, by name. */
@@ -47,6 +55,7 @@ export interface AssistantEvalInput {
 export function assistantEvalInput(surface: Pick<ToolSurface, 'list'>): AssistantEvalInput {
   const offered = assistantTools(surface.list(ADMIN), { customerData: true })
   return {
+    model: EVAL_STAMP_MODEL,
     prompts: {
       masked: systemPrompt(EVAL_STAMP_STORE, EVAL_STAMP_PAGE, true, EVAL_STAMP_TODAY),
       plain: systemPrompt(EVAL_STAMP_STORE, EVAL_STAMP_PAGE, false, EVAL_STAMP_TODAY),

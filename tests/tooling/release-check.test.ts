@@ -423,6 +423,12 @@ describe('release:check holds a release whose assistant eval stamp records no pa
       says: `no ${STAMP_FILE} at ${short(recorded().sha)}`,
     },
     {
+      name: 'a stamp recorded by another model',
+      stamp: JSON.stringify({ ...STAMPED, model: 'gpt-x' }),
+      verdict: 'red',
+      says: 'the stamp records a run of gpt-x, not the default model',
+    },
+    {
       name: 'a stamp whose run passed under its threshold',
       stamp: JSON.stringify({ ...STAMPED, passed: DEFAULT_THRESHOLD - 1 }),
       verdict: 'red',

@@ -3,8 +3,12 @@
   "command": "pnpm mutation:integration",
   "total": 68.42,
   "files": {
+    "packages/platform/src/assistant/loop.ts": 78.94,
+    "packages/platform/src/assistant/mask.ts": 83.41,
     "packages/platform/src/events/publisher.ts": 92.86,
     "packages/platform/src/events/relay.ts": 76.73,
+    "packages/platform/src/mcp/invoke.ts": 67.31,
+    "packages/platform/src/mcp/withhold.ts": 76.75,
     "packages/platform/src/repositories/alert-subscription.ts": 62.5,
     "packages/platform/src/repositories/audit-entry.ts": 32.48,
     "packages/platform/src/repositories/email-suppression.ts": 51.43,

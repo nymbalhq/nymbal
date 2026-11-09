@@ -1,7 +1,7 @@
 import { accessSync, constants, existsSync, statSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { DEFAULT_CUSTOMER_FIELDS } from '@nymbalhq/config'
-import type { AssistantEvalStamp, GoldenTally } from '@nymbalhq/platform'
+import type { AssistantEvalStamp, GoldenTally, GoldenUsage } from '@nymbalhq/platform'
 
 /** How many golden questions must pass for exit 0: three misses allowed. The least a stamp may record. */
 export const DEFAULT_THRESHOLD = 24
@@ -87,6 +87,7 @@ export function stampOf(run: {
   tally: GoldenTally
   threshold: number
   date: Date
+  usage: GoldenUsage
 }): AssistantEvalStamp | undefined {
   if (run.tally.passed < run.threshold) return undefined
   return {
@@ -98,5 +99,6 @@ export function stampOf(run: {
     total: run.tally.total,
     threshold: run.threshold,
     date: run.date.toISOString().slice(0, 10),
+    usage: run.usage,
   }
 }

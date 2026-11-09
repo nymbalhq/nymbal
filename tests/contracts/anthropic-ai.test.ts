@@ -5,6 +5,7 @@ import { adapterContext, runAiContract, type AiFailureMode } from '@nymbalhq/con
 import type { AiAdapter, Logger } from '@nymbalhq/types'
 import { createAdapter } from '../../packages/adapters/ai/anthropic/src/index.js'
 import { DEFAULT_BASE_URL } from '../../packages/adapters/ai/anthropic/src/anthropic-adapter.js'
+import { EVAL_STAMP_MODEL } from '../../packages/platform/src/assistant/stamp.js'
 import {
   contentText,
   LOOKUP_PRICE,
@@ -154,6 +155,12 @@ describe('the Anthropic wire', () => {
     expect([unset.stopReason, one.stopReason]).toEqual(['end', 'max_tokens'])
     expect(oneAnswer.stop).toBe('max_tokens')
     expect(unsetAnswer.stop).toBe('end_turn')
+  })
+
+  it('a config with no model sends the model the assistant eval stamp scores: a change of the default needs a new stamp', async () => {
+    await adapter.chat([{ role: 'user', content: 'Reply with exactly the word ok' }])
+
+    expect(lastBody()['model']).toBe(EVAL_STAMP_MODEL)
   })
 
   it('AC-2: each wire stop reason maps to end, max_tokens, tool_use or other, never passed through raw', async () => {

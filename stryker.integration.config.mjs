@@ -27,6 +27,10 @@ export default {
     'packages/platform/src/services/import-removal-service.ts',
     'packages/platform/src/services/description.ts',
     'packages/platform/src/repositories/audit-entry.ts',
+    'packages/platform/src/assistant/loop.ts',
+    'packages/platform/src/assistant/mask.ts',
+    'packages/platform/src/mcp/invoke.ts',
+    'packages/platform/src/mcp/withhold.ts',
   ],
   ignorePatterns: [
     '/*',
@@ -42,7 +46,7 @@ export default {
     '/packages/adapters/*/*/dist',
     '**/CLAUDE.md',
   ],
-  disableTypeChecks: 'packages/platform/src/{services,repositories}/**/*.ts',
+  disableTypeChecks: 'packages/platform/src/{services,repositories,assistant,mcp}/**/*.ts',
   coverageAnalysis: 'perTest',
   // Static mutants are left out as in stryker.config.mjs: each reruns the whole suite with a reload, which is most of
   // the run's tail. Only pure static mutants are skipped; one a test also reaches runs against it.
