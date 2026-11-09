@@ -251,7 +251,7 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
       if (!customer) throw new AuthError('token_invalid', 'customer missing')
       const nextJti = uuidv7()
       const nextRefresh = await mintRefresh(customer, nextJti)
-      await store.transaction((tx) =>
+      const rotated = await store.transaction((tx) =>
         repos.refreshToken.rotate(tx, jti, {
           id: nextJti,
           customerId: customer.id,
@@ -260,6 +260,8 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
           createdAt: new Date(),
         }),
       )
+      // A sign-out committed after the read above. Losing to one is not theft, so nothing else is revoked.
+      if (!rotated) throw new AuthError('token_invalid', 'refresh token revoked')
       const accessToken = await mintAccess(customer)
       return {
         accessToken,
@@ -269,13 +271,21 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
     },
 
     async logout(refreshToken) {
+      let payload: CustomerJwtPayload
       try {
         const verified = await jwtVerify(refreshToken, secretKey, { issuer })
-        const payload = verified.payload as CustomerJwtPayload
-        const { jti } = payload
-        if (jti) await store.transaction((tx) => repos.refreshToken.revoke(tx, jti))
+        payload = verified.payload as CustomerJwtPayload
       } catch {
-        // ignore — already invalid
+        return // already invalid
+      }
+      const { jti } = payload
+      if (jti) {
+        await store.transaction(async (tx) => {
+          if (await repos.refreshToken.revoke(tx, jti)) return
+          // Already rotated: the pointer names only the last fork, so only ending every session leaves none live.
+          const row = await repos.refreshToken.findById(tx, jti)
+          if (row?.replacedByJti) await repos.refreshToken.revokeAllForCustomer(tx, row.customerId)
+        })
       }
     },
 

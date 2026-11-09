@@ -1,36 +1,31 @@
 # id: I119
 # kind: injected
-# defect: revoking every session of a customer also overwrites revokedAt on rows already revoked, so each rotated token gets a fresh reuse window from the moment theft was detected and replays answered
-# where: packages/platform/src/repositories/refresh-token.ts:165
+# defect: revoking every session of a customer also overwrites revokedAt on rotated rows and leaves them rotatable, so each rotated token gets a fresh reuse window from the moment theft was detected and replays answered
+# where: packages/platform/src/repositories/refresh-token.ts:192
 # killed-by: packages/platform/src/services/refresh-reuse.test.ts AC-15 (a sign-out of every session does not reopen a rotated token's window)
 # suite: pnpm vitest run --project platform-unit packages/platform/src/services/refresh-reuse.test.ts
 diff --git a/packages/platform/src/repositories/refresh-token.ts b/packages/platform/src/repositories/refresh-token.ts
 --- a/packages/platform/src/repositories/refresh-token.ts
 +++ b/packages/platform/src/repositories/refresh-token.ts
-@@ -167,24 +167,14 @@
+@@ -195,19 +195,16 @@
          sqliteDb(tx)
-           .update(sqliteSchema.refreshTokens)
-           .set({ revokedAt: new Date().toISOString() })
--          .where(
--            and(
--              eq(sqliteSchema.refreshTokens.customerId, customerId),
--              isNull(sqliteSchema.refreshTokens.revokedAt),
--            ),
--          )
-+          .where(eq(sqliteSchema.refreshTokens.customerId, customerId))
+           .update(t)
+-          .set({
+-            revokedAt: sql`COALESCE(${t.revokedAt}, ${new Date().toISOString()})`,
+-            replacedByJti: null,
+-          })
++          .set({ revokedAt: new Date().toISOString() })
+           .where(and(eq(t.customerId, customerId), isRotatable(t)))
            .run()
          return
        }
-       await postgresDb(tx)
-         .update(postgresSchema.refreshTokens)
-         .set({ revokedAt: new Date() })
--        .where(
--          and(
--            eq(postgresSchema.refreshTokens.customerId, customerId),
--            isNull(postgresSchema.refreshTokens.revokedAt),
--          ),
--        )
-+        .where(eq(postgresSchema.refreshTokens.customerId, customerId))
+       const db = postgresDb(tx)
+       const t = postgresSchema.refreshTokens
+       const ofCustomer = and(eq(t.customerId, customerId), isRotatable(t))
+       await db.select({ id: t.id }).from(t).where(ofCustomer).orderBy(t.id).for('update')
+       await db
+         .update(t)
+-        .set({ revokedAt: sql`COALESCE(${t.revokedAt}, ${new Date()})`, replacedByJti: null })
++        .set({ revokedAt: new Date() })
+         .where(ofCustomer)
      },
-     async purgeExpired(tx, now) {
-       if (tx.kind === 'sqlite') {
