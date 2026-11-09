@@ -277,6 +277,8 @@ export const routeSchemas: Record<string, RouteSchema> = {
       email: z.string().trim().max(254).email(),
       variantId: id,
       kind: z.enum(['back_in_stock', 'price_drop']),
+      // Any string reaches the allowlist check, which answers `alerts.origin_not_allowed`.
+      linkOrigin: z.string().optional(),
     }),
   },
   'POST /api/alerts/confirm': {

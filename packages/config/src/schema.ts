@@ -530,6 +530,8 @@ export const httpSchema = z.object({
       allowedOrigins: z
         .array(z.string())
         .default(['http://localhost:3000', 'http://localhost:4321']),
+      // Sites running the cart kit: credentialed CORS on the cart's routes alone, so their scripts never reach a token.
+      kitOrigins: z.array(z.string()).default([]),
       credentials: z.boolean().default(true),
     })
     .prefault({}),

@@ -129,7 +129,12 @@ function capture(): Capture {
   }
 }
 
-function alertsConfig(email: 'custom' | 'native', origins: string[], currency?: string) {
+function alertsConfig(
+  email: 'custom' | 'native',
+  origins: string[],
+  currency?: string,
+  kitOrigins: string[] = [],
+) {
   return (config: NymbalConfig): NymbalConfig =>
     ({
       ...config,
@@ -138,7 +143,7 @@ function alertsConfig(email: 'custom' | 'native', origins: string[], currency?: 
         ...config.commerce,
         ...(email === 'custom' ? { email: { provider: 'custom' } } : {}),
       },
-      http: { ...config.http, cors: { ...config.http.cors, allowedOrigins: origins } },
+      http: { ...config.http, cors: { ...config.http.cors, allowedOrigins: origins, kitOrigins } },
       security: {
         ...config.security,
         // The suite subscribes many times from 127.0.0.1; the built-in bound is proven in the http package.
@@ -177,6 +182,7 @@ async function openStore(
   opts: {
     email?: 'custom' | 'native'
     origins?: string[]
+    kitOrigins?: string[]
     currency?: string
     retry?: boolean
   } = {},
@@ -191,7 +197,7 @@ async function openStore(
   })
   const email = opts.email ?? 'custom'
   const k = await options.open({
-    configure: alertsConfig(email, opts.origins ?? ORIGINS, opts.currency),
+    configure: alertsConfig(email, opts.origins ?? ORIGINS, opts.currency, opts.kitOrigins),
     appOptions: {
       ...(email === 'custom' && { adapters: { email: mail.adapter } }),
       ...(opts.retry === true && {
@@ -2610,6 +2616,132 @@ export function alertsSuite(dialect: Dialect, options: AlertsSuiteOptions): void
       ])
       expect(baselineOf(await rowOf(s, email, p.variantId, PRICE_DROP))).toBe(70)
     }, 120_000)
+  })
+
+  describe(`alerts: a subscribe naming the origin its links go to (${dialect})`, () => {
+    let s: Store
+
+    beforeAll(async () => {
+      s = await openStore(options)
+    }, 60_000)
+
+    afterAll(async () => {
+      await s?.close()
+    })
+
+    const ALLOWED = SHOP_A
+    const OTHER_ALLOWED = SHOP_B
+
+    /** A subscribe from `origin` that names where the links go. */
+    const subscribeFor = (
+      email: string,
+      variantId: string,
+      origin: string | null,
+      linkOrigin: string | undefined,
+    ): Promise<Answer> =>
+      post(
+        s.base,
+        SUBSCRIBE,
+        { email, variantId, kind: KIND, ...(linkOrigin === undefined ? {} : { linkOrigin }) },
+        { ...s.csrf, ...(origin === null ? {} : { origin }) },
+      )
+
+    /** The alert.requested.v1 events for a variant, however many subscribes it took. */
+    const requestedFor = async (variantId: string): Promise<unknown[]> =>
+      (await eventRows(s.raw, 'type = ?', ['alert.requested.v1'])).filter(
+        (e) => (e.envelope.payload as { variantId?: string }).variantId === variantId,
+      )
+
+    it('AC-12: a subscribe from an allowed Origin with an allowed linkOrigin writes the row’s origin as linkOrigin, and the confirmation’s confirm, unsubscribe and product links begin with it', async () => {
+      const p = await seedProduct(s.k, 0)
+      const email = freshEmail('link-origin')
+
+      const res = await subscribeFor(email, p.variantId, ALLOWED, OTHER_ALLOWED)
+      expect(res.status, res.text.slice(0, 300)).toBe(202)
+      await delivered(s)
+
+      const row = await rowOf(s, email, p.variantId)
+      expect(row.origin).toBe(OTHER_ALLOWED)
+      expect(row.origin).not.toBe(ALLOWED)
+
+      const mails = mailsTo(s, email, CONFIRM_MAIL)
+      expect(mails.length).toBe(1)
+      const vars = mails[0]!.vars
+      expect(link(vars['confirmUrl'], '/alerts/confirm').origin).toBe(row.origin)
+      expect(link(vars['unsubscribeUrl'], '/alerts/unsubscribe').origin).toBe(row.origin)
+      const product = new URL(String(vars['productUrl']))
+      expect(product.origin).toBe(row.origin)
+      expect(product.pathname).toBe(`/product/${p.slug}`)
+    })
+
+    it('AC-13: a linkOrigin outside the allowlist, or an allowed linkOrigin from an Origin outside it, answers 400 alerts.origin_not_allowed with no row and no event; with no linkOrigin the row’s origin is the Origin', async () => {
+      const refused = [
+        { origin: ALLOWED, linkOrigin: 'http://evil.test' },
+        { origin: ALLOWED, linkOrigin: 'https://shop-a.test' },
+        { origin: ALLOWED, linkOrigin: 'http://shop-a.test:8080' },
+        { origin: ALLOWED, linkOrigin: 'http://shop-a.test.evil.test' },
+        { origin: ALLOWED, linkOrigin: 'null' },
+        { origin: ALLOWED, linkOrigin: '*' },
+        { origin: 'http://evil.test', linkOrigin: ALLOWED },
+        { origin: null, linkOrigin: ALLOWED },
+      ]
+      for (const attempt of refused) {
+        const p = await seedProduct(s.k, 0)
+        const email = freshEmail('link-origin-refused')
+
+        const answer = await subscribeFor(email, p.variantId, attempt.origin, attempt.linkOrigin)
+        await delivered(s)
+
+        const label = JSON.stringify(attempt)
+        expect([answer.status, said(answer)], label).toEqual([400, 'alerts.origin_not_allowed'])
+        expect(await rowsWhere(s, 'variant_id = ?', [p.variantId]), label).toEqual([])
+        expect(await requestedFor(p.variantId), label).toEqual([])
+        expect(mailsTo(s, email), label).toEqual([])
+      }
+
+      const p = await seedProduct(s.k, 0)
+      const email = freshEmail('link-origin-absent')
+      const res = await subscribeFor(email, p.variantId, OTHER_ALLOWED, undefined)
+      expect(res.status, res.text.slice(0, 300)).toBe(202)
+      const row = await rowOf(s, email, p.variantId)
+      expect(row.origin).toBe(OTHER_ALLOWED)
+    })
+  })
+
+  describe(`alerts: a site on http.cors.kitOrigins (${dialect})`, () => {
+    const KIT_SITE = 'http://www.kit.test'
+
+    it('AC-13: a subscribe from a kit origin is taken, with a linkOrigin on either list; a linkOrigin on neither answers 400 with no row', async () => {
+      const kit = await openStore(options, { kitOrigins: [KIT_SITE] })
+      const send = (email: string, variantId: string, linkOrigin: string): Promise<Answer> =>
+        post(
+          kit.base,
+          SUBSCRIBE,
+          { email, variantId, kind: KIND, linkOrigin },
+          { ...kit.csrf, origin: KIT_SITE },
+        )
+      try {
+        for (const linkOrigin of [SHOP_A, KIT_SITE]) {
+          const p = await seedProduct(kit.k, 0)
+          const email = freshEmail('kit-origin')
+          const res = await send(email, p.variantId, linkOrigin)
+          expect(res.status, res.text.slice(0, 300)).toBe(202)
+          expect((await rowOf(kit, email, p.variantId)).origin).toBe(linkOrigin)
+        }
+
+        const p = await seedProduct(kit.k, 0)
+        const refused = await send(
+          freshEmail('kit-origin-refused'),
+          p.variantId,
+          'http://evil.test',
+        )
+        await delivered(kit)
+        expect([refused.status, said(refused)]).toEqual([400, 'alerts.origin_not_allowed'])
+        expect(await rowsWhere(kit, 'variant_id = ?', [p.variantId])).toEqual([])
+      } finally {
+        await kit.close()
+      }
+    }, 60_000)
   })
 
   describe(`alerts: stores that cannot take a subscription (${dialect})`, () => {

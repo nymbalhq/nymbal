@@ -192,7 +192,7 @@ export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
       store,
       repos,
       publisher,
-      allowedOrigins: config.http.cors.allowedOrigins,
+      allowedOrigins: [...config.http.cors.allowedOrigins, ...config.http.cors.kitOrigins],
       delivers: () => emailDelivers(email),
     }),
     review: createReviewService({

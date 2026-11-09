@@ -40,7 +40,15 @@ import { createShopperAttestation, type ShopperAttestation } from './shopper-att
 
 export interface CorsOptions {
   allowedOrigins: string[]
+  /** Origins answered, with credentials, on `KIT_ROUTES` alone; `allowedOrigins` wins for an origin on both. */
+  kitOrigins?: string[]
   credentials: boolean
+}
+
+const KIT_ROUTES = /^\/api\/(?:csrf|capabilities|alerts\/subscribe|cart(?:\/.*)?)$/
+
+function isKitRoute(url: string): boolean {
+  return KIT_ROUTES.test(url.split('?', 1)[0] ?? '')
 }
 
 export interface FastifyAdapterOptions {
@@ -211,17 +219,36 @@ export class FastifyHttpAdapter implements HttpAdapter {
       for (const endStream of this.#openStreams) endStream()
     })
     void this.#app.register(fastifyCookie)
-    if (options.cors && options.cors.allowedOrigins.length > 0) {
-      void this.#app.register(fastifyCors, {
-        origin: options.cors.allowedOrigins,
-        credentials: options.cors.credentials,
-        methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
-        // A browser client on an allowed origin reads the request's id and whether a keyed write was a replay.
-        exposedHeaders: [CORRELATION_ID_HEADER, IDEMPOTENT_REPLAYED_HEADER],
-      })
-    }
+    if (options.cors) this.#registerCors(options.cors)
     // The token a client on another origin of the same site echoes in `x-csrf-token`: it cannot read this cookie.
     this.registerRoute('GET', '/api/csrf', (ctx) => this.#guard.issueToken(ctx))
+  }
+
+  #registerCors({ allowedOrigins, kitOrigins = [], credentials }: CorsOptions): void {
+    if (allowedOrigins.length === 0 && kitOrigins.length === 0) return
+    const shared = {
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
+      // A browser client on an allowed origin reads the request's id and whether a keyed write was a replay.
+      exposedHeaders: [CORRELATION_ID_HEADER, IDEMPOTENT_REPLAYED_HEADER],
+    }
+    const standard = {
+      ...shared,
+      credentials,
+      origin: allowedOrigins.length > 0 ? allowedOrigins : false,
+    }
+    const kit = { ...shared, credentials: true, origin: kitOrigins }
+    // `origin: false` rather than a list without it: the plugin sends Allow-Credentials to any origin a list refuses.
+    const refused = { ...shared, credentials: false, origin: false }
+    void this.#app.register(fastifyCors, {
+      delegator: (req, callback) => {
+        const origin = req.headers.origin ?? ''
+        if (!kitOrigins.includes(origin) || allowedOrigins.includes(origin)) {
+          callback(null, standard)
+        } else {
+          callback(null, isKitRoute(req.url) ? kit : refused)
+        }
+      },
+    })
   }
 
   get boundPort(): number {

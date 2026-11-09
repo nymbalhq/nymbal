@@ -280,7 +280,7 @@ export function selectTests(changed: string[]): {
 export function isBuildInput(path: string): boolean {
   if (TEST_FILE.test(path)) return false
   // A package is `packages/<name>` or, by the second workspace glob, `packages/adapters/<slot>/<provider>`.
-  return /^packages\/(?:adapters\/[^/]+\/[^/]+|[^/]+)\/(?:src\/|package\.json$|tsup\.config\.[cm]?[jt]s$|tsconfig[^/]*\.json$)/.test(
+  return /^packages\/(?:adapters\/[^/]+\/[^/]+|[^/]+)\/(?:src\/|package\.json$|tsup(?:\.kit)?\.config\.[cm]?[jt]s$|tsconfig[^/]*\.json$)/.test(
     path,
   )
 }
@@ -1237,6 +1237,8 @@ export type PlanInput = {
   stryker?: 'off' | 'blocking' | undefined
   /** gate:full's perf-bytes step: script bytes per page against the budgets, as dev CI's perf job holds them. */
   perfBytes?: boolean | undefined
+  /** gate:full's WordPress site and journeys, for a diff that reaches them; dev CI runs them regardless. */
+  wordpress?: boolean | undefined
   /**
    * The harness's own Vitest projects (`HARNESS_PROJECTS`): `all` runs them whatever changed (dev CI); `changed`,
    * the default, leaves them out when no harness path changed: all of them in the plain gate, the tooling ones in
@@ -1352,6 +1354,8 @@ const E2E_SERVES: Record<string, string[]> = {
   // The native store with the project-elements fixture (tests/e2e/fixtures/override-elements) as each template's entry.
   'astro-override': [],
   'nextjs-override': [],
+  // The bundle the WordPress journeys route the jsDelivr URL to.
+  wordpress: ['packages/web-components/dist/kit.js'],
 }
 
 /**
@@ -1590,6 +1594,12 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
   const s3 = external
     ? `NYMBAL_TEST_S3_ENDPOINT=${shellWord(input.s3Endpoint ?? minioUrl())}`
     : `NYMBAL_TEST_S3_ENDPOINT=${shellWord(minioUrl(minioPort))} NYMBAL_TEST_S3_ACCESS_KEY_ID=minioadmin NYMBAL_TEST_S3_SECRET_ACCESS_KEY=minioadmin`
+  const slotCompose =
+    block.slot === 0
+      ? 'docker compose'
+      : `${Object.entries(composePorts(block))
+          .map(([name, value]) => `${name}=${shellWord(value)}`)
+          .join(' ')} docker compose -p ${block.project}`
   // Slot 0 is compose.yaml's own project and default ports; another slot names both, so worktrees share no container.
   const compose =
     block.slot === 0
@@ -1739,6 +1749,25 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
       { name: 'e2e astro-override', command: e2e('astro-override'), needs: e2eNeeds },
       { name: 'e2e nextjs-override', command: e2e('nextjs-override'), needs: e2eNeeds },
     )
+    // Off by default: one more image set and target against a full run already over budget. `--only` naming a step
+    // must find it (`select` throws on an absent one), so naming either turns both on.
+    if (
+      input.wordpress === true ||
+      input.only?.includes('wordpress up') === true ||
+      input.only?.includes('e2e wordpress') === true
+    ) {
+      steps.push(
+        {
+          name: 'wordpress up',
+          command: `${slotCompose} --profile wordpress up -d --wait wordpress-db wordpress && ${slotCompose} --profile wordpress --profile wordpress-init run --rm wordpress-init`,
+        },
+        {
+          name: 'e2e wordpress',
+          command: e2e('wordpress'),
+          needs: [...mailpitNeeds, 'wordpress up'],
+        },
+      )
+    }
   }
   // Last: it builds the templates for production and serves them on the slot's ports, which the E2E dev servers use.
   steps.push(
@@ -2021,6 +2050,7 @@ async function main(argv: string[]): Promise<number> {
       sentinels: { type: 'string' },
       stryker: { type: 'boolean', default: false },
       'perf-bytes': { type: 'boolean', default: false },
+      wordpress: { type: 'boolean', default: false },
       harness: { type: 'string', default: 'changed' },
       check: { type: 'boolean', default: false },
       admin: { type: 'boolean', default: false },
@@ -2120,6 +2150,7 @@ async function main(argv: string[]): Promise<number> {
     perfBytes: values['perf-bytes'],
   })
   if (perfBytes && !values.full) throw new Error('--perf-bytes needs --full')
+  if (values.wordpress && !values.full) throw new Error('--wordpress needs --full')
   const sentinelsDir = resolve(root, 'tests/sentinels')
   if (Array.isArray(sentinelsMode)) {
     const known = existsSync(sentinelsDir) ? loadSentinels(sentinelsDir).map((s) => s.id) : []
@@ -2209,6 +2240,7 @@ async function main(argv: string[]): Promise<number> {
     sentinels,
     stryker: strykerMode,
     perfBytes,
+    wordpress: values.wordpress,
     harness: values.harness,
     inputReaders,
     relatedPaths,

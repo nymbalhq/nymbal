@@ -165,6 +165,12 @@ const TARGETS: Target[] = [
     store: 'override',
     storefronts: ['nextjsOverride'],
   },
+  {
+    name: 'wordpress',
+    env: { NYMBAL_E2E_TARGET: 'wordpress' },
+    store: 'custom',
+    storefronts: ['astroCustom'],
+  },
 ]
 const targetNamed = (name: string): Target => TARGETS.find((t) => t.name === name)!
 
@@ -183,6 +189,7 @@ const PROJECT_FIELDS: Record<string, PortField | 'admin'> = {
   'nextjs-mobile': 'nextjs',
   admin: 'admin',
   'admin-mobile': 'admin',
+  wordpress: 'wordpress',
 }
 
 const TYPOS = ['astr0', 'Astro', 'next', 'astro-mobile']
@@ -399,7 +406,7 @@ describe.each(SLOTS)('AC-4: the Playwright config in stack slot %i', (slot) => {
     },
   )
 
-  it.each(TARGETS)(
+  it.each(TARGETS.filter((t) => t.name !== 'wordpress'))(
     'AC-4 (c): $name: the API server’s NYMBAL_CORS_ORIGINS is its two storefronts’ origins',
     (target) => {
       const api = serversOf(slot, target).filter(isApi)
@@ -410,6 +417,23 @@ describe.each(SLOTS)('AC-4: the Playwright config in stack slot %i', (slot) => {
       )
     },
   )
+
+  it('AC-15: the wordpress target’s API gives its store full CORS and the WordPress site, on each of the journeys’ hosts, kit origins alone', () => {
+    const target = targetNamed('wordpress')
+    const api = serversOf(slot, target).filter(isApi)
+    expect(api.length).toBe(1)
+    const list = (name: string): string[] =>
+      (api[0]!.env?.[name] ?? '').split(',').map((o) => o.trim())
+    const wordpress = block.wordpress
+    expect(list('NYMBAL_CORS_ORIGINS')).toEqual([origin(block.astroCustom)])
+    expect(list('NYMBAL_KIT_ORIGINS').sort()).toEqual(
+      [
+        `http://localhost:${wordpress}`,
+        `http://127.0.0.1:${wordpress}`,
+        `http://www.nymbal-kit.test:${wordpress}`,
+      ].sort(),
+    )
+  })
 
   it.each(TARGETS)('AC-4 (d): $name: each project’s baseURL is the block’s', (target) => {
     const projects = evaluated.get(key(slot, target))?.projects ?? []
@@ -583,6 +607,37 @@ describe('the custom-store projects run only the journeys tagged @capabilities',
       expect(rows.length).toBeGreaterThan(tagged.length)
     },
   )
+})
+
+describe('AC-15: the WordPress journey runs on the wordpress project alone', () => {
+  const FILE = 'wordpress-kit.spec.ts'
+  const listed = new Map<string, Listed[]>()
+  let others: string[] = []
+
+  beforeAll(async () => {
+    const configured = await evaluate({ NYMBAL_STACK_SLOT: '0' })
+    const names = (configured.projects ?? []).map((p) => p.name)
+    others = names.filter((name) => name !== 'wordpress')
+    for (const row of await listTests([...others, 'wordpress'])) {
+      listed.set(row.project, [...(listed.get(row.project) ?? []), row])
+    }
+  }, 120_000)
+
+  it('AC-15: --project wordpress lists exactly wordpress-kit.spec.ts, every test tagged @wordpress', () => {
+    const rows = listed.get('wordpress') ?? []
+    expect(rows.length).toBeGreaterThanOrEqual(8)
+    expect([...new Set(rows.map((row) => row.file))]).toEqual([FILE])
+    expect(rows.filter((row) => !row.tags.includes('wordpress'))).toEqual([])
+  })
+
+  it('AC-15: no other project lists a @wordpress test', () => {
+    expect(others.length).toBeGreaterThanOrEqual(13)
+    expect(
+      others
+        .flatMap((name) => listed.get(name) ?? [])
+        .filter((row) => row.tags.includes('wordpress')),
+    ).toEqual([])
+  })
 })
 
 // The mail outage journey stops Mailpit for every store on the stack, so only its own project may run it.

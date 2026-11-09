@@ -643,6 +643,84 @@ jobs:
           if-no-files-found: ignore
           retention-days: 3
 
+  e2e-wordpress:
+    name: E2E — the cart kit on WordPress
+    if: inputs.select != 'lighthouse'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    needs: [build]
+    # The custom store's email is SMTP into this Mailpit, which its alert journeys read.
+    env:
+      NYMBAL_TEST_MAILPIT_URL: http://localhost:18025
+      NYMBAL_TEST_MAILPIT_SMTP: localhost:11025
+    services:
+      mailpit:
+        image: axllent/mailpit:v1.22.0
+        env:
+          MP_ENABLE_CHAOS: 'true'
+        ports:
+          - '11025:1025'
+          - '18025:8025'
+        options: >-
+          --health-cmd "/mailpit readyz"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          lfs: true
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          name: build-output
+      - name: Playwright version
+        id: playwright
+        run: |
+          version=$(grep -m1 -oE "^  '@playwright/test@[0-9]+\.[0-9]+\.[0-9]+'" pnpm-lock.yaml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright browsers
+        id: browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+      - name: Install Playwright browsers
+        if: steps.browsers.outputs.cache-hit != 'true'
+        run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
+      - name: Install Playwright system libraries
+        if: steps.browsers.outputs.cache-hit == 'true'
+        run: pnpm --filter @nymbalhq/e2e exec playwright install-deps chromium
+      # Every fresh runner pulls these three, and a registry blip here would hold every lane.
+      - name: Pull the WordPress images
+        run: docker compose --profile wordpress --profile wordpress-init pull wordpress-db wordpress wordpress-init || (sleep 15 && docker compose --profile wordpress --profile wordpress-init pull wordpress-db wordpress wordpress-init)
+      - name: WordPress journeys
+        run: pnpm exec tsx scripts/gate.ts --full --only "wordpress up,e2e wordpress" --services external --no-build --base "$GATE_BASE"
+      - name: Upload the Playwright reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-reports-wordpress
+          path: |
+            reports/e2e-*.json
+            !reports/e2e-shutdown.json
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Upload the Playwright traces
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-traces-wordpress
+          path: tests/e2e/test-results/
+          if-no-files-found: ignore
+          retention-days: 3
+
   e2e-nextjs-custom:
     name: E2E — Next.js on custom providers
     if: inputs.select != 'lighthouse'

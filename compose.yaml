@@ -75,3 +75,68 @@ services:
         mc alias set local http://minio:9000 minioadmin minioadmin &&
         mc mb --ignore-existing local/nymbal-media &&
         mc anonymous set download local/nymbal-media
+
+  # The migration kit's journeys: a real WordPress on a Nymbal cart. Under profiles so `up --wait` starts none of it;
+  # `wordpress-init` is one-shot and in a profile of its own, as `minio-init`, for the same reason.
+  wordpress-db:
+    image: mariadb:11.8@sha256:c4124d1afa875e47f2892edf26b482fa54f796e2f342d3717a04ca091a22a9bd
+    profiles: ['wordpress']
+    environment:
+      MARIADB_RANDOM_ROOT_PASSWORD: 'yes'
+      MARIADB_DATABASE: wordpress
+      MARIADB_USER: wordpress
+      MARIADB_PASSWORD: wordpress
+    healthcheck:
+      test: ['CMD', 'healthcheck.sh', '--connect', '--innodb_initialized']
+      interval: 2s
+      timeout: 3s
+      retries: 60
+
+  wordpress:
+    image: wordpress:7.1-php8.4-apache@sha256:543d2b75f287c76f387cd17dcf2ca5e69745a1c30b754e32414a5e1ef5b8da87
+    profiles: ['wordpress']
+    depends_on:
+      wordpress-db:
+        condition: service_healthy
+    environment: &wordpress-environment
+      WORDPRESS_DB_HOST: wordpress-db
+      WORDPRESS_DB_NAME: wordpress
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: wordpress
+      # One install answers on every host the journeys open it on. The CLI has no Host header.
+      WORDPRESS_CONFIG_EXTRA: |
+        define('WP_HOME', 'http://' . ($$_SERVER['HTTP_HOST'] ?? 'localhost'));
+        define('WP_SITEURL', WP_HOME);
+    ports:
+      - '127.0.0.1:${NYMBAL_WORDPRESS_PORT:-3051}:80'
+    volumes: &wordpress-volumes
+      - wordpress-site:/var/www/html
+      - ./tests/e2e/fixtures/wordpress/theme:/var/www/html/wp-content/themes/nymbal-kit-fixture:ro
+    healthcheck:
+      test: ['CMD', 'curl', '-fsS', '-o', '/dev/null', 'http://localhost/readme.html']
+      interval: 2s
+      timeout: 3s
+      retries: 60
+
+  wordpress-init:
+    image: wordpress:cli-2.12-php8.4@sha256:37b7e3ed9b537788756f9b5c6dd8ec7c3f3053ee707abc67c776e453ba8f9e55
+    profiles: ['wordpress-init']
+    depends_on:
+      wordpress-db:
+        condition: service_healthy
+      wordpress:
+        condition: service_healthy
+    # The site's files belong to the Apache image's www-data, whose uid differs from the CLI image's.
+    user: '33:33'
+    environment: *wordpress-environment
+    volumes: *wordpress-volumes
+    entrypoint: ['/bin/sh', '-c']
+    command:
+      - >-
+        wp core is-installed --url=http://localhost ||
+        wp core install --url=http://localhost --title=Nymbal --admin_user=admin --admin_password=admin
+        --admin_email=admin@nymbal.dev --skip-email;
+        wp theme activate nymbal-kit-fixture --url=http://localhost
+
+volumes:
+  wordpress-site:

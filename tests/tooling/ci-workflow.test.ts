@@ -939,6 +939,7 @@ describe('AC-11: the E2E jobs start no Postgres service, and their gate.ts call 
 const MAILPIT_E2E_JOBS: Record<string, string> = {
   'e2e-astro-custom': 'e2e astro-custom',
   'e2e-nextjs-custom': 'e2e nextjs-custom',
+  'e2e-wordpress': 'e2e wordpress',
 }
 
 describe('AC-13: the custom-store E2E jobs have the Mailpit their journeys read', () => {
@@ -1680,7 +1681,7 @@ describe('the integration job runs its service-backed gate steps side by side', 
 describe('every E2E target runs once on a push, and its job keeps its Playwright JSON report', () => {
   it('on a push to dev, the E2E targets ci.yml runs are each of the gate’s default-store targets once, and each job always uploads reports/e2e-<target>.json for every target it runs', () => {
     const ci = loadWorkflow(WORKFLOW)
-    const targets = plan({ full: true, base: 'HEAD', changed: [], mutated: [] })
+    const targets = plan({ full: true, base: 'HEAD', changed: [], mutated: [], wordpress: true })
       .steps.filter((s) => s.name.startsWith('e2e '))
       .map((s) => s.name.slice('e2e '.length))
       .sort()
@@ -1729,7 +1730,7 @@ describe('every E2E target runs once on a push, and its job keeps its Playwright
         ]),
     )
     const outputOf = new Map(
-      plan({ full: true, base: 'HEAD', changed: [], mutated: [] })
+      plan({ full: true, base: 'HEAD', changed: [], mutated: [], wordpress: true })
         .steps.filter((s) => s.name.startsWith('e2e '))
         .map((s) => {
           const pkg = /pnpm --filter (\S+) exec playwright/.exec(s.command)?.[1] ?? ''

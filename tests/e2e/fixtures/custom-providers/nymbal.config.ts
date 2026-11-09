@@ -88,6 +88,10 @@ export default {
       allowedOrigins: env('NYMBAL_CORS_ORIGINS', 'http://localhost:4331,http://localhost:3010')
         .split(',')
         .map((origin) => origin.trim()),
+      kitOrigins: env('NYMBAL_KIT_ORIGINS', '')
+        .split(',')
+        .map((origin) => origin.trim())
+        .filter((origin) => origin !== ''),
     },
   },
   deployment: {

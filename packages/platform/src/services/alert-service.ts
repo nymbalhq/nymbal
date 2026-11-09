@@ -36,6 +36,8 @@ export interface AlertSubscribeInput {
   kind: AlertKind
   /** The request's `Origin` header: the storefront the links in its emails point at. */
   origin: string | undefined
+  /** Where the links in its emails point instead, for a page on a site that has none of the store's pages. */
+  linkOrigin?: string
 }
 
 export interface AlertConfirmed {
@@ -77,7 +79,7 @@ export interface CreateAlertServiceDeps {
   store: CommandStore
   repos: Repositories
   publisher: EventPublisher
-  /** `http.cors.allowedOrigins`: the storefronts a subscribe may come from. A `*` entry matches no origin. */
+  /** `http.cors.allowedOrigins` and `kitOrigins`: the sites a subscribe may come from. A `*` entry matches no origin. */
   allowedOrigins: readonly string[]
   /** Whether the store's email reaches a mailbox; a store whose email only logs takes no subscription. */
   delivers(): boolean
@@ -85,6 +87,12 @@ export interface CreateAlertServiceDeps {
 
 const CONFIRMABLE: readonly AlertStatus[] = ['pending', 'active']
 const UNSUBSCRIBABLE: readonly AlertStatus[] = ['pending', 'active', 'fired']
+
+function originNotAllowed(): HttpError {
+  return new HttpError(400, 'The request does not come from one of the store’s storefronts', {
+    code: 'alerts.origin_not_allowed',
+  })
+}
 
 function linkInvalid(): HttpError {
   return new HttpError(404, 'This link is not valid or no longer applies', {
@@ -97,7 +105,7 @@ export function createAlertService(deps: CreateAlertServiceDeps): AlertService {
   const origins = new Set(deps.allowedOrigins.filter((origin) => origin !== '*'))
 
   return {
-    async subscribe({ email, variantId, kind, origin }) {
+    async subscribe({ email, variantId, kind, origin, linkOrigin }) {
       return store.transaction(async (tx) => {
         audit.note('alert.subscribe', [{ type: 'variant', id: variantId }])
         if (!deps.delivers()) {
@@ -105,15 +113,8 @@ export function createAlertService(deps: CreateAlertServiceDeps): AlertService {
             code: 'alerts.unavailable',
           })
         }
-        if (origin === undefined || !origins.has(origin)) {
-          throw new HttpError(
-            400,
-            'The request does not come from one of the store’s storefronts',
-            {
-              code: 'alerts.origin_not_allowed',
-            },
-          )
-        }
+        if (origin === undefined || !origins.has(origin)) throw originNotAllowed()
+        if (linkOrigin !== undefined && !origins.has(linkOrigin)) throw originNotAllowed()
         const variant = await repos.variant.findById(tx, variantId)
         if (variant === null) {
           throw new HttpError(404, `Variant ${variantId} not found`, {
@@ -129,7 +130,7 @@ export function createAlertService(deps: CreateAlertServiceDeps): AlertService {
           productId: variant.productId,
           confirmToken: newAlertToken(),
           unsubscribeToken: newAlertToken(),
-          origin,
+          origin: linkOrigin ?? origin,
           baselinePriceMinor: kind === 'price_drop' ? variant.priceMinor : null,
           at,
         })
