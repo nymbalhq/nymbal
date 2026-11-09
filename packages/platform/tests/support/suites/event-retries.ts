@@ -7,23 +7,28 @@ import {
   AdapterError,
   ConfigError,
   EVT_CATEGORY_CREATED,
+  EVT_ORDER_SHIPPED,
   EVT_PRODUCT_CREATED,
   NymbalError,
   type EmailAdapter,
   type NymbalEvent,
+  type ShippingAdapter,
   type TransactionalEmail,
 } from '@nymbalhq/types'
 import { withIdempotency } from '../../../src/handlers/idempotency.js'
 import { createLogger } from '../../../src/logger.js'
-import { address, seedVariant, type Dialect, type Kernel } from '../kernel.js'
+import { startEventRetentionSweeper } from '../../../src/sweepers/event-retention-sweeper.js'
+import { retryDeadOf, retryFloorOf, type DeadSelection } from '../../../src/tests/event-retry.js'
+import { address, checkoutOf, seedVariant, type Dialect, type Kernel } from '../kernel.js'
 import { eventRows, failPublishFor, maxSeq, type FailingBus } from '../outbox.js'
-import { openRaw, type RawReader } from '../raw.js'
+import { openRaw, writeRaw, type RawReader } from '../raw.js'
 import {
   DOCUMENT_COLLECTIONS,
   documentModelsOf,
   nativeSearchDocuments,
   rebuildFresh,
 } from '../read-models.js'
+import { createTestShipAdapter, type TestShipAdapter } from '../test-ship.js'
 
 // The relay's retries on one dialect. A named handler that throws leaves its event in the log; the relay hands it to
 // the bus again until it is delivered or, after maxAttempts, dead, and the logs say which subscription failed (AC-4).
@@ -36,7 +41,7 @@ export interface RetriesOpen {
   target?: string
   configure?: (config: NymbalConfig) => NymbalConfig
   appOptions?: {
-    adapters?: { email: EmailAdapter }
+    adapters?: { email?: EmailAdapter; shipping?: ShippingAdapter }
     relay?: { retryDelayMs?: number; maxAttempts?: number; now?: () => Date }
   }
   logger?: Kernel['logger']
@@ -124,10 +129,13 @@ function counter(): { add(id: string): number; of(id: string): number } {
 interface Capture {
   adapter: EmailAdapter
   sent: TransactionalEmail[]
+  /** Addresses every send to is refused, until removed. */
+  refuse: Set<string>
 }
 
 function capture(): Capture {
   const sent: TransactionalEmail[] = []
+  const refuse = new Set<string>()
   const adapter: EmailAdapter = {
     kind: 'email',
     providerName: 'retries-capture',
@@ -137,13 +145,14 @@ function capture(): Capture {
     initialize: async () => undefined,
     healthCheck: async () => ({ status: 'healthy' }),
     async sendTransactional(message) {
+      if (refuse.has(message.to)) throw new Error(`the capture refuses ${message.to}`)
       sent.push(message)
       return { messageId: `retries-${sent.length}`, accepted: true }
     },
     syncCustomerToList: async () => undefined,
     removeCustomerFromList: async () => undefined,
   }
-  return { adapter, sent }
+  return { adapter, sent, refuse }
 }
 
 const storeConfig = (config: NymbalConfig): NymbalConfig =>
@@ -760,5 +769,352 @@ export function eventRetriesSuite(dialect: Dialect, options: RetriesSuiteOptions
         { numRuns: options.sequenceRuns, endOnFailure: true },
       )
     }, 600_000)
+  })
+
+  describe(`retrying a dead event (${dialect})`, () => {
+    const NOT_DEAD_BEFORE = new Date(0)
+
+    /** Puts the dead rows the selection takes back in the log, as `nymbal events retry` does. */
+    const retry = (k: Kernel, selection: DeadSelection = {}) =>
+      k.store.transaction((tx) =>
+        retryDeadOf(k.repos.eventLog)(tx, selection, { floor: NOT_DEAD_BEFORE, limit: 100 }),
+      )
+
+    /** The relay's retries, one pass each: with retryDelayMs 0 each pass is one more attempt. */
+    async function drains(k: Kernel, passes: number): Promise<void> {
+      for (let pass = 0; pass < passes; pass += 1) await k.app.relay.drain()
+    }
+
+    const trackingConfig = (config: NymbalConfig): NymbalConfig => {
+      const base = storeConfig(config)
+      return {
+        ...base,
+        commerce: { ...base.commerce, shipping: { provider: 'custom' } },
+      } as NymbalConfig
+    }
+
+    interface ShippingStore {
+      k: Kernel
+      raw: RawReader
+      mail: Capture
+      ship: TestShipAdapter
+    }
+
+    async function openShippingStore(): Promise<ShippingStore> {
+      const mail = capture()
+      const ship = createTestShipAdapter()
+      const k = await options.open({
+        configure: trackingConfig,
+        appOptions: { adapters: { email: mail.adapter, shipping: ship } },
+      })
+      return { k, raw: openRaw(k.dialect, k.target), mail, ship }
+    }
+
+    /** An order shipped while the tracking provider rejects it: its email goes out on the first delivery and the event dies. */
+    async function shippedEventDead(store: ShippingStore): Promise<{ id: string; number: string }> {
+      const { k, raw, ship } = store
+      const seeded = await seedVariant(k, 5)
+      const started = await checkoutOf(k, seeded, 1, `shipped-${randomUUID()}@retries.test`)
+      await k.services.order.updateStatus(started.orderId, 'processing', 'retries')
+      ship.rejectNext(MAX_ATTEMPTS)
+      const number = `TRK${randomUUID().replace(/-/g, '').slice(0, 12).toUpperCase()}`
+      const before = await maxSeq(raw)
+      await k.services.order.markShipped(started.orderId, number, 'royal-mail', 'retries')
+      const { id } = await onlyRow(raw, before, EVT_ORDER_SHIPPED)
+      await drains(k, MAX_ATTEMPTS - 1)
+      const [row] = await eventRows(raw, 'id = ?', [id])
+      expect([row!.attempts, row!.deadAt != null], 'the shipped event, killed by tracking').toEqual(
+        [MAX_ATTEMPTS, true],
+      )
+      return { id, number }
+    }
+
+    it('AC-4: a dead event, whose last failure left it a wait of minutes, is delivered once on the next relay pass after retryDead, with attempts 0 and no dead_at, and not again by the pass after it', async () => {
+      const DELAY = 60_000
+      const clock = { at: Date.now() }
+      const k = await options.open({
+        appOptions: { relay: { retryDelayMs: DELAY, now: () => new Date(clock.at) } },
+      })
+      const raw = openRaw(k.dialect, k.target)
+      try {
+        const refusing = failPublishFor(k.eventBus, [EVT_CATEGORY_CREATED])
+        const before = await maxSeq(raw)
+        await k.services.category.create({ slug: `dead-${randomUUID()}`, name: 'Dead' })
+        const { id } = await onlyRow(raw, before, EVT_CATEGORY_CREATED)
+        for (let failure = 1; failure < MAX_ATTEMPTS; failure += 1) {
+          clock.at = (await retryAtOf(raw, id))!
+          await k.app.relay.drain()
+        }
+        const [dead] = await eventRows(raw, 'id = ?', [id])
+        expect([dead!.attempts, dead!.deadAt != null], 'the event is dead').toEqual([
+          MAX_ATTEMPTS,
+          true,
+        ])
+        expect(await retryAtOf(raw, id), 'its last wait is still ahead').toBeGreaterThan(clock.at)
+
+        const delivered = counter()
+        await k.eventBus.subscribe(
+          EVT_CATEGORY_CREATED,
+          async (e: NymbalEvent<unknown>) => void delivered.add(e.id),
+          { name: 'retries-after-dead' },
+        )
+        refusing.restore()
+        clock.at += 1_000
+        await retry(k)
+        await k.app.relay.drain()
+
+        expect(delivered.of(id), 'deliveries on the pass after the retry').toBe(1)
+        const [row] = await eventRows(raw, 'id = ?', [id])
+        expect([row!.deliveredAt != null, row!.attempts, row!.deadAt ?? null]).toEqual([
+          true,
+          0,
+          null,
+        ])
+
+        await k.app.relay.drain()
+        expect(delivered.of(id), 'deliveries after one more pass').toBe(1)
+      } finally {
+        await raw.close()
+        await k.close()
+      }
+    }, 60_000)
+
+    it(`AC-5: property: after a retry, a handler that fails its next f deliveries (f from 0 to ${MAX_ATTEMPTS + 1}) leaves the event delivered iff f < maxAttempts, with attempts min(f, maxAttempts) and dead_at iff f ≥ maxAttempts; the bus takes it exactly min(f + 1, maxAttempts) more times and never again from later passes`, async () => {
+      const k = await options.open({})
+      const raw = openRaw(k.dialect, k.target)
+      const PROBE = 'retries-after-retry'
+      let failing: number | 'always' = 'always'
+      const called = counter()
+      try {
+        await k.eventBus.subscribe(
+          EVT_CATEGORY_CREATED,
+          async (e: NymbalEvent<unknown>) => {
+            called.add(e.id)
+            if (failing === 'always') throw new Error(`the probe refuses ${e.id}`)
+            if (failing > 0) {
+              failing -= 1
+              throw new Error(`the probe refuses ${e.id} again`)
+            }
+          },
+          { name: PROBE },
+        )
+        await fc.assert(
+          fc.asyncProperty(fc.integer({ min: 0, max: MAX_ATTEMPTS + 1 }), async (f) => {
+            failing = 'always'
+            const before = await maxSeq(raw)
+            await k.services.category.create({ slug: `retry-${randomUUID()}`, name: 'Retried' })
+            const { id } = await onlyRow(raw, before, EVT_CATEGORY_CREATED)
+            await drains(k, MAX_ATTEMPTS - 1)
+            const [dead] = await eventRows(raw, 'id = ?', [id])
+            expect([dead!.attempts, dead!.deadAt != null], 'dead before the retry').toEqual([
+              MAX_ATTEMPTS,
+              true,
+            ])
+            const handedBefore = called.of(id)
+
+            failing = f
+            await retry(k, { id })
+            await drains(k, MAX_ATTEMPTS + 2)
+
+            const label = `f = ${f}`
+            const [row] = await eventRows(raw, 'id = ?', [id])
+            expect(called.of(id) - handedBefore, `${label}: bus calls after the retry`).toBe(
+              Math.min(f + 1, MAX_ATTEMPTS),
+            )
+            expect(row!.deliveredAt != null, `${label}: delivered`).toBe(f < MAX_ATTEMPTS)
+            expect(row!.attempts, `${label}: attempts`).toBe(Math.min(f, MAX_ATTEMPTS))
+            expect(row!.deadAt != null, `${label}: dead`).toBe(f >= MAX_ATTEMPTS)
+          }),
+          {
+            numRuns: options.propertyRuns,
+            examples: [[0], [1], [MAX_ATTEMPTS - 1], [MAX_ATTEMPTS], [MAX_ATTEMPTS + 1]],
+          },
+        )
+      } finally {
+        await raw.close()
+        await k.close()
+      }
+    }, 300_000)
+
+    it('AC-7: an order.shipped.v1 that mailed its customer and died on a failing shipping-start-tracking: once the failure is fixed, a retry registers the tracking number, sends no second shipped email and leaves the audit entries as they were', async () => {
+      const store = await openShippingStore()
+      const { k, raw, mail, ship } = store
+      try {
+        const { id, number } = await shippedEventDead(store)
+        const mailed = () => mail.sent.filter((m) => m.template === 'order-shipped').length
+        expect(mailed(), 'the shipped email, sent on the first delivery').toBe(1)
+        const callsBefore = ship.startCalls.length
+        const auditBefore = await raw.count('audit_entries')
+
+        await retry(k, { id })
+        await k.app.relay.drain()
+
+        const [row] = await eventRows(raw, 'id = ?', [id])
+        expect(row!.deliveredAt != null, 'the event is delivered').toBe(true)
+        expect(
+          ship.startCalls.slice(callsBefore).map((c) => c.trackingNumber),
+          'tracking numbers registered after the retry',
+        ).toEqual([number])
+        expect(ship.startAnswers.at(-1)).toBe('tracking')
+        expect(mailed(), 'shipped emails after the retry').toBe(1)
+        expect(await raw.count('audit_entries'), 'audit entries').toBe(auditBefore)
+      } finally {
+        await raw.close()
+        await k.close()
+      }
+    }, 120_000)
+
+    it('AC-7: a product.restocked.v1 that mailed one subscriber and failed another until it died: once the mail is fixed, a retry mails only the row that failed', async () => {
+      const mail = capture()
+      const k = await options.open({
+        configure: storeConfig,
+        appOptions: { adapters: { email: mail.adapter } },
+      })
+      const raw = openRaw(k.dialect, k.target)
+      try {
+        const seeded = await seedVariant(k, 0)
+        const tag = randomUUID().slice(0, 8)
+        const emails = [`mailed-${tag}@retries.test`, `refused-${tag}@retries.test`]
+        for (const email of emails) {
+          await k.services.alert.subscribe({
+            email,
+            variantId: seeded.variantId,
+            kind: 'back_in_stock',
+            origin: SHOP,
+          })
+          const { confirm_token: token } = await raw.one<{ confirm_token: string }>(
+            'SELECT confirm_token FROM alert_subscriptions WHERE email = ? AND variant_id = ?',
+            [email, seeded.variantId],
+          )
+          await k.services.alert.confirm(token)
+        }
+        const [mailedTo, refusedTo] = emails as [string, string]
+        const before = await maxSeq(raw)
+        mail.refuse.add(refusedTo)
+        await k.services.inventory.adjustStock(seeded.variantId, 1, 'manual', 'retries')
+        const { id } = await onlyRow(raw, before, 'product.restocked.v1')
+        await drains(k, MAX_ATTEMPTS - 1)
+        const [dead] = await eventRows(raw, 'id = ?', [id])
+        expect(dead!.deadAt != null, 'the restock is dead').toBe(true)
+        const sent = (to: string) =>
+          mail.sent.filter((m) => m.to === to && m.template === 'alert-back-in-stock').length
+        expect([sent(mailedTo), sent(refusedTo)], 'alerts before the retry').toEqual([1, 0])
+
+        mail.refuse.delete(refusedTo)
+        await retry(k, { id })
+        await k.app.relay.drain()
+
+        expect([sent(mailedTo), sent(refusedTo)], 'alerts after the retry').toEqual([1, 1])
+        const [row] = await eventRows(raw, 'id = ?', [id])
+        expect(row!.deliveredAt != null, 'the restock is delivered').toBe(true)
+      } finally {
+        await raw.close()
+        await k.close()
+      }
+    }, 120_000)
+
+    it('AC-8: a dead event already marked delivered is cleared by the retry with its delivered_at unchanged, no handler runs on the next pass, and once no longer dead it is one retention removes', async () => {
+      const k = await options.open({})
+      const raw = openRaw(k.dialect, k.target)
+      try {
+        const before = await maxSeq(raw)
+        await k.services.category.create({ slug: `delivered-${randomUUID()}`, name: 'Delivered' })
+        const { id, deliveredAt } = await onlyRow(raw, before, EVT_CATEGORY_CREATED)
+        expect(deliveredAt != null, 'the fixture: the event delivered at its commit').toBe(true)
+        await k.store.transaction((tx) => k.repos.eventLog.recordFailure(tx, id, new Date(), 1))
+        const handled = counter()
+        await k.eventBus.subscribe(
+          EVT_CATEGORY_CREATED,
+          async (e: NymbalEvent<unknown>) => void handled.add(e.id),
+          { name: 'retries-delivered' },
+        )
+        const cutoff = new Date(Date.now() + 365 * 24 * 60 * 60_000)
+        await k.store.transaction((tx) => k.repos.eventLog.deleteDeliveredBefore(tx, cutoff))
+        const [held] = await eventRows(raw, 'id = ?', [id])
+        expect(held?.deadAt != null, 'retention keeps a dead row, delivered or not').toBe(true)
+
+        await retry(k, { id })
+        await k.app.relay.drain()
+
+        const [row] = await eventRows(raw, 'id = ?', [id])
+        expect([row!.deadAt ?? null, row!.attempts], 'cleared by the retry').toEqual([null, 0])
+        expect(instant(row!.deliveredAt), 'delivered_at is unchanged').toBe(instant(deliveredAt))
+        expect(handled.of(id), 'handlers run by the next pass').toBe(0)
+
+        const deleted = await k.store.transaction((tx) =>
+          k.repos.eventLog.deleteDeliveredBefore(tx, cutoff),
+        )
+        expect(await eventRows(raw, 'id = ?', [id]), 'retention removes it').toEqual([])
+        expect(deleted, 'the delete counts it').toBeGreaterThanOrEqual(1)
+      } finally {
+        await raw.close()
+        await k.close()
+      }
+    }, 60_000)
+
+    it('AC-17: an order.shipped.v1 past retention, its processed_events record swept by the real sweeper, is not taken by retryDead with the real retryFloor: it stays dead and no second shipped email is sent, while a younger dead event in the same retry is taken and delivered', async () => {
+      const store = await openShippingStore()
+      const { k, raw, mail } = store
+      try {
+        const { id: oldId } = await shippedEventDead(store)
+        const mailed = () => mail.sent.filter((m) => m.template === 'order-shipped').length
+        const mailedBefore = mailed()
+        expect(mailedBefore, 'the shipped email, sent on the first delivery').toBe(1)
+
+        const retentionDays = k.config.events.retentionDays
+        const aged = new Date(Date.now() - (retentionDays + 1) * 24 * 60 * 60_000).toISOString()
+        await writeRaw(k.dialect, k.target, 'UPDATE events SET created_at = ? WHERE id = ?', [
+          aged,
+          oldId,
+        ])
+        await writeRaw(
+          k.dialect,
+          k.target,
+          'UPDATE processed_events SET processed_at = ? WHERE event_id = ?',
+          [aged, oldId],
+        )
+        const records = () => raw.count('processed_events', 'event_id = ?', [oldId])
+        const recordsBefore = await records()
+        expect(recordsBefore, 'the delivery records to sweep').toBeGreaterThanOrEqual(1)
+        const sweeper = startEventRetentionSweeper({
+          store: k.store,
+          eventLog: k.repos.eventLog,
+          processedEvents: k.repos.processedEvent,
+          logger: k.logger,
+          retentionDays,
+        })
+        await sweeper.tick()
+        sweeper.stop()
+        expect(await records(), 'the record of the first delivery after the sweep').toBe(0)
+
+        const refusing = failPublishFor(k.eventBus, [EVT_CATEGORY_CREATED])
+        const beforeYoung = await maxSeq(raw)
+        await k.services.category.create({ slug: `young-${randomUUID()}`, name: 'Young' })
+        const { id: youngId } = await onlyRow(raw, beforeYoung, EVT_CATEGORY_CREATED)
+        await drains(k, MAX_ATTEMPTS - 1)
+        refusing.restore()
+        const [deadYoung] = await eventRows(raw, 'id = ?', [youngId])
+        expect(deadYoung!.deadAt != null, 'the younger event is dead').toBe(true)
+
+        const floor = retryFloorOf(new Date(), retentionDays)
+        const taken = await k.store.transaction((tx) =>
+          retryDeadOf(k.repos.eventLog)(tx, {}, { floor, limit: 100 }),
+        )
+        await k.app.relay.drain()
+
+        expect(
+          taken.map((r) => r.event.id),
+          'the retry takes the younger event and leaves the aged one',
+        ).toEqual([youngId])
+        const [old] = await eventRows(raw, 'id = ?', [oldId])
+        expect(old!.deadAt != null, 'the aged event stays dead').toBe(true)
+        expect(mailed(), 'shipped emails after the retry').toBe(mailedBefore)
+        const [young] = await eventRows(raw, 'id = ?', [youngId])
+        expect(young!.deliveredAt != null, 'the younger event is delivered').toBe(true)
+      } finally {
+        await raw.close()
+        await k.close()
+      }
+    }, 120_000)
   })
 }

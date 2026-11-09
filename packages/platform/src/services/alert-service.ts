@@ -10,7 +10,6 @@ import {
   type AlertKind,
   type AlertStatus,
   type NymbalEvent,
-  type ProductVariantPriceChangedV1Payload,
 } from '@nymbalhq/types'
 import { audit } from '../audit/audit.js'
 import type { CommandStore, Tx } from '../db/command-store.js'
@@ -56,13 +55,14 @@ export interface AlertService {
   unsubscribe(token: string): Promise<{ status: 'unsubscribed' }>
   /**
    * In the transaction that marks an alert's send: a back-in-stock row is `fired`, a price-drop row stays `active` with
-   * the trigger's price as its baseline; `alert.sent.v1` names the trigger. A row no longer `active` is left as it is,
-   * with no event: answers whether the row moved.
+   * the variant's price at the send, the one its mail quoted, as its baseline; `alert.sent.v1` names the trigger. A row
+   * no longer `active` is left as it is, with no event: answers whether the row moved.
    */
   recordSent(
     tx: Tx,
     subscription: AlertSubscription,
     trigger: NymbalEvent<unknown>,
+    variantPriceMinor: number,
   ): Promise<boolean>
   /** In the transaction that marks a confirmation's send: the row's interval starts at `at`. */
   recordConfirmationSent(
@@ -196,7 +196,7 @@ export function createAlertService(deps: CreateAlertServiceDeps): AlertService {
       })
     },
 
-    async recordSent(tx, subscription, trigger) {
+    async recordSent(tx, subscription, trigger, variantPriceMinor) {
       const updatedAt = new Date()
       const moved = await repos.alertSubscription.update(
         tx,
@@ -204,8 +204,7 @@ export function createAlertService(deps: CreateAlertServiceDeps): AlertService {
         subscription.kind === 'price_drop'
           ? {
               status: 'active',
-              baselinePriceMinor: (trigger.payload as ProductVariantPriceChangedV1Payload)
-                .priceMinor,
+              baselinePriceMinor: variantPriceMinor,
               updatedAt,
             }
           : { status: 'fired', updatedAt },

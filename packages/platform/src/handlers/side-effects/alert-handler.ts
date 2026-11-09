@@ -28,7 +28,10 @@ export interface RegisterAlertHandlerDeps {
   eventBus: EventBusAdapter
   email: EmailAdapter
   logger: Logger
-  repos: Pick<Repositories, 'alertSubscription' | 'emailSuppression' | 'processedEvent' | 'product'>
+  repos: Pick<
+    Repositories,
+    'alertSubscription' | 'emailSuppression' | 'processedEvent' | 'product' | 'variant'
+  >
   alerts: AlertService
   storeName: string
 }
@@ -89,6 +92,7 @@ export async function registerAlertHandler(deps: RegisterAlertHandlerDeps): Prom
     what: { alert: string; next: string },
     due: (row: AlertSubscription) => boolean,
     message: (row: AlertSubscription) => Omit<TransactionalEmail, 'to'>,
+    variantPriceMinor: number,
   ): Promise<void> {
     const failed: string[] = []
     for (const { id } of listed.filter(due)) {
@@ -106,7 +110,7 @@ export async function registerAlertHandler(deps: RegisterAlertHandlerDeps): Prom
         await email.sendTransactional({ ...message(row), to: row.email })
         await store.transaction(async (tx) => {
           await repos.processedEvent.markProcessed(tx, HANDLER, key, new Date())
-          await alerts.recordSent(tx, row, event)
+          await alerts.recordSent(tx, row, event, variantPriceMinor)
         })
       } catch (err) {
         failed.push(row.id)
@@ -125,48 +129,70 @@ export async function registerAlertHandler(deps: RegisterAlertHandlerDeps): Prom
 
   const onRestocked: EventHandler<ProductRestockedV1Payload> = async (event) => {
     const { variantId, productId } = event.payload
-    const { rows, product } = await store.read(async (tx) => ({
+    const { rows, product, variant } = await store.read(async (tx) => ({
       rows: await repos.alertSubscription.listActive(tx, variantId, 'back_in_stock'),
       product: await repos.product.findById(tx, productId),
+      variant: await repos.variant.findById(tx, variantId),
     }))
-    if (product === null) return
-    const due = (row: AlertSubscription) => row.status === 'active'
-    await fanOut(event, rows, { alert: 'back-in-stock', next: 'restock' }, due, (row) => {
-      const { productUrl, unsubscribeUrl } = links(row, product)
-      return {
-        template: 'alert-back-in-stock',
-        vars: { storeName, productName: product.name, productUrl, unsubscribeUrl },
-      }
-    })
+    if (product === null || variant === null) return
+    // A restock delivered late may meet a variant sold out since: an alert then would be false and fire the row.
+    const due = (row: AlertSubscription) => row.status === 'active' && variant.stock > 0
+    await fanOut(
+      event,
+      rows,
+      { alert: 'back-in-stock', next: 'restock' },
+      due,
+      (row) => {
+        const { productUrl, unsubscribeUrl } = links(row, product)
+        return {
+          template: 'alert-back-in-stock',
+          vars: { storeName, productName: product.name, productUrl, unsubscribeUrl },
+        }
+      },
+      variant.priceMinor,
+    )
   }
 
-  // A row is mailed when the price falls below both the previous price and the last price it was told (its baseline).
+  // A drop mails a row whose baseline (the last price it was told) is above the variant's price now, and quotes that
+  // price: the event may be behind it, and a rise behind a failed drop mails nothing, so the drop must carry the news.
   const onPriceChanged: EventHandler<ProductVariantPriceChangedV1Payload> = async (event) => {
-    const { variantId, productId, previousPriceMinor, priceMinor, currency } = event.payload
-    if (priceMinor >= previousPriceMinor) return
-    const { rows, product } = await store.read(async (tx) => ({
+    const { variantId, productId, previousPriceMinor, priceMinor: eventPriceMinor, currency } =
+      event.payload
+    if (eventPriceMinor >= previousPriceMinor) return
+    const { rows, product, variant } = await store.read(async (tx) => ({
       rows: await repos.alertSubscription.listActive(tx, variantId, 'price_drop'),
       product: await repos.product.findById(tx, productId),
+      variant: await repos.variant.findById(tx, variantId),
     }))
-    if (product === null) return
+    if (product === null || variant === null) return
+    const { priceMinor } = variant
     const due = (row: AlertSubscription) =>
-      row.status === 'active' && row.baselinePriceMinor !== null && priceMinor < row.baselinePriceMinor
+      row.status === 'active' &&
+      row.baselinePriceMinor !== null &&
+      priceMinor < row.baselinePriceMinor
     const previousPriceFormatted = formatMoney(previousPriceMinor, currency)
     const priceFormatted = formatMoney(priceMinor, currency)
-    await fanOut(event, rows, { alert: 'price-drop', next: 'drop' }, due, (row) => {
-      const { productUrl, unsubscribeUrl } = links(row, product)
-      return {
-        template: 'alert-price-drop',
-        vars: {
-          storeName,
-          productName: product.name,
-          productUrl,
-          unsubscribeUrl,
-          previousPriceFormatted,
-          priceFormatted,
-        },
-      }
-    })
+    await fanOut(
+      event,
+      rows,
+      { alert: 'price-drop', next: 'drop' },
+      due,
+      (row) => {
+        const { productUrl, unsubscribeUrl } = links(row, product)
+        return {
+          template: 'alert-price-drop',
+          vars: {
+            storeName,
+            productName: product.name,
+            productUrl,
+            unsubscribeUrl,
+            previousPriceFormatted,
+            priceFormatted,
+          },
+        }
+      },
+      priceMinor,
+    )
   }
 
   await eventBus.subscribe(EVT_ALERT_REQUESTED, onRequested as EventHandler, {

@@ -219,9 +219,9 @@ Delete saved settings (all, or one slot or path); needs no key
 
 ## `nymbal events`
 
-Read the event log without changing it
+Read the event log, and put dead events back for the running store to deliver
 
-Subcommands: `nymbal events query`, `nymbal events tail`.
+Subcommands: `nymbal events query`, `nymbal events tail`, `nymbal events retry`.
 
 ## `nymbal events query`
 
@@ -247,6 +247,19 @@ Print events as they are appended, until interrupted. Exact for serially committ
 | `--from` | string | Print events above this seq (default: the current maximum) |  |
 | `--json` | boolean | One envelope per line, with seq and deliveredAt | `false` |
 | `--payload` | boolean | Include each event’s payload (it may hold customer data) | `false` |
+
+## `nymbal events retry`
+
+List dead events, or put them back for the running store to deliver. Bare it lists and writes nothing.
+
+| Argument | Type | Description | Default |
+| --- | --- | --- | --- |
+| `<target>` | positional | One event, by seq or id |  |
+| `--all` | boolean | Every dead event, at most 100 a run | `false` |
+| `--type` | string | Only types matching this glob; * matches anything (order.*) |  |
+| `--since` | string | Only events appended at or after this ISO time |  |
+| `--until` | string | Only events appended before this ISO time |  |
+| `--dry-run` | boolean | Say what a retry would do and write nothing | `false` |
 
 ## `nymbal audit`
 

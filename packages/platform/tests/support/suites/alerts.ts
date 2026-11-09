@@ -2401,6 +2401,217 @@ export function alertsSuite(dialect: Dialect, options: AlertsSuiteOptions): void
     }, 300_000)
   })
 
+  describe(`alerts: a delivery that has fallen behind its variant (${dialect})`, () => {
+    let stock: Store
+    let priced: Store
+
+    beforeAll(async () => {
+      stock = await openStore(options, { retry: true })
+      priced = await openStore(options, { currency: PRICE_CURRENCY, retry: true })
+    }, 120_000)
+
+    afterAll(async () => {
+      await stock?.close()
+      await priced?.close()
+    })
+
+    /** Puts a dead row back as a retry does: not dead, no attempts, no wait. */
+    const putBack = (s: Store, id: string): Promise<void> =>
+      write(s, 'UPDATE events SET dead_at = NULL, attempts = 0, retry_at = NULL WHERE id = ?', [id])
+
+    async function untilDead(s: Store, id: string): Promise<void> {
+      for (let attempt = 2; attempt <= MAX_ATTEMPTS + 2; attempt += 1) await retried(s)
+      expect(await deliveryOf(s, id), 'the event is dead').toEqual([MAX_ATTEMPTS, false, true])
+    }
+
+    it('AC-19: a restock that died, then a sell-out and a new active subscriber: the retry mails no one, leaves the rows active with no alert.sent.v1 and delivers the event; a later real restock mails the row', async () => {
+      const s = stock
+      const p = await seedProduct(s.k, 0)
+      const first = freshEmail('ac19-first')
+      await activate(s, first, p.variantId)
+      s.mail.refuse.set(norm(first), Number.POSITIVE_INFINITY)
+      const before = await lastSeq(s)
+      await restock(s, p.variantId, 1)
+      await settled(s)
+      const event = await triggerOf(s, 'product.restocked.v1', p.variantId, before)
+      await untilDead(s, event.id)
+      s.mail.refuse.delete(norm(first))
+
+      await restock(s, p.variantId, -1)
+      await settled(s)
+      const late = freshEmail('ac19-late')
+      await activate(s, late, p.variantId)
+      const rowIds = await Promise.all(
+        [first, late].map(async (e) => (await rowOf(s, e, p.variantId)).id),
+      )
+      const alerted = () => [first, late].map((e) => mailsTo(s, e, ALERT_MAIL).length)
+      const statuses = () =>
+        Promise.all([first, late].map(async (e) => (await rowOf(s, e, p.variantId)).status))
+
+      await putBack(s, event.id)
+      await settled(s)
+
+      expect(alerted(), 'alerts mailed by the retry of a stale restock').toEqual([0, 0])
+      expect(await statuses(), 'the rows after the retry').toEqual(['active', 'active'])
+      expect(await sentPerRow(s, rowIds, event.id), 'alert.sent.v1 for the stale trigger').toEqual([
+        0, 0,
+      ])
+      expect(await deliveryOf(s, event.id), 'the event after the retry').toEqual([0, true, false])
+
+      await restock(s, p.variantId, 1)
+      await settled(s)
+
+      expect(alerted(), 'alerts after a real restock').toEqual([1, 1])
+      expect(await statuses(), 'the rows after a real restock').toEqual(['fired', 'fired'])
+    }, 120_000)
+
+    it('AC-20: a drop from 100 to 80 that died, then the price back at 100: the retry mails no one, the baseline stays 100, no alert.sent.v1 and the event is delivered; a later real drop to 90 mails the row quoting 90', async () => {
+      const s = priced
+      const p = await seedProduct(s.k, 4)
+      await reprice(s, p, 100)
+      await settled(s)
+      const email = freshEmail('ac20')
+      await activatePriceDrop(s, email, p.variantId)
+      const row = await rowOf(s, email, p.variantId, PRICE_DROP)
+      expect(baselineOf(row), 'the baseline when the row was confirmed').toBe(100)
+
+      s.mail.refuse.set(norm(email), Number.POSITIVE_INFINITY)
+      const before = await lastSeq(s)
+      await reprice(s, p, 80)
+      await settled(s)
+      const event = await triggerOf(s, PRICE_CHANGED, p.variantId, before)
+      await untilDead(s, event.id)
+      s.mail.refuse.delete(norm(email))
+
+      await reprice(s, p, 100)
+      await settled(s)
+      const alerts = () => mailsTo(s, email, PRICE_ALERT_MAIL)
+      expect(alerts().length, 'alerts before the retry').toBe(0)
+
+      await putBack(s, event.id)
+      await settled(s)
+
+      expect(alerts().length, 'alerts mailed by the retry of a stale drop').toBe(0)
+      expect(
+        baselineOf(await rowOf(s, email, p.variantId, PRICE_DROP)),
+        'the baseline after the retry',
+      ).toBe(100)
+      expect((await rowOf(s, email, p.variantId, PRICE_DROP)).status).toBe('active')
+      expect(
+        await sentPerRow(s, [row.id], event.id),
+        'alert.sent.v1 for the stale trigger',
+      ).toEqual([0])
+      expect(await deliveryOf(s, event.id), 'the event after the retry').toEqual([0, true, false])
+
+      await reprice(s, p, 90)
+      await settled(s)
+
+      expect(
+        alerts().map((m) => m.vars['priceFormatted']),
+        'a real drop quotes the price',
+      ).toEqual([money(90, PRICE_CURRENCY)])
+      expect(baselineOf(await rowOf(s, email, p.variantId, PRICE_DROP))).toBe(90)
+    }, 120_000)
+
+    /** A row confirmed at a baseline of 100, on a product of its own. */
+    async function ownedAt100(tag: string) {
+      const s = priced
+      const p = await seedProduct(s.k, 4)
+      await reprice(s, p, 100)
+      await settled(s)
+      const email = freshEmail(tag)
+      await activatePriceDrop(s, email, p.variantId)
+      const row = await rowOf(s, email, p.variantId, PRICE_DROP)
+      expect(baselineOf(row), 'the baseline when the row was confirmed').toBe(100)
+      return { s, p, email, row }
+    }
+
+    /** Saves a price and answers the one price event it appended. */
+    async function repriced(s: Store, p: Seeded, priceMinor: number) {
+      const before = await lastSeq(s)
+      await reprice(s, p, priceMinor)
+      await settled(s)
+      return triggerOf(s, PRICE_CHANGED, p.variantId, before)
+    }
+
+    it('AC-22: a drop from 100 to 80 whose sends fail, then 90 saved: the first event, once delivered, mails one alert quoting 90 and sets the baseline to 90, and the 80 to 90 event mails nothing', async () => {
+      const { s, p, email, row } = await ownedAt100('ac22-rebound')
+      s.mail.refuse.set(norm(email), Number.POSITIVE_INFINITY)
+      const drop = await repriced(s, p, 80)
+      expect(await deliveryOf(s, drop.id), 'the drop after its failed send').toEqual([
+        1,
+        false,
+        false,
+      ])
+      const rebound = await repriced(s, p, 90)
+      const alerts = () => mailsTo(s, email, PRICE_ALERT_MAIL)
+      expect(alerts().length, 'alerts while the sends fail').toBe(0)
+
+      s.mail.refuse.delete(norm(email))
+      await retried(s)
+      await retried(s)
+
+      expect(
+        alerts().map((m) => m.vars['priceFormatted']),
+        'the alerts once the drop is delivered',
+      ).toEqual([money(90, PRICE_CURRENCY)])
+      const after = await rowOf(s, email, p.variantId, PRICE_DROP)
+      expect([baselineOf(after), after.status], 'the row after the alert').toEqual([90, 'active'])
+      expect(await sentPerRow(s, [row.id], drop.id), 'alert.sent.v1 for the drop').toEqual([1])
+      expect(await sentPerRow(s, [row.id], rebound.id), 'alert.sent.v1 for the rise').toEqual([0])
+      expect((await deliveryOf(s, drop.id))[1], 'the drop is delivered').toBe(true)
+      expect((await deliveryOf(s, rebound.id))[1], 'the rise is delivered').toBe(true)
+    }, 120_000)
+
+    it('AC-22: drops from 100 to 80 to 70 whose sends fail: once delivered they mail one alert quoting 70, the baseline is 70 and alert.sent.v1 is published once', async () => {
+      const { s, p, email, row } = await ownedAt100('ac22-further')
+      s.mail.refuse.set(norm(email), Number.POSITIVE_INFINITY)
+      const first = await repriced(s, p, 80)
+      const second = await repriced(s, p, 70)
+
+      s.mail.refuse.delete(norm(email))
+      await retried(s)
+      await retried(s)
+
+      expect(
+        mailsTo(s, email, PRICE_ALERT_MAIL).map((m) => m.vars['priceFormatted']),
+        'the alerts once both drops are delivered',
+      ).toEqual([money(70, PRICE_CURRENCY)])
+      const after = await rowOf(s, email, p.variantId, PRICE_DROP)
+      expect([baselineOf(after), after.status], 'the row after the alert').toEqual([70, 'active'])
+      const sent = [
+        ...(await sentPerRow(s, [row.id], first.id)),
+        ...(await sentPerRow(s, [row.id], second.id)),
+      ]
+      expect(
+        sent.reduce((a, b) => a + b, 0),
+        'alert.sent.v1 across both drops',
+      ).toBe(1)
+      expect((await deliveryOf(s, first.id))[1], 'the first drop is delivered').toBe(true)
+      expect((await deliveryOf(s, second.id))[1], 'the second drop is delivered').toBe(true)
+    }, 120_000)
+
+    it('AC-22: drops delivered in order each mail their own price, from the price before it, and move the baseline', async () => {
+      const { s, p, email } = await ownedAt100('ac22-in-order')
+
+      await repriced(s, p, 80)
+      expect(baselineOf(await rowOf(s, email, p.variantId, PRICE_DROP))).toBe(80)
+      await repriced(s, p, 70)
+
+      expect(
+        mailsTo(s, email, PRICE_ALERT_MAIL).map((m) => [
+          m.vars['previousPriceFormatted'],
+          m.vars['priceFormatted'],
+        ]),
+        'each alert: from, to',
+      ).toEqual([
+        [money(100, PRICE_CURRENCY), money(80, PRICE_CURRENCY)],
+        [money(80, PRICE_CURRENCY), money(70, PRICE_CURRENCY)],
+      ])
+      expect(baselineOf(await rowOf(s, email, p.variantId, PRICE_DROP))).toBe(70)
+    }, 120_000)
+  })
+
   describe(`alerts: stores that cannot take a subscription (${dialect})`, () => {
     it('AC-2: a store whose only allowed origin is * answers 400 alerts.origin_not_allowed, with no row and no mail', async () => {
       const star = await openStore(options, { origins: ['*'] })

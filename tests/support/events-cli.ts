@@ -9,7 +9,10 @@ import { CLI_BIN, cliEnv, stripAnsi } from './doctor.js'
 // how the command is implemented.
 
 /** A project whose command store is the SQLite file `dbPath` (through NYMBAL_SQLITE_PATH), and its CLI environment. */
-export function sqliteProject(dbPath: string): { dir: string; env: NodeJS.ProcessEnv } {
+export function sqliteProject(
+  dbPath: string,
+  extra: Record<string, unknown> = {},
+): { dir: string; env: NodeJS.ProcessEnv } {
   const dir = mkdtempSync(join(tmpdir(), 'events-cli-'))
   const config = {
     store: { name: 'events-cli', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
@@ -32,6 +35,7 @@ export function sqliteProject(dbPath: string): { dir: string; env: NodeJS.Proces
     },
     http: { adapter: 'fastify', port: 3999, host: '127.0.0.1' },
     deployment: { strategy: 'standard' },
+    ...extra,
   }
   writeFileSync(
     join(dir, 'nymbal.config.ts'),
