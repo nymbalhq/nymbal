@@ -1,4 +1,4 @@
-import type { Locator, Page } from '@playwright/test'
+import type { APIRequestContext, Locator, Page } from '@playwright/test'
 import { storeCapabilities } from '../support/capabilities'
 import { adminToken, ownProduct } from '../support/checkout'
 import { API_URL } from '../support/csrf'
@@ -25,6 +25,34 @@ function stockLabel(stock: number): RegExp {
   if (stock <= 0) return /^\s*out of stock\s*$/i
   if (stock < 5) return /^\s*low stock\b/i
   return /^\s*in stock\s*$/i
+}
+
+/** How long a write can take to reach the public listing, as the journeys poll for it. */
+const READ_SIDE_LAG_MS = 10_000
+
+/**
+ * Of slugs the public API no longer serves, those taken off sale while this test ran: the store still has them, not
+ * active, last changed since `since`. A product that was never on sale, or left it earlier, is not one of them.
+ */
+async function takenOffSince(
+  request: APIRequestContext,
+  slugs: string[],
+  since: number,
+): Promise<Set<string>> {
+  const taken = new Set<string>()
+  if (slugs.length === 0) return taken
+  const authorization = `Bearer ${await adminToken(request)}`
+  for (const slug of slugs) {
+    const res = await request.get(`${API_URL}/api/admin/products/${slug}`, {
+      headers: { authorization },
+    })
+    if (!res.ok()) continue
+    const { data } = (await res.json()) as { data: { status: string; updatedAt: string } }
+    if (data.status !== 'active' && Date.parse(data.updatedAt) >= since - READ_SIDE_LAG_MS) {
+      taken.add(slug)
+    }
+  }
+  return taken
 }
 
 /** The product cards a locator matches, by slug, in document order. */
@@ -92,10 +120,13 @@ async function facetCount(option: Locator): Promise<number> {
 test.describe('Browse catalog', () => {
   // The homepage features the first FEATURED products of the API's default (newest) order. Other journeys create
   // products while this runs; a new product goes first and may push known ones down, never reorder them, so the known
-  // cards shown must be exactly the first known products in the API's order read after the page.
+  // cards shown must be exactly the first known products in the API's order read after the page. They also take their
+  // own products off sale, which can land between the render and that read: only such a card may be missing from it.
   test('homepage: under the hero, the featured cards are the first products GET /api/products lists, in its order and by name', async ({
     page,
+    request,
   }) => {
+    const startedAt = Date.now()
     const listing = `${API_URL}/api/products?limit=100`
     const before = (await (await page.request.get(listing)).json()) as ApiListing
     const known = new Set(before.data.items.map((p) => p.slug))
@@ -110,9 +141,11 @@ test.describe('Browse catalog', () => {
     expect(res.status()).toBe(200)
     const after = (await res.json()) as ApiListing
     const bySlug = new Map(after.data.items.map((p) => [p.slug, p]))
-    expect(shown.length).toBe(Math.min(FEATURED, after.data.items.length))
-    expect(shown.filter((slug) => !bySlug.has(slug))).toEqual([])
-    const knownShown = shown.filter((slug) => known.has(slug))
+    const unlisted = shown.filter((slug) => !bySlug.has(slug))
+    const takenOff = await takenOffSince(request, unlisted, startedAt)
+    expect(unlisted.filter((slug) => !takenOff.has(slug))).toEqual([])
+    expect(shown.length).toBe(Math.min(FEATURED, after.data.items.length + takenOff.size))
+    const knownShown = shown.filter((slug) => known.has(slug) && !takenOff.has(slug))
     expect(knownShown).toEqual(
       after.data.items
         .map((p) => p.slug)
@@ -120,18 +153,21 @@ test.describe('Browse catalog', () => {
         .slice(0, knownShown.length),
     )
     for (const [i, slug] of shown.entries()) {
-      await expect(cards.nth(i)).toContainText(bySlug.get(slug)!.name)
+      if (!takenOff.has(slug)) await expect(cards.nth(i)).toContainText(bySlug.get(slug)!.name)
     }
 
     // A shown card's link reaches that card's product page. The last card, so a link built from the wrong card or a
     // wrong path (`/products/…`) does not land on the product the shopper clicked.
-    const target = shown.length - 1
+    const target = shown.findLastIndex((slug) => !takenOff.has(slug))
     const slug = shown[target]!
     await cards.nth(target).click()
     await expect(page).toHaveURL(new RegExp(`/product/${slug}$`), { timeout: 15000 })
-    const served = (await (
-      await page.request.get(`${API_URL}/api/products/${slug}`)
-    ).json()) as ApiProduct
+    const answer = await page.request.get(`${API_URL}/api/products/${slug}`)
+    if (answer.status() === 404) {
+      expect([...(await takenOffSince(request, [slug], startedAt))]).toEqual([slug])
+      return
+    }
+    const served = (await answer.json()) as ApiProduct
     await expect(page.getByTestId('product-title')).toHaveText(served.data.name, {
       timeout: 15000,
     })
