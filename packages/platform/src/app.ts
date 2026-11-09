@@ -367,6 +367,7 @@ export async function createApp(
       adapters,
       alerts: services.alert,
       orders: services.order,
+      publisher,
       logger,
     })
 

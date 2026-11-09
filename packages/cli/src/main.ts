@@ -13,6 +13,7 @@ import { addCommand } from './commands/add.js'
 import { doctorCommand } from './commands/doctor.js'
 import { secretsCommand } from './commands/secrets.js'
 import { eventsCommand } from './commands/events.js'
+import { suppressionsCommand } from './commands/suppressions.js'
 import { auditCommand } from './commands/audit.js'
 import { replayCommand } from './commands/replay.js'
 import { mcpCommand } from './commands/mcp.js'
@@ -59,6 +60,7 @@ export const main = defineCommand({
     'security:inspect': securityInspectCommand,
     secrets: secretsCommand,
     events: eventsCommand,
+    suppressions: suppressionsCommand,
     audit: auditCommand,
     replay: replayCommand,
     mcp: mcpCommand,

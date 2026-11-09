@@ -1,6 +1,13 @@
 import { CUSTOMER_FIELDS, type CustomerField } from '@nymbalhq/config'
 import type { ToolResult } from '@nymbalhq/types'
-import { freeTextSpans, kindOfKey, replaceIn, wholeSpans, type Piece } from '../customer-fields.js'
+import {
+  changedField,
+  freeTextSpans,
+  kindOfKey,
+  replaceIn,
+  wholeSpans,
+  type Piece,
+} from '../customer-fields.js'
 
 /**
  * A tool result as an admin's MCP client receives it: every customer value of a listed kind removed, by the key it sits
@@ -17,11 +24,8 @@ export function withholdResult(result: ToolResult, fields: readonly CustomerFiel
     return kind !== undefined && listed.has(kind) ? kind : undefined
   }
   /** A history change's field, when it is of a listed kind. */
-  const changeKind = (value: Record<string, unknown>): CustomerField | undefined => {
-    const path = value['path']
-    if (typeof path !== 'string' || !('from' in value || 'to' in value)) return undefined
-    return listedKind(path.split('.').at(-1))
-  }
+  const changeKind = (value: Record<string, unknown>): CustomerField | undefined =>
+    listedKind(changedField(value))
   /** A change's `from` or `to` that holds a value: null and '' remove nothing. */
   const holds = (value: unknown): boolean => value !== undefined && value !== null && value !== ''
 

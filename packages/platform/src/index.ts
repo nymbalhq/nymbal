@@ -38,6 +38,7 @@ export {
   type CategoryInsert as LegacyCategoryInsert,
   type CategoryRow as LegacyCategoryRow,
 } from './db/repositories/categories.js'
+export { normaliseEmail } from './email-address.js'
 // Full repositories.
 export * from './repositories/index.js'
 export {

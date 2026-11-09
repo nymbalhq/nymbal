@@ -1,4 +1,4 @@
-import { asc, eq, gt } from 'drizzle-orm'
+import { and, asc, eq, gt, sql, type SQL, type SQLWrapper } from 'drizzle-orm'
 import type { Product, ProductStatus, ProductType, ProductMedia } from '@nymbalhq/types'
 import {
   postgresDb,
@@ -42,6 +42,21 @@ export interface ProductUpdate {
   updatedAt: Date
 }
 
+/**
+ * Whether the name holds `q`, ignoring case: instr and strpos compare characters, so a % or _ matches only itself.
+ * SQLite's own lower() folds ASCII alone, so that side goes through the store connection's unicode_lower.
+ */
+function nameHolds(
+  kind: CommandStore['kind'],
+  name: SQLWrapper,
+  q: string | undefined,
+): SQL | undefined {
+  if (!q) return undefined
+  return kind === 'sqlite'
+    ? sql`instr(unicode_lower(${name}), unicode_lower(cast(${q} as text))) > 0`
+    : sql`strpos(lower(${name}), lower(cast(${q} as text))) > 0`
+}
+
 function rowToProduct(store: CommandStore['kind'], row: Record<string, unknown>): Product {
   return {
     id: String(row.id),
@@ -65,7 +80,7 @@ export interface ProductRepository extends StoreRepository {
   findBySlug(tx: ReadTx, slug: string): Promise<Product | null>
   list(
     tx: ReadTx,
-    opts?: { status?: ProductStatus; limit?: number; offset?: number },
+    opts?: { status?: ProductStatus; q?: string; limit?: number; offset?: number },
   ): Promise<Product[]>
   /** Rows by id after `page.after`: a walk over the table that a concurrent write cannot make skip a row. */
   listPage(tx: ReadTx, page: KeysetPage): Promise<Product[]>
@@ -120,18 +135,35 @@ export function createProductRepository(store: CommandStore): ProductRepository 
       const limit = opts.limit ?? 100
       const offset = opts.offset ?? 0
       if (tx.kind === 'sqlite') {
-        const base = sqliteDb(tx).select().from(sqliteSchema.products)
-        const filtered = opts.status
-          ? base.where(eq(sqliteSchema.products.status, opts.status))
-          : base
-        const rows = filtered.limit(limit).offset(offset).all()
+        const t = sqliteSchema.products
+        const rows = sqliteDb(tx)
+          .select()
+          .from(t)
+          .where(
+            and(
+              opts.status ? eq(t.status, opts.status) : undefined,
+              nameHolds('sqlite', t.name, opts.q),
+            ),
+          )
+          .orderBy(asc(t.createdAt), asc(t.id))
+          .limit(limit)
+          .offset(offset)
+          .all()
         return rows.map((r) => rowToProduct('sqlite', r as Record<string, unknown>))
       }
-      const base = postgresDb(tx).select().from(postgresSchema.products)
-      const filtered = opts.status
-        ? base.where(eq(postgresSchema.products.status, opts.status))
-        : base
-      const rows = await filtered.limit(limit).offset(offset)
+      const t = postgresSchema.products
+      const rows = await postgresDb(tx)
+        .select()
+        .from(t)
+        .where(
+          and(
+            opts.status ? eq(t.status, opts.status) : undefined,
+            nameHolds('postgres', t.name, opts.q),
+          ),
+        )
+        .orderBy(asc(t.createdAt), asc(t.id))
+        .limit(limit)
+        .offset(offset)
       return rows.map((r) => rowToProduct('postgres', r as Record<string, unknown>))
     },
     async insert(tx, p) {

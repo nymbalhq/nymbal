@@ -20,6 +20,10 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 
 function refusingApi(message: string) {
   const writes: string[] = []
+  let answerNow: () => void = () => {}
+  const answered = new Promise<void>((resolve) => {
+    answerNow = resolve
+  })
   vi.stubGlobal('fetch', async (input: string | URL | Request, init: RequestInit = {}) => {
     const url = new URL(
       String(input instanceof Request ? input.url : input),
@@ -29,11 +33,12 @@ function refusingApi(message: string) {
     if (url.pathname === '/api/csrf') return json({ data: { token: 'csrf-tok' } })
     if (method === 'POST') {
       writes.push(url.pathname)
+      await answered
       return json({ error: { code: 'order.invalid_transition', message } }, 409)
     }
     return json({ data: {} })
   })
-  return { writes }
+  return { writes, answerNow }
 }
 
 beforeAll(polyfillRadix)
@@ -43,11 +48,18 @@ afterEach(() => {
 })
 
 // Every move the select offers but Shipped, which opens the ship dialog instead of posting.
-const MOVES: Array<{ from: OrderStatus; capturedMinor: number; option: string; action: string }> = [
+const MOVES: Array<{
+  from: OrderStatus
+  capturedMinor: number
+  option: string
+  action: string
+  /** What the select reads while the move is in flight, when the option names a status. */
+  inFlightLabel?: string
+}> = [
   { from: 'pending', capturedMinor: 0, option: 'record-payment', action: 'mark-paid' },
-  { from: 'pending', capturedMinor: 0, option: 'cancelled', action: 'cancel' },
-  { from: 'confirmed', capturedMinor: 2500, option: 'processing', action: 'process' },
-  { from: 'shipped', capturedMinor: 2500, option: 'delivered', action: 'mark-delivered' },
+  { from: 'pending', capturedMinor: 0, option: 'cancelled', action: 'cancel', inFlightLabel: 'Cancelled' },
+  { from: 'confirmed', capturedMinor: 2500, option: 'processing', action: 'process', inFlightLabel: 'Processing' },
+  { from: 'shipped', capturedMinor: 2500, option: 'delivered', action: 'mark-delivered', inFlightLabel: 'Delivered' },
 ]
 
 const messageFor = (move: (typeof MOVES)[number]) =>
@@ -55,11 +67,17 @@ const messageFor = (move: (typeof MOVES)[number]) =>
 
 describe('a status move the server refuses', () => {
   // Kills: the select only logging the refusal, so the merchant sees the select snap back with no reason.
-  it('AC-6: each move answered 409 shows the answer’s message in admin-order-status-error, and the select shows the current status again', async () => {
-    const outcomes: Array<{ option: string; alert: string | null; shownAgain: boolean }> = []
+  it('AC-6: while a move is in flight the select reads the chosen status; each move answered 409 shows the answer’s message in admin-order-status-error, and the select shows the current status again', async () => {
+    const outcomes: Array<{
+      option: string
+      inFlight: string | null
+      alert: string | null
+      shownAgain: boolean
+    }> = []
     for (const move of MOVES) {
       const message = messageFor(move)
       const api = refusingApi(message)
+      const answerNow = api.answerNow
       const user = userEvent.setup()
       const view = renderWithProviders(
         <OrderStatusSelect
@@ -67,6 +85,7 @@ describe('a status move the server refuses', () => {
           currentStatus={move.from}
           orderNumber="NYM-1"
           capturedMinor={move.capturedMinor}
+          paymentState="unpaid"
         />,
       )
       const select = screen.getByTestId('admin-order-status-select')
@@ -76,6 +95,8 @@ describe('a status move the server refuses', () => {
       await user.click(await screen.findByTestId(`admin-order-status-option-${move.option}`))
 
       await waitFor(() => expect(api.writes).toEqual([`/api/admin/orders/o-1/${move.action}`]))
+      const shownInFlight = screen.getByTestId('admin-order-status-select').textContent
+      answerNow()
       await waitFor(() =>
         expect(screen.getByTestId('admin-order-status-error'), move.option).toHaveTextContent(
           message,
@@ -89,6 +110,7 @@ describe('a status move the server refuses', () => {
       )
       outcomes.push({
         option: move.option,
+        inFlight: shownInFlight,
         alert: screen.getByTestId('admin-order-status-error').textContent,
         shownAgain: screen.getByTestId('admin-order-status-select').textContent === shownBefore,
       })
@@ -98,6 +120,7 @@ describe('a status move the server refuses', () => {
     expect(outcomes).toEqual(
       MOVES.map((move) => ({
         option: move.option,
+        inFlight: expect.stringContaining(move.inFlightLabel ?? ''),
         alert: expect.stringContaining(messageFor(move)),
         shownAgain: true,
       })),
@@ -153,14 +176,13 @@ async function offeredMoves(user: User): Promise<string[] | null> {
 }
 
 function renderSelect(status: OrderStatus, paymentState: PaymentState) {
-  const money = { paymentState } as Record<string, unknown>
   return renderWithProviders(
     <OrderStatusSelect
       orderId="o-1"
       currentStatus={status}
       orderNumber="NYM-1001"
       capturedMinor={2500}
-      {...money}
+      paymentState={paymentState}
     />,
   )
 }
@@ -175,6 +197,47 @@ const EVERY_STATUS: OrderStatus[] = [
 ]
 const EVERY_PAYMENT: PaymentState[] = ['unpaid', 'paid', 'partially_refunded', 'refunded']
 const MONEY_LABELS = ['Refunded', 'Partially Refunded']
+
+describe('the select after a successful move', () => {
+  // Kills: the optimistic status outliving the move, so the old label stays while the new order's moves are offered.
+  it('AC-5: after a successful move to Processing, when currentStatus then becomes Shipped (a change made elsewhere), the select reads Shipped and offers only Shipped’s moves', async () => {
+    const steps: OrderStatus[][] = [['shipped'], ['processing', 'shipped']]
+    const seen: Array<[string | null, string[] | null]> = []
+    for (const statuses of steps) {
+      const order = orderIn('confirmed')
+      const api = fakeOrderApi(order, () => movedTo(order, 'processing'))
+      const user = userEvent.setup()
+      const select = (status: OrderStatus) => (
+        <OrderStatusSelect
+          orderId="o-1"
+          currentStatus={status}
+          orderNumber="NYM-1001"
+          capturedMinor={2500}
+          paymentState="paid"
+        />
+      )
+      const view = renderWithProviders(select('confirmed'))
+
+      await user.click(screen.getByTestId('admin-order-status-select'))
+      await user.click(await screen.findByTestId(`${OPTION}processing`))
+      await waitFor(() => expect(api.answered).toBe(1))
+      for (const status of statuses) view.rerender(select(status))
+
+      await waitFor(() =>
+        expect(screen.getByTestId('admin-order-status-select')).toHaveTextContent(
+          STATUS_LABEL.shipped,
+        ),
+      )
+      const shown = screen.getByTestId('admin-order-status-select').textContent
+      const offered = await offeredMoves(user)
+      seen.push([shown, offered])
+      await user.keyboard('{Escape}')
+      view.unmount()
+      vi.unstubAllGlobals()
+    }
+    expect(seen).toEqual(steps.map(() => [`${STATUS_LABEL.shipped} (current)`, ['delivered']]))
+  })
+})
 
 describe('the status select follows the fulfilment moves', () => {
   // Kills: the select still narrowing by history, a fully refunded order offered processing or shipped, a paid order

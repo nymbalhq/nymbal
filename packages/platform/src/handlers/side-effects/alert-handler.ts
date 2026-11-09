@@ -170,7 +170,6 @@ export async function registerAlertHandler(deps: RegisterAlertHandlerDeps): Prom
       row.status === 'active' &&
       row.baselinePriceMinor !== null &&
       priceMinor < row.baselinePriceMinor
-    const previousPriceFormatted = formatMoney(previousPriceMinor, currency)
     const priceFormatted = formatMoney(priceMinor, currency)
     await fanOut(
       event,
@@ -186,7 +185,7 @@ export async function registerAlertHandler(deps: RegisterAlertHandlerDeps): Prom
             productName: product.name,
             productUrl,
             unsubscribeUrl,
-            previousPriceFormatted,
+            previousPriceFormatted: formatMoney(row.baselinePriceMinor!, currency),
             priceFormatted,
           },
         }

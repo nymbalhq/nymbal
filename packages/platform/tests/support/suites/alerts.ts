@@ -881,7 +881,7 @@ class PriceMachine {
         for (const p of this.people) {
           if (p.state !== 'active' || p.baseline === null) continue
           if (next < this.price && next < p.baseline) {
-            p.alerts.push({ previous: this.price, price: next, origin: p.origin! })
+            p.alerts.push({ previous: p.baseline, price: next, origin: p.origin! })
             p.baseline = next
           }
         }
@@ -1908,6 +1908,43 @@ export function alertsSuite(dialect: Dialect, options: AlertsSuiteOptions): void
     afterAll(async () => {
       await s?.close()
     })
+
+    it('AC-15: property: after the price goes baseline, a rise, then a drop below it, each row is mailed from its own baseline to the new price, whatever the rise', async () => {
+      twice.on = true
+      await fc.assert(
+        fc.asyncProperty(
+          fc.integer({ min: 200, max: 5_000 }),
+          fc.integer({ min: 1, max: 1_000 }),
+          fc.integer({ min: 1, max: 150 }),
+          async (start, rise, drop) => {
+            const p = await seedProduct(s.k, 4)
+            await reprice(s, p, start)
+            await delivered(s)
+            const atStart = freshEmail('ac15-start')
+            const afterRise = freshEmail('ac15-rise')
+
+            await activatePriceDrop(s, atStart, p.variantId)
+            await reprice(s, p, start + rise)
+            await delivered(s)
+            await activatePriceDrop(s, afterRise, p.variantId)
+            await reprice(s, p, start - drop)
+            await delivered(s)
+
+            const quoted = (email: string) =>
+              mailsTo(s, email, PRICE_ALERT_MAIL).map((m) => [
+                m.vars['previousPriceFormatted'],
+                m.vars['priceFormatted'],
+              ])
+            const to = money(start - drop, PRICE_CURRENCY)
+            expect([quoted(atStart), quoted(afterRise)]).toEqual([
+              [[money(start, PRICE_CURRENCY), to]],
+              [[money(start + rise, PRICE_CURRENCY), to]],
+            ])
+          },
+        ),
+        { numRuns: options.propertyRuns },
+      )
+    }, 300_000)
 
     it('AC-8: property: with every event delivered twice, over random price rises, drops and equal saves, subscription states and confirmation intervals passing, the price alerts sent equal the model: an active row is mailed exactly when the new price is below the previous one and its baseline, which then moves to the new price, and it stays active; pending and unsubscribed rows get nothing; each alert names both prices in the store currency, links the product and the row’s unsubscribe link at its origin, never says back in stock or one-time, and has one alert.sent.v1; confirmations are one per new or reissued row and one per interval on a pending row', async () => {
       twice.on = true

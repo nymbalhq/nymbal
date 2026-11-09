@@ -202,8 +202,6 @@ export function DashboardPage() {
   const { data, isLoading } = useDashboard()
   const navigate = useNavigate()
 
-  const currency = 'GBP' // Default; in production this would come from store settings
-
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -227,8 +225,8 @@ export function DashboardPage() {
         <StatCard
           icon={<DollarSign className="h-4.5 w-4.5" />}
           label="Revenue today"
-          value={data ? formatMoneyCompact(data.today.revenueMinor, currency) : '—'}
-          subtext={data ? formatMoney(data.today.revenueMinor, currency) : undefined}
+          value={data ? formatMoneyCompact(data.today.revenueMinor, data.agents.currency) : '—'}
+          subtext={data ? formatMoney(data.today.revenueMinor, data.agents.currency) : undefined}
           loading={isLoading}
           color="green"
         />

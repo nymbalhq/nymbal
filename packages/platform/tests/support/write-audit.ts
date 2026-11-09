@@ -25,7 +25,7 @@ export const EXEMPT_TABLES: Readonly<Record<string, string>> = {
   audit_entries: 'the audit trail, written beside the command it records',
   order_access_keys: 'a credential checkout mints in its own write after placement settles',
   email_suppressions:
-    'written inside a delivery by the email feedback and alert handlers, not by a command',
+    'written inside a delivery by the email feedback and alert handlers, and cleared by the CLI; no read model is built from it',
   order_refunds:
     'read from its own table, no read model; a refund that moves money changes the order and publishes its events',
   reviews:

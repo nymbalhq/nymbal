@@ -50,6 +50,7 @@ import type {
   OrderSource,
   OrderStatus,
 } from '@nymbalhq/types'
+import type { NoteEntry } from '@/types'
 
 /** No confirmation is due before payment, and a cancelled order was never paid: the server refuses both. */
 const NO_CONFIRMATION_DUE: readonly OrderStatus[] = ['pending', 'cancelled']
@@ -190,6 +191,19 @@ function AddressBlock({ address, label }: { address: Order['billingAddress']; la
   )
 }
 
+/** The shopper's checkout note: the column as it stands, or the shopper's entry once staff or system notes joined it. */
+function shopperNoteOf(notes: string): string | null {
+  try {
+    const parsed = JSON.parse(notes) as unknown
+    if (Array.isArray(parsed)) {
+      return (parsed as NoteEntry[]).find((entry) => entry.actor === 'customer')?.body ?? null
+    }
+  } catch {
+    // Not JSON: a plain string is the note itself.
+  }
+  return notes
+}
+
 export function OrderDetailPage() {
   const { orderNumber } = useParams<{ orderNumber: string }>()
   const [showRefund, setShowRefund] = useState(false)
@@ -251,6 +265,8 @@ export function OrderDetailPage() {
       </div>
     )
   }
+
+  const shopperNote = order.notes ? shopperNoteOf(order.notes) : null
 
   const primaryAction = () => {
     if (order.status === 'pending' && order.payment.capturedMinor === 0)
@@ -403,8 +419,11 @@ export function OrderDetailPage() {
               </h2>
             </div>
             <div className="divide-y divide-zinc-50">
-              {order.lineItems.map((item) => (
-                <div key={item.variantId} className="flex items-start gap-3 px-4 py-3">
+              {order.lineItems.map((item, index) => (
+                <div
+                  key={`${item.variantId}-${index}`}
+                  className="flex items-start gap-3 px-4 py-3"
+                >
                   {item.imageUrl ? (
                     <img
                       src={item.imageUrl}
@@ -568,12 +587,12 @@ export function OrderDetailPage() {
           <PaymentPanel order={order} />
 
           {/* Notes */}
-          {order.notes && (
+          {shopperNote && (
             <div className="rounded-lg border border-zinc-200 bg-amber-50 p-4">
               <h3 className="text-xs font-semibold uppercase tracking-wider text-amber-600 mb-1.5">
                 Order Note
               </h3>
-              <p className="text-sm text-amber-800">{order.notes}</p>
+              <p className="text-sm text-amber-800">{shopperNote}</p>
             </div>
           )}
         </div>

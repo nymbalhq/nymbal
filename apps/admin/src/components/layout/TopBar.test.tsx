@@ -68,6 +68,15 @@ beforeEach(() => {
           today: { orderCount: 0, revenueMinor: 0, itemsShipped: 0 },
           recentOrders: [],
           lowStock: [],
+          agents: {
+            since: '2026-11-01T00:00:00.000Z',
+            currency: 'GBP',
+            surfaces: [],
+            mcp: { enabled: false, writes: 'proposal' },
+            profilePath: null,
+            orders: { count: 0, revenueMinor: 0 },
+            bySource: [],
+          },
         },
       })
     return json({ data: [] })

@@ -373,6 +373,7 @@ export function createCommandStore(
     const raw = options.readOnly
       ? new BetterSqlite3(path, { readonly: true, fileMustExist: true })
       : new BetterSqlite3(path)
+    raw.function('unicode_lower', { deterministic: true }, (text: string) => text.toLowerCase())
     if (!options.readOnly) {
       raw.pragma('journal_mode = WAL')
       raw.pragma('foreign_keys = ON')

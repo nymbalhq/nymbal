@@ -265,6 +265,20 @@ List dead events, or put them back for the running store to deliver. Bare it lis
 | `--until` | string | Only events appended before this ISO time |  |
 | `--dry-run` | boolean | Say what a retry would do and write nothing | `false` |
 
+## `nymbal suppressions`
+
+Manage the email suppression list
+
+Subcommands: `nymbal suppressions clear`.
+
+## `nymbal suppressions clear`
+
+Take one address off the email suppression list, so it is mailed again
+
+| Argument | Type | Description | Default |
+| --- | --- | --- | --- |
+| `<email>` | positional | The address to clear |  |
+
 ## `nymbal audit`
 
 Read the audit trail

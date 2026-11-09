@@ -22,7 +22,7 @@ interface OrderStatusSelectProps {
   /** What the order captured: a paid order is refunded through the refund dialog, never cancelled. */
   capturedMinor: number
   /** Where the order's money stands: a fully refunded order takes no further fulfilment work. */
-  paymentState?: PaymentState
+  paymentState: PaymentState
 }
 
 /** The select's value for recording a payment taken outside the store (mark-paid), which confirms a pending order. */
@@ -63,7 +63,7 @@ export function OrderStatusSelect({
   currentStatus,
   orderNumber,
   capturedMinor,
-  paymentState = 'unpaid',
+  paymentState,
 }: OrderStatusSelectProps) {
   const queryClient = useQueryClient()
   const { mutateAsync: updateStatus, isPending: isUpdating } = useUpdateOrderStatus()
@@ -71,6 +71,13 @@ export function OrderStatusSelect({
   const [optimisticStatus, setOptimisticStatus] = useState<OrderStatus | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
   const [shipping, setShipping] = useState(false)
+  const [settledStatus, setSettledStatus] = useState(currentStatus)
+
+  // The order's status arriving, from this move or from elsewhere, ends what the select was showing in its place.
+  if (settledStatus !== currentStatus) {
+    setSettledStatus(currentStatus)
+    setOptimisticStatus(null)
+  }
 
   const nextStatuses = offeredStatuses(currentStatus, capturedMinor, paymentState)
   const canRecordPayment = currentStatus === 'pending' && capturedMinor === 0

@@ -18,12 +18,7 @@ import { idempotencyKeyOf } from '../audit/idempotency.js'
 import { requireRole } from './role-middleware.js'
 import { answerAsOf, answerHistory, atOf } from '../history/http.js'
 import type { HistoryReader, HistorySubject } from '../history/read.js'
-
-export interface NoteEntry {
-  body: string
-  actor: string
-  at: string
-}
+import { parseNotes, type NoteEntry } from '../order-notes.js'
 
 export interface RegisterAdminOrdersRoutesDeps {
   order: OrderService
@@ -35,18 +30,6 @@ export interface RegisterAdminOrdersRoutesDeps {
 
 /** An order as the admin reads it: with what was actually paid and refunded. */
 type AdminOrder = Order & { payment: OrderPayment }
-
-function parseNotes(rawNotes: string, createdAt: string): NoteEntry[] {
-  if (!rawNotes) return []
-  try {
-    const parsed = JSON.parse(rawNotes) as unknown
-    if (Array.isArray(parsed)) return parsed as NoteEntry[]
-    // old plain-string format
-    return [{ body: rawNotes, actor: 'system', at: createdAt }]
-  } catch {
-    return [{ body: rawNotes, actor: 'system', at: createdAt }]
-  }
-}
 
 export function registerAdminOrdersRoutes(
   adapter: HttpAdapter,

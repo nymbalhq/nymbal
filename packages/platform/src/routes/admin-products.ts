@@ -58,24 +58,18 @@ export function registerAdminProductsRoutes(
         const limitRaw = Array.isArray(q.limit) ? q.limit[0] : q.limit
         const offsetRaw = Array.isArray(q.offset) ? q.offset[0] : q.offset
 
-        const limit = limitRaw ? Math.min(parseInt(limitRaw, 10) || 50, 200) : 50
-        const offset = offsetRaw ? parseInt(offsetRaw, 10) || 0 : 0
+        // Clamped: a negative LIMIT is an error on Postgres and no limit at all on SQLite.
+        const limit = limitRaw ? Math.max(1, Math.min(parseInt(limitRaw, 10) || 50, 200)) : 50
+        const offset = offsetRaw ? Math.max(0, parseInt(offsetRaw, 10) || 0) : 0
 
-        const listOpts: { status?: ProductStatus; limit?: number; offset?: number } = {
-          limit: limit + offset + 200,
-          offset: 0,
-        }
-        if (statusRaw) listOpts.status = statusRaw as ProductStatus
-        let products = await product.list(listOpts)
-
-        // In-memory q filter
-        if (search) {
-          const lc = search.toLowerCase()
-          products = products.filter((p) => p.name.toLowerCase().includes(lc))
-        }
-
-        const page = products.slice(offset, offset + limit)
-        return ok(page)
+        return ok(
+          await product.list({
+            limit,
+            offset,
+            ...(statusRaw && { status: statusRaw as ProductStatus }),
+            ...(search && { q: search }),
+          }),
+        )
       } catch (err) {
         return renderError(err, ctx.logger)
       }

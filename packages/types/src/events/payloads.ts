@@ -124,6 +124,11 @@ export interface OrderDeletedV1Payload {
   customerId: string | null
   createdAt: string
 }
+export interface OrderNoteAddedV1Payload {
+  orderId: string
+  orderNumber: string
+  actor: string
+}
 
 export interface InventoryChangedV1Payload {
   variantId: string

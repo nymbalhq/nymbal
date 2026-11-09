@@ -26,6 +26,7 @@ export interface NymbalEventMap {
   [C.EVT_ORDER_STATUS_CHANGED]: P.OrderStatusChangedV1Payload
   [C.EVT_ORDER_CONFIRMATION_RESEND_REQUESTED]: P.OrderConfirmationResendRequestedV1Payload
   [C.EVT_ORDER_DELETED]: P.OrderDeletedV1Payload
+  [C.EVT_ORDER_NOTE_ADDED]: P.OrderNoteAddedV1Payload
 
   [C.EVT_INVENTORY_CHANGED]: P.InventoryChangedV1Payload
   [C.EVT_INVENTORY_RESERVED]: P.InventoryReservedV1Payload

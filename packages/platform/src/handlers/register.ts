@@ -1,5 +1,6 @@
 import type { DocumentStoreAdapter, EventBusAdapter, Logger } from '@nymbalhq/types'
 import type { NymbalConfig } from '@nymbalhq/config'
+import type { EventPublisher } from '../events/publisher.js'
 import type { Repositories } from '../repositories/index.js'
 import type { AdapterRegistry } from '../adapters/registry.js'
 import type { AlertService } from '../services/alert-service.js'
@@ -29,11 +30,14 @@ export interface RegisterHandlersDeps {
   alerts: AlertService
   /** Moves an order a tracking update reports delivered. */
   orders: OrderService
+  /** Publishes the note a carrier's refusal leaves on an order. */
+  publisher: EventPublisher
   logger: Logger
 }
 
 export async function registerHandlers(deps: RegisterHandlersDeps): Promise<void> {
-  const { config, eventBus, documentStore, repos, adapters, alerts, orders, logger } = deps
+  const { config, eventBus, documentStore, repos, adapters, alerts, orders, publisher, logger } =
+    deps
   const handlerLogger = logger.child({ component: 'handlers' })
 
   await registerCategoryProjection({
@@ -115,6 +119,8 @@ export async function registerHandlers(deps: RegisterHandlersDeps): Promise<void
     eventBus,
     shipping: adapters.shipping,
     processedEventRepo: repos.processedEvent,
+    repos,
+    publisher,
     logger: handlerLogger.child({ handler: 'shipping-start-tracking' }),
   })
   await registerSearchHandler({

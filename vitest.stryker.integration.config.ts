@@ -33,6 +33,7 @@ export default defineConfig({
       'packages/platform/tests/integration/audit-*.test.ts',
       'packages/platform/src/events/*.test.ts',
       'packages/platform/src/services/proposal-service.test.ts',
+      'packages/platform/src/repositories/email-suppression.test.ts',
     ],
     testTimeout: 30000,
   },
