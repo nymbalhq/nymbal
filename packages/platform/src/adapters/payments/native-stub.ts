@@ -10,6 +10,7 @@ import {
   type PaymentIntentParams,
   type PaymentStatus,
   type PaymentsAdapter,
+  type ProviderRefund,
   type Refund,
   type WebhookResult,
 } from '@nymbalhq/types'
@@ -64,6 +65,10 @@ export function createNativeStubPaymentsAdapter(deps: { logger: Logger }): Payme
   const intents = new Map<string, StubIntent>()
   /** Each idempotency key's first refund, which a retry under the key gets back without refunding again. */
   const refunds = new Map<string, Refund>()
+  /** Every refund of each intent, oldest first, as `listRefunds` answers them. */
+  const listed = new Map<string, ProviderRefund[]>()
+  const hold = (refund: ProviderRefund) =>
+    listed.set(refund.paymentId, [...(listed.get(refund.paymentId) ?? []), refund])
   return {
     kind: 'payments',
     providerName: 'native-stub',
@@ -123,6 +128,7 @@ export function createNativeStubPaymentsAdapter(deps: { logger: Logger }): Payme
           status: 'succeeded',
         }
         if (key !== undefined) refunds.set(key, refund)
+        hold({ ...refund, idempotencyKey: key ?? null })
         return refund
       }
       const intent = intents.get(paymentId)
@@ -140,6 +146,10 @@ export function createNativeStubPaymentsAdapter(deps: { logger: Logger }): Payme
       }
       intent.refundedMinor += amount
       return answer(amount, intent.currency)
+    },
+
+    async listRefunds(paymentId): Promise<ProviderRefund[]> {
+      return (listed.get(paymentId) ?? []).map((refund) => ({ ...refund }))
     },
 
     async getPaymentStatus(intentId) {
@@ -171,11 +181,28 @@ export function createNativeStubPaymentsAdapter(deps: { logger: Logger }): Payme
           paymentIntentId?: string
           amountMinor?: number
           currency?: string
+          refund?: { id: string; amountMinor: number; status?: Refund['status'] }
         }
         // A stub webhook stands in for the shopper paying a waiting intent: the stub now holds it captured.
         const held =
           event.paymentIntentId === undefined ? undefined : intents.get(event.paymentIntentId)
         if (held !== undefined && event.kind === 'payment.captured') held.status = 'succeeded'
+        // Or for a refund made in the provider's own dashboard: it joins the intent's list, once per refund id.
+        if (held !== undefined && event.kind === 'payment.refunded' && event.refund !== undefined) {
+          const { id, amountMinor, status = 'succeeded' } = event.refund
+          if (!listed.get(held.id)?.some((r) => r.refundId === id)) {
+            if (status !== 'failed') held.refundedMinor += amountMinor
+            hold({
+              refundId: id,
+              paymentId: held.id,
+              amountMinor,
+              currency: held.currency,
+              reason: null,
+              status,
+              idempotencyKey: null,
+            })
+          }
+        }
         return {
           verified: true,
           eventId: event.id ?? `evt_stub_${uuidv7()}`,

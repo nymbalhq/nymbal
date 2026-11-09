@@ -67,6 +67,8 @@ export async function startStripeFake(options = {}) {
   const intents = new Map()
   /** What has been refunded of each intent, in minor units. */
   const refunded = new Map()
+  /** Each intent's refunds, oldest first, as `GET /v1/refunds` lists them (newest first). */
+  const refundsOf = new Map()
   /** Each Idempotency-Key's first answer, replayed to a retry as Stripe does. */
   const answered = new Map()
   /** The Idempotency-Key a response answers, when its request carried one. */
@@ -266,7 +268,7 @@ export async function startStripeFake(options = {}) {
       }
       refunded.set(intent.id, (refunded.get(intent.id) ?? 0) + amount)
       seq += 1
-      sendJson(res, 200, {
+      const refund = {
         id: `re_${seq}`,
         object: 'refund',
         amount,
@@ -274,6 +276,26 @@ export async function startStripeFake(options = {}) {
         payment_intent: intent.id,
         reason: params.get('reason'),
         status: 'succeeded',
+        metadata: metadataFromParams(params),
+      }
+      refundsOf.set(intent.id, [...(refundsOf.get(intent.id) ?? []), refund])
+      sendJson(res, 200, refund)
+      return
+    }
+
+    if (method === 'GET' && path === '/v1/refunds') {
+      const query = new URL(req.url ?? '/', 'http://localhost').searchParams
+      const paymentIntent = query.get('payment_intent')
+      const newestFirst = [...(paymentIntent === null ? [] : (refundsOf.get(paymentIntent) ?? []))].reverse()
+      const limit = Number(query.get('limit') ?? '10')
+      const after = query.get('starting_after')
+      const from = after === null ? 0 : newestFirst.findIndex((r) => r.id === after) + 1
+      const data = newestFirst.slice(from, from + limit)
+      sendJson(res, 200, {
+        object: 'list',
+        url: '/v1/refunds',
+        has_more: from + limit < newestFirst.length,
+        data,
       })
       return
     }

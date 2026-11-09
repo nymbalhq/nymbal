@@ -53,6 +53,7 @@ const TRACKING_SHAPE = /\bshape:/
 const REVIEW_SUBMIT = /\bsubmit:/
 const SHIPPING_WORDS = /\bwords:/
 const SHIPPING_LABELS = /\blabels:/
+const REFUND_LIST = /\brefund list:/
 
 interface Outcome {
   passed: string[]
@@ -140,6 +141,21 @@ describe('the published suites fail an adapter with the defect they exist for', 
     expect(run.controlFailed, run.why).toEqual([])
     expect(run.controlPassed).toBe(run.badTotal)
   })
+
+  for (const [broken, defect] of [
+    ['payments-key-lost', 'loses each refund’s key'],
+    ['payments-other-intents', 'returns another payment’s refund'],
+    ['payments-lookup-refunds', 'moves money while it lists'],
+  ] as const) {
+    it(`AC-3: a payments adapter that ${defect} fails the refund list cases and nothing else; the same adapter without the defect passes every case`, () => {
+      const run = compare(broken, 'payments-control', REFUND_LIST)
+
+      expect(run.failed.length, run.why).toBeGreaterThan(0)
+      expect(run.offTopic, run.why).toEqual([])
+      expect(run.controlFailed, run.why).toEqual([])
+      expect(run.controlPassed).toBe(run.badTotal)
+    })
+  }
 
   it('AC-5: a commerce adapter whose healthCheck never settles fails the health case and nothing else, within the case bound', () => {
     const run = compare('reviews-health-hangs', 'reviews-control', HEALTH)

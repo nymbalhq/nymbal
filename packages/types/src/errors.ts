@@ -98,6 +98,10 @@ export class PaymentError extends NymbalError {
       | 'refund_rejected'
       // An outcome the shop cannot know (a timeout, a provider fault): money may have moved.
       | 'refund_unknown'
+      // The provider could not list a payment's refunds: nothing is known about them yet.
+      | 'refund_lookup_failed'
+      // A refund arrived for an order whose capture has not been recorded yet.
+      | 'capture_not_recorded'
       | 'cancel_refused'
       | 'webhook_invalid'
       | 'not_configured',

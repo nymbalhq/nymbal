@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, inArray } from 'drizzle-orm'
+import { and, asc, eq, gte, inArray, lt, min } from 'drizzle-orm'
 import type { OrderRefund, OrderRefundStatus } from '@nymbalhq/types'
 import {
   postgresDb,
@@ -57,6 +57,8 @@ export interface OrderRefundRepository extends StoreRepository {
   deleteByOrder(tx: Tx, orderId: string): Promise<void>
   /** The order of each refund made at or after `since`, once per refund. */
   orderIdsSince(tx: ReadTx, since: Date): Promise<string[]>
+  /** The orders holding a `pending` refund made before `before`, the one waiting longest first, at most `limit`. */
+  pendingOrderIds(tx: ReadTx, before: Date, limit: number): Promise<string[]>
 }
 
 export function createOrderRefundRepository(store: CommandStore): OrderRefundRepository {
@@ -163,6 +165,29 @@ export function createOrderRefundRepository(store: CommandStore): OrderRefundRep
         .select({ orderId: t.orderId })
         .from(t)
         .where(gte(t.createdAt, since))
+      return rows.map((r) => r.orderId)
+    },
+    async pendingOrderIds(tx, before, limit) {
+      if (tx.kind === 'sqlite') {
+        const t = sqliteSchema.orderRefunds
+        return sqliteDb(tx)
+          .select({ orderId: t.orderId })
+          .from(t)
+          .where(and(eq(t.status, 'pending'), lt(t.createdAt, before.toISOString())))
+          .groupBy(t.orderId)
+          .orderBy(asc(min(t.createdAt)), asc(t.orderId))
+          .limit(limit)
+          .all()
+          .map((r) => r.orderId)
+      }
+      const t = postgresSchema.orderRefunds
+      const rows = await postgresDb(tx)
+        .select({ orderId: t.orderId })
+        .from(t)
+        .where(and(eq(t.status, 'pending'), lt(t.createdAt, before)))
+        .groupBy(t.orderId)
+        .orderBy(asc(min(t.createdAt)), asc(t.orderId))
+        .limit(limit)
       return rows.map((r) => r.orderId)
     },
   }

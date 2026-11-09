@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import type { PaymentsAdapter } from '@nymbalhq/types'
+import type { PaymentsAdapter, ProviderRefund } from '@nymbalhq/types'
 import { CASE_MS, healthAndDowntime, type Build, type ContractOptions } from './common.js'
 
 export interface PaymentsContractOptions extends ContractOptions<PaymentsAdapter> {
@@ -17,6 +17,24 @@ async function rejectionCode(call: Promise<unknown>): Promise<unknown> {
     () => null,
     (err: unknown) => (err as { code?: unknown } | null)?.code ?? err,
   )
+}
+
+/** The refunds the adapter lists for the payment; an adapter that cannot read them lists nothing and so fails below. */
+async function refundsListed(
+  adapter: Partial<Pick<PaymentsAdapter, 'listRefunds'>>,
+  paymentId: string,
+): Promise<ProviderRefund[]> {
+  return (await adapter.listRefunds?.(paymentId)) ?? []
+}
+
+async function capturedIntent(adapter: PaymentsAdapter, amountMinor: number) {
+  const intent = await adapter.createPaymentIntent({
+    amountMinor,
+    currency: 'GBP',
+    orderRef: `contract-${randomUUID()}`,
+  })
+  if (intent.status !== 'succeeded') await adapter.capturePayment(intent.id)
+  return intent
 }
 
 export function runPaymentsContract(
@@ -96,6 +114,64 @@ export function runPaymentsContract(
           adapter.refund(intent.id, 1, 'requested_by_customer', { idempotencyKey: `${key}-over` }),
         )
         expect(over, 'a minor unit past the amount was refunded').toBe('payment.refund_rejected')
+      },
+      CASE_MS,
+    )
+
+    // Listing goes through the published contract's own method: an adapter that loses the key, lists another payment's
+    // refund or moves money while it reads fails here, whatever else it does right.
+    it(
+      'refund list: a refund made under key K appears once with K and its amount, a keyless one with null, and another intent’s refunds are absent',
+      async () => {
+        const adapter = await build()
+        const intent = await capturedIntent(adapter, TOTAL)
+        const other = await capturedIntent(adapter, TOTAL)
+        const key = `contract-list-${randomUUID()}`
+        const keyed = await adapter.refund(intent.id, 300, 'requested_by_customer', {
+          idempotencyKey: key,
+        })
+        const plain = await adapter.refund(intent.id, 200, 'requested_by_customer')
+        await adapter.refund(other.id, 150, 'requested_by_customer', {
+          idempotencyKey: `contract-list-other-${randomUUID()}`,
+        })
+
+        const listed = await refundsListed(adapter, intent.id)
+
+        expect(
+          listed.map((r) => r.refundId).sort(),
+          'the list is exactly the two refunds of this intent',
+        ).toEqual([keyed.refundId, plain.refundId].sort())
+        const byKey = listed.find((r) => r.refundId === keyed.refundId)
+        expect(byKey?.idempotencyKey).toBe(key)
+        expect(byKey?.amountMinor).toBe(300)
+        const noKey = listed.find((r) => r.refundId === plain.refundId)
+        expect(noKey?.idempotencyKey).toBeNull()
+        expect(noKey?.amountMinor).toBe(200)
+      },
+      CASE_MS,
+    )
+
+    it(
+      'refund list: a lookup moves no money: the remainder still refunds exactly, and one minor unit more is refund_rejected',
+      async () => {
+        const adapter = await build()
+        const intent = await capturedIntent(adapter, TOTAL)
+        const half = Math.floor(TOTAL / 2)
+        const key = `contract-lookup-${randomUUID()}`
+        await adapter.refund(intent.id, half, 'requested_by_customer', { idempotencyKey: key })
+
+        const seen = await refundsListed(adapter, intent.id)
+        await refundsListed(adapter, intent.id)
+
+        expect(seen.map((r) => r.amountMinor)).toEqual([half])
+        const rest = await adapter.refund(intent.id, TOTAL - half, 'requested_by_customer', {
+          idempotencyKey: `${key}-rest`,
+        })
+        expect(rest.amountMinor).toBe(TOTAL - half)
+        const over = await rejectionCode(
+          adapter.refund(intent.id, 1, 'requested_by_customer', { idempotencyKey: `${key}-over` }),
+        )
+        expect(over, 'a lookup left less to refund, or more').toBe('payment.refund_rejected')
       },
       CASE_MS,
     )

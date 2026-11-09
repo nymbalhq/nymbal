@@ -14,6 +14,7 @@ import {
 import { API_URL, csrf } from '../support/csrf'
 import { expect, test } from '../support/fixtures'
 import { signIn } from '../support/sign-in'
+import { postSignedWebhook } from '../support/webhooks'
 
 // The order timeline on both templates (the astro and nextjs projects run this file), driven only through the
 // product: the storefront's checkout and the admin API's commands. The guest confirmation page `/order/<n>` and the
@@ -256,6 +257,55 @@ test.describe('The order timeline', () => {
     })
     await expect(page.getByTestId('order-payment-state')).toHaveText(/^\s*Partially refunded\s*$/)
     await expect(page.getByTestId('order-status')).toHaveText(/confirmed/i)
+  })
+
+  // Kills: a provider refund that reaches the tables but not what the shopper reads, or a repeat that moves it again.
+  test('AC-15: an order refunded in part by a stub provider webhook reads Partially refunded with its order-status unchanged on /order/<n>, and delivering the same event again changes nothing', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(180_000)
+    const token = await adminToken(request)
+    const product = await ownProduct(request, token, 5)
+    const { orderNumber, key } = await placeThroughCheckout(page, product, email('ac15-provider'))
+    const placed = await apiOrder(request, orderNumber, keyHeader(key))
+    expect(placed.status, 'the stub captured the payment at checkout').toBe('confirmed')
+    const orderRes = await request.get(
+      `${API_URL}/api/admin/orders/${encodeURIComponent(orderNumber)}`,
+      { headers: { authorization: `Bearer ${token}` } },
+    )
+    const intentId = ((await orderRes.json()) as { data: { paymentIntentId: string } }).data
+      .paymentIntentId
+    const signed = {
+      rawBody: JSON.stringify({
+        id: `evt_e2e_${randomUUID()}`,
+        kind: 'payment.refunded',
+        paymentIntentId: intentId,
+        refund: {
+          id: `re_e2e_${randomUUID()}`,
+          amountMinor: Math.max(1, Math.floor(placed.totalMinor / 3)),
+        },
+      }),
+      headers: { 'content-type': 'application/json', 'stripe-signature': 'proof-kit-stub' },
+    }
+
+    const delivered = await postSignedWebhook(request, 'stripe', signed)
+    expect(delivered.status, JSON.stringify(delivered)).toBe(200)
+
+    await expect
+      .poll(async () => (await apiOrder(request, orderNumber, keyHeader(key))).timeline?.at(-1)?.kind, {
+        timeout: 10_000,
+      })
+      .toBe('partially_refunded')
+    await page.goto(keyedOrderPath(orderNumber, key))
+    await expect(page.getByTestId('order-payment-state')).toHaveText(/^\s*Partially refunded\s*$/, {
+      timeout: 15_000,
+    })
+    await expect(page.getByTestId('order-status')).toHaveText(/confirmed/i)
+
+    await postSignedWebhook(request, 'stripe', signed)
+    const again = await apiOrder(request, orderNumber, keyHeader(key))
+    expect(again.timeline?.filter((e) => e.kind === 'partially_refunded')).toHaveLength(1)
   })
 
   // Kills: the account pages leaving the refund out now that the status no longer says it.

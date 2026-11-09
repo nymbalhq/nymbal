@@ -466,10 +466,12 @@ export function createCheckoutService(
     if (settlement.status === 'pending') return
     await store.transaction(async (tx) => {
       await repos.order.lock(tx, order.id)
-      await repos.orderRefund.settle(tx, refundId, {
+      const moved = await repos.orderRefund.settle(tx, refundId, {
         status: settlement.status,
         providerRefundId: settlement.providerRefundId,
       })
+      // A delivery of the provider's own refund event settled it first, and counted it.
+      if (!moved) return
       await refreshRefunded(repos, tx, order.id, new Date())
       if (settlement.status === 'succeeded') {
         await publisher.publish(EVT_PAYMENT_REFUNDED, {

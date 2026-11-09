@@ -3,6 +3,7 @@ import type {
   PaymentIntent,
   PaymentIntentParams,
   PaymentCapture,
+  ProviderRefund,
   Refund,
   PaymentStatus,
   WebhookResult,
@@ -65,13 +66,22 @@ export interface PaymentsAdapter extends CommerceAdapter {
   client?(): PaymentClient | null
   createPaymentIntent(params: PaymentIntentParams): Promise<PaymentIntent>
   capturePayment(intentId: string, amountMinor?: number): Promise<PaymentCapture>
-  /** Throws `PaymentError('refund_rejected')` when no money moved, `PaymentError('refund_unknown')` when it may have. */
+  /**
+   * Throws `PaymentError('refund_rejected')` when no money moved, `PaymentError('refund_unknown')` when it may have. An
+   * `idempotencyKey` is recorded with the refund, so that `listRefunds` returns it.
+   */
   refund(
     paymentId: string,
     amountMinor?: number,
     reason?: string,
     opts?: RefundOptions,
   ): Promise<Refund>
+  /**
+   * Every refund of the payment as the provider holds it now, with the key `refund` was given, oldest first: the adapter
+   * owns that order, since a `ProviderRefund` carries no timestamp. It only reads and moves no money. Throws
+   * `PaymentError('refund_lookup_failed')` when the provider cannot answer.
+   */
+  listRefunds(paymentId: string): Promise<ProviderRefund[]>
   getPaymentStatus(intentId: string): Promise<PaymentStatus>
   /** The intent as the provider holds it now, client secret included: what a shopper needs to pay it again. */
   getPaymentIntent(intentId: string): Promise<PaymentIntent>

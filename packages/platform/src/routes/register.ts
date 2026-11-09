@@ -238,6 +238,7 @@ export function registerAllRoutes(deps: RegisterAllRoutesDeps): void {
   registerInboundWebhookRoute(adapter, {
     adapters,
     checkout: services.checkout,
+    refund: services.refund,
     publisher,
     store: repos.processedEvent.store,
     processedEvents: repos.processedEvent,

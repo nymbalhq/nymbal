@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import fc from 'fast-check'
 import { v7 as uuidv7 } from 'uuid'
 import {
@@ -12,7 +12,9 @@ import {
   ValidationError,
   type Address,
   type CaptureMethod,
+  type Logger,
   type OrderStatus,
+  type ProviderRefund,
   type Refund,
   type RefundOptions,
 } from '@nymbalhq/types'
@@ -31,7 +33,13 @@ import { listAuditEntries } from '../repositories/audit-entry.js'
 import type { CommandStore } from '../db/command-store.js'
 import { formatMoney } from '../money.js'
 import { createOrderService } from './order-service.js'
-import { createRefundService, settlementOf, PROVIDER_REFUND_REASON } from './refund-service.js'
+import {
+  createRefundService,
+  settlementOf,
+  PROVIDER_REFUND_REASON,
+  REFUND_UNKNOWN_AFTER_MS,
+} from './refund-service.js'
+import type { OrderRefundInsert } from '../repositories/order-refund.js'
 
 // A refund moves money: the hold under the lock (requestId reuse, not_captured, exceeds_captured), the provider call
 // (key = row id, outcome mapping, manual and import captures move nothing) and the settlement (only on a matching
@@ -66,6 +74,15 @@ const echo: Answer = async (call) => ({
   status: 'succeeded',
 })
 
+/** What the provider lists for a payment; an empty list unless a test says otherwise. */
+type Listing = (paymentId: string) => Promise<ProviderRefund[]>
+
+interface LogLine {
+  level: 'warn' | 'error'
+  fields: unknown
+  msg: string | undefined
+}
+
 async function setup(answer: Answer = echo) {
   const store = createCommandStore(
     // @ts-expect-error minimal config
@@ -90,7 +107,8 @@ async function setup(answer: Answer = echo) {
     orderNumberStart: 1000,
   })
   const calls: RefundCall[] = []
-  const script = { answer }
+  const listCalls: string[] = []
+  const script = { answer, list: (async () => []) as Listing }
   const payments = {
     ...createNativeStubPaymentsAdapter({ logger }),
     async refund(paymentId: string, amountMinor?: number, reason?: string, opts?: RefundOptions) {
@@ -98,9 +116,19 @@ async function setup(answer: Answer = echo) {
       calls.push(call)
       return script.answer(call)
     },
+    async listRefunds(paymentId: string) {
+      listCalls.push(paymentId)
+      return script.list(paymentId)
+    },
   }
-  const refunds = createRefundService({ store, repos, publisher, logger, payments })
-  return { store, repos, orders, refunds, calls, script }
+  const logs: LogLine[] = []
+  const recording: Logger = {
+    ...logger,
+    warn: (fields, msg) => logs.push({ level: 'warn', fields, msg }),
+    error: (fields, msg) => logs.push({ level: 'error', fields, msg }),
+  }
+  const refunds = createRefundService({ store, repos, publisher, logger: recording, payments })
+  return { store, repos, orders, refunds, calls, listCalls, script, logs }
 }
 type Env = Awaited<ReturnType<typeof setup>>
 
@@ -615,6 +643,649 @@ describe('RefundService: audit notes', () => {
         status: 400,
       },
     ])
+    await env.store.close()
+  })
+})
+
+const MINUTE = 60_000
+const HOUR = 60 * MINUTE
+const UNCHANGED = { recorded: 0, settled: 0, failed: 0 }
+const lines = (env: Env, level: LogLine['level']) => env.logs.filter((l) => l.level === level)
+
+function listedRefund(paymentId: string, over: Partial<ProviderRefund> = {}): ProviderRefund {
+  return {
+    refundId: `re_${uuidv7()}`,
+    paymentId,
+    amountMinor: 1500,
+    currency: 'GBP',
+    reason: null,
+    status: 'succeeded',
+    idempotencyKey: null,
+    ...over,
+  }
+}
+
+async function heldRow(env: Env, orderId: string, over: Partial<OrderRefundInsert> = {}) {
+  const row: OrderRefundInsert = {
+    id: uuidv7(),
+    orderId,
+    amountMinor: 1500,
+    currency: 'GBP',
+    providerRefundId: null,
+    status: 'pending',
+    reason: null,
+    actor: 'admin:1',
+    createdAt: new Date(Date.now() - 10 * MINUTE),
+    requestId: null,
+    ...over,
+  }
+  await env.store.transaction((tx) => env.repos.orderRefund.insert(tx, row))
+  return row
+}
+
+const storedRow = async (env: Env, orderId: string, id: string) =>
+  (await rowsOf(env, orderId)).find((r) => r.id === id)!
+
+const lists =
+  (...refunds: ProviderRefund[]): Listing =>
+  async () =>
+    refunds
+
+async function customerWhoSpent(env: Env, spentMinor: number) {
+  const id = uuidv7()
+  const now = new Date()
+  await env.store.transaction((tx) =>
+    env.repos.customer.insert(tx, {
+      id,
+      email: `${id}@example.com`,
+      passwordHash: 'x',
+      createdAt: now,
+      updatedAt: now,
+    }),
+  )
+  await env.store.transaction((tx) => env.repos.customer.incrementStats(tx, id, 1, spentMinor, now))
+  return id
+}
+
+const spentBy = async (env: Env, customerId: string) =>
+  (await env.store.read((tx) => env.repos.customer.findById(tx, customerId)))!.totalSpentMinor
+
+describe('RefundService: reconcile guards', () => {
+  // Defect: a refund on a shared provider account for something this store never sold reaches the list call, or is
+  // recorded against some other order.
+  it('an intent no order holds answers unknown_order and never asks the provider', async () => {
+    const env = await setup()
+    env.script.list = lists(listedRefund('pi_elsewhere'))
+
+    expect(await env.refunds.reconcilePayment('pi_elsewhere')).toEqual({ ignored: 'unknown_order' })
+    expect(env.listCalls).toEqual([])
+    await env.store.close()
+  })
+
+  // Defect: a manual or imported capture is matched against the provider, which never took that money.
+  it('a manual or import capture answers not_provider_captured and changes nothing', async () => {
+    const env = await setup()
+    for (const method of ['manual', 'import'] as const) {
+      const intent = `pi_${uuidv7()}`
+      const order = await paidOrder(env, { method, intent })
+      env.script.list = lists(listedRefund(intent, { amountMinor: 700 }))
+
+      expect(await env.refunds.reconcilePayment(intent)).toEqual({
+        ignored: 'not_provider_captured',
+      })
+      expect(await rowsOf(env, order.id)).toEqual([])
+      expect((await orderOf(env, order.id)).refundedMinor).toBe(0)
+    }
+    expect(env.listCalls).toEqual([])
+    await env.store.close()
+  })
+
+  // Defect: a refund that overtook its capture is answered as handled, so the webhook is not retried once it lands.
+  it('a pending order with no capture throws capture_not_recorded, naming the order', async () => {
+    const env = await setup()
+    const intent = `pi_${uuidv7()}`
+    const order = await paidOrder(env, { method: null, intent, status: 'pending' })
+
+    const err = await refusal(env.refunds.reconcilePayment(intent))
+
+    expect(err).toBeInstanceOf(PaymentError)
+    expect(err).toMatchObject({
+      code: 'payment.capture_not_recorded',
+      message: `Order ${order.orderNumber} has a refund before its capture`,
+      context: { orderId: order.id },
+    })
+    expect(env.listCalls).toEqual([])
+    await env.store.close()
+  })
+
+  // Defect: an order that moved on with no capture throws, so one event holds the endpoint failing for three days; or
+  // nothing is logged and the lost capture goes unseen.
+  it('any other status with no capture answers capture_never_recorded and logs one error', async () => {
+    const env = await setup()
+    for (const status of ['confirmed', 'cancelled'] as const) {
+      env.logs.length = 0
+      const intent = `pi_${uuidv7()}`
+      const order = await paidOrder(env, { method: null, intent, status })
+
+      expect(await env.refunds.reconcilePayment(intent)).toEqual({
+        ignored: 'capture_never_recorded',
+      })
+      expect(env.logs).toEqual([
+        {
+          level: 'error',
+          fields: { orderId: order.id, status },
+          msg: 'a provider refund for an order with no recorded capture; ignored',
+        },
+      ])
+    }
+    expect(env.listCalls).toEqual([])
+    await env.store.close()
+  })
+
+  // Defect: a failed list reads as "no refunds", so every old pending row is aged out during a provider outage.
+  it('a list that throws is refund_lookup_failed with its cause, and leaves an old pending row pending', async () => {
+    const env = await setup()
+    const order = await paidOrder(env)
+    const row = await heldRow(env, order.id, {
+      createdAt: new Date(Date.now() - 3 * HOUR),
+    })
+    const cause = new Error('provider down')
+    env.script.list = async () => {
+      throw cause
+    }
+
+    const err = await refusal(env.refunds.reconcilePayment(order.paymentIntentId!))
+
+    expect(err).toBeInstanceOf(PaymentError)
+    expect(err).toMatchObject({
+      code: 'payment.refund_lookup_failed',
+      message: `Could not list the refunds of payment ${order.paymentIntentId}`,
+      cause,
+      context: { orderId: order.id },
+    })
+    expect((await storedRow(env, order.id, row.id)).status).toBe('pending')
+    await env.store.close()
+  })
+
+  // Defect: an order with no intent, or an order id that is no order, reaches the provider or throws.
+  it('reconcileOrder answers no_payment with no intent and no order, and otherwise reads that order', async () => {
+    const env = await setup()
+    const unpaid = await paidOrder(env, { method: 'manual', intent: null })
+
+    expect(await env.refunds.reconcileOrder(unpaid.id)).toEqual({ ignored: 'no_payment' })
+    expect(await env.refunds.reconcileOrder(uuidv7())).toEqual({ ignored: 'no_payment' })
+    expect(env.listCalls).toEqual([])
+
+    const paid = await paidOrder(env)
+    env.script.list = lists(listedRefund(paid.paymentIntentId!, { amountMinor: 700 }))
+    expect(await env.refunds.reconcileOrder(paid.id)).toEqual({ ...UNCHANGED, recorded: 1 })
+    expect(env.listCalls).toEqual([paid.paymentIntentId])
+    expect((await orderOf(env, paid.id)).refundedMinor).toBe(700)
+    await env.store.close()
+  })
+})
+
+describe('RefundService: applying the list', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  // Defect: the key is read before the provider id, so a listed refund settles the row its key names.
+  it('a listed refund settles the row holding its provider id before the row its key names', async () => {
+    const env = await setup()
+    const order = await paidOrder(env)
+    const named = await heldRow(env, order.id, {
+      amountMinor: 2000,
+      createdAt: new Date(Date.now() - 30 * MINUTE),
+    })
+    const held = await heldRow(env, order.id, { amountMinor: 1000, providerRefundId: 're_held' })
+    env.script.list = lists(
+      listedRefund(order.paymentIntentId!, {
+        refundId: 're_held',
+        amountMinor: 1000,
+        idempotencyKey: named.id,
+      }),
+    )
+
+    expect(await env.refunds.reconcileOrder(order.id)).toEqual({ ...UNCHANGED, settled: 1 })
+
+    expect((await storedRow(env, order.id, held.id)).status).toBe('succeeded')
+    expect(await storedRow(env, order.id, named.id)).toMatchObject({
+      status: 'pending',
+      providerRefundId: null,
+    })
+    expect((await orderOf(env, order.id)).refundedMinor).toBe(1000)
+    await env.store.close()
+  })
+
+  // Defect: a key match settles the wrong row of the order, or a settled row runs no effects.
+  it('a listed refund with no provider id on any row settles the row its key names, with the row actor on its history', async () => {
+    const env = await setup()
+    const order = await paidOrder(env)
+    const other = await heldRow(env, order.id, {
+      amountMinor: 2000,
+      createdAt: new Date(Date.now() - 30 * MINUTE),
+    })
+    const named = await heldRow(env, order.id, { amountMinor: 1500, actor: 'admin:7' })
+    const historyBefore = (await historyOf(env, order.id)).length
+    env.script.list = lists(
+      listedRefund(order.paymentIntentId!, {
+        refundId: 're_new',
+        amountMinor: 1500,
+        idempotencyKey: named.id,
+      }),
+    )
+
+    expect(await env.refunds.reconcileOrder(order.id)).toEqual({ ...UNCHANGED, settled: 1 })
+
+    expect(await storedRow(env, order.id, named.id)).toMatchObject({
+      status: 'succeeded',
+      providerRefundId: 're_new',
+    })
+    expect((await storedRow(env, order.id, other.id)).status).toBe('pending')
+    expect((await orderOf(env, order.id)).refundedMinor).toBe(1500)
+    const history = await historyOf(env, order.id)
+    expect(history).toHaveLength(historyBefore + 1)
+    expect(history.at(-1)!.actor).toBe('admin:7')
+    await env.store.close()
+  })
+
+  // Defect: a refund carrying this store's key on no row of the order is recorded as the provider's own, adding money
+  // the order never refunded (a key from another order, or a row removed since).
+  it('a listed refund whose key names no row of the order warns, writes no row and leaves the sum alone', async () => {
+    const env = await setup()
+    const order = await paidOrder(env)
+    await env.refunds.refund({ orderId: order.id, amountMinor: 1000, actor: 'a' })
+    const rowsBefore = await rowsOf(env, order.id)
+    const key = uuidv7()
+    env.script.list = lists(
+      listedRefund(order.paymentIntentId!, {
+        refundId: 're_foreign',
+        amountMinor: 500,
+        idempotencyKey: key,
+      }),
+    )
+
+    expect(await env.refunds.reconcileOrder(order.id)).toEqual(UNCHANGED)
+
+    expect(await rowsOf(env, order.id)).toEqual(rowsBefore)
+    expect((await orderOf(env, order.id)).refundedMinor).toBe(1000)
+    expect(env.logs).toEqual([
+      {
+        level: 'warn',
+        fields: { orderId: order.id, refundId: 're_foreign', key },
+        msg: "this store's key on no row of the order",
+      },
+    ])
+    await env.store.close()
+  })
+
+  // Defect: a dashboard refund that failed is recorded, holding money that never moved against the capture.
+  it('a listed failed refund with no key writes no row and logs nothing', async () => {
+    const env = await setup()
+    const order = await paidOrder(env)
+    env.script.list = lists(listedRefund(order.paymentIntentId!, { status: 'failed' }))
+
+    expect(await env.refunds.reconcileOrder(order.id)).toEqual(UNCHANGED)
+
+    expect(await rowsOf(env, order.id)).toEqual([])
+    expect((await orderOf(env, order.id)).refundedMinor).toBe(0)
+    expect(env.logs).toEqual([])
+    await env.store.close()
+  })
+
+  // Defect: the capture check counts pending or failed rows, is off by one at the capture, is case-sensitive on the
+  // currency, stops the pass at the first refusal, or does not move on as refunds are counted.
+  it('a refund the order cannot hold is refused with an error while the next listed one applies, up to the capture exactly', async () => {
+    const env = await setup()
+    const order = await paidOrder(env, { totalMinor: 10_000 })
+    await env.refunds.refund({ orderId: order.id, amountMinor: 3000, actor: 'a' })
+    await heldRow(env, order.id, { amountMinor: 4000, status: 'failed' })
+    await heldRow(env, order.id, { amountMinor: 2000 })
+    const intent = order.paymentIntentId!
+    const euro = listedRefund(intent, { amountMinor: 100, currency: 'EUR' })
+    const over = listedRefund(intent, { amountMinor: 7001 })
+    const fits = listedRefund(intent, { amountMinor: 7000, currency: 'gbp' })
+    const past = listedRefund(intent, { amountMinor: 1 })
+    env.script.list = lists(euro, over, fits, past)
+
+    expect(await env.refunds.reconcileOrder(order.id)).toEqual({ ...UNCHANGED, recorded: 1 })
+
+    const recorded = (await rowsOf(env, order.id)).filter((r) => r.actor === 'system:provider')
+    expect(recorded.map((r) => r.providerRefundId)).toEqual([fits.refundId])
+    expect((await orderOf(env, order.id)).refundedMinor).toBe(10_000)
+    const refused = 'provider refund refused: the order cannot hold it'
+    expect(env.logs).toEqual(
+      [euro, over, past].map((r) => ({
+        level: 'error',
+        fields: {
+          orderId: order.id,
+          refundId: r.refundId,
+          amountMinor: r.amountMinor,
+          currency: r.currency,
+        },
+        msg: refused,
+      })),
+    )
+    await env.store.close()
+  })
+
+  // Defect: the row takes the provider's casing of the currency or another actor, or a pending refund counts as
+  // refunded.
+  it('an inserted row has the provider actor, the listed status and the order currency, and only a succeeded one moves the sum', async () => {
+    const env = await setup()
+    const order = await paidOrder(env, { totalMinor: 10_000 })
+    const historyBefore = (await historyOf(env, order.id)).length
+    const startedAt = Date.now()
+    const waiting = listedRefund(order.paymentIntentId!, {
+      status: 'pending',
+      amountMinor: 400,
+      currency: 'gbp',
+      reason: 'goodwill',
+    })
+    const done = listedRefund(order.paymentIntentId!, { amountMinor: 600 })
+    env.script.list = lists(waiting, done)
+
+    expect(await env.refunds.reconcileOrder(order.id)).toEqual({ ...UNCHANGED, recorded: 2 })
+
+    const rows = await rowsOf(env, order.id)
+    const pendingRow = rows.find((r) => r.providerRefundId === waiting.refundId)!
+    const doneRow = rows.find((r) => r.providerRefundId === done.refundId)!
+    expect(pendingRow).toMatchObject({
+      status: 'pending',
+      amountMinor: 400,
+      currency: 'GBP',
+      reason: 'goodwill',
+      actor: 'system:provider',
+    })
+    expect(doneRow).toMatchObject({
+      status: 'succeeded',
+      amountMinor: 600,
+      currency: 'GBP',
+      reason: null,
+      actor: 'system:provider',
+    })
+    expect(new Date(doneRow.createdAt).getTime()).toBeGreaterThanOrEqual(startedAt)
+    expect(pendingRow.id).not.toBe(doneRow.id)
+    expect((await orderOf(env, order.id)).refundedMinor).toBe(600)
+    const partial = await events(env, EVT_ORDER_PARTIALLY_REFUNDED, order.id)
+    expect(partial.map((p) => p.refundId)).toEqual([doneRow.id])
+    const history = await historyOf(env, order.id)
+    expect(history).toHaveLength(historyBefore + 1)
+    expect(history.at(-1)!.actor).toBe('system:provider')
+    await env.store.close()
+  })
+
+  // Defect: a pending listing writes the row on every sweep, one audit entry every five minutes per stuck refund; or
+  // the provider id is never stored and later passes cannot match the row by it.
+  it('a pending row listed pending stores the provider id once, and a second pass writes no audit note', async () => {
+    const env = await setup()
+    const order = await paidOrder(env)
+    const row = await heldRow(env, order.id)
+    env.script.list = lists(
+      listedRefund(order.paymentIntentId!, {
+        refundId: 're_waiting',
+        amountMinor: row.amountMinor,
+        status: 'pending',
+        idempotencyKey: row.id,
+      }),
+    )
+
+    const pass = () => runAsActor(importer, () => env.refunds.reconcileOrder(order.id))
+    expect(await pass()).toEqual(UNCHANGED)
+
+    expect(await storedRow(env, order.id, row.id)).toMatchObject({
+      status: 'pending',
+      providerRefundId: 're_waiting',
+    })
+    const first = await noted(env.store)
+    expect(first).toEqual([
+      {
+        actor: importer,
+        command: 'order.reconcileRefunds',
+        subjects: [{ type: 'order', id: order.id }],
+        outcome: 'applied',
+        status: null,
+      },
+    ])
+
+    expect(await pass()).toEqual(UNCHANGED)
+    expect(await noted(env.store)).toEqual(first)
+    await env.store.close()
+  })
+
+  // Defect: a mismatch stores the provider id, so the key no longer matches the row; or it counts as refunded; or every
+  // sweep logs at error, 288 errors a day for one stuck row; or the first row seen silences the alarm for the rest.
+  it('a mismatch stores no provider id and logs error once per row, then warn', async () => {
+    const env = await setup()
+    const order = await paidOrder(env)
+    const old = () => new Date(Date.now() - 2 * HOUR)
+    const stuck = await heldRow(env, order.id, { createdAt: old() })
+    const offBy = (row: OrderRefundInsert) =>
+      listedRefund(order.paymentIntentId!, {
+        refundId: `re_off_${row.id}`,
+        amountMinor: row.amountMinor + 1,
+        idempotencyKey: row.id,
+      })
+    env.script.list = lists(offBy(stuck))
+    const line = (level: string, row: OrderRefundInsert) => ({
+      level,
+      fields: { orderId: order.id, refundId: `re_off_${row.id}`, rowId: row.id },
+      msg: 'provider refund differs from the row; left pending',
+    })
+
+    expect(await env.refunds.reconcileOrder(order.id)).toEqual(UNCHANGED)
+    expect(await storedRow(env, order.id, stuck.id)).toMatchObject({
+      status: 'pending',
+      providerRefundId: null,
+    })
+    expect((await orderOf(env, order.id)).refundedMinor).toBe(0)
+    expect(env.logs).toEqual([line('error', stuck)])
+
+    env.logs.length = 0
+    expect(await env.refunds.reconcileOrder(order.id)).toEqual(UNCHANGED)
+    expect(env.logs).toEqual([line('warn', stuck)])
+
+    env.logs.length = 0
+    const second = await heldRow(env, order.id, { createdAt: old() })
+    env.script.list = lists(offBy(stuck), offBy(second))
+    await env.refunds.reconcileOrder(order.id)
+    expect(env.logs).toEqual([line('warn', stuck), line('error', second)])
+    await env.store.close()
+  })
+
+  // Defect: a provider failure leaves the row pending, or counts as money moved.
+  it('a pending row listed failed settles failed with the provider id, and moves no money', async () => {
+    const env = await setup()
+    const order = await paidOrder(env)
+    const row = await heldRow(env, order.id, {
+      createdAt: new Date(Date.now() - 2 * HOUR),
+    })
+    env.script.list = lists(
+      listedRefund(order.paymentIntentId!, {
+        refundId: 're_refused',
+        amountMinor: row.amountMinor,
+        status: 'failed',
+        idempotencyKey: row.id,
+      }),
+    )
+
+    expect(await env.refunds.reconcileOrder(order.id)).toEqual({ ...UNCHANGED, failed: 1 })
+
+    expect(await storedRow(env, order.id, row.id)).toMatchObject({
+      status: 'failed',
+      providerRefundId: 're_refused',
+    })
+    expect((await orderOf(env, order.id)).refundedMinor).toBe(0)
+    expect(await events(env, EVT_PAYMENT_REFUNDED, order.id)).toEqual([])
+    await env.store.close()
+  })
+
+  // Defect: a settled row is rewritten by a later listing, or a real disagreement passes silently.
+  it('a settled row is never rewritten, and only a real disagreement with the provider logs an error', async () => {
+    const env = await setup()
+    const cases = [
+      { row: 'succeeded', listed: 'failed', logged: true },
+      { row: 'failed', listed: 'succeeded', logged: true },
+      { row: 'succeeded', listed: 'succeeded', logged: false },
+      { row: 'succeeded', listed: 'pending', logged: false },
+      { row: 'failed', listed: 'pending', logged: false },
+    ] as const
+    for (const c of cases) {
+      env.logs.length = 0
+      const order = await paidOrder(env)
+      const refundId = `re_${uuidv7()}`
+      const row = await heldRow(env, order.id, { status: c.row, providerRefundId: refundId })
+      env.script.list = lists(
+        listedRefund(order.paymentIntentId!, {
+          refundId,
+          amountMinor: row.amountMinor,
+          status: c.listed,
+        }),
+      )
+
+      expect(await env.refunds.reconcileOrder(order.id)).toEqual(UNCHANGED)
+
+      expect((await storedRow(env, order.id, row.id)).status).toBe(c.row)
+      expect((await orderOf(env, order.id)).refundedMinor).toBe(0)
+      expect(lines(env, 'error')).toEqual(
+        c.logged
+          ? [
+              {
+                level: 'error',
+                fields: {
+                  orderId: order.id,
+                  refundId,
+                  rowId: row.id,
+                  row: c.row,
+                  provider: c.listed,
+                },
+                msg: 'a settled refund row disagrees with the provider',
+              },
+            ]
+          : [],
+      )
+    }
+    await env.store.close()
+  })
+
+  // Defect: a refund still in flight is failed and its amount freed, so the shop refunds it again; or a row with a
+  // provider id is failed by a list that omits it.
+  it('a pending row fails only when older than an hour with no provider id and unmatched', async () => {
+    const env = await setup()
+    const order = await paidOrder(env, { totalMinor: 10_000 })
+    const now = new Date('2026-11-09T12:00:00.000Z')
+    const aged = (ms: number) => new Date(now.getTime() - ms)
+    const expired = await heldRow(env, order.id, {
+      amountMinor: 100,
+      createdAt: aged(REFUND_UNKNOWN_AFTER_MS + 1),
+    })
+    const atHour = await heldRow(env, order.id, {
+      amountMinor: 200,
+      createdAt: aged(REFUND_UNKNOWN_AFTER_MS),
+    })
+    const withId = await heldRow(env, order.id, {
+      amountMinor: 300,
+      providerRefundId: 're_held',
+      createdAt: aged(3 * HOUR),
+    })
+    const matched = await heldRow(env, order.id, {
+      amountMinor: 400,
+      createdAt: aged(3 * HOUR),
+    })
+    const settled = await heldRow(env, order.id, {
+      amountMinor: 500,
+      status: 'succeeded',
+      providerRefundId: 're_done',
+      createdAt: aged(3 * HOUR),
+    })
+    env.script.list = lists(
+      listedRefund(order.paymentIntentId!, {
+        refundId: 're_off',
+        amountMinor: matched.amountMinor + 1,
+        idempotencyKey: matched.id,
+      }),
+    )
+    vi.useFakeTimers({ toFake: ['Date'], now })
+
+    expect(await env.refunds.reconcileOrder(order.id)).toEqual({ ...UNCHANGED, failed: 1 })
+
+    const statusOf = async (row: OrderRefundInsert) =>
+      (await storedRow(env, order.id, row.id)).status
+    expect(await storedRow(env, order.id, expired.id)).toMatchObject({
+      status: 'failed',
+      providerRefundId: null,
+    })
+    expect(await statusOf(atHour)).toBe('pending')
+    expect(await statusOf(withId)).toBe('pending')
+    expect(await statusOf(matched)).toBe('pending')
+    expect(await statusOf(settled)).toBe('succeeded')
+    expect((await orderOf(env, order.id)).refundedMinor).toBe(0)
+    expect(await events(env, EVT_PAYMENT_REFUNDED, order.id)).toEqual([])
+    await env.store.close()
+  })
+
+  // Defect: a cancelled order, which already netted to zero, takes the order's refund effects as well.
+  it('a refund on a cancelled order publishes payment.refunded alone: no order event, no history row, no spend', async () => {
+    const env = await setup()
+    const customerId = await customerWhoSpent(env, 10_000)
+    const order = await paidOrder(env, { status: 'cancelled', customerId })
+    const held = await heldRow(env, order.id, { amountMinor: 900 })
+    const historyBefore = (await historyOf(env, order.id)).length
+    const dashboard = listedRefund(order.paymentIntentId!, { amountMinor: 600 })
+    env.script.list = lists(
+      listedRefund(order.paymentIntentId!, {
+        refundId: 're_held',
+        amountMinor: 900,
+        idempotencyKey: held.id,
+      }),
+      dashboard,
+    )
+
+    expect(await env.refunds.reconcileOrder(order.id)).toEqual({
+      ...UNCHANGED,
+      recorded: 1,
+      settled: 1,
+    })
+
+    expect((await orderOf(env, order.id)).refundedMinor).toBe(1500)
+    const moved = await events(env, EVT_PAYMENT_REFUNDED, order.id)
+    expect(moved.map((p) => [p.paymentId, p.amountMinor, p.currency])).toEqual([
+      [order.paymentIntentId, 900, 'GBP'],
+      [order.paymentIntentId, 600, 'GBP'],
+    ])
+    expect(await events(env, EVT_ORDER_REFUNDED, order.id)).toEqual([])
+    expect(await events(env, EVT_ORDER_PARTIALLY_REFUNDED, order.id)).toEqual([])
+    expect(await historyOf(env, order.id)).toHaveLength(historyBefore)
+    expect(await spentBy(env, customerId)).toBe(10_000)
+    await env.store.close()
+  })
+})
+
+describe('RefundService: a row another writer settled first', () => {
+  // Defect: the settle's answer is ignored, so a row a webhook settled during the provider call runs its effects twice.
+  it('the request runs no effects and answers the row as stored', async () => {
+    const env = await setup()
+    const order = await paidOrder(env, { totalMinor: 5000 })
+    const historyBefore = (await historyOf(env, order.id)).length
+    env.script.answer = async (call) => {
+      await env.store.transaction((tx) =>
+        env.repos.orderRefund.settle(tx, call.opts!.idempotencyKey!, {
+          status: 'succeeded',
+          providerRefundId: 're_webhook',
+        }),
+      )
+      return { ...(await echo(call)), refundId: 're_answer', status: 'failed' as const }
+    }
+
+    const r = await env.refunds.refund({ orderId: order.id, amountMinor: 2000, actor: 'a' })
+
+    expect(r.refund).toMatchObject({ status: 'succeeded', providerRefundId: 're_webhook' })
+    expect(r.order.refundedMinor).toBe(0)
+    expect((await orderOf(env, order.id)).refundedMinor).toBe(0)
+    expect(await historyOf(env, order.id)).toHaveLength(historyBefore)
+    expect(await events(env, EVT_PAYMENT_REFUNDED, order.id)).toEqual([])
+    expect(await events(env, EVT_ORDER_PARTIALLY_REFUNDED, order.id)).toEqual([])
     await env.store.close()
   })
 })

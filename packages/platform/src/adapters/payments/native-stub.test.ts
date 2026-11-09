@@ -10,8 +10,57 @@ import { createNativeStubPaymentsAdapter } from './native-stub.js'
 const stub = () =>
   createNativeStubPaymentsAdapter({ logger: createLogger({ pretty: false, level: 'error' }) })
 
+/** What the stub's own list answers; an adapter without one lists nothing. */
+async function refundList(
+  adapter: ReturnType<typeof stub>,
+  paymentId: string,
+): Promise<Array<{ refundId: string; amountMinor: number; status: string; idempotencyKey: string | null }>> {
+  const list = adapter as unknown as { listRefunds?: (id: string) => Promise<never[]> }
+  return (await list.listRefunds?.(paymentId)) ?? []
+}
+
 const localPart = fc.stringMatching(/^[a-z][a-z0-9.]{0,15}$/)
 const domain = fc.constantFrom('checkout.test', 'example.com', 'shop.dev')
+
+describe('native-stub payments: refunds it can list', () => {
+  const webhookBody = (paymentIntentId: string, refund?: { id: string; amountMinor: number; status?: string }) =>
+    JSON.stringify({ id: 'evt_listed', kind: 'payment.refunded', paymentIntentId, ...(refund && { refund }) })
+
+  // Defect: the stub cannot stand in for a dashboard refund, so nothing above can be tested through the real route.
+  it('AC-14: a payment.refunded body holds its refund on the intent once per id, listRefunds returns it keyless, and parseWebhook answers kind and paymentIntentId as sent', async () => {
+    const adapter = stub()
+    const intent = await adapter.createPaymentIntent({ amountMinor: 5_000, currency: 'GBP' })
+    const refund = { id: 're_dashboard', amountMinor: 1_200 }
+
+    const parsed = await adapter.parseWebhook(webhookBody(intent.id, refund), '')
+    await adapter.parseWebhook(webhookBody(intent.id, refund), '')
+
+    expect([parsed.kind, parsed.paymentIntentId]).toEqual(['payment.refunded', intent.id])
+    const listed = await refundList(adapter, intent.id)
+    expect(listed.map((r) => [r.refundId, r.amountMinor, r.idempotencyKey, r.status])).toEqual([
+      ['re_dashboard', 1_200, null, 'succeeded'],
+    ])
+  })
+
+  // Defect: the stub loses a keyed refund, so a pending row can never be matched.
+  it('AC-14: a keyed refund lists with its key, a keyless one with null, and an intent the process no longer holds lists empty', async () => {
+    const adapter = stub()
+    const intent = await adapter.createPaymentIntent({ amountMinor: 5_000, currency: 'GBP' })
+    const keyed = await adapter.refund(intent.id, 500, 'requested_by_customer', {
+      idempotencyKey: 'row-1',
+    })
+    const plain = await adapter.refund(intent.id, 300, 'requested_by_customer')
+
+    const listed = await refundList(adapter, intent.id)
+    const byId = new Map(listed.map((r) => [r.refundId, r]))
+
+    expect(byId.size).toBe(2)
+    expect(byId.get(keyed.refundId)?.idempotencyKey).toBe('row-1')
+    expect(byId.get(plain.refundId)?.idempotencyKey).toBeNull()
+    expect(await refundList(adapter, 'pi_stub_forgotten')).toEqual([])
+    expect(await refundList(adapter, intent.id)).toHaveLength(listed.length)
+  })
+})
 
 describe('native-stub payments: the receipt email decides the outcome', () => {
   it('AC-2: over generated addresses, +stub-pending answers requires_action, +stub-decline failed, and any other address succeeded; the intent keeps the amount and currency', async () => {

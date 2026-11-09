@@ -41,6 +41,7 @@ import {
   startCartAbandonmentSweeper,
   startEventRetentionSweeper,
   startRefreshTokenSweeper,
+  startRefundReconcileSweeper,
   startStuckProposalSweeper,
   type EventArchiveWriter,
   type SweeperHandle,
@@ -106,6 +107,8 @@ export interface CreateAppOptions extends ResolvePrimitivesOptions {
   relay?: Pick<CreateRelayOptions, 'maxAttempts' | 'retryDelayMs' | 'intervalMs' | 'now'>
   /** How often expired and used refresh tokens are deleted; tests shorten it. */
   refreshTokenSweep?: { intervalMs?: number }
+  /** How often pending refunds are reconciled with the provider; tests shorten it. */
+  refundReconcileSweep?: { intervalMs?: number }
   /** How often approved proposals that never settled are swept, and after how long they count; tests shorten both. */
   proposalSweep?: { intervalMs?: number; stuckAfterMs?: number }
 }
@@ -413,6 +416,15 @@ export async function createApp(
         logger,
         ...(options.refreshTokenSweep?.intervalMs !== undefined && {
           intervalMs: options.refreshTokenSweep.intervalMs,
+        }),
+      }),
+      startRefundReconcileSweeper({
+        store: platform.commandStore,
+        refunds: repos.orderRefund,
+        service: services.refund,
+        logger,
+        ...(options.refundReconcileSweep?.intervalMs !== undefined && {
+          intervalMs: options.refundReconcileSweep.intervalMs,
         }),
       }),
       startStuckProposalSweeper({

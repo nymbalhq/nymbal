@@ -162,6 +162,8 @@ export function createFixturePaymentsAdapter() {
   const intents = new Map<string, Intent>()
   /** The first answer to each idempotency key: a retry gets it back. */
   const refunds = new Map<string, Refunded>()
+  /** Every refund made, keyed or not, as the provider's own list reports it. */
+  const listed: Array<Refunded & { idempotencyKey: string | null }> = []
   const toIntent = (i: Intent) => ({
     id: i.id,
     clientSecret: `${i.id}_secret`,
@@ -227,6 +229,7 @@ export function createFixturePaymentsAdapter() {
           status: 'succeeded' as const,
         }
         if (opts?.idempotencyKey !== undefined) refunds.set(opts.idempotencyKey, refund)
+        listed.push({ ...refund, idempotencyKey: opts?.idempotencyKey ?? null })
         return refund
       }
       if (!paymentId.startsWith(ID_PREFIX)) {
@@ -249,6 +252,10 @@ export function createFixturePaymentsAdapter() {
       }
       intent.refundedMinor += amount
       return answer(amount, intent.currency)
+    },
+
+    async listRefunds(paymentId: string) {
+      return listed.filter((r) => r.paymentId === paymentId).map((r) => ({ ...r }))
     },
 
     async getPaymentStatus(intentId: string): Promise<PaymentStatus> {

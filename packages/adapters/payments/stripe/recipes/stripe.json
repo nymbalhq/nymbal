@@ -31,7 +31,7 @@
     }
   ],
   "next": [
-    "Add a webhook endpoint in the Stripe dashboard at https://<your API host>/api/webhooks/stripe and copy its signing secret into STRIPE_WEBHOOK_SECRET.",
+    "Add a webhook endpoint in the Stripe dashboard at https://<your API host>/api/webhooks/stripe, subscribed to payment_intent.succeeded, payment_intent.payment_failed and charge.refunded, and copy its signing secret into STRIPE_WEBHOOK_SECRET.",
     "For local development, stripe listen --forward-to localhost:3001/api/webhooks/stripe prints a signing secret to use instead."
   ]
 }

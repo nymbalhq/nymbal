@@ -19,6 +19,7 @@ import type { CommandStore, Tx } from '../db/command-store.js'
 import type { OrderRepository } from '../repositories/order.js'
 import type { ProcessedEventRepository } from '../repositories/processed-event.js'
 import type { CheckoutService } from '../services/checkout-service.js'
+import type { RefundService } from '../services/refund-service.js'
 import { inOrderScope } from '../services/order-correlation.js'
 import type { EventPublisher } from '../events/publisher.js'
 import { runAsActor } from '../audit/actor.js'
@@ -108,6 +109,7 @@ const noRawBody = () =>
 export interface RegisterInboundWebhookDeps {
   adapters: AdapterRegistry
   checkout: CheckoutService
+  refund: RefundService
   publisher: EventPublisher
   store: CommandStore
   processedEvents: ProcessedEventRepository
@@ -118,7 +120,7 @@ export function registerInboundWebhookRoute(
   adapter: HttpAdapter,
   deps: RegisterInboundWebhookDeps,
 ): void {
-  const { checkout, publisher, store, processedEvents, orders } = deps
+  const { checkout, refund, publisher, store, processedEvents, orders } = deps
   const targets = webhookTargets(deps.adapters)
 
   /** payment.failed for the intent, naming its order, and under its checkout's id, when there is one. */
@@ -160,6 +162,27 @@ export function registerInboundWebhookRoute(
     return ok({ ignored: true })
   }
 
+  /**
+   * A `payment.refunded` only prompts a read of the provider's list, so it runs with no claim transaction open: the
+   * provider call must not hold SQLite's write lock. A delivery is marked after it was applied; a failure marks
+   * nothing and the provider retries, and a crash between the two only repeats a pass that changes nothing.
+   */
+  async function receiveRefunded(name: string, result: WebhookResult): Promise<ResponseEnvelope> {
+    const handler = `webhook:${name}`
+    if (await store.read((tx) => processedEvents.seen(tx, handler, result.eventId))) {
+      return ok({ deduped: true })
+    }
+    const outcome = result.paymentIntentId
+      ? await refund.reconcilePayment(result.paymentIntentId)
+      : { ignored: 'no_payment' }
+    await store.transaction((tx) =>
+      processedEvents.markProcessed(tx, handler, result.eventId, new Date()),
+    )
+    return 'ignored' in outcome
+      ? ok({ ignored: true, reason: outcome.ignored })
+      : ok({ reconciled: true, ...outcome })
+  }
+
   // The record is claimed before the work, in the work's transaction: a concurrent duplicate waits on its key and
   // finds it taken, and a delivery whose work throws rolls its claim back, so the provider's retry runs it again.
 
@@ -181,6 +204,7 @@ export function registerInboundWebhookRoute(
       throw err
     }
     if (!result.verified) return invalid()
+    if (result.kind === 'payment.refunded') return receiveRefunded(name, result)
     return store.transaction(async (tx) => {
       if (!(await processedEvents.claim(tx, `webhook:${name}`, result.eventId, new Date()))) {
         return ok({ deduped: true })

@@ -3,6 +3,7 @@ import { expect, test } from '../../support/fixtures'
 import { csrf } from '../../support/csrf'
 import { signInAsAdmin } from '../../support/admin'
 import { adminToken, ownProduct } from '../../support/checkout'
+import { postSignedWebhook } from '../../support/webhooks'
 
 const API_URL = process.env.NYMBAL_API_URL ?? 'http://localhost:3001'
 const ADMIN_EMAIL = process.env.NYMBAL_ADMIN_EMAIL ?? 'admin@nymbal.local'
@@ -98,6 +99,7 @@ interface PaymentRead {
 
 interface OrderRead {
   orderNumber: string
+  paymentIntentId: string | null
   status: string
   totalMinor: number
   currency: string
@@ -507,6 +509,72 @@ test.describe('Admin orders', () => {
     const after = await readOrder(request, token, order.orderNumber)
     expect(after.payment.refundedMinor).toBe(part)
     expect(after.payment.refundableMinor).toBe(captured - after.payment.refundedMinor)
+  })
+
+  // Kills: a provider refund that reaches the tables but not what the merchant reads, or a repeat that moves it again.
+  test('AC-15: a paid order refunded in part by a stub provider webhook shows, after a reload, a Refunded row, Partially refunded, the amount, the status badge unchanged and one timeline entry; GET /api/admin/orders/:n agrees; delivering the same event again changes nothing', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(180_000)
+    const order = await placeOwnOrder(request, paidEmail('provider-refund'))
+    const token = await adminToken(request)
+    const start = await readOrder(request, token, order.orderNumber)
+    const captured = start.payment.capturedMinor
+    const part = Math.max(1, Math.floor(captured / 3))
+    expect(part).toBeLessThan(captured)
+    const signed = {
+      rawBody: JSON.stringify({
+        id: `evt_e2e_${Date.now()}_${Math.floor(Math.random() * 1e6)}`,
+        kind: 'payment.refunded',
+        paymentIntentId: start.paymentIntentId,
+        refund: { id: `re_e2e_${Date.now()}`, amountMinor: part },
+      }),
+      headers: { 'content-type': 'application/json', 'stripe-signature': 'proof-kit-stub' },
+    }
+
+    const answer = await postSignedWebhook(request, 'stripe', signed)
+    expect(answer.status, JSON.stringify(answer)).toBe(200)
+    const settled = await readOrder(request, token, order.orderNumber)
+    expect(settled.payment.refundedMinor).toBe(part)
+    expect(settled.payment.state).toBe('partially_refunded')
+    expect(settled.status).toBe(start.status)
+    const refund = settled.payment.refunds[0]!
+
+    await signInAsAdmin(page)
+    await openDetail(page, order.orderNumber)
+    await page.reload()
+    await expect(page.getByTestId('admin-order-detail')).toContainText(order.orderNumber, {
+      timeout: 15_000,
+    })
+    await expectPaymentPanel(page, settled)
+    await expect(page.getByTestId(`admin-order-refund-row-${refund.id}`)).toContainText(
+      money(part, settled.currency),
+    )
+    await expect(page.getByTestId(`admin-order-refund-row-${refund.id}`)).toContainText(
+      /refunded/i,
+    )
+    await expect(page.getByTestId('admin-order-status-badge')).toHaveText(/confirmed/i)
+    await page.getByTestId('admin-order-tab-timeline').click()
+    await expect(page.getByTestId('admin-order-timeline-entry-refund')).toHaveCount(1, {
+      timeout: 15_000,
+    })
+
+    await postSignedWebhook(request, 'stripe', signed)
+    const again = await readOrder(request, token, order.orderNumber)
+    expect([again.payment.refundedMinor, again.payment.refunds.length, again.status]).toEqual([
+      part,
+      1,
+      start.status,
+    ])
+    await page.reload()
+    await expect(page.getByTestId('admin-order-detail')).toContainText(order.orderNumber, {
+      timeout: 15_000,
+    })
+    await page.getByTestId('admin-order-tab-timeline').click()
+    await expect(page.getByTestId('admin-order-timeline-entry-refund')).toHaveCount(1, {
+      timeout: 15_000,
+    })
   })
 
   test('orders list page is accessible @a11y', async ({ page, request }) => {
