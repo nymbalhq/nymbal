@@ -2,6 +2,7 @@ import { v7 as uuidv7 } from 'uuid'
 import {
   CART_LINE_MAX_QTY,
   CartLimitError,
+  CartPromotionError,
   EVT_CART_CREATED,
   EVT_CART_ITEM_ADDED,
   EVT_CART_ITEM_REMOVED,
@@ -13,25 +14,36 @@ import {
   type CartSource,
   type Logger,
   type Product,
+  type PromotionsAdapter,
   type Variant,
 } from '@nymbalhq/types'
 import type { CommandStore, ReadTx, Tx } from '../db/command-store.js'
 import type { CartRepository } from '../repositories/cart.js'
 import { createOrderRepository, type OrderRepository } from '../repositories/order.js'
 import { createProductRepository, type ProductRepository } from '../repositories/product.js'
+import { createProductCategoryRepository } from '../repositories/product-category.js'
 import { createVariantRepository, type VariantRepository } from '../repositories/variant.js'
 import type { EventPublisher } from '../events/publisher.js'
+import {
+  cartTotals,
+  createCartQuoter,
+  PROMOTIONS_BOUND_MS,
+  type CartQuoter,
+} from './promotions-quote.js'
 
 const TTL_SECONDS_DEFAULT = 60 * 60 * 24 * 30
 
 export interface CartService {
   /** The live cart on `token`, or a new one opened with `source`; an existing cart keeps its own source. */
   getOrCreate(token?: string, customerId?: string | null, source?: CartSource): Promise<Cart>
+  /** The live cart. One stored while its engine was down is evaluated again first, and that result stored; no timestamp moves. */
   get(token: string): Promise<Cart | null>
   addItem(token: string, item: Omit<CartItem, 'qty'> & { qty?: number }): Promise<Cart>
   updateItemQuantity(token: string, variantId: string, qty: number): Promise<Cart>
   removeItem(token: string, variantId: string): Promise<Cart>
   clear(token: string): Promise<Cart>
+  addCode(token: string, code: string): Promise<Cart>
+  removeCode(token: string, code: string): Promise<Cart>
   merge(guestToken: string, customerToken: string): Promise<Cart>
   attachCustomer(token: string, customerId: string): Promise<Cart>
   /** The customer's cart once the guest cart at `guestToken` is folded into it; null when there is neither. */
@@ -80,7 +92,14 @@ export interface CreateCartServiceDeps {
   pendingOrders?: Pick<OrderRepository, 'findPendingByCartToken'>
   ttlSeconds?: number
   now?: () => Date
+  /** Absent: no engine, and no code is ever kept on a cart. */
+  promotions?: PromotionsAdapter
+  /** How long an engine not marked `inTransaction` may take; 3 s when not given. */
+  promotionsBoundMs?: number
 }
+
+/** Past this many codes on one cart a request is refused, a limit on hostile growth. */
+const MAX_CART_CODES = 5
 
 function calcSubtotal(items: CartItem[]): number {
   return items.reduce((sum, item) => sum + item.priceMinor * item.qty, 0)
@@ -110,6 +129,20 @@ export function createCartService(deps: CreateCartServiceDeps): CartService {
   const pendingOrders = deps.pendingOrders ?? createOrderRepository(store)
   const ttlMs = (deps.ttlSeconds ?? TTL_SECONDS_DEFAULT) * 1000
   const now = deps.now ?? (() => new Date())
+  const quoter: CartQuoter | undefined =
+    deps.promotions === undefined
+      ? undefined
+      : createCartQuoter({
+          engine: deps.promotions,
+          boundMs: deps.promotionsBoundMs ?? PROMOTIONS_BOUND_MS,
+          store,
+          catalogue: {
+            variant: createVariantRepository(store),
+            productCategory: createProductCategoryRepository(store),
+          },
+          logger: deps.logger,
+          now,
+        })
 
   /** A cart past its expiry reads as missing, whether or not the sweeper has deleted it yet. */
   function live(cart: Cart | null, at: Date): cart is Cart {
@@ -137,8 +170,20 @@ export function createCartService(deps: CreateCartServiceDeps): CartService {
     await publisher.publish(EVT_CART_UPDATED, {
       cartId: cart.token,
       itemCount: cart.items.reduce((n, i) => n + i.qty, 0),
-      totalMinor: cart.subtotalMinor,
+      totalMinor: cartTotals(cart).totalMinor,
     })
+  }
+
+  /**
+   * The cart with what the engine says of it now, or with no record when the cart needs no engine. `strict` lets an
+   * outage refuse the command; otherwise it is recorded and the command goes through.
+   */
+  async function quoted(cart: Cart, strict = false): Promise<Cart> {
+    if (quoter === undefined) return cart
+    const promotions = await quoter.quote(cart, strict)
+    if (promotions !== undefined) return { ...cart, promotions }
+    const { promotions: _none, ...bare } = cart
+    return bare
   }
 
   /**
@@ -178,7 +223,14 @@ export function createCartService(deps: CreateCartServiceDeps): CartService {
     const [kept, folded] = guestPending ? [guest, customer] : [customer, guest]
     const items = combine(kept.items, folded.items, await sellableOf(tx, kept.items, folded.items))
     const source = guest.items.length > 0 ? guest.source : kept.source
-    const merged = { ...written(kept, items, at), customerId, source }
+    // The kept cart's codes win; one with none takes the guest's.
+    const promotions = (kept.promotions?.codes.length ?? 0) > 0 ? kept.promotions : guest.promotions
+    const merged = await quoted({
+      ...written(kept, items, at),
+      customerId,
+      source,
+      ...(promotions !== undefined && { promotions }),
+    })
     await carts.remove(tx, folded.token)
     await carts.put(tx, merged)
     await emitUpdated(merged)
@@ -190,7 +242,7 @@ export function createCartService(deps: CreateCartServiceDeps): CartService {
     const sellable = await sellableOf(tx, cart.items)
     const items = cart.items.filter((i) => sellable.has(i.variantId))
     if (items.length === cart.items.length && cart.customerId === customerId) return cart
-    const claimed = { ...written(cart, items, at), customerId }
+    const claimed = await quoted({ ...written(cart, items, at), customerId })
     await carts.put(tx, claimed)
     await emitUpdated(claimed)
     return claimed
@@ -198,12 +250,21 @@ export function createCartService(deps: CreateCartServiceDeps): CartService {
 
   /**
    * One command on one cart, in one transaction: the row is held from the read to the write, so a concurrent command
-   * (another replica's included) waits and then sees this one's result, and the events commit with the write.
+   * (another replica's included) waits and then sees this one's result, and the events commit with the write. A change
+   * that hands back the cart it was given writes nothing. `strict` lets an engine outage refuse the command instead of
+   * recording it.
    */
-  function command(token: string, change: (cart: Cart, at: Date) => Promise<Cart>): Promise<Cart> {
+  function command(
+    token: string,
+    change: (cart: Cart, at: Date) => Promise<Cart>,
+    strict = false,
+  ): Promise<Cart> {
     return store.transaction(async (tx) => {
       const at = now()
-      const next = await change(await requireCart(tx, token, at), at)
+      const cart = await requireCart(tx, token, at)
+      const changed = await change(cart, at)
+      if (changed === cart) return cart
+      const next = await quoted(changed, strict)
       await carts.put(tx, next)
       await emitUpdated(next)
       return next
@@ -234,8 +295,16 @@ export function createCartService(deps: CreateCartServiceDeps): CartService {
 
     async get(token) {
       const at = now()
-      const cart = await store.read((tx) => carts.findByToken(tx, token))
-      return live(cart, at) ? cart : null
+      const found = await store.read((tx) => carts.findByToken(tx, token))
+      if (!live(found, at)) return null
+      if (quoter === undefined || found.promotions?.unavailable !== true) return found
+      // Evaluated outside any transaction: a read holds no cart lock during an outage.
+      // A cart stored unavailable holds a code, so the engine always answers it.
+      const fresh = await quoter.quote(found, false)
+      if (fresh!.unavailable) return found
+      // Conditional on `updatedAt`: a command that committed while the engine answered has decided the cart already.
+      await store.transaction((tx) => carts.setPromotions(tx, token, found.updatedAt, fresh!))
+      return { ...found, promotions: fresh! }
     },
 
     async addItem(token, item) {
@@ -305,7 +374,56 @@ export function createCartService(deps: CreateCartServiceDeps): CartService {
     },
 
     async clear(token) {
-      return command(token, async (cart, at) => written(cart, [], at))
+      return command(token, async (cart, at) => {
+        const { promotions: _codes, ...bare } = written(cart, [], at)
+        return bare
+      })
+    },
+
+    async addCode(token, code) {
+      return command(
+        token,
+        async (cart, at) => {
+          const codes = cart.promotions?.codes ?? []
+          if (codes.some((c) => c.toLowerCase() === code.toLowerCase())) return cart
+          if (codes.length >= MAX_CART_CODES) {
+            throw new CartPromotionError(
+              'cart.code_limit',
+              `a cart holds at most ${MAX_CART_CODES} codes`,
+            )
+          }
+          if (quoter === undefined) {
+            throw new CartPromotionError(
+              'cart.promotions_unavailable',
+              'no promotions engine is configured',
+            )
+          }
+          return {
+            ...written(cart, cart.items, at),
+            promotions: {
+              codes: [...codes, code],
+              effects: [],
+              provider: cart.promotions?.provider ?? '',
+              evaluatedAt: at.toISOString(),
+              unavailable: false,
+            },
+          }
+        },
+        true,
+      )
+    },
+
+    async removeCode(token, code) {
+      return command(token, async (cart, at) => {
+        const codes = cart.promotions?.codes ?? []
+        const left = codes.filter((c) => c.toLowerCase() !== code.toLowerCase())
+        if (left.length === codes.length) return cart
+        // Stored with its codes gone; the requote drops the record once no code is left.
+        return {
+          ...written(cart, cart.items, at),
+          promotions: { ...cart.promotions!, codes: left },
+        }
+      })
     },
 
     async attachCustomer(token, customerId) {

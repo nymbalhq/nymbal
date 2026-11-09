@@ -155,14 +155,7 @@ export const orders = sqliteTable(
     sequence: integer('sequence').notNull(),
     customerId: text('customer_id'),
     status: text('status', {
-      enum: [
-        'pending',
-        'confirmed',
-        'processing',
-        'shipped',
-        'delivered',
-        'cancelled',
-      ],
+      enum: ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled'],
     })
       .notNull()
       .default('pending'),
@@ -349,6 +342,8 @@ export const carts = sqliteTable(
     updatedAt: text('updated_at').notNull(),
     /** Set by the abandonment sweeper's claim; every cart write clears it, starting a new inactivity period. */
     abandonedNotifiedAt: text('abandoned_notified_at'),
+    /** What the promotions engine last said; null while the cart holds no code. */
+    promotions: text('promotions'),
   },
   (t) => ({
     expiresIdx: index('carts_expires_idx').on(t.expiresAt),
@@ -591,6 +586,44 @@ export const proposals = sqliteTable(
   }),
 )
 
+// --- Promotions --------------------------------------------------------------
+
+export const promotions = sqliteTable(
+  'promotions',
+  {
+    id: text('id').primaryKey(),
+    code: text('code').notNull(),
+    kind: text('kind').notNull(),
+    percentBps: integer('percent_bps'),
+    amountOffMinor: integer('amount_off_minor'),
+    currency: text('currency'),
+    minimumSubtotalMinor: integer('minimum_subtotal_minor'),
+    expiresAt: text('expires_at'),
+    usageCap: integer('usage_cap'),
+    active: integer('active', { mode: 'boolean' }).notNull(),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (t) => ({
+    codeLowerUnique: uniqueIndex('promotions_code_lower_unique').on(sql`lower(${t.code})`),
+    createdIdx: index('promotions_created_idx').on(t.createdAt),
+  }),
+)
+
+export const promotionRedemptions = sqliteTable(
+  'promotion_redemptions',
+  {
+    promotionId: text('promotion_id').notNull(),
+    // No foreign key to orders: the row is written before its order exists, in the same transaction.
+    orderId: text('order_id').notNull(),
+    sessionId: text('session_id').notNull(),
+    createdAt: text('created_at').notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.promotionId, t.orderId] }),
+  }),
+)
+
 // --- Report rollups ---------------------------------------------------------
 
 export const reportSalesHours = sqliteTable(
@@ -696,6 +729,8 @@ export const schema = {
   emailSuppressions,
   orderShipments,
   proposals,
+  promotions,
+  promotionRedemptions,
   reportSalesHours,
   reportFunnelDays,
   reportProductDays,

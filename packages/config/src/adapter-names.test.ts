@@ -7,6 +7,7 @@ import {
   KNOWN_PROVIDERS,
   PROVIDER_NAME,
   slotFolder,
+  type CommerceSlot,
   type Slot,
 } from './index.js'
 
@@ -22,6 +23,7 @@ const COMMERCE = [
   'analytics',
   'shipping',
   'tax',
+  'promotions' as CommerceSlot,
   'ai',
 ] as const
 const SLOTS: readonly Slot[] = [...COMMERCE, 'documentStore', 'eventBus', 'media', 'security']
@@ -36,6 +38,7 @@ const KNOWN_BEFORE: Record<(typeof COMMERCE)[number], readonly string[]> = {
   analytics: ['native'],
   shipping: ['native', 'easypost', 'aftership'],
   tax: ['native'],
+  promotions: ['native'],
 }
 
 /** The kernel's own provider of each slot. */

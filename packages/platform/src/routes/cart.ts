@@ -1,5 +1,7 @@
 import {
   agentSource,
+  NotFoundError,
+  type Cart,
   type CartSource,
   type HttpAdapter,
   type RequestContext,
@@ -10,6 +12,7 @@ import { isSellable, type CartService } from '../services/cart-service.js'
 import type { AfterSignIn, SecureCookies } from './auth.js'
 import type { ProductRepository } from '../repositories/product.js'
 import type { VariantRepository } from '../repositories/variant.js'
+import { cartCodes, cartTotals } from '../services/promotions-quote.js'
 import { ok, fail, renderError } from './envelope.js'
 
 const CART_COOKIE = 'nymbal.cart'
@@ -21,6 +24,13 @@ interface AddItemBody {
 
 interface UpdateBody {
   qty?: number
+}
+
+const CODE_MAX_LENGTH = 64
+
+/** A cart as the routes answer it: its lines, what it comes to, and what the engine said of each code. */
+function priced(cart: Cart) {
+  return { ...cart, totals: cartTotals(cart), promotions: cartCodes(cart.promotions) }
 }
 
 function cookie(token: string, secure = false): ResponseCookie[] {
@@ -74,9 +84,9 @@ export function registerCartRoutes(adapter: HttpAdapter, deps: RegisterCartRoute
     try {
       const token = ctx.cookies[CART_COOKIE]
       const existing = token ? await cart.get(token) : null
-      if (existing) return ok(existing) as ResponseEnvelope
+      if (existing) return ok(priced(existing)) as ResponseEnvelope
       const fresh = await cart.getOrCreate(undefined, null, sourceOf(ctx))
-      const env = ok(fresh)
+      const env = ok(priced(fresh))
       env.cookies = cookie(fresh.token, deps.secureCookies?.())
       return env as ResponseEnvelope
     } catch (err) {
@@ -116,7 +126,7 @@ export function registerCartRoutes(adapter: HttpAdapter, deps: RegisterCartRoute
         qty,
         imageUrl: (product.media[0] as { url?: string } | undefined)?.url ?? '',
       })
-      const env = ok(updated)
+      const env = ok(priced(updated))
       env.cookies = cookie(token, deps.secureCookies?.())
       return env as ResponseEnvelope
     } catch (err) {
@@ -132,7 +142,7 @@ export function registerCartRoutes(adapter: HttpAdapter, deps: RegisterCartRoute
       if (!variantId) return fail('cart.variant_required', 'variantId param required', 400)
       const qty = (ctx.body as UpdateBody | undefined)?.qty ?? 0
       const updated = await cart.updateItemQuantity(token, variantId, qty)
-      return ok(updated)
+      return ok(priced(updated))
     } catch (err) {
       return renderError(err, ctx.logger)
     }
@@ -145,7 +155,7 @@ export function registerCartRoutes(adapter: HttpAdapter, deps: RegisterCartRoute
       const variantId = ctx.params.variantId
       if (!variantId) return fail('cart.variant_required', 'variantId param required', 400)
       const updated = await cart.removeItem(token, variantId)
-      return ok(updated)
+      return ok(priced(updated))
     } catch (err) {
       return renderError(err, ctx.logger)
     }
@@ -156,9 +166,41 @@ export function registerCartRoutes(adapter: HttpAdapter, deps: RegisterCartRoute
       const token = ctx.cookies[CART_COOKIE]
       if (!token) return fail('cart.missing', 'no active cart', 404)
       const cleared = await cart.clear(token)
-      return ok(cleared)
+      return ok(priced(cleared))
     } catch (err) {
       return renderError(err, ctx.logger)
     }
   })
+
+  adapter.registerRoute('POST', '/api/cart/codes', async (ctx) => {
+    try {
+      const token = ctx.cookies[CART_COOKIE]
+      if (!token) return fail('cart.missing', 'no active cart', 404)
+      const code = (ctx.body as { code: string }).code.trim()
+      if (code.length === 0 || code.length > CODE_MAX_LENGTH) {
+        return fail('cart.code_invalid', `a code is 1 to ${CODE_MAX_LENGTH} characters`, 400)
+      }
+      return ok(priced(await cart.addCode(token, code)))
+    } catch (err) {
+      return codeError(err, ctx.logger)
+    }
+  })
+
+  adapter.registerRoute('DELETE', '/api/cart/codes/:code', async (ctx) => {
+    try {
+      const token = ctx.cookies[CART_COOKIE]
+      if (!token) return fail('cart.missing', 'no active cart', 404)
+      const code = ctx.params.code
+      if (!code) return fail('cart.code_invalid', 'code param required', 400)
+      return ok(priced(await cart.removeCode(token, code)))
+    } catch (err) {
+      return codeError(err, ctx.logger)
+    }
+  })
+}
+
+/** A stale cookie, whose cart has gone, is `cart.missing` here as on the routes that check for one up front. */
+function codeError(err: unknown, logger: Parameters<typeof renderError>[1]) {
+  if (err instanceof NotFoundError) return fail('cart.missing', 'no active cart', 404)
+  return renderError(err, logger)
 }

@@ -11,6 +11,7 @@ import type { Repositories } from '../repositories/index.js'
 import type { EventPublisher } from '../events/publisher.js'
 import { createProductService, type ProductService } from './product-service.js'
 import { createCategoryService, type CategoryService } from './category-service.js'
+import type { PromotionsAdapter } from '@nymbalhq/types'
 import { createCartCatalogue, createCartService, type CartService } from './cart-service.js'
 import { createCustomerService, type CustomerService } from './customer-service.js'
 import { createAuthService, parseDurationToMs, type AuthService } from './auth-service.js'
@@ -87,6 +88,7 @@ export interface BuildServicesDeps {
   searchAdapter: SearchAdapter
   email: EmailAdapter
   reviews: ReviewsAdapter
+  promotions: PromotionsAdapter
   /** The effective JWT secret (`resolveAuthSecret`), not the config's field. */
   jwtSecret: string
   /** Runs a stored proposal through its route: the tool surface `attachHttp` builds. */
@@ -104,6 +106,7 @@ export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
     searchAdapter,
     email,
     reviews,
+    promotions,
     jwtSecret,
   } = deps
   const inventory = createInventoryService({
@@ -128,12 +131,15 @@ export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
     currency: config.store.currency,
     catalogue: createCartCatalogue(repos),
     pendingOrders: repos.order,
+    promotions,
   })
   const checkout = createCheckoutService({
     store,
     repos,
     publisher,
     logger: logger.child({ service: 'checkout' }),
+    promotions,
+    promotionsOnUnavailable: config.commerce.promotions.onUnavailable,
     cart,
     orders,
     inventory,

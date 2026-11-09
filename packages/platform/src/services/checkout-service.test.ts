@@ -19,6 +19,7 @@ import {
   type PaymentIntentParams,
   type PaymentsAdapter,
   type PaymentStatus,
+  type PromotionsAdapter,
 } from '@nymbalhq/types'
 import { InMemoryDocumentStore } from '../document-store/in-memory.js'
 import { InProcessEventBus } from '../event-bus/in-process.js'
@@ -34,10 +35,16 @@ import { createCartService } from './cart-service.js'
 import { createCheckoutService } from './checkout-service.js'
 import { createNativeStubPaymentsAdapter } from '../adapters/payments/native-stub.js'
 import { createLogger } from '../logger.js'
+import { scriptedEngine, type EngineAnswer, type ScriptedEngine } from '../tests/promotions.js'
 import { formatMoney } from '../money.js'
 import { v7 as uuidv7 } from 'uuid'
 
-async function setup() {
+interface SetupOptions {
+  promotions?: PromotionsAdapter
+  onUnavailable?: 'proceed' | 'refuse'
+}
+
+async function setup(options: SetupOptions = {}) {
   const commandStore = createCommandStore(
     // @ts-expect-error — minimal config
     { infrastructure: { commandStore: 'sqlite' }, store: { name: 'test', currency: 'GBP' } },
@@ -81,6 +88,7 @@ async function setup() {
     catalogue: {
       sellable: async (_tx: ReadTx, variantIds: readonly string[]) => new Set(variantIds),
     },
+    ...(options.promotions && { promotions: options.promotions }),
   })
   const checkout = createCheckoutService({
     store: commandStore,
@@ -92,6 +100,8 @@ async function setup() {
     inventory,
     payments,
     currency: 'GBP',
+    ...(options.promotions && { promotions: options.promotions }),
+    ...(options.onUnavailable && { promotionsOnUnavailable: options.onUnavailable }),
   })
   return {
     commandStore,
@@ -2020,6 +2030,153 @@ describe('CheckoutService.beginCheckout: payment outcomes, resubmits, changed ca
       context: { orderNumber: confirmed.orderNumber },
     })
     await env.commandStore.close()
+  })
+
+  describe('discount codes', () => {
+    const LINE: Line = { priceMinor: 2500, stock: 5, qty: 2 }
+
+    const takes =
+      (amountMinor: number): EngineAnswer =>
+      (session) => ({
+        effects: session.codes.flatMap((code) => [
+          { kind: 'code_accepted' as const, code },
+          { kind: 'order' as const, amountMinor, label: code, code },
+        ]),
+      })
+
+    async function codedCart(engine: ScriptedEngine, options: SetupOptions = {}, codes = ['SAVE']) {
+      const env = await setup({ promotions: engine.adapter, ...options })
+      const { token, variants } = await cartWith(env, [LINE])
+      for (const code of codes) await env.cart.addCode(token, code)
+      return { env, token, variant: variants[0]! }
+    }
+
+    const place = (env: Env, cartToken: string, expectedTotalMinor?: number) =>
+      env.checkout.beginCheckout({
+        cartToken,
+        email: 'shopper+stub-pending@example.com',
+        billingAddress: makeAddr(),
+        shippingAddress: makeAddr(),
+        ...(expectedTotalMinor !== undefined && { expectedTotalMinor }),
+      })
+
+    const orderCount = (env: Env) =>
+      env.commandStore.read(async (tx) => (await env.repos.order.list(tx, { limit: 100 })).length)
+
+    it('the order’s columns, lines, record and intent come from the quote the reservation returned', async () => {
+      const engine = scriptedEngine({ providerName: 'engine-a' })
+      engine.answer(takes(500))
+      const { env, token, variant } = await codedCart(engine)
+      const placed = await place(env, token)
+      const order = await orderOf(env, placed.orderId)
+      expect(order).toMatchObject({
+        subtotalMinor: 5000,
+        discountTotalMinor: 500,
+        taxTotalMinor: 0,
+        shippingTotalMinor: 0,
+        totalMinor: 4500,
+      })
+      expect(order.lineItems).toMatchObject([
+        { variantId: variant.id, sku: variant.sku, lineDiscountMinor: 500 },
+      ])
+      expect((order.metadata as { promotions?: unknown }).promotions).toEqual({
+        provider: 'engine-a',
+        sessionId: token,
+        codes: ['SAVE'],
+        effects: [{ kind: 'order', amountMinor: 500, label: 'SAVE', code: 'SAVE' }],
+      })
+      expect(engine.calls.slice(-2).map((c) => c.opts)).toEqual([
+        { dry: true },
+        { orderId: placed.orderId },
+      ])
+    })
+
+    it('expectedTotalMinor equal to the total places; any other refuses before an order or a reservation exists', async () => {
+      const engine = scriptedEngine()
+      engine.answer(takes(500))
+      const { env, token, variant } = await codedCart(engine)
+      await expect(place(env, token, 4501)).rejects.toMatchObject({
+        code: 'checkout.total_changed',
+        context: { quoted: 4501, due: 4500 },
+      })
+      expect(engine.calls.at(-1)?.opts).toEqual({ dry: true })
+      expect(await orderCount(env)).toBe(0)
+      expect(await stockOf(env, variant.id)).toBe(5)
+      const placed = await place(env, token, 4500)
+      expect((await orderOf(env, placed.orderId)).totalMinor).toBe(4500)
+    })
+
+    it('a total that moves between the dry quote and the reservation refuses and undoes the reservation', async () => {
+      const engine = scriptedEngine()
+      engine.answer(takes(500))
+      const { env, token, variant } = await codedCart(engine)
+      engine.answer((session, opts) =>
+        takes(opts?.orderId === undefined ? 500 : 100)(session, opts),
+      )
+      await expect(place(env, token, 4500)).rejects.toMatchObject({
+        code: 'checkout.total_changed',
+        context: { quoted: 4500, due: 4900 },
+      })
+      expect(await orderCount(env)).toBe(0)
+      expect(await stockOf(env, variant.id)).toBe(5)
+    })
+
+    it('with the same quote the pending order is reused, and at a changed quote it is replaced', async () => {
+      const engine = scriptedEngine()
+      engine.answer(takes(500))
+      const { env, token } = await codedCart(engine)
+      const first = await place(env, token)
+      const again = await place(env, token)
+      expect(again.orderId).toBe(first.orderId)
+      engine.answer(takes(700))
+      await env.cart.updateItemQuantity(token, (await env.cart.get(token))!.items[0]!.variantId, 2)
+      const moved = await place(env, token)
+      expect(moved.orderId).not.toBe(first.orderId)
+      expect((await orderOf(env, moved.orderId)).totalMinor).toBe(4300)
+      expect((await orderOf(env, first.orderId)).status).toBe('cancelled')
+    })
+
+    it('a code that would zero the order is placed at full price with no record of it', async () => {
+      const engine = scriptedEngine()
+      engine.answer(takes(5000))
+      const { env, token } = await codedCart(engine)
+      const placed = await place(env, token)
+      const order = await orderOf(env, placed.orderId)
+      expect(order).toMatchObject({ discountTotalMinor: 0, totalMinor: 5000 })
+      expect(order.metadata).not.toHaveProperty('promotions')
+    })
+
+    it('an engine outage refuses a coded cart: no order, no stock moved', async () => {
+      const engine = scriptedEngine()
+      const { env, token, variant } = await codedCart(engine)
+      engine.fail()
+      await expect(place(env, token)).rejects.toMatchObject({
+        code: 'checkout.promotions_unavailable',
+      })
+      expect(await orderCount(env)).toBe(0)
+      expect(await stockOf(env, variant.id)).toBe(5)
+    })
+
+    const downWithNoCode = async (setting: 'proceed' | 'refuse') => {
+      const engine = scriptedEngine({ capabilities: ['codes', 'automatic'] })
+      const coded = await codedCart(engine, { onUnavailable: setting }, [])
+      engine.fail()
+      return coded
+    }
+
+    it('an outage on a cart with no code places at full price when the store proceeds', async () => {
+      const { env, token } = await downWithNoCode('proceed')
+      const placed = await place(env, token)
+      expect((await orderOf(env, placed.orderId)).totalMinor).toBe(5000)
+    })
+
+    it('an outage on a cart with no code refuses when the store refuses, and no order exists', async () => {
+      const { env, token } = await downWithNoCode('refuse')
+      await expect(place(env, token)).rejects.toMatchObject({
+        code: 'checkout.promotions_unavailable',
+      })
+      expect(await orderCount(env)).toBe(0)
+    })
   })
 })
 

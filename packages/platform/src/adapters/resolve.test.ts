@@ -1,6 +1,6 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
-import { ConfigError, type Slot } from '@nymbalhq/types'
+import { ConfigError, type CommerceSlot, type Slot } from '@nymbalhq/types'
 import { checkAdapterModule, importAdapterModule, resolveChoice } from './resolve.js'
 
 // The resolver through its importer seam: a stub importer records every specifier and either returns a module or
@@ -19,6 +19,7 @@ const COMMERCE = [
   'analytics',
   'shipping',
   'tax',
+  'promotions' as CommerceSlot,
   'ai',
 ] as const
 const SLOTS: readonly Slot[] = [...COMMERCE, 'documentStore', 'eventBus', 'media', 'security']
@@ -44,6 +45,7 @@ const CATALOGUE: Record<
   analytics: { builtIn: ['native'], firstParty: {} },
   shipping: { builtIn: ['native'], firstParty: { easypost: undefined } },
   tax: { builtIn: ['native'], firstParty: {} },
+  promotions: { builtIn: ['native'], firstParty: {} },
   ai: { builtIn: ['none'], firstParty: { anthropic: '@anthropic-ai/sdk' } },
   documentStore: {
     builtIn: ['in-memory'],

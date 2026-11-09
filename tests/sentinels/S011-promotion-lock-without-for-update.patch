@@ -1,0 +1,19 @@
+# id: S011
+# kind: injected
+# defect: the promotion row is read without FOR UPDATE at reservation, so parallel checkouts of a capped code each see the cap free and all take the discount (SQLite serialises its one connection, so Postgres catches this)
+# where: packages/platform/src/repositories/promotion.ts:185
+# killed-by: packages/platform/tests/postgres/promotion-race.postgres.test.ts AC-20
+# suite: pnpm vitest run --project integration-postgres packages/platform/tests/postgres/promotion-race.postgres.test.ts
+diff --git a/packages/platform/src/repositories/promotion.ts b/packages/platform/src/repositories/promotion.ts
+index 0b84b57..61f464f 100644
+--- a/packages/platform/src/repositories/promotion.ts
++++ b/packages/platform/src/repositories/promotion.ts
+@@ -182,7 +182,7 @@ export function createPromotionRepository(store: CommandStore): PromotionReposit
+     async lock(tx, id) {
+       if (tx.kind === 'sqlite') return findById(tx, id)
+       const t = postgresSchema.promotions
+-      const [row] = await postgresDb(tx).select().from(t).where(eq(t.id, id)).for('update')
++      const [row] = await postgresDb(tx).select().from(t).where(eq(t.id, id))
+       return row ? rowToPromotion(row as Record<string, unknown>) : null
+     },
+     async insert(tx, promotion) {

@@ -16,6 +16,7 @@ const SLOT_LABELS: Record<string, string> = {
   analytics: 'Analytics',
   shipping: 'Shipping',
   tax: 'Tax',
+  promotions: 'Promotions',
   ai: 'AI',
 }
 

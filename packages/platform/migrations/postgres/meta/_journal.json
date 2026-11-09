@@ -176,6 +176,13 @@
       "when": 1794219012972,
       "tag": "0024_report_rollups",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1794255124955,
+      "tag": "0025_promotions",
+      "breakpoints": true
     }
   ]
 }

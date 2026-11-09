@@ -10,6 +10,7 @@ import type {
 } from '../domain/payment.js'
 import type { CustomerProfile } from '../domain/customer.js'
 import type { Address } from '../domain/order.js'
+import type { PromotionEffect } from '../domain/totals.js'
 import type { Review, ReviewModerationStatus, AggregateRating } from '../domain/review.js'
 import type { JsonSchemaObject } from './http.js'
 
@@ -302,6 +303,75 @@ export interface TaxAdapter extends CommerceAdapter {
   calculate(params: TaxCalculationParams): Promise<TaxCalculationResult>
 }
 
+// --- Promotions ------------------------------------------------------------
+
+export type { PromotionEffect }
+
+export type PromotionsCapability =
+  | 'codes'
+  | 'automatic'
+  | 'line'
+  | 'shipping'
+  | 'free-items'
+  | 'referrals'
+
+export interface PromotionSessionLine {
+  id: string
+  variantId: string
+  sku: string
+  productId: string
+  categoryIds: string[]
+  unitMinor: number
+  qty: number
+  attributes?: Record<string, unknown>
+}
+
+export interface PromotionSession {
+  /** The cart token. */
+  id: string
+  customerId: string | null
+  email?: string
+  codes: readonly string[]
+  referral?: string
+  currency: string
+  lines: readonly PromotionSessionLine[]
+  shipping: { optionId: string; amountMinor: number } | null
+  shipTo?: Address
+}
+
+export interface PromotionEvaluation {
+  effects: PromotionEffect[]
+  evaluationId?: string
+}
+
+export interface PromotionOrder {
+  orderId: string
+  orderNumber: string
+  currency: string
+  subtotalMinor: number
+  discountTotalMinor: number
+  totalMinor: number
+}
+
+export interface PromotionsAdapter extends CommerceAdapter {
+  readonly kind: 'promotions'
+  capabilities(): readonly PromotionsCapability[]
+  /** True when `evaluate` writes through the kernel's open transaction: the kernel does not time it out. */
+  readonly inTransaction?: boolean
+  /** Pure with `dry`. A non-dry call may reserve codes against `orderId`. Same session and lines, same effects. */
+  evaluate(
+    session: PromotionSession,
+    opts?: { dry?: boolean; orderId?: string },
+  ): Promise<PromotionEvaluation>
+  close?(sessionId: string, order: PromotionOrder): Promise<void>
+  cancel?(sessionId: string, orderId: string): Promise<void>
+  return?(
+    sessionId: string,
+    orderId: string,
+    returned: { amountMinor: number; currency: string },
+  ): Promise<void>
+}
+
 // --- AI --------------------------------------------------------------------
 
 /** A tool the model may call. Its name matches `^[A-Za-z0-9_-]{1,64}$` and is unique among the tools of one request. */
@@ -397,5 +467,6 @@ export interface CommerceSlotAdapters {
   analytics: AnalyticsAdapter
   shipping: ShippingAdapter
   tax: TaxAdapter
+  promotions: PromotionsAdapter
   ai: AiAdapter
 }

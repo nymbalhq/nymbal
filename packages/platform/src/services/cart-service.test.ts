@@ -1,6 +1,7 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import {
+  CartPromotionError,
   EVT_CART_CREATED,
   EVT_CART_ITEM_ADDED,
   EVT_CART_ITEM_REMOVED,
@@ -10,6 +11,7 @@ import {
   type Cart,
   type CartItem,
   type Order,
+  type PromotionsAdapter,
 } from '@nymbalhq/types'
 import { InMemoryDocumentStore } from '../document-store/in-memory.js'
 import { InProcessEventBus } from '../event-bus/in-process.js'
@@ -29,6 +31,8 @@ import {
   type CreateCartServiceDeps,
 } from './cart-service.js'
 import { createLogger } from '../logger.js'
+import { scriptedEngine } from '../tests/promotions.js'
+import { cartTotals } from './promotions-quote.js'
 
 interface DepsOptions {
   now?: () => Date
@@ -38,6 +42,8 @@ interface DepsOptions {
   storeCatalogue?: boolean
   /** Wraps the cart repository the service is given. */
   carts?: (carts: CartRepository) => CartRepository
+  /** The cart's promotions engine; absent, a cart takes no code. */
+  promotions?: PromotionsAdapter
 }
 
 // Carts are command-store rows and their events go through the outbox on the same store. The catalogue sells every
@@ -75,6 +81,7 @@ async function makeDeps(
     ...(options.pendingOrders && { pendingOrders: options.pendingOrders }),
     ...(options.ttlSeconds !== undefined && { ttlSeconds: options.ttlSeconds }),
     ...(options.now && { now: options.now }),
+    ...(options.promotions && { promotions: options.promotions }),
   })
   return { service, eventBus, relay, commandStore, repos }
 }
@@ -654,6 +661,25 @@ describe('merge and signIn', () => {
     return cart
   }
 
+  it('a merge takes the guest’s source when the guest cart had lines, keeps the customer’s when it had none, and adds no promotions record', async () => {
+    const { service } = await makeDeps()
+    const customer = await service.getOrCreate(undefined, 'cust', 'storefront')
+    const guest = await service.getOrCreate(undefined, null, 'agent:shopper')
+    await service.addItem(guest.token, testItem)
+    const fromGuest = await service.merge(guest.token, customer.token)
+    expect(fromGuest.source).toBe('agent:shopper')
+    expect(fromGuest).not.toHaveProperty('promotions')
+
+    const own = await service.getOrCreate(undefined, 'cust-2', 'agent:shopper')
+    const empty = await service.getOrCreate(undefined, null, 'storefront')
+    expect((await service.merge(empty.token, own.token)).source).toBe('agent:shopper')
+  })
+
+  it('a cart created with no source is a storefront cart', async () => {
+    const { service } = await makeDeps()
+    expect((await service.getOrCreate()).source).toBe('storefront')
+  })
+
   it('merge of a cart into itself leaves it as it was, and with neither cart live is not_found for the customer’s token', async () => {
     const { service } = await makeDeps()
     const cart = await cartOf(service, null, [['a', 2]])
@@ -878,5 +904,258 @@ describe('merge and signIn', () => {
         change(own),
       )
     }
+  })
+})
+
+describe('CartService: discount codes', () => {
+  const coded = async (engine = scriptedEngine()) => {
+    // A clock that moves on every read, so a rewritten record cannot match an old one by landing in the same millisecond.
+    let at = Date.parse('2026-06-01T12:00:00.000Z')
+    const deps = await makeDeps(undefined, {
+      promotions: engine.adapter,
+      now: () => new Date((at += 1000)),
+    })
+    const { token } = await deps.service.getOrCreate()
+    await deps.service.addItem(token, { ...testItem, qty: 2 })
+    const stored = () => deps.commandStore.read((tx) => deps.repos.cart.findByToken(tx, token))
+    return { ...deps, token, engine, stored }
+  }
+
+  it('addCode stores the engine’s answer and the totals follow it; cart.updated carries the discounted total', async () => {
+    const { service, eventBus, relay, token, stored } = await coded()
+    const updates: { totalMinor: number }[] = []
+    await eventBus.subscribe(EVT_CART_UPDATED, (e) => {
+      updates.push(e.payload as { totalMinor: number })
+    })
+    const cart = await service.addCode(token, 'SAVE')
+    await relay.drain()
+    expect(cart.promotions?.codes).toEqual(['SAVE'])
+    expect(cart.promotions?.provider).toBe('scripted-promotions')
+    expect(cartTotals(cart)).toMatchObject({ discountTotalMinor: 200, totalMinor: 1800 })
+    expect(await stored()).toEqual(cart)
+    expect(updates.at(-1)).toMatchObject({ totalMinor: 1800 })
+  })
+
+  it('a code already on the cart, in any case, writes nothing and asks the engine nothing', async () => {
+    const { service, token, engine, stored } = await coded()
+    await service.addCode(token, 'SAVE')
+    const before = await stored()
+    const calls = engine.calls.length
+    const again = await service.addCode(token, 'save')
+    expect(again).toEqual(before)
+    expect(await stored()).toEqual(before)
+    expect(engine.calls).toHaveLength(calls)
+  })
+
+  it('takes a fifth code and refuses a sixth, leaving the cart as it was', async () => {
+    const { service, token, stored } = await coded()
+    for (const code of ['A', 'B', 'C', 'D', 'E']) await service.addCode(token, code)
+    const before = await stored()
+    expect(before?.promotions?.codes).toHaveLength(5)
+    await expect(service.addCode(token, 'F')).rejects.toMatchObject({ code: 'cart.code_limit' })
+    expect(await stored()).toEqual(before)
+  })
+
+  it('with no engine a code is refused and the cart keeps no record', async () => {
+    const { service } = await makeDeps()
+    const { token } = await service.getOrCreate()
+    await expect(service.addCode(token, 'SAVE')).rejects.toBeInstanceOf(CartPromotionError)
+    await expect(service.addCode(token, 'SAVE')).rejects.toMatchObject({
+      code: 'cart.promotions_unavailable',
+    })
+    expect((await service.getOrCreate(token)).promotions).toBeUndefined()
+  })
+
+  it('a refused code says why', async () => {
+    const { service, token } = await coded()
+    for (const code of ['A', 'B', 'C', 'D', 'E']) await service.addCode(token, code)
+    await expect(service.addCode(token, 'F')).rejects.toThrow('a cart holds at most 5 codes')
+
+    const bare = await makeDeps()
+    const cart = await bare.service.getOrCreate()
+    await expect(bare.service.addCode(cart.token, 'SAVE')).rejects.toThrow(
+      'no promotions engine is configured',
+    )
+  })
+
+  it('removing a code from a cart with no codes leaves it as it was', async () => {
+    const { service, token, stored } = await coded()
+    const before = await stored()
+    expect(await service.removeCode(token, 'SAVE')).toEqual(before)
+    expect(await stored()).toEqual(before)
+  })
+
+  it('an engine outage on addCode refuses the command and stores nothing', async () => {
+    const { service, token, engine, stored } = await coded()
+    const before = await stored()
+    engine.fail()
+    await expect(service.addCode(token, 'SAVE')).rejects.toMatchObject({
+      code: 'cart.promotions_unavailable',
+    })
+    expect(await stored()).toEqual(before)
+  })
+
+  it('removeCode removes in any case and evaluates what is left; the last code gone drops the record', async () => {
+    const { service, token, stored } = await coded()
+    await service.addCode(token, 'ONE')
+    await service.addCode(token, 'TWO')
+    const left = await service.removeCode(token, 'one')
+    expect(left.promotions?.codes).toEqual(['TWO'])
+    expect(cartTotals(left).discountTotalMinor).toBe(200)
+    const none = await service.removeCode(token, 'TWO')
+    expect(none).not.toHaveProperty('promotions')
+    expect(cartTotals(none).discountTotalMinor).toBe(0)
+    expect(await stored()).toEqual(none)
+  })
+
+  it('removing a code not on the cart writes nothing and asks the engine nothing', async () => {
+    const { service, token, engine, stored } = await coded()
+    await service.addCode(token, 'SAVE')
+    const before = await stored()
+    const calls = engine.calls.length
+    await service.removeCode(token, 'OTHER')
+    expect(await stored()).toEqual(before)
+    expect(engine.calls).toHaveLength(calls)
+  })
+
+  it('every line command asks the engine again with the new lines and stores the answer', async () => {
+    const { service, token, engine } = await coded()
+    await service.addCode(token, 'SAVE')
+    const quotedQty = () => engine.calls.at(-1)!.session.lines.map((l) => [l.variantId, l.qty])
+    const discountOf = (cart: Cart) => cartTotals(cart).discountTotalMinor
+
+    const added = await service.addItem(token, { ...testItem, variantId: 'var-2', qty: 1 })
+    expect(quotedQty()).toEqual([
+      ['var-1', 2],
+      ['var-2', 1],
+    ])
+    expect(discountOf(added)).toBe(300)
+
+    const changed = await service.updateItemQuantity(token, 'var-1', 5)
+    expect(quotedQty()).toEqual([
+      ['var-1', 5],
+      ['var-2', 1],
+    ])
+    expect(discountOf(changed)).toBe(600)
+
+    const removed = await service.removeItem(token, 'var-2')
+    expect(quotedQty()).toEqual([['var-1', 5]])
+    expect(discountOf(removed)).toBe(500)
+  })
+
+  it('an outage on a line command goes through at full price and records the cart unavailable', async () => {
+    const { service, token, engine, stored } = await coded()
+    await service.addCode(token, 'SAVE')
+    engine.fail()
+    const cart = await service.updateItemQuantity(token, 'var-1', 3)
+    expect(cart.items[0]?.qty).toBe(3)
+    expect(cart.promotions).toMatchObject({ codes: ['SAVE'], effects: [], unavailable: true })
+    expect(cartTotals(cart)).toMatchObject({ discountTotalMinor: 0, totalMinor: 3000 })
+    expect(await stored()).toEqual(cart)
+  })
+
+  it('clear drops the codes and asks the engine nothing', async () => {
+    const { service, token, engine, stored } = await coded()
+    await service.addCode(token, 'SAVE')
+    const calls = engine.calls.length
+    const cleared = await service.clear(token)
+    expect(cleared).not.toHaveProperty('promotions')
+    expect(await stored()).toEqual(cleared)
+    expect(engine.calls).toHaveLength(calls)
+  })
+
+  it('merge keeps the kept cart’s codes; a kept cart with none takes the guest’s', async () => {
+    const { service, token } = await coded()
+    await service.addCode(token, 'GUEST')
+    const other = await service.getOrCreate()
+    await service.addItem(other.token, { ...testItem, variantId: 'var-2', qty: 1 })
+    const noCodes = await service.merge(token, other.token)
+    expect(noCodes.promotions?.codes).toEqual(['GUEST'])
+
+    const guest = await service.getOrCreate()
+    await service.addItem(guest.token, testItem)
+    await service.addCode(guest.token, 'THEIRS')
+    await service.addCode(noCodes.token, 'OURS')
+    const kept = await service.merge(guest.token, noCodes.token)
+    expect(kept.promotions?.codes).toEqual(['GUEST', 'OURS'])
+    expect(cartTotals(kept).discountTotalMinor).toBeGreaterThan(0)
+  })
+
+  it('attachCustomer asks the engine for the customer’s own session', async () => {
+    const { service, token, engine } = await coded()
+    await service.addCode(token, 'SAVE')
+    await service.attachCustomer(token, 'cust-9')
+    expect(engine.calls.at(-1)?.session.customerId).toBe('cust-9')
+  })
+
+  describe('get on a cart stored while its engine was down', () => {
+    const stale = async () => {
+      const env = await coded()
+      await env.service.addCode(env.token, 'SAVE')
+      env.engine.fail()
+      await env.service.updateItemQuantity(env.token, 'var-1', 3)
+      const before = (await env.stored())!
+      expect(before.promotions?.unavailable).toBe(true)
+      return { ...env, before }
+    }
+
+    it('stores the recovered answer and moves no timestamp', async () => {
+      const { service, token, engine, stored, before } = await stale()
+      engine.recover()
+      const fresh = await service.get(token)
+      expect(fresh?.promotions).toMatchObject({ unavailable: false, codes: ['SAVE'] })
+      expect(cartTotals(fresh!)).toMatchObject({ discountTotalMinor: 300, totalMinor: 2700 })
+      const after = await stored()
+      expect(after).toEqual(fresh)
+      expect(after?.updatedAt).toBe(before.updatedAt)
+      expect(after?.expiresAt).toBe(before.expiresAt)
+    })
+
+    it('answers the stored cart while the engine is still down, and stores nothing', async () => {
+      const { service, token, stored, before } = await stale()
+      await expect(service.get(token)).resolves.toEqual(before)
+      expect(await stored()).toEqual(before)
+    })
+
+    it('a command that committed while the engine answered keeps the cart it wrote', async () => {
+      const { service, token, engine, commandStore, repos, stored, before } = await stale()
+      const written = {
+        ...before,
+        updatedAt: new Date(Date.parse(before.updatedAt) + 1).toISOString(),
+      }
+      engine.recover()
+      engine.answer(async () => {
+        await commandStore.transaction((tx) => repos.cart.put(tx, written))
+        return { effects: [] }
+      })
+      await service.get(token)
+      expect(await stored()).toEqual(written)
+    })
+  })
+
+  it('get asks the engine nothing for a cart its engine answered', async () => {
+    const { service, token, engine, stored } = await coded()
+    await service.addCode(token, 'SAVE')
+    const calls = engine.calls.length
+    await expect(service.get(token)).resolves.toEqual(await stored())
+    expect(engine.calls).toHaveLength(calls)
+  })
+
+  it('get with no engine leaves a cart stored unavailable as it is', async () => {
+    const { service, commandStore, repos } = await makeDeps()
+    const { token } = await service.getOrCreate()
+    const cart = (await service.get(token))!
+    const unavailable = {
+      ...cart,
+      promotions: {
+        codes: ['SAVE'],
+        effects: [],
+        provider: 'gone',
+        evaluatedAt: cart.updatedAt,
+        unavailable: true,
+      },
+    }
+    await commandStore.transaction((tx) => repos.cart.put(tx, unavailable))
+    await expect(service.get(token)).resolves.toEqual(unavailable)
   })
 })

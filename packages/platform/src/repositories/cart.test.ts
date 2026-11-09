@@ -1,6 +1,6 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
-import type { Cart } from '@nymbalhq/types'
+import type { Cart, CartPromotions } from '@nymbalhq/types'
 import { createCommandStore } from '../db/command-store.js'
 import { runMigrations } from '../db/migrate.js'
 import { createCartRepository } from './cart.js'
@@ -144,6 +144,79 @@ describe('cart repository (sqlite)', () => {
       updatedAt: iso(0),
     })
     expect(await read(env, expired.token)).toEqual(expired)
+  })
+
+  const said = (over: Partial<CartPromotions> = {}): CartPromotions => ({
+    codes: ['SAVE10'],
+    effects: [{ kind: 'code_accepted', code: 'SAVE10' }],
+    provider: 'native',
+    evaluatedAt: iso(-1),
+    unavailable: false,
+    ...over,
+  })
+
+  it('a cart keeps what the engine said through put and findByToken, and one with no record reads back with none', async () => {
+    const env = await setup()
+    const coded = { ...cartAt(), promotions: said() }
+    const plain = cartAt()
+    await put(env, coded, plain)
+    expect(await read(env, coded.token)).toEqual(coded)
+    const back = await read(env, plain.token)
+    expect(back).toEqual(plain)
+    expect(back).not.toHaveProperty('promotions')
+  })
+
+  it('put replacing a cart with no record drops the one stored', async () => {
+    const env = await setup()
+    const coded = { ...cartAt(), promotions: said() }
+    await put(env, coded)
+    const { promotions: _gone, ...bare } = coded
+    await put(env, bare)
+    expect(await read(env, coded.token)).toEqual(bare)
+  })
+
+  it('clearIfLive drops the record along with the lines', async () => {
+    const env = await setup()
+    const coded = { ...cartAt(), promotions: said() }
+    await put(env, coded)
+    const at = new Date(iso(0))
+    expect(await env.store.transaction((tx) => env.carts.clearIfLive(tx, coded.token, at))).toBe(
+      true,
+    )
+    const back = await read(env, coded.token)
+    expect(back?.items).toEqual([])
+    expect(back).not.toHaveProperty('promotions')
+  })
+
+  it('setPromotions replaces the record and nothing else while updatedAt still matches', async () => {
+    const env = await setup()
+    const cart = { ...cartAt(), promotions: said({ unavailable: true, effects: [] }) }
+    const other = { ...cartAt(), promotions: said({ unavailable: true, effects: [] }) }
+    await put(env, cart, other)
+    const fresh = said({ evaluatedAt: iso(0) })
+    await env.store.transaction((tx) =>
+      env.carts.setPromotions(tx, cart.token, cart.updatedAt, fresh),
+    )
+    expect(await read(env, cart.token)).toEqual({ ...cart, promotions: fresh })
+    expect(await read(env, other.token)).toEqual(other)
+  })
+
+  it('property: setPromotions on any updatedAt but the stored one leaves the cart as it was', async () => {
+    const env = await setup()
+    await fc.assert(
+      fc.asyncProperty(
+        fc.integer({ min: -100, max: 100 }).filter((n) => n !== -10),
+        async (minutes) => {
+          const cart = { ...cartAt(), promotions: said({ unavailable: true, effects: [] }) }
+          await put(env, cart)
+          await env.store.transaction((tx) =>
+            env.carts.setPromotions(tx, cart.token, iso(minutes), said({ evaluatedAt: iso(0) })),
+          )
+          expect(await read(env, cart.token)).toEqual(cart)
+        },
+      ),
+      { numRuns: 20 },
+    )
   })
 
   it('deleteExpired deletes exactly the carts whose expiry is at or before `at`, and answers how many', async () => {

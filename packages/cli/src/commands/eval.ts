@@ -94,6 +94,7 @@ function throwawayConfig(config: NymbalConfig, ai: NymbalConfig['commerce']['ai'
       analytics: native,
       shipping: native,
       tax: native,
+      promotions: { ...native, onUnavailable: 'proceed' },
       ai,
     },
     http: { ...config.http, host: '127.0.0.1' },

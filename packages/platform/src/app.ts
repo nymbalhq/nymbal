@@ -351,6 +351,7 @@ export async function createApp(
       searchAdapter: adapters.search,
       email: adapters.email,
       reviews: adapters.reviews,
+      promotions: adapters.promotions,
       jwtSecret: jwt.secret,
       executeProposal: (row, auth) => {
         if (mcp === undefined)

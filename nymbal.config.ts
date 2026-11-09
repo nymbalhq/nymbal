@@ -53,6 +53,7 @@ export default {
     analytics: { provider: 'native' },
     shipping: { provider: 'native' },
     tax: { provider: 'native' },
+    promotions: { provider: 'native' },
     ai: { provider: 'none' },
   },
   http: {

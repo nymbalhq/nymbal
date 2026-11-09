@@ -5,7 +5,12 @@ import { randomUUID } from 'node:crypto'
 import fc from 'fast-check'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import type { NymbalConfig } from '@nymbalhq/config'
-import { ConfigError, type Cart, type PaymentIntentParams } from '@nymbalhq/types'
+import {
+  ConfigError,
+  type Cart,
+  type CommerceSlot,
+  type PaymentIntentParams,
+} from '@nymbalhq/types'
 import { createNativeStubPaymentsAdapter } from '../../src/adapters/payments/native-stub.js'
 import { createApp, type NymbalApp } from '../../src/app.js'
 import { createCommandStore } from '../../src/db/command-store.js'
@@ -35,6 +40,7 @@ const SLOTS = [
   'analytics',
   'shipping',
   'tax',
+  'promotions' as CommerceSlot,
   'ai',
 ] as const
 type Slot = (typeof SLOTS)[number]

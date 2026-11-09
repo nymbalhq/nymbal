@@ -22,6 +22,7 @@ const COMMERCE = [
   'analytics',
   'shipping',
   'tax',
+  'promotions',
   'ai',
 ] as const
 const INFRASTRUCTURE = ['security', 'documentStore', 'eventBus', 'media'] as const

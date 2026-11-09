@@ -8,6 +8,7 @@ import { runEventBusContract } from './event-bus.js'
 import type { CONTRACT_KINDS } from './kinds.js'
 import { runMediaStorageContract, type MediaStorageContractOptions } from './media-storage.js'
 import { runPaymentsContract } from './payments.js'
+import { runPromotionsContract } from './promotions.js'
 import { runReviewsContract } from './reviews.js'
 import { runSearchContract } from './search.js'
 import { runShippingContract } from './shipping.js'
@@ -39,6 +40,7 @@ export {
 export { runAnalyticsContract } from './analytics.js'
 export { runShippingContract, type ShippingContractOptions } from './shipping.js'
 export { runTaxContract } from './tax.js'
+export { runPromotionsContract } from './promotions.js'
 export { runWebhookContract, type WebhookContractOptions, type WebhookRequest } from './webhook.js'
 export {
   runEmailFeedbackContract,
@@ -79,6 +81,7 @@ const suites = {
   analytics: runAnalyticsContract as ContractSuite,
   shipping: runShippingContract as ContractSuite,
   tax: runTaxContract as ContractSuite,
+  promotions: runPromotionsContract as ContractSuite,
   ai: runAiContract as ContractSuite,
   documentStore: runDocumentStoreContract as ContractSuite,
   eventBus: runEventBusContract as ContractSuite,

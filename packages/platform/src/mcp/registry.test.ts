@@ -46,6 +46,12 @@ const EXCLUDED = [
   'admin.settings.delete',
   'admin.assistant.turn',
   'admin.assistant.stream',
+  'cart.addCode',
+  'cart.removeCode',
+  'admin.promotions.list',
+  'admin.promotions.create',
+  'admin.promotions.update',
+  'admin.promotions.delete',
 ].sort()
 
 /** The routes a cookie names the cart of; their tools take it as `cart`. */
@@ -210,7 +216,7 @@ describe('AC-1: one tool per registry entry', () => {
     }
   })
 
-  it('AC-13: the entries marked tool: false are exactly the fourteen kept from agents plus proposal approve, proposal reject, settings put and delete and the assistant’s turn and stream, and every stream route is among them', () => {
+  it('AC-13: the entries marked tool: false are exactly the fourteen kept from agents plus proposal approve, proposal reject, settings put and delete, the assistant’s turn and stream and the cart-code and admin-promotion routes, and every stream route is among them', () => {
     const marked = Object.values(routeSchemas)
       .filter((entry) => entry.tool === false)
       .map((entry) => entry.name)

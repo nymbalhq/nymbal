@@ -15,6 +15,8 @@ const checkoutStatus: Record<CheckoutCode, number> = {
   reservation_failed: 409,
   variant_missing: 422,
   finalize_failed: 500,
+  total_changed: 409,
+  promotions_unavailable: 503,
 }
 
 interface Rendered {

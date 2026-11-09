@@ -140,11 +140,24 @@ export class CheckoutError extends NymbalError {
       | 'variant_missing'
       | 'out_of_stock'
       | 'reservation_failed'
-      | 'finalize_failed',
+      | 'finalize_failed'
+      | 'total_changed'
+      | 'promotions_unavailable',
     message: string,
     options: { cause?: unknown; context?: ErrorContext } = {},
   ) {
     super(`checkout.${code}`, message, options)
+  }
+}
+
+/** A code the cart refuses before any engine sees it, or a cart its engine could not be reached for. */
+export class CartPromotionError extends NymbalError {
+  constructor(
+    code: 'cart.code_limit' | 'cart.promotions_unavailable',
+    message: string,
+    options: { cause?: unknown; context?: ErrorContext } = {},
+  ) {
+    super(code, message, options)
   }
 }
 

@@ -1,5 +1,6 @@
 import {
   CartLimitError,
+  CartPromotionError,
   CheckoutError,
   HttpError,
   NotFoundError,
@@ -51,6 +52,8 @@ const CHECKOUT_STATUS: Record<string, number> = {
   'checkout.out_of_stock': 409,
   'checkout.reservation_failed': 409,
   'checkout.variant_missing': 422,
+  'checkout.total_changed': 409,
+  'checkout.promotions_unavailable': 503,
 }
 
 const INTERNAL_MESSAGE = 'Internal server error'
@@ -77,6 +80,14 @@ function errorEnvelope(err: NymbalError): ResponseEnvelope<Envelope<never>> {
   }
   if (err instanceof ValidationError || err instanceof CartLimitError) {
     return fail(err.code, err.message, 400, err.context)
+  }
+  if (err instanceof CartPromotionError) {
+    return fail(
+      err.code,
+      err.message,
+      err.code === 'cart.promotions_unavailable' ? 503 : 400,
+      err.context,
+    )
   }
   // A transition the table forbids, or money that does not allow the command: the caller's to fix, never a fault.
   if (err instanceof StatusTransitionError || err instanceof OrderConflictError) {

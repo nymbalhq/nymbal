@@ -55,6 +55,7 @@ export default defineConfig({
     analytics: { provider: 'native' },
     shipping: { provider: 'native' },
     tax: { provider: 'native' },
+    promotions: { provider: 'native' },
     ai: {
       provider: 'anthropic',
       config: { apiKey: env('ANTHROPIC_API_KEY', 'anthropic-placeholder') },

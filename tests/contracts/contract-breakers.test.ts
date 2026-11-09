@@ -216,6 +216,32 @@ describe('the published reviews suite certifies a provider without on-site revie
   })
 })
 
+describe('the published promotions suite fails an adapter whose effects a settlement would have to guess at', () => {
+  it('AC-8: a promotions adapter whose money effect is a fraction of a minor unit fails a case about money effects; the same adapter without the defect passes every case', () => {
+    const run = compare('promotions-fractional-money', 'promotions-control', /money|integer/i)
+
+    expect(run.failed.length, run.why).toBeGreaterThan(0)
+    expect(
+      run.failed.some((name) => /money|integer/i.test(name)),
+      run.why,
+    ).toBe(true)
+    expect(run.controlFailed, run.why).toEqual([])
+    expect(run.controlPassed).toBe(run.badTotal)
+  })
+
+  it('AC-8: a promotions adapter whose line effect names a line the session does not have fails a case about line effects; the same adapter without the defect passes every case', () => {
+    const run = compare('promotions-unknown-line', 'promotions-control', /\bline\b/i)
+
+    expect(run.failed.length, run.why).toBeGreaterThan(0)
+    expect(
+      run.failed.some((name) => /\bline\b/i.test(name)),
+      run.why,
+    ).toBe(true)
+    expect(run.controlFailed, run.why).toEqual([])
+    expect(run.controlPassed).toBe(run.badTotal)
+  })
+})
+
 describe('the published document store suite fails a replaceCollection with the defect it exists for', () => {
   it('AC-1: a document store whose replaceCollection is not atomic fails the concurrent-reader replaceCollection case, and only replaceCollection cases; the real in-memory store passes every case', () => {
     const run = compare('documents-replace-not-atomic', 'documents-control', REPLACE)

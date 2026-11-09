@@ -66,6 +66,27 @@ const ALL_PERSONAL = ['email', 'phone', 'address'] as const
 
 const id = z.string().min(1)
 const cartHandle = { cart: 'nymbal.cart' }
+
+/** Taken unchecked beyond its shape: the route answers a promotion it cannot accept with `promotion.invalid`, naming the rule. */
+const promotionFields = {
+  percentBps: z.unknown().optional(),
+  amountOffMinor: z.unknown().optional(),
+  currency: z.unknown().optional(),
+  minimumSubtotalMinor: z.unknown().optional(),
+  expiresAt: z.unknown().optional(),
+  usageCap: z.unknown().optional(),
+  active: z.unknown().optional(),
+}
+const promotionCreateBody = z.object({
+  code: z.string(),
+  kind: z.string(),
+  ...promotionFields,
+})
+const promotionPatchBody = z.object({
+  code: z.string().optional(),
+  kind: z.string().optional(),
+  ...promotionFields,
+})
 /** A query value as the HTTP layer hands it over: repeated keys arrive as an array. */
 const queryValue = z.union([z.string(), z.array(z.string())]).optional()
 const paging = { limit: queryValue, offset: queryValue }
@@ -76,9 +97,7 @@ function pagingOf(size: number, max: number) {
     offset: queryValue.describe('How many to skip, to page through the list (0 by default).'),
   }
 }
-const orderStatus = z.enum(
-  Object.keys(ORDER_STATUS_TRANSITIONS) as [OrderStatus, ...OrderStatus[]],
-)
+const orderStatus = z.enum(Object.keys(ORDER_STATUS_TRANSITIONS) as [OrderStatus, ...OrderStatus[]])
 const orderPaymentState = z.enum(['unpaid', 'paid', 'partially_refunded', 'refunded'])
 const inventoryStatus = z.enum(['in_stock', 'low_stock', 'out_of_stock'])
 const isoDateTime = z.iso.datetime({ offset: true })
@@ -335,6 +354,20 @@ export const routeSchemas: Record<string, RouteSchema> = {
     command: null,
     description: 'Remove every item from the cart.',
   },
+  'POST /api/cart/codes': {
+    name: 'cart.addCode',
+    command: null,
+    tool: false,
+    description: 'Add a discount code to the cart.',
+    body: z.object({ code: z.string() }),
+  },
+  'DELETE /api/cart/codes/:code': {
+    name: 'cart.removeCode',
+    command: null,
+    tool: false,
+    description: 'Remove a discount code from the cart.',
+    params: z.object({ code: z.string() }),
+  },
 
   // Checkout and orders
   'POST /api/checkout': {
@@ -347,6 +380,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
       billingAddress: address,
       shippingAddress: address,
       notes: z.string().optional(),
+      expectedTotalMinor: z.number().int().nonnegative().optional(),
     }),
   },
   'GET /api/orders': {
@@ -779,6 +813,36 @@ export const routeSchemas: Record<string, RouteSchema> = {
     description: 'Add an internal note to a customer.',
     params: idParams,
     body: noteBody,
+  },
+
+  // Admin: promotions
+  'GET /api/admin/promotions': {
+    name: 'admin.promotions.list',
+    tool: false,
+    description: 'List promotions, newest first, each with how often it has been used.',
+    query: z.object({ limit: queryValue }),
+  },
+  'POST /api/admin/promotions': {
+    name: 'admin.promotions.create',
+    command: 'promotion.create',
+    tool: false,
+    description: 'Create a promotion.',
+    body: promotionCreateBody,
+  },
+  'PATCH /api/admin/promotions/:id': {
+    name: 'admin.promotions.update',
+    command: 'promotion.update',
+    tool: false,
+    description: 'Change a promotion.',
+    params: idParams,
+    body: promotionPatchBody,
+  },
+  'DELETE /api/admin/promotions/:id': {
+    name: 'admin.promotions.delete',
+    command: 'promotion.delete',
+    tool: false,
+    description: 'Delete a promotion no order has used.',
+    params: idParams,
   },
 
   // Admin: reviews

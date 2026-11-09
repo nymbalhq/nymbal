@@ -18,6 +18,7 @@ import { createNativeReviewsAdapter } from './reviews/native-adapter.js'
 import { createNativeAnalyticsAdapter } from './analytics/native-adapter.js'
 import { createNativeShippingAdapter } from './shipping/native-adapter.js'
 import { createNativeTaxAdapter } from './tax/native-adapter.js'
+import { createNativePromotionsAdapter } from './promotions/native-adapter.js'
 import {
   declaredSettings,
   importAdapterModule,
@@ -41,6 +42,7 @@ export const COMMERCE_SLOTS = [
   'analytics',
   'shipping',
   'tax',
+  'promotions',
   'ai',
 ] as const satisfies readonly CommerceSlot[]
 
@@ -239,6 +241,11 @@ export function slotBuilders(deps: Omit<BuildAdaptersDeps, 'payments' | 'securit
     analytics: () => slot('analytics', { native: () => createNativeAnalyticsAdapter(logger) }),
     shipping: () => slot('shipping', { native: () => createNativeShippingAdapter(logger) }),
     tax: () => slot('tax', { native: () => createNativeTaxAdapter(logger) }),
+    promotions: () =>
+      slot('promotions', {
+        native: () =>
+          createNativePromotionsAdapter({ repos, logger: logger.child({ adapter: 'promotions' }) }),
+      }),
     ai: () => slot('ai', { none: () => null }),
   }
 }
@@ -253,7 +260,8 @@ export async function buildAdapters(deps: BuildAdaptersDeps): Promise<AdapterReg
   const analytics = await build.analytics()
   const shipping = await build.shipping()
   const tax = await build.tax()
+  const promotions = await build.promotions()
   const ai = await build.ai()
 
-  return { security, payments, email, search, reviews, analytics, shipping, tax, ai }
+  return { security, payments, email, search, reviews, analytics, shipping, tax, promotions, ai }
 }

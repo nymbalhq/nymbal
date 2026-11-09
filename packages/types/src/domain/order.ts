@@ -27,9 +27,7 @@ export function fulfilmentMoves(
   payment: PaymentState,
 ): readonly OrderStatus[] {
   const moves = ORDER_STATUS_TRANSITIONS[status]
-  return payment === 'refunded'
-    ? moves.filter((m) => m !== 'processing' && m !== 'shipped')
-    : moves
+  return payment === 'refunded' ? moves.filter((m) => m !== 'processing' && m !== 'shipped') : moves
 }
 
 const REFUNDABLE: ReadonlySet<OrderStatus> = new Set([
@@ -78,6 +76,8 @@ export interface OrderLineItem {
   lineSubtotalMinor: number
   lineTaxMinor: number
   lineTotalMinor: number
+  /** The line's share of the order's discount, beside the gross total; absent when none. */
+  lineDiscountMinor?: number
   imageUrl: string
 }
 

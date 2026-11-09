@@ -13,6 +13,7 @@ export default {
   mutate: [
     'packages/platform/src/services/**/*.ts',
     'packages/platform/src/repositories/**/*.ts',
+    'packages/platform/src/adapters/promotions/**/*.ts',
     // Measured by the integration run too (stryker.integration.config.mjs); here by the unit tests beside them.
     'packages/platform/src/events/relay.ts',
     'packages/platform/src/events/publisher.ts',
@@ -55,7 +56,7 @@ export default {
     '/packages/types/dist',
     '**/CLAUDE.md',
   ],
-  disableTypeChecks: 'packages/platform/src/{services,repositories}/**/*.ts',
+  disableTypeChecks: 'packages/platform/src/{services,repositories,adapters/promotions}/**/*.ts',
   coverageAnalysis: 'perTest',
   // A static mutant (module-level code, or a factory every test's setup calls) reruns the whole suite with a reload, last
   // in the run, against an allowance shorter than the suite's cold start: those reruns were most of the run's tail,

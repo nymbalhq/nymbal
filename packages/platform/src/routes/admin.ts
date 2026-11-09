@@ -14,6 +14,7 @@ import { registerAdminInventoryRoutes } from './admin-inventory.js'
 import { registerAdminCustomersRoutes } from './admin-customers.js'
 import { registerAdminSearchRoute } from './admin-search.js'
 import { registerAdminReviewsRoutes } from './admin-reviews.js'
+import { registerAdminPromotionsRoutes } from './admin-promotions.js'
 import { registerAdminSettingsRoutes } from './admin-settings.js'
 import { createHistoryReader } from '../history/read.js'
 
@@ -70,6 +71,7 @@ export function registerAdminRoutes(adapter: HttpAdapter, deps: RegisterAdminRou
     reviewRepo: repos.review,
     productRepo: repos.product,
   })
+  registerAdminPromotionsRoutes(adapter, { promotions: repos.promotion })
   registerAdminSettingsRoutes(adapter, {
     config,
     slots: deps.settingsSlots,

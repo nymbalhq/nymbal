@@ -23,6 +23,8 @@ import {
   type PaymentsAdapter,
   type PaymentIntent,
   type PaymentStatus,
+  type PromotionsAdapter,
+  type Variant,
 } from '@nymbalhq/types'
 import { audit } from '../audit/audit.js'
 import type { CommandStore, Tx } from '../db/command-store.js'
@@ -30,6 +32,13 @@ import type { Repositories } from '../repositories/index.js'
 import type { EventPublisher } from '../events/publisher.js'
 import { currentCorrelationId } from '../events/correlation.js'
 import { formatMoney } from '../money.js'
+import {
+  createPlaceQuoter,
+  orderPromotionRecord,
+  PROMOTIONS_BOUND_MS,
+  sameQuote,
+  type SessionExtras,
+} from './promotions-quote.js'
 import { mintOrderKey } from '../order-access-key.js'
 import type { InventoryService } from './inventory-service.js'
 import type { OrderService } from './order-service.js'
@@ -49,6 +58,8 @@ export interface BeginCheckoutInput {
   billingAddress: Address
   shippingAddress: Address
   notes?: string
+  /** The total the caller was shown: a checkout that would charge anything else is refused `total_changed`. */
+  expectedTotalMinor?: number
   /**
    * A payment credential an agent holds for the buyer (an ACP Shared Payment Token), charged at once. No one is there
    * to complete a challenge, so an intent that neither succeeds nor fails is cancelled.
@@ -124,6 +135,12 @@ export interface CreateCheckoutServiceDeps {
   currency: string
   /** How long a checkout's order key opens the order on its own; 48 hours when not given. */
   keyLifetimeMs?: number
+  /** Absent: no engine, and every order is at full price. */
+  promotions?: PromotionsAdapter
+  /** How long an engine not marked `inTransaction` may take; 3 s when not given. */
+  promotionsBoundMs?: number
+  /** A cart with no code when the engine is down: place at full price, or refuse. A cart with a code always refuses. */
+  promotionsOnUnavailable?: 'proceed' | 'refuse'
 }
 
 /** The checkout keys an order keeps: each mint past this deletes the oldest, so a checkout loop cannot grow the table. */
@@ -136,6 +153,8 @@ interface DraftMetadata {
   reservationIds: string[]
   /** The checkout's correlation id, which its payment publishes under (`inOrderScope`). */
   correlationId?: string
+  /** What the engine applied, present only when it accepted a code, moved money or named an evaluation. */
+  promotions?: Record<string, unknown>
 }
 
 /** A line whose released reservation cannot be re-taken: another order has the stock now. */
@@ -198,25 +217,37 @@ function outcomeOf(status: PaymentStatus): CheckoutPayment['status'] {
   return 'requires_action'
 }
 
-/** The pending order is for exactly this cart: the same lines, quantities, prices and total. */
-function sameLines(order: Order, cart: Cart): boolean {
-  if (order.totalMinor !== cart.subtotalMinor || order.currency !== cart.currency) return false
-  if (order.lineItems.length !== cart.items.length) return false
-  return cart.items.every((item, i) => {
-    const line = order.lineItems[i]
-    return (
-      line?.variantId === item.variantId &&
-      line.qty === item.qty &&
-      line.unitPriceMinor === item.priceMinor
-    )
-  })
-}
-
 export function createCheckoutService(
   deps: CreateCheckoutServiceDeps,
 ): CheckoutService & ManualPayments {
   const { store, repos, publisher, logger, cart, orders, inventory, payments, currency } = deps
   const keyLifetimeMs = deps.keyLifetimeMs ?? DEFAULT_CHECKOUT_KEY_LIFETIME_MS
+  const quotes = createPlaceQuoter({
+    engine: deps.promotions,
+    boundMs: deps.promotionsBoundMs ?? PROMOTIONS_BOUND_MS,
+    onUnavailable: deps.promotionsOnUnavailable ?? 'proceed',
+    store,
+    catalogue: repos,
+    logger,
+  })
+
+  /** Refuses a charge the caller was not shown. */
+  function refuseChangedTotal(input: BeginCheckoutInput, due: number): void {
+    const quoted = input.expectedTotalMinor
+    if (quoted !== undefined && quoted !== due) {
+      throw new CheckoutError('total_changed', 'The total has changed', {
+        context: { quoted, due },
+      })
+    }
+  }
+
+  function sessionExtras(input: BeginCheckoutInput, cartDoc: Cart): SessionExtras {
+    return {
+      customerId: input.customerId ?? cartDoc.customerId,
+      email: input.email,
+      shipTo: input.shippingAddress,
+    }
+  }
 
   /**
    * A new key for a guest's order, its hash written in `tx`, and none for a customer's. Earlier keys keep opening the
@@ -635,8 +666,12 @@ export function createCheckoutService(
     })
   }
 
-  /** A fast, readable refusal; the conditional decrement when reserving is what holds under concurrency. */
-  async function checkStock(tx: Tx, cartDoc: Cart): Promise<void> {
+  /**
+   * A fast, readable refusal, answering the variants it read; the conditional decrement when reserving is what holds
+   * under concurrency.
+   */
+  async function checkStock(tx: Tx, cartDoc: Cart): Promise<ReadonlyMap<string, Variant>> {
+    const read = new Map<string, Variant>()
     for (const item of cartDoc.items) {
       const v = await repos.variant.findById(tx, item.variantId)
       if (!v) {
@@ -648,7 +683,9 @@ export function createCheckoutService(
           `Insufficient stock for ${item.variantName}: available ${v.stock}, requested ${item.qty}`,
         )
       }
+      read.set(item.variantId, v)
     }
+    return read
   }
 
   /**
@@ -667,6 +704,11 @@ export function createCheckoutService(
     if (cartDoc === null) throw new NotFoundError('cart', input.cartToken)
     if (!cartDoc.items.length) throw await cartEmpty(input.cartToken)
 
+    // Before anything is cancelled, so an outage or a changed total leaves a pending order and its intent as they were.
+    const extras = sessionExtras(input, cartDoc)
+    const dryQuote = await quotes.dry(cartDoc, extras)
+    refuseChangedTotal(input, dryQuote.totals.totalMinor)
+
     const pending = await repos.order.findPendingByCartToken(tx, input.cartToken)
     if (pending !== null) {
       const { paymentIntentId } = pending
@@ -679,7 +721,7 @@ export function createCheckoutService(
       } else {
         const reason = closed.get(paymentIntentId)
         if (reason === undefined) {
-          if (sameLines(pending, cartDoc)) {
+          if (sameQuote(pending, cartDoc, dryQuote, input.shippingAddress)) {
             const orderKey = await mintKey(tx, pending)
             return { kind: 'existing', order: { ...pending, paymentIntentId }, orderKey }
           }
@@ -689,20 +731,7 @@ export function createCheckoutService(
       }
     }
 
-    await checkStock(tx, cartDoc)
-    const lineItems: OrderLineItem[] = cartDoc.items.map((item) => ({
-      variantId: item.variantId,
-      productId: item.productId,
-      productName: item.productName,
-      variantName: item.variantName,
-      sku: '',
-      qty: item.qty,
-      unitPriceMinor: item.priceMinor,
-      lineSubtotalMinor: item.priceMinor * item.qty,
-      lineTaxMinor: 0,
-      lineTotalMinor: item.priceMinor * item.qty,
-      imageUrl: item.imageUrl,
-    }))
+    const variants = await checkStock(tx, cartDoc)
     const orderId = uuidv7()
     audit.note('checkout.place', [{ type: 'order', id: orderId }])
     const correlationId = currentCorrelationId()
@@ -719,6 +748,30 @@ export function createCheckoutService(
         })
       }
     }
+    // After the stock, so the commonest refusal never reaches the reservation.
+    const quote = await quotes.reserve(cartDoc, extras, orderId)
+    refuseChangedTotal(input, quote.totals.totalMinor)
+    const discounts = new Map(quote.totals.lines.map((l) => [l.id, l.discountMinor]))
+    const lineItems: OrderLineItem[] = cartDoc.items.map((item) => {
+      const lineDiscountMinor = discounts.get(item.variantId)!
+      return {
+        variantId: item.variantId,
+        productId: item.productId,
+        productName: item.productName,
+        variantName: item.variantName,
+        sku: variants.get(item.variantId)!.sku,
+        qty: item.qty,
+        unitPriceMinor: item.priceMinor,
+        lineSubtotalMinor: item.priceMinor * item.qty,
+        lineTaxMinor: 0,
+        lineTotalMinor: item.priceMinor * item.qty,
+        ...(lineDiscountMinor > 0 && { lineDiscountMinor }),
+        imageUrl: item.imageUrl,
+      }
+    })
+    const promotions = deps.promotions
+      ? orderPromotionRecord(deps.promotions.providerName, cartDoc.token, quote)
+      : undefined
     const order = await orders.createFromCheckout({
       orderId,
       customerId: input.customerId ?? null,
@@ -726,21 +779,33 @@ export function createCheckoutService(
       billingAddress: input.billingAddress,
       shippingAddress: input.shippingAddress,
       lineItems,
-      subtotalMinor: cartDoc.subtotalMinor,
-      taxTotalMinor: 0,
-      shippingTotalMinor: 0,
-      discountTotalMinor: 0,
-      totalMinor: cartDoc.subtotalMinor,
+      subtotalMinor: quote.totals.subtotalMinor,
+      taxTotalMinor: quote.totals.taxTotalMinor,
+      shippingTotalMinor: quote.totals.shippingTotalMinor,
+      discountTotalMinor: quote.totals.discountTotalMinor,
+      totalMinor: quote.totals.totalMinor,
       currency: cartDoc.currency,
       ...(input.notes !== undefined && { notes: input.notes }),
       metadata: {
         cartToken: cartDoc.token,
         reservationIds,
         ...(correlationId !== undefined && { correlationId }),
+        ...(promotions !== undefined && { promotions }),
       } satisfies DraftMetadata,
       cartToken: cartDoc.token,
       source: cartDoc.source,
     })
+    if (quote.skipped) {
+      await repos.orderHistory.append(tx, {
+        id: uuidv7(),
+        orderId: order.id,
+        fromStatus: order.status,
+        toStatus: order.status,
+        actor: 'system:checkout',
+        note: 'promotions.skipped: the promotions engine was unavailable and the order was placed at full price',
+        timestamp: new Date(),
+      })
+    }
     return { kind: 'placed', order, orderKey: await mintKey(tx, order) }
   }
 

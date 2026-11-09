@@ -10,6 +10,7 @@ interface BeginBody {
   billingAddress?: Address
   shippingAddress?: Address
   notes?: string
+  expectedTotalMinor?: number
 }
 
 export function registerCheckoutRoutes(adapter: HttpAdapter, checkout: CheckoutService): void {
@@ -31,6 +32,9 @@ export function registerCheckoutRoutes(adapter: HttpAdapter, checkout: CheckoutS
         billingAddress: body.billingAddress,
         shippingAddress: body.shippingAddress,
         ...(body.notes !== undefined && { notes: body.notes }),
+        ...(body.expectedTotalMinor !== undefined && {
+          expectedTotalMinor: body.expectedTotalMinor,
+        }),
       })
       return ok({
         orderId: result.orderId,

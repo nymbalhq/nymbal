@@ -2,6 +2,11 @@
   "groups": [
     { "name": "services", "glob": "packages/platform/src/services/**/*.ts", "floor": 60 },
     { "name": "repositories", "glob": "packages/platform/src/repositories/**/*.ts", "floor": 50 },
+    {
+      "name": "promotions",
+      "glob": "packages/platform/src/adapters/promotions/**/*.ts",
+      "floor": 60
+    },
     { "name": "mappers", "glob": "packages/importers/src/woocommerce/mappers/**/*.ts", "floor": 80 },
     { "name": "assistant", "glob": "packages/platform/src/assistant/**/*.ts", "floor": 75 },
     { "name": "assistant-tools", "glob": "packages/platform/src/mcp/**/*.ts", "floor": 65 }

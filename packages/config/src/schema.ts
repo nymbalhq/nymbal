@@ -456,6 +456,18 @@ function adapterBlock(slot: CommerceSlot) {
     .superRefine((block, ctx) => packageBesideBuiltIn(slot, block, ctx))
 }
 
+/** The promotions slot's block: every other slot's fields, and what a cart with no code does when the engine is down. */
+function promotionsBlock() {
+  return z
+    .object({
+      provider: providerNameSchema('promotions.provider'),
+      config: z.record(z.string(), z.unknown()).optional(),
+      package: packageNameSchema.optional(),
+      onUnavailable: z.enum(['proceed', 'refuse']).default('proceed'),
+    })
+    .superRefine((block, ctx) => packageBesideBuiltIn('promotions', block, ctx))
+}
+
 export const commerceSchema = z.object({
   payments: adapterBlock('payments'),
   email: adapterBlock('email'),
@@ -464,6 +476,8 @@ export const commerceSchema = z.object({
   analytics: adapterBlock('analytics'),
   shipping: adapterBlock('shipping'),
   tax: adapterBlock('tax'),
+  // Absent is the kernel's own engine, so a config written before the slot existed keeps working.
+  promotions: promotionsBlock().default({ provider: 'native', onUnavailable: 'proceed' }),
   ai: adapterBlock('ai'),
   orders: z
     .object({

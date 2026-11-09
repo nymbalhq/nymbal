@@ -28,6 +28,8 @@ export const EXEMPT_TABLES: Readonly<Record<string, string>> = {
     'written inside a delivery by the email feedback and alert handlers, and cleared by the CLI; no read model is built from it',
   order_refunds:
     'read from its own table, no read model; a refund that moves money changes the order and publishes its events',
+  promotions:
+    'read from its own table by the engine and the admin routes, no read model; an admin edit publishes no event',
   reviews:
     "the native reviews adapter's own store, read from its table, no read model; a submission publishes its event after the adapter's write",
   report_sales_hours: 'a figure the report handler folds from an event it is delivered, in that delivery',

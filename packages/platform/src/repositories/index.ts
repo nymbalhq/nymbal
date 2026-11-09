@@ -41,6 +41,7 @@ import {
 } from './email-suppression.js'
 import { createOrderShipmentRepository, type OrderShipmentRepository } from './order-shipment.js'
 import { createProposalRepository, type ProposalRepository } from './proposal.js'
+import { createPromotionRepository, type PromotionRepository } from './promotion.js'
 import { createReportRollupRepository, type ReportRollupRepository } from './report-rollup.js'
 
 export * from './product.js'
@@ -66,6 +67,7 @@ export * from './alert-subscription.js'
 export * from './email-suppression.js'
 export * from './order-shipment.js'
 export * from './proposal.js'
+export * from './promotion.js'
 export * from './report-rollup.js'
 export * from './page.js'
 
@@ -93,6 +95,7 @@ export interface Repositories {
   emailSuppression: EmailSuppressionRepository
   orderShipment: OrderShipmentRepository
   proposal: ProposalRepository
+  promotion: PromotionRepository
   reportRollup: ReportRollupRepository
 }
 
@@ -125,6 +128,7 @@ export function buildRepositories(
     emailSuppression: createEmailSuppressionRepository(commandStore),
     orderShipment: createOrderShipmentRepository(commandStore),
     proposal: createProposalRepository(commandStore),
+    promotion: createPromotionRepository(commandStore),
     reportRollup: createReportRollupRepository(commandStore),
   }
 }
