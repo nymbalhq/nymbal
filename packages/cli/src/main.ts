@@ -17,6 +17,7 @@ import { auditCommand } from './commands/audit.js'
 import { replayCommand } from './commands/replay.js'
 import { mcpCommand } from './commands/mcp.js'
 import { evalCommand } from './commands/eval.js'
+import { upgradeCommand } from './commands/upgrade.js'
 import {
   securityApplyCommand,
   securityDriftCommand,
@@ -50,6 +51,7 @@ export const main = defineCommand({
     preview: previewCommand,
     'config:validate': configValidateCommand,
     add: addCommand,
+    upgrade: upgradeCommand,
     doctor: doctorCommand,
     'security:plan': securityPlanCommand,
     'security:apply': securityApplyCommand,

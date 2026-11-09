@@ -13,7 +13,10 @@ import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
+import semver from 'semver'
+import { type Matrix, MatrixError, parseMatrix } from '../../packages/cli/src/upgrade/matrix'
 import { type Manifest, type ManifestEntry, REPO, validateManifest } from './manifest'
+import { mergeMatrix } from './matrix'
 import { badgePath, renderBadge, renderStatusPage } from './site'
 import { type EntryHistory, nextStatus, type RunResult } from './status'
 
@@ -94,8 +97,24 @@ function npmErrorLine(out: string): string {
   return first?.trim() ?? lastLine(out)
 }
 
-/** Installs the entry into `project` and certifies it, each in the sandbox. */
-function certify(entry: ManifestEntry, project: string, timeoutS: number): RunResult {
+/** The canonical version a package.json declares, or null when it is missing, unreadable or not one. */
+function versionIn(file: string): string | null {
+  let version: unknown
+  try {
+    version = (JSON.parse(readFileSync(file, 'utf8')) as { version?: unknown }).version
+  } catch {
+    return null
+  }
+  return typeof version === 'string' && semver.valid(version) === version ? version : null
+}
+
+/** Installs the entry into `project` and certifies it, each in the sandbox, with the version the install put there. */
+function certify(
+  entry: ManifestEntry,
+  project: string,
+  timeoutS: number,
+): { result: RunResult; version: string | null } {
+  const failed = (line: string) => ({ result: { kind: 'fail', line } as RunResult, version: null })
   writeFileSync(
     join(project, 'package.json'),
     `${JSON.stringify({ name: 'nymbal-registry-certify', private: true, type: 'module' }, null, 2)}\n`,
@@ -103,8 +122,7 @@ function certify(entry: ManifestEntry, project: string, timeoutS: number): RunRe
   let spec: string
   if ('dir' in entry.source) {
     const dir = resolve(REPO, entry.source.dir)
-    if (!existsSync(dir))
-      return { kind: 'fail', line: `install failed: ${entry.source.dir} does not exist` }
+    if (!existsSync(dir)) return failed(`install failed: ${entry.source.dir} does not exist`)
     const pack = spawnSync(
       'npm',
       ['pack', '--ignore-scripts', '--json', '--pack-destination', project, dir],
@@ -117,7 +135,7 @@ function certify(entry: ManifestEntry, project: string, timeoutS: number): RunRe
       file = undefined
     }
     if (pack.status !== 0 || file === undefined) {
-      return { kind: 'fail', line: `pack failed: ${npmErrorLine(`${pack.stdout}${pack.stderr}`)}` }
+      return failed(`pack failed: ${npmErrorLine(`${pack.stdout}${pack.stderr}`)}`)
     }
     spec = join(project, file)
   } else {
@@ -138,9 +156,13 @@ function certify(entry: ManifestEntry, project: string, timeoutS: number): RunRe
     ],
     { network: true, timeoutS },
   )
-  if (install.timedOut) return { kind: 'fail', line: `timed out after ${timeoutS} s (install)` }
-  if (install.status !== 0)
-    return { kind: 'fail', line: `install failed: ${npmErrorLine(install.out)}` }
+  if (install.timedOut) return failed(`timed out after ${timeoutS} s (install)`)
+  if (install.status !== 0) return failed(`install failed: ${npmErrorLine(install.out)}`)
+
+  // Read here, before the adapter's own code runs and can rewrite the file.
+  const version = versionIn(join(project, 'node_modules', entry.package, 'package.json'))
+  if (version === null) return failed(`install failed: ${entry.package} has no valid version`)
+  const settled = (result: RunResult) => ({ result, version })
 
   // The suites and the vitest that runs them are the workspace's, as `nymbal test:contracts` finds them in a store.
   const vitest = dirname(createRequire(join(REPO, 'package.json')).resolve('vitest/package.json'))
@@ -158,19 +180,51 @@ function certify(entry: ManifestEntry, project: string, timeoutS: number): RunRe
     network: false,
     timeoutS,
   })
-  if (run.timedOut) return { kind: 'fail', line: `timed out after ${timeoutS} s (certify)` }
+  if (run.timedOut)
+    return settled({ kind: 'fail', line: `timed out after ${timeoutS} s (certify)` })
   const lines = run.out.split('\n').map((l) => l.trim())
   const passed =
     run.status === 0 ? lines.find((l) => l.startsWith(`certified ${entry.package} `)) : undefined
   const count = passed === undefined ? undefined : /: (\d+) cases passed$/.exec(passed)?.[1]
-  if (count !== undefined) return { kind: 'pass', passed: Number(count) }
+  if (count !== undefined) return settled({ kind: 'pass', passed: Number(count) })
   const refused = lines.find((l) => l.startsWith(`not certified ${entry.package} `))
-  if (refused !== undefined) return { kind: 'fail', line: refused }
+  if (refused !== undefined) return settled({ kind: 'fail', line: refused })
   const line = lastLine(run.out)
-  if (line.startsWith('no contract suite for kind ')) return { kind: 'no-suite', line }
-  return {
+  if (line.startsWith('no contract suite for kind ')) return settled({ kind: 'no-suite', line })
+  return settled({
     kind: 'fail',
     line: line === '' ? `test:contracts exited ${String(run.status)} with no result` : line,
+  })
+}
+
+/** A first-party entry is never installed here: its version is its package's in this repo. */
+function firstPartyVersion(entry: ManifestEntry): string {
+  const version =
+    'dir' in entry.source ? versionIn(resolve(REPO, entry.source.dir, 'package.json')) : null
+  if (version === null) throw new RunError(`${entry.package}: no valid version in its source.dir`)
+  return version
+}
+
+function readMatrix(path: string): Matrix | undefined {
+  if (!existsSync(path)) return undefined
+  try {
+    return parseMatrix(JSON.parse(readFileSync(path, 'utf8')))
+  } catch (err) {
+    if (err instanceof SyntaxError || err instanceof MatrixError) {
+      throw new RunError(`${path}: ${err.message}`)
+    }
+    throw err
+  }
+}
+
+/** The stack this tree releases: its version, and its pinned packages plus itself. */
+function stackRow(): { version: string; packages: Record<string, string> } {
+  const stack = JSON.parse(
+    readFileSync(join(REPO, 'packages', 'stack', 'package.json'), 'utf8'),
+  ) as { name: string; version: string; dependencies: Record<string, string> }
+  return {
+    version: stack.version,
+    packages: { ...stack.dependencies, [stack.name]: stack.version },
   }
 }
 
@@ -198,11 +252,12 @@ function main(argv: string[]): number {
       now: { type: 'string' },
       'entry-timeout': { type: 'string', default: '600' },
       work: { type: 'string' },
+      matrix: { type: 'string' },
     },
   })
   if (values.manifest === undefined || values.history === undefined || values.out === undefined) {
     throw new RunError(
-      'usage: pnpm registry --manifest <file> --history <file> --out <dir> [--now <ISO>] [--entry-timeout <s>] [--work <dir>]',
+      'usage: pnpm registry --manifest <file> --history <file> --out <dir> [--now <ISO>] [--entry-timeout <s>] [--work <dir>] [--matrix <file>]',
     )
   }
   const now = values.now === undefined ? new Date() : new Date(values.now)
@@ -225,6 +280,7 @@ function main(argv: string[]): number {
     throw new RunError(`the workspace CLI is not built (${CLI_DIST} is missing): run pnpm build`)
   }
   const previous = readHistory(values.history)
+  const previousMatrix = values.matrix === undefined ? undefined : readMatrix(values.matrix)
   // Pulled once up front, and only when an entry will run in it: a registry that cannot reach the image is the run's
   // failure, not every adapter's, and a night with nothing to certify does not need it.
   if (manifest.adapters.some((e) => e.tier !== 'first-party')) {
@@ -238,6 +294,7 @@ function main(argv: string[]): number {
 
   const work = values.work === undefined ? undefined : resolve(values.work)
   const history: Record<string, EntryHistory> = {}
+  const versions: Record<string, string | null> = {}
   for (const entry of manifest.adapters) {
     if (entry.tier === 'first-party') {
       history[entry.package] = {
@@ -246,16 +303,15 @@ function main(argv: string[]): number {
         lastRun: now.toISOString(),
         line: '',
       }
+      versions[entry.package] = firstPartyVersion(entry)
       continue
     }
     const slug = badgePath(entry.package).slice('badges/'.length, -'.svg'.length)
     const project = mkdtempSync(join(work ?? tmpdir(), `${slug}-`))
     try {
-      history[entry.package] = nextStatus(
-        previous[entry.package],
-        certify(entry, project, timeoutS),
-        now,
-      )
+      const { result, version } = certify(entry, project, timeoutS)
+      history[entry.package] = nextStatus(previous[entry.package], result, now)
+      versions[entry.package] = version
     } finally {
       if (work === undefined) rmSync(project, { recursive: true, force: true })
     }
@@ -282,6 +338,26 @@ function main(argv: string[]): number {
       2,
     )}\n`,
   )
+  const matrix = `${JSON.stringify(
+    mergeMatrix(
+      previousMatrix,
+      stackRow(),
+      Object.fromEntries(
+        manifest.adapters.map((e) => {
+          const { status, line } = history[e.package]!
+          return [e.package, { version: versions[e.package] ?? null, status, line }]
+        }),
+      ),
+      now,
+    ),
+    null,
+    2,
+  )}\n`
+  writeFileSync(join(out, 'matrix.json'), matrix)
+  if (values.matrix !== undefined) {
+    mkdirSync(dirname(resolve(values.matrix)), { recursive: true })
+    writeFileSync(values.matrix, matrix)
+  }
   mkdirSync(dirname(resolve(values.history)), { recursive: true })
   writeFileSync(values.history, `${JSON.stringify(history, null, 2)}\n`)
   return 0

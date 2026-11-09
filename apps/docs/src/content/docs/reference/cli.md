@@ -160,6 +160,10 @@ Add a provider by slot, a third-party adapter by package, or a service by recipe
 | `--force` | boolean | Overwrite a config value the addition conflicts with | `false` |
 | `--dry-run` | boolean | Print the config change, the .env.example lines and the install line, and write nothing | `false` |
 
+## `nymbal upgrade`
+
+Move this store to the newest Nymbal release its adapters are certified with
+
 ## `nymbal doctor`
 
 Check the project without changing it: config, packages, command store, migrations, slots and primitives

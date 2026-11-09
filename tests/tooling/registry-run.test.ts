@@ -1,4 +1,4 @@
-// Reads: scripts/registry/**, package.json, .node-version, tests/fixtures/third-party-search/**, tests/fixtures/third-party-search-*/**
+// Reads: scripts/registry/**, package.json, .node-version, tests/fixtures/third-party-search/**, tests/fixtures/third-party-search-*/**, packages/stack/package.json
 import { spawnSync } from 'node:child_process'
 import {
   cpSync,
@@ -110,6 +110,7 @@ function night(
   seeded: Record<string, EntryHistory>,
   entryTimeoutS: number,
   timeout: number,
+  extraArgs: string[] = [],
 ) {
   const dir = testDir('registry-night-')
   const work = join(dir, 'work')
@@ -133,6 +134,7 @@ function night(
       String(entryTimeoutS),
       '--work',
       work,
+      ...extraArgs,
     ],
     timeout,
   )
@@ -263,6 +265,65 @@ describe.runIf(process.platform === 'linux')('AC-5: the nightly registry run end
       lastRun: NOW,
     })
   }, 180_000)
+
+  it('AC-18: a real run writes matrix.json beside the site, with each installed version, the broken line and a seeded older row carried', () => {
+    const copies = testDir('registry-matrix-')
+    cpSync(join(FIXTURES, 'third-party-search'), join(copies, 'search'), { recursive: true })
+    cpSync(join(FIXTURES, 'third-party-search-broken'), join(copies, 'broken'), { recursive: true })
+    const fixtureVersion = (name: string) =>
+      (
+        JSON.parse(readFileSync(join(copies, name, 'package.json'), 'utf8')) as {
+          version: string
+        }
+      ).version
+    const stack = JSON.parse(
+      readFileSync(join(REPO, 'packages', 'stack', 'package.json'), 'utf8'),
+    ) as { name: string; version: string; dependencies: Record<string, string> }
+    const olderRow = {
+      packages: { nymbal: '0.9.0' },
+      adapters: { [GOOD]: { version: '0.1.0', status: 'passing', line: '30 cases passed' } },
+    }
+    const matrixFile = join(testDir('registry-matrix-seed-'), 'matrix.json')
+    writeFileSync(
+      matrixFile,
+      `${JSON.stringify({ schema: 1, generatedAt: ago(1), stacks: { '0.9.0': olderRow } }, null, 2)}\n`,
+    )
+
+    const { run, out, carried } = night(
+      [
+        entry(GOOD, 'acme', join(copies, 'search')),
+        entry(BROKEN, 'acme-broken', join(copies, 'broken')),
+      ],
+      {},
+      CERTIFY_TIMEOUT_S,
+      900_000,
+      ['--matrix', matrixFile],
+    )
+
+    expect(run.status, run.out.slice(-4000)).toBe(0)
+    const written = join(out, 'matrix.json')
+    const doc = (existsSync(written) ? JSON.parse(readFileSync(written, 'utf8')) : undefined) as
+      | {
+          stacks: Record<
+            string,
+            { packages: Record<string, string>; adapters: Record<string, unknown> }
+          >
+        }
+      | undefined
+    const row = doc?.stacks[stack.version]
+    expect(row?.packages).toEqual({ ...stack.dependencies, [stack.name]: stack.version })
+    expect(row?.adapters[GOOD]).toMatchObject({
+      version: fixtureVersion('search'),
+      status: 'passing',
+    })
+    expect(row?.adapters[BROKEN]).toMatchObject({
+      version: fixtureVersion('broken'),
+      status: 'failing',
+      line: carried[BROKEN]!.line,
+    })
+    expect(doc?.stacks['0.9.0']).toEqual(olderRow)
+    expect(JSON.parse(readFileSync(matrixFile, 'utf8'))).toEqual(doc)
+  }, 1_000_000)
 })
 
 describe('AC-5: a bad manifest stops the run before it writes anything', () => {
