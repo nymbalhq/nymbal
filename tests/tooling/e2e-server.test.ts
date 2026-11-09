@@ -150,6 +150,7 @@ describe('AC-10: the wrapper records a child that outlives its shutdown, and onl
       )
       expect(readFileSync(got, 'utf8').trim()).toBe(signal)
       expect(existsSync(shutdownFile(run.root))).toBe(false)
+      await until(() => !alive(run.childPid), 'the child to be gone')
       expect(alive(run.childPid)).toBe(false)
     },
   )
