@@ -256,6 +256,51 @@ test.describe('Admin at Pixel 7', () => {
     expect(results.violations.map((v) => v.nodes.map((n) => n.target))).toEqual([])
   })
 
+  test('AC-17: with two orders selected the bulk bar and both its actions stay inside the 412 px viewport, and its dialog fits it', async ({
+    page,
+  }) => {
+    test.setTimeout(90_000)
+    const placed: string[] = []
+    for (let i = 0; i < 2; i += 1) {
+      const guest = await playwrightRequest.newContext()
+      try {
+        placed.push((await placeOrder(guest)).orderNumber)
+      } finally {
+        await guest.dispose()
+      }
+    }
+    await signIn(page)
+    await page.goto('orders')
+    for (const orderNumber of placed) {
+      const row = page.getByTestId(`admin-orders-row-${orderNumber}`)
+      await expect(row).toBeVisible({ timeout: 15_000 })
+      await row.getByRole('checkbox').tap()
+    }
+
+    const viewport = pixel7.viewport
+    const bar = page.getByTestId('admin-orders-bulk-bar')
+    await expect(page.getByTestId('admin-orders-bulk-count')).toContainText('2')
+    const barBox = await bar.boundingBox()
+    expect(barBox, 'the bar has a box').not.toBeNull()
+    expect(barBox!.x + barBox!.width, 'the bar’s right edge').toBeLessThanOrEqual(viewport.width)
+    await expect(page.getByTestId('admin-orders-bulk-process')).toBeInViewport({ ratio: 1 })
+    await expect(page.getByTestId('admin-orders-bulk-cancel')).toBeInViewport({ ratio: 1 })
+    expect((await widths(page)).scrollWidth).toBeLessThanOrEqual(viewport.width)
+
+    await page.getByTestId('admin-orders-bulk-process').tap()
+    const dialog = page.getByTestId('admin-orders-bulk-dialog')
+    await expect(dialog).toBeInViewport({ ratio: 1 })
+    const dialogBox = await dialog.boundingBox()
+    expect(dialogBox, 'the dialog has a box').not.toBeNull()
+    expect(dialogBox!.x, 'the dialog’s left edge').toBeGreaterThanOrEqual(0)
+    expect(dialogBox!.x + dialogBox!.width, 'the dialog’s right edge').toBeLessThanOrEqual(
+      viewport.width,
+    )
+    expect(dialogBox!.y + dialogBox!.height, 'the dialog’s bottom edge').toBeLessThanOrEqual(
+      viewport.height,
+    )
+  })
+
   test('AC-3: the sidebar is closed on a phone, the menu button opens it, and choosing Orders lands on the orders list and closes it', async ({
     page,
   }) => {
