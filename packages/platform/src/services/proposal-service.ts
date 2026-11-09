@@ -1,10 +1,9 @@
 import { v7 as uuidv7 } from 'uuid'
 import {
-  EVT_PROPOSAL_APPLIED,
   EVT_PROPOSAL_APPROVED,
   EVT_PROPOSAL_CREATED,
-  EVT_PROPOSAL_FAILED,
   EVT_PROPOSAL_REJECTED,
+  type Logger,
   type ProposalDecider,
   type ProposalPage,
   type ProposalView,
@@ -13,7 +12,14 @@ import {
 import { audit } from '../audit/audit.js'
 import type { CommandStore, Tx } from '../db/command-store.js'
 import type { EventPublisher } from '../events/publisher.js'
-import { insertOf, ProposalError, type Executed, type Proposal } from '../mcp/proposals.js'
+import {
+  aboutProposal as about,
+  insertOf,
+  ProposalError,
+  publishSettlement,
+  type Executed,
+  type Proposal,
+} from '../mcp/proposals.js'
 import {
   encodeProposalCursor,
   proposalView,
@@ -27,6 +33,7 @@ export interface ProposalServiceDeps {
   store: CommandStore
   proposals: ProposalRepository
   publisher: EventPublisher
+  logger: Logger
   /** Runs a stored proposal's request through its route as `auth`. */
   execute(row: ProposalRecord, auth: RequestAuth | undefined): Promise<Executed>
 }
@@ -43,14 +50,6 @@ export interface ProposalService {
   list(q: ProposalQuery): Promise<ProposalPage>
 }
 
-const about = (row: ProposalRecord) => ({
-  proposalId: row.id,
-  tool: row.tool,
-  command: row.command,
-  proposerId: row.proposerId,
-  agentName: row.agentName,
-})
-
 const adminOf = (auth: RequestAuth): ProposalDecider => ({ kind: 'admin', id: auth.userId! })
 
 /**
@@ -59,7 +58,7 @@ const adminOf = (auth: RequestAuth): ProposalDecider => ({ kind: 'admin', id: au
  * transaction of this service's: a provider command commits its own steps around the money it moves.
  */
 export function createProposalService(deps: ProposalServiceDeps): ProposalService {
-  const { store, proposals, publisher, execute } = deps
+  const { store, proposals, publisher, logger, execute } = deps
 
   /** Moves a pending row to the decision's status and publishes it; `command` names the audited command, if any. */
   function decide(id: string, decision: ProposalDecision, command?: string) {
@@ -91,20 +90,21 @@ export function createProposalService(deps: ProposalServiceDeps): ProposalServic
   ) {
     const row = await decide(id, { status: 'approved', by, at: new Date() }, command)
     const executed = await execute(row, executor)
-    const applied = executed.outcome.status < 400
+    const settlement = {
+      status: executed.outcome.status < 400 ? ('applied' as const) : ('failed' as const),
+      outcome: executed.outcome,
+      at: new Date(),
+    }
     const settled = await store.transaction(async (tx) => {
-      await proposals.settle(tx, id, {
-        status: applied ? 'applied' : 'failed',
-        outcome: executed.outcome,
-        at: new Date(),
-      })
-      const events = publisher.correlated(row.correlationId)
-      await (applied
-        ? events.publish(EVT_PROPOSAL_APPLIED, {
-            ...about(row),
-            outcome: { status: executed.outcome.status },
-          })
-        : events.publish(EVT_PROPOSAL_FAILED, { ...about(row), outcome: executed.outcome }))
+      if (await proposals.settle(tx, id, settlement)) {
+        await publishSettlement(publisher, row, settlement)
+      } else {
+        // The sweeper settled the row while its command ran past the bound; this outcome is recorded nowhere else.
+        logger.warn(
+          { proposalId: id, outcome: executed.outcome },
+          'a finished proposal was already settled; its outcome was not recorded',
+        )
+      }
       return (await proposals.findById(tx, id))!
     })
     return { view: proposalView(settled), executed }

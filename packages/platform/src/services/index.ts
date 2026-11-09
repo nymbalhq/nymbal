@@ -206,6 +206,7 @@ export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
       store,
       proposals: repos.proposal,
       publisher,
+      logger: logger.child({ service: 'proposal' }),
       execute: deps.executeProposal,
     }),
     importRemoval: createImportRemovalService({

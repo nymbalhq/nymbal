@@ -125,10 +125,12 @@ export {
   startCartAbandonmentSweeper,
   startEventRetentionSweeper,
   startRefreshTokenSweeper,
+  startStuckProposalSweeper,
   type SweeperHandle,
   type EventArchiveWriter,
   type EventRetentionSweeperDeps,
   type RefreshTokenSweeperDeps,
+  type StuckProposalSweeperDeps,
 } from './sweepers/index.js'
 export * from './services/index.js'
 export * from './adapters/index.js'

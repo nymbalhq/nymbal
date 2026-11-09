@@ -1,13 +1,20 @@
 import type { NymbalConfig } from '@nymbalhq/config'
 import {
   ConfigError,
+  EVT_PROPOSAL_APPLIED,
+  EVT_PROPOSAL_FAILED,
   NymbalError,
   type Caller,
   type ProposalDecider,
   type ProposalStatus,
   type ToolResult,
 } from '@nymbalhq/types'
-import type { ProposalInsert } from '../repositories/proposal.js'
+import type { EventPublisher } from '../events/publisher.js'
+import type {
+  ProposalInsert,
+  ProposalRecord,
+  ProposalSettlement,
+} from '../repositories/proposal.js'
 import { routeSchemas } from '../routes/schemas.js'
 
 /** A command tool's call, admitted by its route's gate and schema, as the proposal it is kept as. */
@@ -49,6 +56,35 @@ export class ProposalError extends NymbalError {
     )
     this.status = status === undefined ? 404 : 409
   }
+}
+
+/** The key a stored proposal's route runs under: its evidence in the audit log is found by this key. */
+export const runKeyOf = (row: Pick<ProposalRecord, 'id' | 'idempotencyKey'>): string =>
+  row.idempotencyKey ?? `proposal:${row.id}`
+
+/** What every event about a proposal says of it. */
+export const aboutProposal = (row: ProposalRecord) => ({
+  proposalId: row.id,
+  tool: row.tool,
+  command: row.command,
+  proposerId: row.proposerId,
+  agentName: row.agentName,
+})
+
+/** Publishes how an approved row ended: only for the settlement that moved it, so a row has one such event. */
+export async function publishSettlement(
+  publisher: EventPublisher,
+  row: ProposalRecord,
+  settlement: Pick<ProposalSettlement, 'status' | 'outcome'>,
+): Promise<void> {
+  const events = publisher.correlated(row.correlationId)
+  const about = aboutProposal(row)
+  await (settlement.status === 'applied'
+    ? events.publish(EVT_PROPOSAL_APPLIED, {
+        ...about,
+        outcome: { status: settlement.outcome.status },
+      })
+    : events.publish(EVT_PROPOSAL_FAILED, { ...about, outcome: settlement.outcome }))
 }
 
 export function insertOf(p: Proposal, id: string): ProposalInsert {

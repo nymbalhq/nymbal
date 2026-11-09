@@ -41,6 +41,7 @@ import {
   startCartAbandonmentSweeper,
   startEventRetentionSweeper,
   startRefreshTokenSweeper,
+  startStuckProposalSweeper,
   type EventArchiveWriter,
   type SweeperHandle,
 } from './sweepers/index.js'
@@ -105,6 +106,8 @@ export interface CreateAppOptions extends ResolvePrimitivesOptions {
   relay?: Pick<CreateRelayOptions, 'maxAttempts' | 'retryDelayMs' | 'intervalMs' | 'now'>
   /** How often expired and used refresh tokens are deleted; tests shorten it. */
   refreshTokenSweep?: { intervalMs?: number }
+  /** How often approved proposals that never settled are swept, and after how long they count; tests shorten both. */
+  proposalSweep?: { intervalMs?: number; stuckAfterMs?: number }
 }
 
 /** Who an ACP agent's keyed requests are recorded as: the agent's own name is a label anyone holding the key can set. */
@@ -411,6 +414,13 @@ export async function createApp(
         ...(options.refreshTokenSweep?.intervalMs !== undefined && {
           intervalMs: options.refreshTokenSweep.intervalMs,
         }),
+      }),
+      startStuckProposalSweeper({
+        store: platform.commandStore,
+        proposals: repos.proposal,
+        publisher,
+        logger,
+        ...options.proposalSweep,
       }),
     ]
 

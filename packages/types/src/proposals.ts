@@ -1,6 +1,11 @@
 /** Where an agent's write stands: waiting, decided, then run. */
 export type ProposalStatus = 'pending' | 'approved' | 'rejected' | 'applied' | 'failed'
 
+/** `outcome.code` of a row the server stopped before settling, when the store shows its command did not run. */
+export const PROPOSAL_INTERRUPTED = 'proposal.interrupted'
+/** `outcome.code` of a row the server stopped before settling, when the store cannot show whether its command ran. */
+export const PROPOSAL_OUTCOME_UNKNOWN = 'proposal.outcome_unknown'
+
 /** Who decided a proposal: an admin, or a policy the store's config sets. */
 export type ProposalDecider =
   | { kind: 'admin'; id: string }

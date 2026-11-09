@@ -16,3 +16,7 @@ export {
   startRefreshTokenSweeper,
   type RefreshTokenSweeperDeps,
 } from './refresh-token-sweeper.js'
+export {
+  startStuckProposalSweeper,
+  type StuckProposalSweeperDeps,
+} from './stuck-proposal-sweeper.js'

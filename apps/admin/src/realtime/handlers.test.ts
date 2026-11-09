@@ -648,3 +648,44 @@ describe('AC-4: a placed order is not lost to a list fetch already in flight', (
     )
   })
 })
+
+describe('AC-14: an outcome the store cannot prove reaches the merchant', () => {
+  const KEY = ['proposals', 'list']
+  const notifications = () => useNotifications.getState().notifications
+  const failed = (command: string, code: string) => ({
+    proposalId: 'p-1',
+    tool: command.replace('.', '_'),
+    command,
+    proposerId: 'admin-1',
+    agentName: 'nymbal-assistant',
+    outcome: { status: 500, code, message: 'text' },
+  })
+
+  it('AC-14: property: proposal.failed.v1 as outcome_unknown pushes one error toast naming the command and invalidates the list; any other failed code invalidates with no toast', () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom('order.refund', 'order.markPaid', 'checkout.place'),
+        fc.constantFrom('proposal.interrupted', 'route.failed', 'order.not_found'),
+        (command, otherCode) => {
+          useNotifications.getState().clearAll()
+          const qc = freshClient()
+          const handle = createEventHandlers(qc)
+          const invalidated = () => qc.getQueryState(KEY)?.isInvalidated
+
+          qc.setQueryData(KEY, { items: [] })
+          handle('proposal.failed.v1', failed(command, otherCode))
+          expect(invalidated()).toBe(true)
+          const toastsAfterOther = notifications().length
+
+          qc.setQueryData(KEY, { items: [] })
+          handle('proposal.failed.v1', failed(command, 'proposal.outcome_unknown'))
+          expect(invalidated()).toBe(true)
+          expect(notifications().length).toBe(toastsAfterOther + 1)
+          expect(notifications()[0]!.type).toBe('error')
+          expect(notifications()[0]!.message).toContain(command)
+        },
+      ),
+      { numRuns: 12 },
+    )
+  })
+})

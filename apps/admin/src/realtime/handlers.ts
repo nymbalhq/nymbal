@@ -1,5 +1,10 @@
 import type { QueryClient, QueryKey } from '@tanstack/react-query'
-import type { NymbalEventMap, NymbalEventType, Order } from '@nymbalhq/types'
+import {
+  PROPOSAL_OUTCOME_UNKNOWN,
+  type NymbalEventMap,
+  type NymbalEventType,
+  type Order,
+} from '@nymbalhq/types'
 import { useNotifications } from '@/hooks/useNotifications'
 
 /** An event as the admin handles it: its type and the payload that type carries. */
@@ -168,9 +173,20 @@ export function createEventHandlers(queryClient: QueryClient) {
 
       case 'proposal.approved.v1':
       case 'proposal.rejected.v1':
-      case 'proposal.applied.v1':
+      case 'proposal.applied.v1': {
+        void queryClient.invalidateQueries({ queryKey: ['proposals'] })
+        break
+      }
+
       case 'proposal.failed.v1': {
         void queryClient.invalidateQueries({ queryKey: ['proposals'] })
+        if (event.payload.outcome.code === PROPOSAL_OUTCOME_UNKNOWN) {
+          push({
+            type: 'error',
+            title: 'Outcome unknown',
+            message: `${event.payload.command} may or may not have gone through. Check it in the inbox before doing it again.`,
+          })
+        }
         break
       }
 
