@@ -24,7 +24,10 @@ interface ReportedAdapters {
   shipping: ShippingAdapter
 }
 
-function storeCapabilities(adapters: ReportedAdapters): StoreCapabilities {
+function storeCapabilities(
+  adapters: ReportedAdapters,
+  verification: StoreCapabilities['auth']['verification'],
+): StoreCapabilities {
   const client = adapters.payments.client?.() ?? null
   return {
     payments: {
@@ -35,15 +38,21 @@ function storeCapabilities(adapters: ReportedAdapters): StoreCapabilities {
     // The document store runs the listing's sort, so these are the catalogue's keys, not the search adapter's.
     catalog: { sortKeys: [...PRODUCT_SORT_KEYS], defaultSort: DEFAULT_PRODUCT_SORT },
     email: { delivers: emailDelivers(adapters.email) },
+    auth: { verification },
     reviews: { capabilities: [...(adapters.reviews?.capabilities() ?? [])] },
     shipping: { capabilities: [...adapters.shipping.capabilities()] },
   }
 }
 
-export function registerCapabilitiesRoute(adapter: HttpAdapter, adapters: ReportedAdapters): void {
+/** `verification` is the policy the auth service runs, so the storefront is told what a register will do. */
+export function registerCapabilitiesRoute(
+  adapter: HttpAdapter,
+  adapters: ReportedAdapters,
+  verification: StoreCapabilities['auth']['verification'],
+): void {
   adapter.registerRoute('GET', '/api/capabilities', async (ctx) => {
     try {
-      return ok(storeCapabilities(adapters))
+      return ok(storeCapabilities(adapters, verification))
     } catch (err) {
       return renderError(err, ctx.logger)
     }

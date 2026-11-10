@@ -7,7 +7,9 @@ import {
   AuthError,
   EVT_CUSTOMER_CREATED,
   EVT_CUSTOMER_PASSWORD_RESET_REQUESTED,
+  EVT_CUSTOMER_REGISTERED_AGAIN,
   EVT_CUSTOMER_UPDATED,
+  EVT_CUSTOMER_VERIFICATION_REQUESTED,
   HttpError,
   ValidationError,
   type Customer,
@@ -53,8 +55,26 @@ export interface ImportCustomerInput {
   metadata?: Record<string, unknown>
 }
 
+export type VerificationPolicy = 'required' | 'off'
+
 export interface AuthService {
+  /** The sign-up policy the store runs: `required` asks a new address to follow a mailed link before it signs in. */
+  readonly verification: VerificationPolicy
+  /** The `off` policy's sign-up: a new address signs in at once; a taken one is refused. */
   register(input: RegisterInput): Promise<{ customer: Customer; tokens: AuthTokens }>
+  /**
+   * The `required` policy's sign-up, alike for every address: a new one gets a pending account and a confirmation
+   * link, a pending one takes this register's password and names, and any other account's owner is told by mail.
+   */
+  signUp(input: RegisterInput): Promise<void>
+  /** Confirms the address with a mailed link's token, once, and signs the customer in. */
+  verifyEmail(token: string): Promise<{ customer: Customer; tokens: AuthTokens }>
+  /** Mails a pending account's link again; any other address gets the same silence. */
+  resendVerification(email: string): Promise<void>
+  /** Support's send: a new link for a pending customer, whatever the age of the live one. */
+  sendVerification(customerId: string): Promise<void>
+  /** Support's confirm: a pending customer becomes verified; any other is answered as it is. */
+  markVerified(customerId: string): Promise<Customer>
   login(email: string, password: string): Promise<{ customer: Customer; tokens: AuthTokens }>
   refresh(refreshToken: string): Promise<AuthTokens>
   logout(refreshToken: string): Promise<void>
@@ -83,6 +103,8 @@ export interface CreateAuthServiceDeps {
   accessTtl: string
   refreshTtl: string
   issuer?: string
+  /** `off` when absent. */
+  verification?: VerificationPolicy
 }
 
 export function parseDurationToMs(s: string): number {
@@ -122,6 +144,15 @@ const IMPORTED_NO_PASSWORD = 'IMPORTED_NO_PASSWORD'
 /** How long a mailed reset link sets a password. */
 export const PASSWORD_RESET_TTL_MS = 15 * 60_000
 
+/** How long a mailed confirmation link confirms the address. */
+export const EMAIL_VERIFICATION_TTL_MS = 24 * 60 * 60_000
+
+/** A shopper's register or resend mails a pending account's link again only once the live one is this old. */
+export const VERIFICATION_REISSUE_MS = 15 * 60_000
+
+/** The window an account's owner is told at most once in that someone registered their address. */
+export const ACCOUNT_EXISTS_WINDOW_MS = 24 * 60 * 60_000
+
 /**
  * How long after its first rotation a refresh token may be rotated again: two tabs restored together present one cookie
  * at once. The window is anchored at that first rotation and never slides.
@@ -149,6 +180,22 @@ function resetLinkInvalid(): HttpError {
   })
 }
 
+function verifyLinkInvalid(): HttpError {
+  return new HttpError(400, 'This confirmation link is no longer valid. Ask for a new one.', {
+    code: 'auth.verify_link_invalid',
+  })
+}
+
+function customerNotFound(customerId: string): HttpError {
+  return new HttpError(404, `Customer not found: ${customerId}`, { code: 'customers.not_found' })
+}
+
+/** The refusals a register makes before it looks the address up, so they never depend on the account. */
+function checkRegisterInput(input: RegisterInput): void {
+  if (!input.email.includes('@')) throw new ValidationError('invalid email')
+  checkPasswordLength(input.password)
+}
+
 function currentPasswordInvalid(): HttpError {
   return new HttpError(400, 'The current password is not correct.', {
     code: 'auth.current_password_invalid',
@@ -167,6 +214,7 @@ function stripPassword(c: Customer & { passwordHash: string }): Customer {
 
 export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
   const { repos, publisher, logger, jwtSecret, accessTtl, refreshTtl } = deps
+  const verification = deps.verification ?? 'off'
   const { store } = repos.customer
   const issuer = deps.issuer ?? 'nymbal'
   const secretKey = new TextEncoder().encode(jwtSecret)
@@ -234,15 +282,20 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
     customerId: string,
     passwordHash: string,
   ): Promise<CustomerWithHash> {
+    const current = await repos.customer.findById(tx, customerId)
+    // Removing a customer deletes their reset links in its transaction, so only a change racing a removal gets here.
+    /* c8 ignore next */
+    if (current === null) throw new AuthError('unauthorized', 'customer missing')
+    // A reset link proves the mailbox as a confirmation link does.
+    const confirms = current.emailVerification === 'pending'
     await repos.customer.update(tx, customerId, {
       passwordHash,
       requiresPasswordReset: false,
+      ...(confirms && { emailVerification: 'verified' as const }),
       updatedAt: new Date(),
     })
-    const fresh = await repos.customer.findById(tx, customerId)
-    // Removing a customer deletes their reset links in its transaction, so only a change racing a removal gets here.
-    /* c8 ignore next */
-    if (fresh === null) throw new AuthError('unauthorized', 'customer missing')
+    if (confirms) await repos.emailVerificationToken.deleteByCustomer(tx, customerId)
+    const fresh = (await repos.customer.findById(tx, customerId))!
     await repos.passwordResetToken.deleteByCustomer(tx, customerId)
     await repos.refreshToken.revokeAllForCustomer(tx, customerId)
     await publisher.publish(EVT_CUSTOMER_UPDATED, {
@@ -252,11 +305,33 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
     return fresh
   }
 
+  /** Confirms a pending customer's address and takes away their links, in the caller's transaction. */
+  async function confirm(tx: Tx, customerId: string): Promise<CustomerWithHash> {
+    await repos.customer.update(tx, customerId, {
+      emailVerification: 'verified',
+      updatedAt: new Date(),
+    })
+    await repos.emailVerificationToken.deleteByCustomer(tx, customerId)
+    const fresh = (await repos.customer.findById(tx, customerId))!
+    await publisher.publish(EVT_CUSTOMER_UPDATED, {
+      customerId,
+      customer: toCustomerSnapshot(fresh),
+    })
+    return fresh
+  }
+
+  async function existingCustomer(tx: Tx, customerId: string): Promise<CustomerWithHash> {
+    const customer = await repos.customer.findById(tx, customerId)
+    if (customer === null) throw customerNotFound(customerId)
+    return customer
+  }
+
   return {
+    verification,
+
     async register(input) {
       audit.note('customer.register')
-      if (!input.email.includes('@')) throw new ValidationError('invalid email')
-      checkPasswordLength(input.password)
+      checkRegisterInput(input)
       const email = input.email.toLowerCase()
       const existing = await store.read((tx) => repos.customer.findByEmail(tx, email))
       if (existing) {
@@ -292,12 +367,135 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
       return { customer: stripPassword(customer), tokens }
     },
 
+    async signUp(input) {
+      audit.note('customer.register')
+      checkRegisterInput(input)
+      const email = input.email.toLowerCase()
+      // Before the lookup and on every path, so the answer's time does not say whether the address has an account.
+      const passwordHash = await bcryptHash(input.password, PASSWORD_HASH_ROUNDS)
+      const profile = {
+        firstName: input.firstName ?? '',
+        lastName: input.lastName ?? '',
+        phone: input.phone ?? '',
+      }
+      await store.transaction(async (tx) => {
+        const existing = await repos.customer.findByEmail(tx, email)
+        if (existing === null) {
+          const id = uuidv7()
+          audit.note('customer.register', [{ type: 'customer', id }])
+          const now = new Date()
+          await repos.customer.insert(tx, {
+            id,
+            email,
+            passwordHash,
+            ...profile,
+            emailVerification: 'pending',
+            createdAt: now,
+            updatedAt: now,
+          })
+          const inserted = (await repos.customer.findById(tx, id))!
+          await publisher.publish(EVT_CUSTOMER_CREATED, {
+            customerId: id,
+            email,
+            customer: toCustomerSnapshot(inserted),
+            verification: 'pending',
+          })
+          await publisher.publish(EVT_CUSTOMER_VERIFICATION_REQUESTED, {
+            customerId: id,
+            reissue: 'if-stale',
+          })
+          return
+        }
+        audit.note('customer.register', [{ type: 'customer', id: existing.id }])
+        if (existing.emailVerification !== 'pending') {
+          // A confirmed, never-asked or imported account is never written: its owner is told instead.
+          await publisher.publish(EVT_CUSTOMER_REGISTERED_AGAIN, { customerId: existing.id })
+          return
+        }
+        // Nobody has proved this mailbox yet, so whoever follows the link holds the password typed last.
+        await repos.customer.update(tx, existing.id, {
+          passwordHash,
+          ...profile,
+          updatedAt: new Date(),
+        })
+        const fresh = (await repos.customer.findById(tx, existing.id))!
+        await publisher.publish(EVT_CUSTOMER_UPDATED, {
+          customerId: existing.id,
+          customer: toCustomerSnapshot(fresh),
+        })
+        await publisher.publish(EVT_CUSTOMER_VERIFICATION_REQUESTED, {
+          customerId: existing.id,
+          reissue: 'if-stale',
+        })
+      })
+    },
+
+    async verifyEmail(token) {
+      const tokenHash = hashResetToken(token)
+      const live = await store.read((tx) =>
+        repos.emailVerificationToken.findLive(tx, tokenHash, new Date()),
+      )
+      if (live === null) throw verifyLinkInvalid()
+      const customer = await store.transaction(async (tx) => {
+        // The conditional delete is the one use: of two presses that both read the row, only one deletes it.
+        const customerId = await repos.emailVerificationToken.consume(tx, tokenHash, new Date())
+        if (customerId === null) throw verifyLinkInvalid()
+        audit.note('customer.verifyEmail', [{ type: 'customer', id: customerId }])
+        return confirm(tx, customerId)
+      })
+      const tokens = await issueTokens(customer)
+      logger.info({ customerId: customer.id }, 'customer email verified')
+      return { customer: stripPassword(customer), tokens }
+    },
+
+    async resendVerification(email) {
+      const customer = await store.read((tx) => repos.customer.findByEmail(tx, email.toLowerCase()))
+      if (customer?.emailVerification !== 'pending') return
+      await store.transaction(async () => {
+        audit.note('customer.resendVerification', [{ type: 'customer', id: customer.id }])
+        await publisher.publish(EVT_CUSTOMER_VERIFICATION_REQUESTED, {
+          customerId: customer.id,
+          reissue: 'if-stale',
+        })
+      })
+    },
+
+    async sendVerification(customerId) {
+      await store.transaction(async (tx) => {
+        if ((await existingCustomer(tx, customerId)).emailVerification !== 'pending') {
+          throw new HttpError(409, 'This customer has no email waiting to be confirmed.', {
+            code: 'customers.not_pending',
+          })
+        }
+        audit.note('customer.sendVerification', [{ type: 'customer', id: customerId }])
+        await publisher.publish(EVT_CUSTOMER_VERIFICATION_REQUESTED, {
+          customerId,
+          reissue: 'always',
+        })
+      })
+    },
+
+    async markVerified(customerId) {
+      const customer = await store.transaction(async (tx) => {
+        const current = await existingCustomer(tx, customerId)
+        // Anything but a pending account is answered as it is: a second press changes nothing.
+        if (current.emailVerification !== 'pending') return current
+        audit.note('customer.markVerified', [{ type: 'customer', id: customerId }])
+        return confirm(tx, customerId)
+      })
+      return stripPassword(customer)
+    },
+
     async login(email, password) {
       const customer = await store.read((tx) => repos.customer.findByEmail(tx, email.toLowerCase()))
       // One compare on every path, so the answer's time does not say whether the address has a password.
       const real = hasPassword(customer)
       const ok = await bcryptCompare(password, real ? customer.passwordHash : DUMMY_PASSWORD_HASH)
-      if (!real || !ok) throw new AuthError('invalid_credentials', 'Invalid email or password')
+      // After the compare and with the same refusal, so an unconfirmed account reads as a wrong password.
+      const unconfirmed = verification === 'required' && customer?.emailVerification === 'pending'
+      if (!real || !ok || unconfirmed) {
+        throw new AuthError('invalid_credentials', 'Invalid email or password')
+      }
       const tokens = await issueTokens(customer)
       logger.info({ customerId: customer.id }, 'customer login')
       return { customer: stripPassword(customer), tokens }

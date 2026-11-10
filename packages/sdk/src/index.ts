@@ -72,6 +72,7 @@ export type {
   CheckoutResult,
   RegisterParams,
   AuthResult,
+  VerificationSent,
   NewAddress,
   OrderPage,
 } from './types.js'

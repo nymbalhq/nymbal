@@ -60,6 +60,17 @@ export function emailDelivers(email: EmailAdapter): boolean {
   return email.providerName !== 'native'
 }
 
+/**
+ * The sign-up policy a store runs: the configured one, else `required` exactly when its mail reaches a mailbox, so a
+ * store whose mail only reaches the log never asks for a link nobody can open.
+ */
+export function resolveVerification(
+  configured: 'required' | 'off' | undefined,
+  delivers: boolean,
+): 'required' | 'off' {
+  return configured ?? (delivers ? 'required' : 'off')
+}
+
 export interface ServiceRegistry {
   product: ProductService
   category: CategoryService
@@ -173,6 +184,7 @@ export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
       jwtSecret,
       accessTtl: config.security.auth.accessTtl,
       refreshTtl: config.security.auth.refreshTtl,
+      verification: resolveVerification(config.security.auth.verification, emailDelivers(email)),
     }),
     order: orders,
     inventory,

@@ -94,6 +94,7 @@ const NOT_ON_HOME = [
   'nymbal-forgot-password-form',
   'nymbal-reset-password-form',
   'nymbal-change-password-form',
+  'nymbal-verify-email',
 ]
 
 interface Elements {

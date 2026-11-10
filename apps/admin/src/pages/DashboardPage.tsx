@@ -4,6 +4,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { OrderStatusBadge } from '@/components/orders/OrderStatusBadge'
 import { EmptyState } from '@/components/common/EmptyState'
 import { useDashboard } from '@/hooks/useDashboard'
+import { useMailHealth } from '@/hooks/useMailHealth'
 import { useMe } from '@/hooks/useMe'
 import { useEventTicker } from '@/realtime/handlers'
 import { formatMoney, formatMoneyCompact } from '@/lib/money'
@@ -200,6 +201,7 @@ function AgentsCard({
 export function DashboardPage() {
   const { data: me } = useMe()
   const { data, isLoading } = useDashboard()
+  const { data: mailHealth } = useMailHealth()
   const navigate = useNavigate()
 
   return (
@@ -212,6 +214,17 @@ export function DashboardPage() {
         </div>
         <LiveIndicator />
       </div>
+
+      {mailHealth?.warning != null && (
+        <div
+          role="alert"
+          className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800"
+          data-testid={tid('dashboard', 'mail-warning')}
+        >
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <p>{mailHealth.warning}</p>
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">

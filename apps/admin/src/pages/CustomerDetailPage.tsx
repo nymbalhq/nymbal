@@ -8,7 +8,13 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { HistoryTab } from '@/components/history/HistoryTab'
 import { CustomerProfileCard } from '@/components/customers/CustomerProfileCard'
 import { CustomerOrdersTable } from '@/components/customers/CustomerOrdersTable'
-import { useCustomer, useCustomerOrders, useAddCustomerNote } from '@/hooks/useCustomers'
+import {
+  useCustomer,
+  useCustomerOrders,
+  useAddCustomerNote,
+  useMarkVerified,
+  useSendVerification,
+} from '@/hooks/useCustomers'
 import { formatDate, formatRelative } from '@/lib/dates'
 import { tid } from '@/lib/testid'
 import type { NoteEntry } from '@/types'
@@ -38,12 +44,95 @@ function NotesList({ notes }: { notes: NoteEntry[] }) {
   )
 }
 
+/**
+ * Support's rescue of a sign-up whose confirmation mail went missing: send the link again, or mark the email confirmed
+ * so the customer's password signs in. Each press is one request, whatever the clicks. A confirmed customer is no
+ * longer pending, so the panel goes and `onConfirmed` lets the page say so.
+ */
+function VerificationPanel({
+  customerId,
+  onConfirmed,
+}: {
+  customerId: string
+  onConfirmed: () => void
+}) {
+  const send = useSendVerification()
+  const mark = useMarkVerified()
+  // Set in the click itself: `isPending` reaches the buttons only after a render, too late for a double click.
+  const acting = useRef(false)
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState<string | null>(null)
+
+  const act = async (run: () => Promise<string | null>) => {
+    if (acting.current) return
+    acting.current = true
+    setBusy(true)
+    try {
+      setResult(await run())
+    } catch (err) {
+      setResult(err instanceof Error ? err.message : 'Something went wrong.')
+    } finally {
+      acting.current = false
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div
+      className="rounded-lg border border-amber-200 bg-amber-50 p-5 space-y-3"
+      data-testid={tid('customer', 'verification')}
+    >
+      <h2 className="text-sm font-semibold text-zinc-900">Email not confirmed</h2>
+      <p className="text-sm text-zinc-600">
+        This customer has not followed the link in their confirmation email, so their password does
+        not sign in yet.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busy}
+          onClick={() =>
+            act(async () => {
+              await send.mutateAsync({ customerId })
+              return 'A new confirmation link is on its way.'
+            })
+          }
+          data-testid={tid('customer', 'send-verification')}
+        >
+          Send the link again
+        </Button>
+        <Button
+          size="sm"
+          disabled={busy}
+          onClick={() =>
+            act(async () => {
+              await mark.mutateAsync({ customerId })
+              onConfirmed()
+              return null
+            })
+          }
+          data-testid={tid('customer', 'mark-verified')}
+        >
+          Mark as confirmed
+        </Button>
+      </div>
+      {result !== null && (
+        <p role="status" className="text-sm text-zinc-700">
+          {result}
+        </p>
+      )}
+    </div>
+  )
+}
+
 export function CustomerDetailPage() {
   const { id } = useParams<{ id: string }>()
   const [noteBody, setNoteBody] = useState('')
   // Set in the submit itself: `isPending` reaches the button only after a render, too late for a double click.
   const submitting = useRef(false)
   const [busy, setBusy] = useState(false)
+  const [confirmed, setConfirmed] = useState(false)
 
   const { data: customerData, isLoading } = useCustomer(id ?? '')
   const { data: orders, isLoading: ordersLoading } = useCustomerOrders(id ?? '')
@@ -117,6 +206,20 @@ export function CustomerDetailPage() {
         </TabsList>
 
         <TabsContent value="overview" className="space-y-5">
+          {customer.emailVerification === 'pending' ? (
+            <VerificationPanel customerId={customer.id} onConfirmed={() => setConfirmed(true)} />
+          ) : (
+            confirmed && (
+              <p
+                role="status"
+                className="rounded-lg border border-zinc-200 bg-white p-5 text-sm text-zinc-700"
+                data-testid={tid('customer', 'verification-confirmed')}
+              >
+                Email marked confirmed: their password now signs in.
+              </p>
+            )
+          )}
+
           {/* Profile card */}
           <div className="rounded-lg border border-zinc-200 bg-white p-5">
             <CustomerProfileCard customer={customer} stats={stats} />

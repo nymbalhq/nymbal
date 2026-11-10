@@ -2,7 +2,7 @@ import type { Customer } from '@nymbalhq/types'
 import type { CommerceAdapter } from '../adapter/commerce-adapter.js'
 import { forgetSession, hasSessionHint, isSessionRefusal, renewSession } from '../auth/session.js'
 import type { TokenManager } from '../auth/token-manager.js'
-import type { AuthResult, AuthState, RegisterParams } from '../types.js'
+import type { AuthResult, AuthState, RegisterParams, VerificationSent } from '../types.js'
 import { createStore } from './create-store.js'
 
 const INITIAL_STATE: AuthState = {
@@ -16,7 +16,15 @@ export interface AuthStore {
   getState(): AuthState
   subscribe(listener: () => void): () => void
   login(email: string, password: string): Promise<void>
-  register(params: RegisterParams): Promise<void>
+  /**
+   * `signed-in` as `login`; `verification-sent` on a store that confirms addresses: a link was mailed, and no token is
+   * held until `verifyEmail` follows it.
+   */
+  register(params: RegisterParams): Promise<'signed-in' | 'verification-sent'>
+  /** Confirms the address with a mailed link's token and signs in, as `login` does. */
+  verifyEmail(token: string): Promise<void>
+  /** Asks for the confirmation link again; the store answers alike whatever the address. */
+  resendVerification(email: string): Promise<void>
   /** Asks for a reset link; the store answers alike whether or not the address has an account. */
   requestPasswordReset(email: string): Promise<void>
   /** Sets a password with a reset link's token and signs in, as `login` does. */
@@ -47,10 +55,17 @@ export function createAuthStore(
    * `busy` sign-in marks the store loading meanwhile; a change of password does not, since a page that hides behind
    * `loading` (an account guard) would take down the signed-in shopper's form mid-change.
    */
-  async function signIn(answer: () => Promise<AuthResult>, busy = true): Promise<void> {
+  async function signIn(
+    answer: () => Promise<AuthResult | VerificationSent>,
+    busy = true,
+  ): Promise<'signed-in' | 'verification-sent'> {
     if (busy) store.setState({ loading: true, error: null })
     try {
       const result = await answer()
+      if (!('accessToken' in result)) {
+        store.setState({ loading: false, error: null })
+        return 'verification-sent'
+      }
       tokenManager.setTokens(result.accessToken, result.expiresIn)
       store.setState({
         customer: result.customer,
@@ -58,6 +73,7 @@ export function createAuthStore(
         loading: false,
         error: null,
       })
+      return 'signed-in'
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       store.setState({ ...(busy && { loading: false }), error: message })
@@ -65,11 +81,11 @@ export function createAuthStore(
     }
   }
 
-  function login(email: string, password: string): Promise<void> {
-    return signIn(() => adapter.customers.login(email, password))
+  async function login(email: string, password: string): Promise<void> {
+    await signIn(() => adapter.customers.login(email, password))
   }
 
-  function register(params: RegisterParams): Promise<void> {
+  function register(params: RegisterParams): Promise<'signed-in' | 'verification-sent'> {
     return signIn(() => adapter.customers.register(params))
   }
 
@@ -158,10 +174,16 @@ export function createAuthStore(
     login,
     register,
     requestPasswordReset: (email) => adapter.customers.requestPasswordReset(email),
-    resetPassword: (token, password) =>
-      signIn(() => adapter.customers.resetPassword(token, password)),
-    changePassword: (currentPassword, newPassword) =>
-      signIn(() => adapter.customers.changePassword(currentPassword, newPassword), false),
+    resetPassword: async (token, password) => {
+      await signIn(() => adapter.customers.resetPassword(token, password))
+    },
+    verifyEmail: async (token) => {
+      await signIn(() => adapter.customers.verifyEmail(token))
+    },
+    resendVerification: (email) => adapter.customers.resendVerification(email),
+    changePassword: async (currentPassword, newPassword) => {
+      await signIn(() => adapter.customers.changePassword(currentPassword, newPassword), false)
+    },
     logout,
     refreshToken,
     updateProfile,

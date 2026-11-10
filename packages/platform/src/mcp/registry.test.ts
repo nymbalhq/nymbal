@@ -32,6 +32,8 @@ const EXCLUDED = [
   'auth.logout',
   'auth.forgotPassword',
   'auth.resetPassword',
+  'auth.verifyEmail',
+  'auth.resendVerification',
   'customers.changePassword',
   'admin.events.ticket',
   'admin.events.stream',
@@ -219,7 +221,7 @@ describe('AC-1: one tool per registry entry', () => {
     }
   })
 
-  it('AC-13: the entries marked tool: false are exactly the fourteen kept from agents plus proposal approve, proposal reject, settings put and delete, the assistant’s turn and stream, the cart-code and admin-promotion routes and the three password routes, and every stream route is among them', () => {
+  it('AC-13: the entries marked tool: false are exactly the fourteen kept from agents plus proposal approve, proposal reject, settings put and delete, the assistant’s turn and stream, the cart-code and admin-promotion routes, the three password routes and the two confirmation routes, and every stream route is among them', () => {
     const marked = Object.values(routeSchemas)
       .filter((entry) => entry.tool === false)
       .map((entry) => entry.name)

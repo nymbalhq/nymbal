@@ -43,6 +43,7 @@
     "packages/platform/src/services/checkout-service.ts": 78.32,
     "packages/platform/src/services/customer-service.ts": 97.01,
     "packages/platform/src/services/inventory-service.ts": 75.63,
+    "packages/platform/src/services/mail-health.ts": 88.52,
     "packages/platform/src/services/order-correlation.ts": 100,
     "packages/platform/src/services/order-service.ts": 68.16,
     "packages/platform/src/services/product-service.ts": 62.92,

@@ -3,14 +3,9 @@ import type { Page } from '@playwright/test'
 import { linksIn, linkTo, mailbox } from '../support/alerts'
 import { isCustomProject, storeCapabilities, type StoreCapabilities } from '../support/capabilities'
 import { expect, test } from '../support/fixtures'
-import {
-  apiSignInStatus,
-  FORGOT_PATH,
-  newShopper,
-  registerThroughApi,
-  RESET_PATH,
-} from '../support/passwords'
+import { apiSignInStatus, FORGOT_PATH, newShopper, RESET_PATH } from '../support/passwords'
 import { formReady } from '../support/sign-in'
+import { registerVerified } from '../support/verification'
 
 // "Forgot password?" on both storefronts. The journey reads GET /api/capabilities and asserts the branch it reports
 // (@capabilities): on every store the sign-in page links to the forgot page, which a signed-out shopper reaches, and
@@ -56,7 +51,8 @@ test.describe('Forgot password', () => {
     const delivering = isCustomProject(testInfo.project.name)
     expect(delivers(caps), JSON.stringify(caps)).toBe(delivering)
     const shopper = newShopper('reset-journey')
-    await registerThroughApi(shopper)
+    // A confirmed account on every store: on a store that confirms sign-ups, the link from its mail is followed first.
+    await registerVerified(shopper)
 
     await page.goto('/account/login')
     await page.getByTestId('forgot-password-link').click()
@@ -69,7 +65,8 @@ test.describe('Forgot password', () => {
     if (!delivering) return
 
     const mail = await mailbox()
-    // Registering mailed a welcome first: the address holds two mails, and the reset is the one linking to its page.
+    // Registering mailed the confirmation link first: the address holds two mails, and the reset is the one linking to
+    // its page.
     const mails = await mail.waitFor(shopper.email, 2)
     const resetMail = mails.find((m) => linksIn(m).some((url) => url.pathname === RESET_PATH))
     const link = linkTo(resetMail ?? mails[0]!, RESET_PATH)

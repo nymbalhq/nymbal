@@ -12,6 +12,7 @@ import { registerAdminOrdersRoutes } from './admin-orders.js'
 import { registerAdminProductsRoutes } from './admin-products.js'
 import { registerAdminInventoryRoutes } from './admin-inventory.js'
 import { registerAdminCustomersRoutes } from './admin-customers.js'
+import { registerAdminMailHealthRoute } from './admin-mail-health.js'
 import { registerAdminSearchRoute } from './admin-search.js'
 import { registerAdminReviewsRoutes } from './admin-reviews.js'
 import { registerAdminPromotionsRoutes } from './admin-promotions.js'
@@ -58,8 +59,15 @@ export function registerAdminRoutes(adapter: HttpAdapter, deps: RegisterAdminRou
   registerAdminCustomersRoutes(adapter, {
     order: services.order,
     customer: services.customer,
+    auth: services.auth,
     repos,
     history,
+  })
+  registerAdminMailHealthRoute(adapter, {
+    config,
+    repos,
+    auth: services.auth,
+    email: adapters.email,
   })
   registerAdminSearchRoute(adapter, {
     order: services.order,

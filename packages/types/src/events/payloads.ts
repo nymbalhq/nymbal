@@ -180,6 +180,8 @@ export interface CustomerCreatedV1Payload {
   customer?: CustomerSnapshot
   /** `'import'` for a customer an import brought over, who is not welcomed; absent for one who registered. */
   origin?: 'import'
+  /** `'pending'` for a sign-up asked to confirm its address: its first mail is the confirmation link, not a welcome. */
+  verification?: 'pending'
 }
 export interface CustomerUpdatedV1Payload {
   customerId: string
@@ -190,6 +192,18 @@ export interface CustomerDeletedV1Payload {
 }
 /** A shopper asked for a password reset link; the email handler mints the link's token when it sends, so none is here. */
 export interface CustomerPasswordResetRequestedV1Payload {
+  customerId: string
+}
+/**
+ * A pending account's confirmation link is to be mailed; the email handler mints its token, so none is here. `if-stale`
+ * sends nothing while a live link is under 15 minutes old; `always` (support's send) replaces it whatever its age.
+ */
+export interface CustomerVerificationRequestedV1Payload {
+  customerId: string
+  reissue: 'if-stale' | 'always'
+}
+/** Someone registered an address that already has an account; the owner is told, at most once a day. */
+export interface CustomerRegisteredAgainV1Payload {
   customerId: string
 }
 

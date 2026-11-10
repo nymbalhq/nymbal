@@ -38,6 +38,8 @@ export interface NymbalEventMap {
   [C.EVT_CUSTOMER_UPDATED]: P.CustomerUpdatedV1Payload
   [C.EVT_CUSTOMER_DELETED]: P.CustomerDeletedV1Payload
   [C.EVT_CUSTOMER_PASSWORD_RESET_REQUESTED]: P.CustomerPasswordResetRequestedV1Payload
+  [C.EVT_CUSTOMER_VERIFICATION_REQUESTED]: P.CustomerVerificationRequestedV1Payload
+  [C.EVT_CUSTOMER_REGISTERED_AGAIN]: P.CustomerRegisteredAgainV1Payload
   [C.EVT_VISITOR_MERGED]: P.VisitorMergedV1Payload
 
   [C.EVT_CART_CREATED]: P.CartCreatedV1Payload

@@ -28,6 +28,7 @@ export default {
     '!packages/platform/src/services/recently-viewed-service.ts',
     '!packages/platform/src/repositories/alert-subscription.ts',
     '!packages/platform/src/repositories/email-suppression.ts',
+    '!packages/platform/src/repositories/email-verification-token.ts',
     '!packages/platform/src/repositories/password-reset-token.ts',
     '!packages/platform/src/repositories/proposal.ts',
     '!packages/platform/src/repositories/report-rollup.ts',

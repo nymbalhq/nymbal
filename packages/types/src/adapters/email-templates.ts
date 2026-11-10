@@ -39,6 +39,14 @@ const TEMPLATES: Record<string, { subject: string; body: string }> = {
     subject: 'Reset your {{storeName}} password',
     body: `Hi,\n\nSomeone asked to reset the password of your {{storeName}} account. Choose a new one by following this link within {{expiresMinutes}} minutes:\n\n{{resetUrl}}\n\nThe link works once. If you did not ask, ignore this email and your password stays as it is.`,
   },
+  'verify-email': {
+    subject: 'Confirm your email for {{storeName}}',
+    body: `Hi,\n\nConfirm your email to finish signing up at {{storeName}} by following this link:\n\n{{verifyUrl}}\n\nThe link works once, for {{expiresHours}} hours. If you did not sign up, ignore this email.`,
+  },
+  'account-exists': {
+    subject: 'You already have a {{storeName}} account',
+    body: `Hi,\n\nSomeone tried to sign up at {{storeName}} with this email, which already has an account. Sign in:\n\n{{signInUrl}}\n\nForgot your password? Choose a new one:\n\n{{forgotUrl}}\n\nIf this was not you, ignore this email: nothing has changed.`,
+  },
   'cart-abandoned': {
     subject: "Don't forget your cart at {{storeName}}",
     body: `Hi,\n\nYou left items in your cart. Pick up where you left off: {{resumeUrl}}`,

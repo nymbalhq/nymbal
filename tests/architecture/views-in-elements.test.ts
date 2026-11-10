@@ -43,6 +43,9 @@ const MOVED_IDS = [
   'forgot-submit',
   'reset-submit',
   'change-submit',
+  // So was the confirmation page's element.
+  'verify-submit',
+  'resend-submit',
 ] as const
 
 const SKIP_DIRS = new Set(['node_modules', '.next', '.astro', 'dist', '.turbo', 'coverage'])

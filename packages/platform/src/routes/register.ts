@@ -174,7 +174,7 @@ export function registerAllRoutes(deps: RegisterAllRoutesDeps): void {
     mergeCartOnSignIn(services.cart, secure),
   ]
   registerAuthRoutes(adapter, services.auth, config.security.auth.refreshTtl, afterSignIn, secure)
-  registerCapabilitiesRoute(adapter, adapters)
+  registerCapabilitiesRoute(adapter, adapters, services.auth.verification)
   registerCategoryRoutes(adapter, documentStore, config.store.name)
   registerProductRoutes(
     adapter,

@@ -119,6 +119,8 @@ export const customers = sqliteTable(
     requiresPasswordReset: integer('requires_password_reset', { mode: 'boolean' })
       .notNull()
       .default(false),
+    /** `'pending'` or `'verified'`; null for an account never asked to confirm its address. */
+    emailVerification: text('email_verification'),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },
@@ -158,6 +160,22 @@ export const passwordResetTokens = sqliteTable(
   (t) => ({
     tokenHashIdx: uniqueIndex('password_reset_tokens_token_hash_idx').on(t.tokenHash),
     customerIdx: index('password_reset_tokens_customer_idx').on(t.customerId),
+  }),
+)
+
+/** A sign-up confirmation link's token: only its SHA-256 is kept, so the mail alone opens it. */
+export const emailVerificationTokens = sqliteTable(
+  'email_verification_tokens',
+  {
+    id: text('id').primaryKey(),
+    customerId: text('customer_id').notNull(),
+    tokenHash: text('token_hash').notNull(),
+    expiresAt: text('expires_at').notNull(),
+    createdAt: text('created_at').notNull(),
+  },
+  (t) => ({
+    tokenHashIdx: uniqueIndex('email_verification_tokens_token_hash_idx').on(t.tokenHash),
+    customerIdx: index('email_verification_tokens_customer_idx').on(t.customerId),
   }),
 )
 
@@ -730,6 +748,7 @@ export const schema = {
   customers,
   refreshTokens,
   passwordResetTokens,
+  emailVerificationTokens,
   orders,
   orderHistory,
   orderSequences,

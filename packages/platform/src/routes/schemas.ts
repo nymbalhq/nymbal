@@ -188,7 +188,8 @@ export const routeSchemas: Record<string, RouteSchema> = {
     name: 'auth.register',
     tool: false,
     command: 'customer.register',
-    description: 'Create a customer account and sign it in.',
+    description:
+      'Create a customer account. Where sign-ups are confirmed by email, answers 202 "check your email" for every address and signs nobody in; otherwise creates the account and signs it in (201).',
     body: z.object({
       email: z.string().min(1),
       password: z.string().min(1),
@@ -223,6 +224,21 @@ export const routeSchemas: Record<string, RouteSchema> = {
     tool: false,
     command: 'customer.requestPasswordReset',
     description: 'Mail a password reset link to the account with this email, if there is one.',
+    body: z.object({ email: z.string().min(1) }),
+  },
+  'POST /api/auth/verify-email': {
+    name: 'auth.verifyEmail',
+    tool: false,
+    command: 'customer.verifyEmail',
+    description: "Confirm a sign-up's email with its mailed link's token and sign the customer in.",
+    body: z.object({ token: z.string().min(1) }),
+  },
+  'POST /api/auth/resend-verification': {
+    name: 'auth.resendVerification',
+    tool: false,
+    command: 'customer.resendVerification',
+    description:
+      'Mail the confirmation link again to a sign-up with this email waiting to confirm, if there is one.',
     body: z.object({ email: z.string().min(1) }),
   },
   'POST /api/auth/reset-password': {
@@ -834,6 +850,28 @@ export const routeSchemas: Record<string, RouteSchema> = {
     description: 'Add an internal note to a customer.',
     params: idParams,
     body: noteBody,
+  },
+
+  'POST /api/admin/customers/:id/send-verification': {
+    name: 'admin.customers.sendVerification',
+    command: 'customer.sendVerification',
+    description:
+      'Mail a new confirmation link to a customer whose email is waiting to be confirmed; the older link stops working.',
+    params: idParams,
+  },
+  'POST /api/admin/customers/:id/mark-verified': {
+    name: 'admin.customers.markVerified',
+    personal: ALL_PERSONAL,
+    record: 'customer',
+    command: 'customer.markVerified',
+    description:
+      "Mark a customer's email confirmed, so their password signs in; their confirmation link stops working.",
+    params: idParams,
+  },
+  'GET /api/admin/mail-health': {
+    name: 'admin.mailHealth',
+    description:
+      "The store's sign-up confirmation policy, how many sign-ups in the last 7 days confirmed their email, and a warning when mail may not be arriving.",
   },
 
   // Admin: promotions

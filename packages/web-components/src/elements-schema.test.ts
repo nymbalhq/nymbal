@@ -54,6 +54,7 @@ const TAGS = [
   'nymbal-forgot-password-form',
   'nymbal-reset-password-form',
   'nymbal-change-password-form',
+  'nymbal-verify-email',
   // Checkout
   'nymbal-checkout',
   // Catalogue and page elements
@@ -98,6 +99,8 @@ interface State {
   recent?: unknown[] | 'fail'
   /** The page URL's fragment when the element connects (the reset form's `token=<t>`). */
   hash?: string
+  /** What `auth.register` answers once it succeeds: the register form's two endings. */
+  registered?: 'signed-in' | 'verification-sent'
 }
 
 const state = (partial: Partial<State> = {}): State => ({
@@ -141,11 +144,20 @@ function installAccount(client: Record<string, unknown>, s: State): void {
     auth.setState({ customer: CUSTOMER, isAuthenticated: true })
   }
   auth['login'] = signIn
-  auth['register'] = signIn
+  auth['register'] = async (): Promise<string> => {
+    if (s.registered === 'verification-sent') {
+      await answer()
+      return 'verification-sent'
+    }
+    await signIn()
+    return 'signed-in'
+  }
   auth['updateProfile'] = () => answer()
   auth['requestPasswordReset'] = () => answer()
   auth['resetPassword'] = signIn
   auth['changePassword'] = () => answer()
+  auth['verifyEmail'] = signIn
+  auth['resendVerification'] = () => answer()
   client['customer'] = {
     addresses: {
       list: async () => {
@@ -445,6 +457,9 @@ const PHASES: Phase[] = ['pending', 'failed', 'succeeded']
 
 /** The fragment a reset mail's link opens the reset page with. */
 const RESET_HASH = `token=${'a'.repeat(43)}`
+
+/** The fragment a verification mail's link opens the verify page with. */
+const VERIFY_HASH = `token=${'b'.repeat(43)}`
 
 const pageItem = fc.record({
   variantId: word,
@@ -814,7 +829,11 @@ const FIXED: Record<Tag, State[]> = {
     }),
   ],
   'nymbal-login-form': formStates(),
-  'nymbal-register-form': formStates(),
+  // Signed in, and told the link was sent (the register-sent note in place of the form).
+  'nymbal-register-form': [
+    ...formStates(),
+    state({ phase: 'succeeded', registered: 'verification-sent' }),
+  ],
   'nymbal-profile-form': formStates(signedIn),
   'nymbal-address-form': [state()],
   'nymbal-address-book': [
@@ -830,6 +849,8 @@ const FIXED: Record<Tag, State[]> = {
   // Opened with no token, and with one: its form as rendered and submitted once in each phase.
   'nymbal-reset-password-form': [state(), ...formStates({ hash: RESET_HASH })],
   'nymbal-change-password-form': formStates(signedIn),
+  // Opened with no token (the resend form) and with one (the button), each submitted once in each phase.
+  'nymbal-verify-email': [...formStates(), ...formStates({ hash: VERIFY_HASH })],
   'nymbal-checkout': [
     ...checkoutStates(),
     ...checkoutStates({
@@ -1183,7 +1204,12 @@ const ARBITRARY: Record<Tag, fc.Arbitrary<State>> = {
     })
     .map((search) => state({ stores: { search } })),
   'nymbal-login-form': fc.option(fc.constantFrom(...PHASES)).map((phase) => state({ phase })),
-  'nymbal-register-form': fc.option(fc.constantFrom(...PHASES)).map((phase) => state({ phase })),
+  'nymbal-register-form': fc
+    .record({
+      phase: fc.option(fc.constantFrom(...PHASES)),
+      registered: fc.constantFrom<'signed-in' | 'verification-sent'>('signed-in', 'verification-sent'),
+    })
+    .map(({ phase, registered }) => state({ phase, registered })),
   'nymbal-profile-form': fc
     .option(fc.constantFrom(...PHASES))
     .map((phase) => state({ ...signedIn, phase })),
@@ -1206,6 +1232,9 @@ const ARBITRARY: Record<Tag, fc.Arbitrary<State>> = {
   'nymbal-change-password-form': fc
     .option(fc.constantFrom(...PHASES))
     .map((phase) => state({ ...signedIn, phase })),
+  'nymbal-verify-email': fc
+    .record({ phase: fc.option(fc.constantFrom(...PHASES)), withToken: fc.boolean() })
+    .map(({ phase, withToken }) => state({ phase, ...(withToken && { hash: VERIFY_HASH }) })),
   'nymbal-checkout': fc
     .record({
       items: fc.array(cartItem, { maxLength: 3 }),
@@ -1573,7 +1602,10 @@ const INTERFACE: Array<{
   {
     tag: 'nymbal-register-form',
     reactName: 'RegisterForm',
-    events: [{ name: 'nymbal:auth:signed-in', prop: 'onSignedIn' }],
+    events: [
+      { name: 'nymbal:auth:signed-in', prop: 'onSignedIn' },
+      { name: 'nymbal:auth:verification-sent', prop: 'onVerificationSent' },
+    ],
     attributes: [],
   },
   {
@@ -1594,6 +1626,11 @@ const INTERFACE: Array<{
     events: [{ name: 'nymbal:auth:signed-in', prop: 'onSignedIn' }],
   },
   { tag: 'nymbal-change-password-form', reactName: 'ChangePasswordForm', events: [] },
+  {
+    tag: 'nymbal-verify-email',
+    reactName: 'VerifyEmail',
+    events: [{ name: 'nymbal:auth:signed-in', prop: 'onSignedIn' }],
+  },
   // Catalogue and page elements
   {
     tag: 'nymbal-recently-viewed',

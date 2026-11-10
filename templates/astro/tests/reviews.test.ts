@@ -17,6 +17,7 @@ function report(reviews: string[]): StoreCapabilities {
     search: { capabilities: ['index', 'search', 'facet'] },
     catalog: { sortKeys: [...PRODUCT_SORT_KEYS], defaultSort: DEFAULT_PRODUCT_SORT },
     email: { delivers: false },
+    auth: { verification: 'off' },
     reviews: { capabilities: reviews },
     shipping: { capabilities: [] },
   }

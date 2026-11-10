@@ -14,13 +14,21 @@ const SCHEMA: ElementSchema = {
       prop: 'onSignedIn',
       detail: '{ customer: unknown }',
     },
+    {
+      name: 'nymbal:auth:verification-sent',
+      prop: 'onVerificationSent',
+      detail: '{ email: string }',
+    },
   ],
-  parts: ['form', 'row', 'field', 'label', 'input', 'error', 'submit'],
+  parts: ['form', 'row', 'field', 'label', 'input', 'error', 'submit', 'message'],
   slots: ['submit-label'],
   children: false,
 }
 
-/** Creates the shopper's account and signs them in; the page decides where they go next. */
+/**
+ * Creates the shopper's account and signs them in; the page decides where they go next. On a store that confirms
+ * addresses nobody is signed in: the form gives way to a note that a link was mailed, alike for every address.
+ */
 export class NymbalRegisterForm extends NymbalFormElement {
   static override schema = SCHEMA
   static override properties = propertiesOf(SCHEMA)
@@ -37,20 +45,29 @@ export class NymbalRegisterForm extends NymbalFormElement {
     `,
   ]
 
-  // The page leaves on success; a second submit while it does would try to register the email twice.
+  // The page leaves on success, or the form gives way to the note; a second submit would register the email twice.
   protected override readonly lockOnSuccess = true
+
+  /** The address a confirmation link went to, once the store says one did. */
+  private sentTo: string | null = null
 
   protected override async send(): Promise<void> {
     if (this.value('password') !== this.value('confirmPassword')) {
       throw new Error('Passwords do not match.')
     }
-    await this.client.auth.register({
-      email: this.value('email'),
+    const email = this.value('email')
+    const outcome = await this.client.auth.register({
+      email,
       password: this.value('password'),
       firstName: this.value('firstName'),
       lastName: this.value('lastName'),
       phone: this.value('phone'),
     })
+    if (outcome === 'verification-sent') {
+      this.sentTo = email
+      this.emit('nymbal:auth:verification-sent', { email })
+      return
+    }
     this.emit('nymbal:auth:signed-in', { customer: this.client.auth.getState().customer })
   }
 
@@ -61,6 +78,11 @@ export class NymbalRegisterForm extends NymbalFormElement {
   }
 
   protected override render() {
+    if (this.sentTo !== null) {
+      return html`<p part="message" role="status" data-testid="register-sent">
+        We sent a link to ${this.sentTo}. It works for 24 hours.
+      </p>`
+    }
     return html`
       ${this.renderError()}
       <form part="form" data-testid="register-form" @submit=${this.onSubmit}>

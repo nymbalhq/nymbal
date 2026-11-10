@@ -10,6 +10,7 @@ export const PUBLIC_AUTH_PATHS = [
   '/account/register',
   '/account/forgot-password',
   '/account/reset-password',
+  '/account/verify-email',
 ]
 
 export function AuthGuard({ children }: { children: ReactNode }) {

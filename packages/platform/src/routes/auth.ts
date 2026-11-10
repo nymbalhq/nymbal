@@ -6,7 +6,12 @@ import {
   type ResponseEnvelope,
   type ResponseCookie,
 } from '@nymbalhq/types'
-import { parseDurationToMs, type AuthService, type AuthTokens } from '../services/auth-service.js'
+import {
+  EMAIL_VERIFICATION_TTL_MS,
+  parseDurationToMs,
+  type AuthService,
+  type AuthTokens,
+} from '../services/auth-service.js'
 import { ok, fail, renderError } from './envelope.js'
 import { expiredVisitorCookie } from './recently-viewed.js'
 import { expiredCartCookie } from './cart.js'
@@ -34,6 +39,9 @@ interface RefreshBody {
 }
 interface ForgotBody {
   email: string
+}
+interface VerifyBody {
+  token: string
 }
 interface ResetBody {
   token: string
@@ -88,7 +96,7 @@ async function runAfterSignIn(
 
 /**
  * `refreshTtl` is the config's `security.auth.refreshTtl`: the cookie lives as long as the token it carries.
- * `afterSignIn` runs after every successful login, register and password reset.
+ * `afterSignIn` runs after every sign-in: a login, an `off` register, a confirmation link and a password reset.
  */
 export function registerAuthRoutes(
   adapter: HttpAdapter,
@@ -110,6 +118,15 @@ export function registerAuthRoutes(
         ...(body.firstName !== undefined && { firstName: body.firstName }),
         ...(body.lastName !== undefined && { lastName: body.lastName }),
         ...(body.phone !== undefined && { phone: body.phone }),
+      }
+      // One answer whatever the address: no session, no cookie and no hook until the mailed link is followed.
+      if (auth.verification === 'required') {
+        await auth.signUp(registerInput)
+        return ok(
+          { verification: 'sent', expiresHours: EMAIL_VERIFICATION_TTL_MS / 3_600_000 },
+          undefined,
+          202,
+        ) as ResponseEnvelope
       }
       const result = await auth.register(registerInput)
       const envelope = ok(
@@ -188,6 +205,25 @@ export function registerAuthRoutes(
   adapter.registerRoute('POST', '/api/auth/forgot-password', async (ctx) => {
     try {
       await auth.requestPasswordReset((ctx.body as ForgotBody).email)
+      return ok({ sent: 'if-matched' }, undefined, 202) as ResponseEnvelope
+    } catch (err) {
+      return renderError(err, ctx.logger)
+    }
+  })
+
+  adapter.registerRoute('POST', '/api/auth/verify-email', async (ctx) => {
+    try {
+      const result = await auth.verifyEmail((ctx.body as VerifyBody).token)
+      return signedIn(result, await runAfterSignIn(afterSignIn, ctx, result.customer.id))
+    } catch (err) {
+      return renderError(err, ctx.logger)
+    }
+  })
+
+  // One answer whatever the address and the policy: whether one is waiting to confirm is not the caller's to learn.
+  adapter.registerRoute('POST', '/api/auth/resend-verification', async (ctx) => {
+    try {
+      await auth.resendVerification((ctx.body as ForgotBody).email)
       return ok({ sent: 'if-matched' }, undefined, 202) as ResponseEnvelope
     } catch (err) {
       return renderError(err, ctx.logger)

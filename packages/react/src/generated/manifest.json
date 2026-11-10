@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-11-09T22:43:07.101Z",
-  "sourceHash": "30916e559418c0f3",
+  "generatedAt": "2026-11-10T05:17:11.690Z",
+  "sourceHash": "9995300f4064ac0a",
   "components": [
     "AddToCart",
     "AddressBook",
@@ -37,6 +37,7 @@
     "SortDropdown",
     "StockBadge",
     "Toast",
-    "VariantSelector"
+    "VariantSelector",
+    "VerifyEmail"
   ]
 }

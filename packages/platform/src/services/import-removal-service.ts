@@ -77,6 +77,7 @@ export function createImportRemovalService(deps: ImportRemovalServiceDeps): Impo
         audit.note('customer.remove', [{ type: 'customer', id }])
         await repos.refreshToken.deleteByCustomer(tx, id)
         await repos.passwordResetToken.deleteByCustomer(tx, id)
+        await repos.emailVerificationToken.deleteByCustomer(tx, id)
         await repos.customer.delete(tx, id)
         await publisher.publish(EVT_CUSTOMER_DELETED, { customerId: id })
         logger.debug({ customerId: id }, 'imported customer removed')

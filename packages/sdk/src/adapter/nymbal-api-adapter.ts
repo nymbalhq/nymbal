@@ -23,6 +23,7 @@ import type {
   CheckoutResult,
   RegisterParams,
   AuthResult,
+  VerificationSent,
   NewAddress,
   OrderPage,
 } from '../types.js'
@@ -115,7 +116,11 @@ export function createNymbalApiAdapter(fetchClient: FetchClient): CommerceAdapte
 
     customers: {
       register(params: RegisterParams) {
-        return fetchClient.request<AuthResult>('POST', '/api/auth/register', params)
+        return fetchClient.request<AuthResult | VerificationSent>(
+          'POST',
+          '/api/auth/register',
+          params,
+        )
       },
       login(email: string, password: string) {
         return fetchClient.request<AuthResult>('POST', '/api/auth/login', { email, password })
@@ -127,6 +132,14 @@ export function createNymbalApiAdapter(fetchClient: FetchClient): CommerceAdapte
         return fetchClient.request<AuthResult>('POST', '/api/auth/reset-password', {
           token,
           password,
+        })
+      },
+      verifyEmail(token: string) {
+        return fetchClient.request<AuthResult>('POST', '/api/auth/verify-email', { token })
+      },
+      async resendVerification(email: string) {
+        await fetchClient.request<{ sent: string }>('POST', '/api/auth/resend-verification', {
+          email,
         })
       },
       changePassword(currentPassword: string, newPassword: string) {

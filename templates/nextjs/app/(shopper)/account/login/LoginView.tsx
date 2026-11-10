@@ -6,8 +6,19 @@ import Link from 'next/link'
 import { LoginForm } from '@nymbalhq/react'
 import styles from '@/styles/pages/account.module.css'
 
-/** `serverHtml` is the form as the server rendered it, `target` the store path to go to once signed in (page.tsx). */
-export function LoginView({ serverHtml, target }: { serverHtml: string; target: string }) {
+/**
+ * `serverHtml` is the form as the server rendered it, `target` the store path to go to once signed in, and
+ * `confirmsSignUps` whether the store asks sign-ups to confirm their email (page.tsx).
+ */
+export function LoginView({
+  serverHtml,
+  target,
+  confirmsSignUps,
+}: {
+  serverHtml: string
+  target: string
+  confirmsSignUps: boolean
+}) {
   const router = useRouter()
   const onSignedIn = useCallback(() => {
     router.push(target)
@@ -24,6 +35,13 @@ export function LoginView({ serverHtml, target }: { serverHtml: string; target: 
             Forgot password?
           </Link>
         </p>
+        {confirmsSignUps && (
+          <p className={styles.authForgot}>
+            <Link href="/account/verify-email" data-testid="verify-resend-link">
+              Didn&apos;t get the confirmation email?
+            </Link>
+          </p>
+        )}
         <p className={styles.authFooter}>
           Don&apos;t have an account? <Link href="/account/register">Create one</Link>
         </p>

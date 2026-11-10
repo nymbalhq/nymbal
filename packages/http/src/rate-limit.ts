@@ -33,6 +33,9 @@ export const BUILT_IN_RATE_LIMITS: RateLimitRules = {
   '/api/auth/forgot-password': { requests: 5, window: '1h', action: 'block' },
   '/api/auth/reset-password': { requests: 10, window: '15m', action: 'block' },
   '/api/customers/me/password': { requests: 10, window: '15m', action: 'block' },
+  '/api/auth/verify-email': { requests: 10, window: '15m', action: 'block' },
+  // Each match mails a confirmation link, at most once per 15 minutes per account.
+  '/api/auth/resend-verification': { requests: 5, window: '1h', action: 'block' },
   // A record and a list per page view: 300 page views a minute, so shoppers behind one NAT keep their views.
   '/api/recently-viewed': { requests: 600, window: '1m', action: 'block' },
   // Each accepted subscribe mails a confirmation: the bound on how much mail one IP can make the store send.

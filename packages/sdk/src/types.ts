@@ -188,6 +188,12 @@ export interface AuthResult {
   expiresIn: number
 }
 
+/** A register on a store that confirms addresses: a link was mailed, and nobody is signed in until it is followed. */
+export interface VerificationSent {
+  verification: 'sent'
+  expiresHours: number
+}
+
 export type NewAddress = Address & { isDefaultBilling?: boolean; isDefaultShipping?: boolean }
 
 export interface OrderPage {

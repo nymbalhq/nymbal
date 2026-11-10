@@ -47,6 +47,8 @@ export default {
       '/api/auth/forgot-password': { requests: 1000, window: '1m', action: 'block' },
       '/api/auth/reset-password': { requests: 1000, window: '1m', action: 'block' },
       '/api/customers/me/password': { requests: 1000, window: '1m', action: 'block' },
+      '/api/auth/verify-email': { requests: 1000, window: '1m', action: 'block' },
+      '/api/auth/resend-verification': { requests: 1000, window: '1m', action: 'block' },
     },
     botProtection: { mode: 'managed', allowList: [] },
     headers: {

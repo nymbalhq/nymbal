@@ -1,4 +1,4 @@
-import { asc, eq, gt, sql } from 'drizzle-orm'
+import { and, asc, eq, gt, gte, isNotNull, lt, sql } from 'drizzle-orm'
 import type { Customer, CustomerAddress, Role } from '@nymbalhq/types'
 import {
   postgresDb,
@@ -25,6 +25,8 @@ export interface CustomerInsert {
   /** Defaults to `['customer']`; only seed and admin code pass anything else. */
   roles?: Role[]
   requiresPasswordReset?: boolean
+  /** `'pending'` for a sign-up asked to confirm its address; absent leaves it null (never asked). */
+  emailVerification?: 'pending'
   createdAt: Date
   updatedAt: Date
 }
@@ -37,7 +39,15 @@ export interface CustomerUpdate {
   metadata?: Record<string, unknown>
   passwordHash?: string
   requiresPasswordReset?: boolean
+  /** A confirmation only ever moves a pending account to verified. */
+  emailVerification?: 'verified'
   updatedAt: Date
+}
+
+/** Sign-ups asked to confirm their address in a window, and how many of them did. */
+export interface VerificationFunnel {
+  started: number
+  verified: number
 }
 
 function rowToCustomer(
@@ -57,6 +67,9 @@ function rowToCustomer(
     metadata: parseJson<Record<string, unknown>>(store, row.metadata, {}),
     roles: parseJson<Role[]>(store, row.roles, ['customer']),
     requiresPasswordReset: Boolean(row.requiresPasswordReset),
+    ...((row.emailVerification === 'pending' || row.emailVerification === 'verified') && {
+      emailVerification: row.emailVerification,
+    }),
     createdAt: fromTimestamp(row.createdAt),
     updatedAt: fromTimestamp(row.updatedAt),
   }
@@ -81,6 +94,8 @@ export interface CustomerRepository extends StoreRepository {
     updatedAt: Date,
   ): Promise<void>
   delete(tx: Tx, id: string): Promise<void>
+  /** Accounts created in `since <= created_at < until` that were asked to confirm, and of those the confirmed. */
+  verificationFunnel(tx: ReadTx, since: Date, until: Date): Promise<VerificationFunnel>
 }
 
 export function createCustomerRepository(store: CommandStore): CustomerRepository {
@@ -169,6 +184,7 @@ export function createCustomerRepository(store: CommandStore): CustomerRepositor
         orderCount: 0,
         totalSpentMinor: 0,
         requiresPasswordReset: c.requiresPasswordReset ?? false,
+        emailVerification: c.emailVerification ?? null,
       }
       if (tx.kind === 'sqlite') {
         sqliteDb(tx)
@@ -204,6 +220,7 @@ export function createCustomerRepository(store: CommandStore): CustomerRepositor
         'phone',
         'passwordHash',
         'requiresPasswordReset',
+        'emailVerification',
       ] as const) {
         if (patch[k] !== undefined) {
           pg[k] = patch[k]
@@ -252,6 +269,35 @@ export function createCustomerRepository(store: CommandStore): CustomerRepositor
           updatedAt,
         })
         .where(eq(postgresSchema.customers.id, id))
+    },
+    async verificationFunnel(tx, since, until) {
+      if (tx.kind === 'sqlite') {
+        const t = sqliteSchema.customers
+        const row = sqliteDb(tx)
+          .select({
+            started: sql<number>`count(*)`,
+            verified: sql<number>`count(*) filter (where ${t.emailVerification} = 'verified')`,
+          })
+          .from(t)
+          .where(
+            and(
+              gte(t.createdAt, since.toISOString()),
+              lt(t.createdAt, until.toISOString()),
+              isNotNull(t.emailVerification),
+            ),
+          )
+          .get()
+        return { started: Number(row?.started ?? 0), verified: Number(row?.verified ?? 0) }
+      }
+      const t = postgresSchema.customers
+      const [row] = await postgresDb(tx)
+        .select({
+          started: sql<number>`count(*)`,
+          verified: sql<number>`count(*) filter (where ${t.emailVerification} = 'verified')`,
+        })
+        .from(t)
+        .where(and(gte(t.createdAt, since), lt(t.createdAt, until), isNotNull(t.emailVerification)))
+      return { started: Number(row?.started ?? 0), verified: Number(row?.verified ?? 0) }
     },
     async delete(tx, id) {
       if (tx.kind === 'sqlite') {

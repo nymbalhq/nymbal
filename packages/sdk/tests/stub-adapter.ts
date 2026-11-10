@@ -126,6 +126,8 @@ export function stubAdapter(data: StubData = defaultData()): CommerceAdapter {
       login: auth,
       requestPasswordReset: async () => {},
       resetPassword: auth,
+      verifyEmail: auth,
+      resendVerification: async () => {},
       changePassword: auth,
       logout: async () => {},
       refresh: async () => ({ accessToken: 'token-stub', expiresIn: 900 }),

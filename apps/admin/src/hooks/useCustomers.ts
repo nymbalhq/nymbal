@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
+import { useIntentKey } from '@/hooks/useIntentKey'
 import type { Customer, Order } from '@nymbalhq/types'
 import type { CustomerStats, NoteEntry } from '@/types'
 
@@ -36,6 +37,44 @@ export function useCustomerOrders(id: string) {
     queryKey: ['customers', 'orders', id],
     queryFn: () => api.get<Order[]>(`/api/admin/customers/${id}/orders`),
     enabled: !!id,
+  })
+}
+
+/** Mails a customer waiting to confirm their email a new link; one Idempotency-Key per intent, as the order's resend. */
+export function useSendVerification() {
+  const [idempotencyKey, renewKey] = useIntentKey()
+  return useMutation({
+    mutationFn: ({ customerId }: { customerId: string }) =>
+      api.post<{ sent: boolean }>(
+        `/api/admin/customers/${customerId}/send-verification`,
+        undefined,
+        { idempotencyKey },
+      ),
+    onSettled: renewKey,
+  })
+}
+
+/**
+ * Marks a customer's email confirmed, so their password signs in. The answer replaces the cached customer, so a page
+ * that reads it within the cache's stale time does not offer to confirm them again.
+ */
+export function useMarkVerified() {
+  const queryClient = useQueryClient()
+  const [idempotencyKey, renewKey] = useIntentKey()
+  return useMutation({
+    mutationFn: ({ customerId }: { customerId: string }) =>
+      api.post<{ customer: Customer }>(
+        `/api/admin/customers/${customerId}/mark-verified`,
+        undefined,
+        { idempotencyKey },
+      ),
+    onSuccess: (data, vars) => {
+      queryClient.setQueryData<{ customer: Customer; stats: CustomerStats }>(
+        ['customers', 'detail', vars.customerId],
+        (cached) => (cached ? { ...cached, customer: data.customer } : cached),
+      )
+    },
+    onSettled: renewKey,
   })
 }
 

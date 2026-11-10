@@ -536,11 +536,15 @@ const CAPABILITY_JOURNEYS = [
   'payment-step.spec.ts AC-5',
   'payment-step.spec.ts AC-5',
   'password-reset.spec.ts AC-24',
+  'register-verification.spec.ts AC-18',
+  'register-verification.spec.ts AC-19',
+  'register-verification.spec.ts AC-20',
   'resend-confirmation.spec.ts AC-10',
   'resend-confirmation.spec.ts AC-11',
   'search-pages.spec.ts AC-8',
   'search.spec.ts AC-3',
   'shipped-email.spec.ts AC-10',
+  'verification-rescue.spec.ts AC-24',
 ]
 
 type Listed = { file: string; title: string; tags: string[]; project: string }

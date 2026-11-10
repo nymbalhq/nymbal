@@ -19,6 +19,8 @@ export interface Customer {
   /** What an access token grants. Written by seed and admin code only, never taken from `metadata`. */
   roles: Role[]
   requiresPasswordReset: boolean
+  /** `pending` until a sign-up follows its mailed link; absent for an account never asked to confirm. */
+  emailVerification?: 'pending' | 'verified'
   createdAt: string
   updatedAt: string
 }

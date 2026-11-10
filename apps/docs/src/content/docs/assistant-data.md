@@ -31,6 +31,7 @@ result held, never their values.
 | `admin_orders_ship`               | The order, shipped                               | email, phone, address |
 | `admin_orders_refund`             | The refund and the order                         | email, phone, address |
 | `admin_orders_resendConfirmation` | The order number and where the confirmation went | email                 |
+| `admin_customers_markVerified`    | The customer, their email confirmed              | email, phone, address |
 
 ## Keeping them back
 

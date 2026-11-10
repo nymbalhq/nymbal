@@ -23,6 +23,8 @@ export const EXEMPT_TABLES: Readonly<Record<string, string>> = {
   refresh_tokens: 'a credential; no read model is built from it',
   password_reset_tokens:
     'a credential the email handler mints in its delivery, consumed by a reset; no read model is built from it',
+  email_verification_tokens:
+    'a credential the email handler mints in its delivery, consumed by a verify; no read model is built from it',
   order_sequences: 'the order-number counter; no read model is built from it',
   audit_entries: 'the audit trail, written beside the command it records',
   order_access_keys: 'a credential checkout mints in its own write after placement settles',
@@ -54,6 +56,10 @@ export const NOTIFICATION_ONLY: Readonly<Record<string, string>> = {
     'asks the email handler to send the confirmation again; nothing about the order changes',
   'customer.password_reset_requested.v1':
     'asks the email handler to mail a reset link, which it mints and stores in its own delivery; nothing about the customer changes',
+  'customer.verification_requested.v1':
+    'asks the email handler to mail a confirmation link, which it mints and stores in its own delivery; a resend or an admin send changes nothing about the customer',
+  'customer.registered_again.v1':
+    'asks the email handler to tell an account holder someone registered their address; nothing about the account changes',
   'payment.failed.v1':
     "a payment provider's report, recorded as it arrives; its handler changes the order in its own delivery",
   'review.submitted.v1':

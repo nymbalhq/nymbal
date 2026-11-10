@@ -2,6 +2,10 @@
 import '../../styles/pages/account.css'
 import NymbalElement from '@nymbalhq/web-components/astro'
 import BaseLayout from '../../layouts/BaseLayout.astro'
+import { fetchCapabilities } from '../../lib/api'
+
+// A store that confirms sign-ups offers the way back to a lost confirmation link here, where a stuck shopper lands.
+const confirmsSignUps = (await fetchCapabilities())?.auth?.verification === 'required'
 ---
 
 <BaseLayout title="Sign In | Nymbal" description="Sign in to your Nymbal account.">
@@ -15,6 +19,11 @@ import BaseLayout from '../../layouts/BaseLayout.astro'
       <p class="auth-forgot">
         <a href="/account/forgot-password" data-testid="forgot-password-link">Forgot password?</a>
       </p>
+      {confirmsSignUps && (
+        <p class="auth-forgot">
+          <a href="/account/verify-email" data-testid="verify-resend-link">Didn't get the confirmation email?</a>
+        </p>
+      )}
 
       <p class="auth-footer">
         Don't have an account? <a href="/account/register">Create one</a>

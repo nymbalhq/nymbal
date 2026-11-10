@@ -122,6 +122,8 @@ export const customers = pgTable(
     metadata: jsonb('metadata').notNull().default({}),
     roles: jsonb('roles').notNull().default(['customer']),
     requiresPasswordReset: boolean('requires_password_reset').notNull().default(false),
+    /** `'pending'` or `'verified'`; null for an account never asked to confirm its address. */
+    emailVerification: text('email_verification'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   },
@@ -161,6 +163,22 @@ export const passwordResetTokens = pgTable(
   (t) => ({
     tokenHashIdx: uniqueIndex('password_reset_tokens_token_hash_idx').on(t.tokenHash),
     customerIdx: index('password_reset_tokens_customer_idx').on(t.customerId),
+  }),
+)
+
+/** A sign-up confirmation link's token: only its SHA-256 is kept, so the mail alone opens it. */
+export const emailVerificationTokens = pgTable(
+  'email_verification_tokens',
+  {
+    id: text('id').primaryKey(),
+    customerId: text('customer_id').notNull(),
+    tokenHash: text('token_hash').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    tokenHashIdx: uniqueIndex('email_verification_tokens_token_hash_idx').on(t.tokenHash),
+    customerIdx: index('email_verification_tokens_customer_idx').on(t.customerId),
   }),
 )
 
@@ -743,6 +761,7 @@ export const schema = {
   customers,
   refreshTokens,
   passwordResetTokens,
+  emailVerificationTokens,
   orders,
   orderHistory,
   orderSequences,

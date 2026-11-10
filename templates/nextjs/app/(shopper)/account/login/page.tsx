@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { shopperCapabilities } from '@/lib/api'
 import { renderNymbal } from '@/lib/render'
 import { signedInTarget } from '@/lib/signed-in-target'
 import { LoginView } from './LoginView'
@@ -16,9 +17,11 @@ interface LoginPageProps {
 export default async function LoginPage({ searchParams }: LoginPageProps) {
   const { redirect } = await searchParams
   const origin = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'
+  // A store that confirms sign-ups offers the way back to a lost confirmation link here, where a stuck shopper lands.
   return (
     <LoginView
       target={signedInTarget(typeof redirect === 'string' ? redirect : null, origin)}
+      confirmsSignUps={(await shopperCapabilities())?.auth?.verification === 'required'}
       serverHtml={renderNymbal('nymbal-login-form').__html}
     />
   )

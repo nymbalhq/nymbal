@@ -35,3 +35,4 @@ export { SortDropdown, type SortDropdownProps } from './wrappers/SortDropdown.js
 export { StockBadge, type StockBadgeProps } from './wrappers/StockBadge.js'
 export { Toast, type ToastProps } from './wrappers/Toast.js'
 export { VariantSelector, type VariantSelectorProps } from './wrappers/VariantSelector.js'
+export { VerifyEmail, type VerifyEmailProps } from './wrappers/VerifyEmail.js'

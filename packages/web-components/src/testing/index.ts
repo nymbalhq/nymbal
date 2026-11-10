@@ -73,9 +73,11 @@ export function createMockClient(): NymbalClient {
     auth: {
       ...authStore,
       login: async () => {},
-      register: async () => {},
+      register: async () => 'signed-in' as const,
       requestPasswordReset: async () => {},
       resetPassword: async () => {},
+      verifyEmail: async () => {},
+      resendVerification: async () => {},
       changePassword: async () => {},
       logout: async () => {},
       refreshToken: async () => {},

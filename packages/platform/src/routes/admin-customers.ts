@@ -1,4 +1,5 @@
 import { NotFoundError, type HttpAdapter, type Customer } from '@nymbalhq/types'
+import type { AuthService } from '../services/auth-service.js'
 import type { OrderService } from '../services/order-service.js'
 import type { CustomerNote, CustomerService } from '../services/customer-service.js'
 import type { Repositories } from '../repositories/index.js'
@@ -21,6 +22,8 @@ export interface CustomerStats {
 export interface RegisterAdminCustomersRoutesDeps {
   order: OrderService
   customer: CustomerService
+  /** Support's rescue of a sign-up whose confirmation mail went missing. */
+  auth: AuthService
   repos: Repositories
   history: HistoryReader
 }
@@ -148,6 +151,33 @@ export function registerAdminCustomersRoutes(
         if (!id) return fail('admin.invalid', 'id required', 400)
         const orders = await store.read((tx) => repos.order.listByCustomer(tx, id))
         return ok(orders)
+      } catch (err) {
+        return renderError(err, ctx.logger)
+      }
+    }),
+  )
+
+  // POST /api/admin/customers/:id/send-verification
+  adapter.registerRoute(
+    'POST',
+    '/api/admin/customers/:id/send-verification',
+    requireRole('admin', async (ctx) => {
+      try {
+        await deps.auth.sendVerification(ctx.params.id!)
+        return ok({ sent: true }, undefined, 202)
+      } catch (err) {
+        return renderError(err, ctx.logger)
+      }
+    }),
+  )
+
+  // POST /api/admin/customers/:id/mark-verified
+  adapter.registerRoute(
+    'POST',
+    '/api/admin/customers/:id/mark-verified',
+    requireRole('admin', async (ctx) => {
+      try {
+        return ok({ customer: await deps.auth.markVerified(ctx.params.id!) })
       } catch (err) {
         return renderError(err, ctx.logger)
       }

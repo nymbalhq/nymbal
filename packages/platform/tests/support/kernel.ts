@@ -57,6 +57,8 @@ export function kernelConfig(dialect: Dialect): NymbalConfig {
         '/api/auth/forgot-password': { requests: 1000, window: '1m', action: 'block' },
         '/api/auth/reset-password': { requests: 1000, window: '1m', action: 'block' },
         '/api/customers/me/password': { requests: 1000, window: '1m', action: 'block' },
+        '/api/auth/verify-email': { requests: 1000, window: '1m', action: 'block' },
+        '/api/auth/resend-verification': { requests: 1000, window: '1m', action: 'block' },
         '/api/checkout': { requests: 1000, window: '1m', action: 'block' },
         '/api/orders/link': { requests: 1000, window: '1m', action: 'block' },
         '/api/reviews': { requests: 1000, window: '1m', action: 'block' },

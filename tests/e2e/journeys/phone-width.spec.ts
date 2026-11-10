@@ -30,7 +30,7 @@ async function measure(
 }
 
 test.describe('Storefront at a phone’s width @phone-width', () => {
-  test('home, the listings, a product, search with and without hits, the empty cart, sign-in, register, forgot and reset password, both alert pages before and after the press, and a missing page are each no wider than the viewport', async ({
+  test('home, the listings, a product, search with and without hits, the empty cart, sign-in, register, forgot and reset password, the email confirmation page, both alert pages before and after the press, and a missing page are each no wider than the viewport', async ({
     page,
     request,
   }) => {
@@ -73,6 +73,10 @@ test.describe('Storefront at a phone’s width @phone-width', () => {
     // Opened with no token, the page says the link is no good and links to the forgot page.
     await measure(page, 'reset-invalid', '/account/reset-password', () =>
       expect(page.getByTestId('reset-invalid')).toBeVisible(),
+    )
+    // Opened with no token, the confirmation page offers to send the link again.
+    await measure(page, 'verify-email', '/account/verify-email', () =>
+      expect(page.getByTestId('resend-email')).toBeVisible(),
     )
     // A token the store never issued: each page shows its button, and the press shows that the link is not valid.
     for (const [name, path] of [

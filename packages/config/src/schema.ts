@@ -407,6 +407,11 @@ const securityFields = z.object({
         .string()
         .regex(/^\d+(ms|s|m|h|d)$/, 'TTL must look like "7d"')
         .default('7d'),
+      /**
+       * Whether a sign-up must follow a mailed link before it signs in. Absent: `required` exactly when the email
+       * adapter delivers (anything but `native`), else `off`.
+       */
+      verification: z.enum(['required', 'off']).optional(),
     })
     .superRefine((auth, ctx) => {
       const access = durationMs(auth.accessTtl)
