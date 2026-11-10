@@ -51,6 +51,9 @@ const TAGS = [
   'nymbal-profile-form',
   'nymbal-address-form',
   'nymbal-address-book',
+  'nymbal-forgot-password-form',
+  'nymbal-reset-password-form',
+  'nymbal-change-password-form',
   // Checkout
   'nymbal-checkout',
   // Catalogue and page elements
@@ -93,6 +96,8 @@ interface State {
   placeOrder?: Phase
   /** What `client.recentlyViewed.list()` answers, or `'fail'` when it rejects. */
   recent?: unknown[] | 'fail'
+  /** The page URL's fragment when the element connects (the reset form's `token=<t>`). */
+  hash?: string
 }
 
 const state = (partial: Partial<State> = {}): State => ({
@@ -138,6 +143,9 @@ function installAccount(client: Record<string, unknown>, s: State): void {
   auth['login'] = signIn
   auth['register'] = signIn
   auth['updateProfile'] = () => answer()
+  auth['requestPasswordReset'] = () => answer()
+  auth['resetPassword'] = signIn
+  auth['changePassword'] = () => answer()
   client['customer'] = {
     addresses: {
       list: async () => {
@@ -314,6 +322,7 @@ async function mount(
   for (const [name, partial] of Object.entries(s.stores)) {
     client[name as StoreName].setState(partial)
   }
+  history.replaceState(null, '', `${location.pathname}${s.hash === undefined ? '' : `#${s.hash}`}`)
   const el = document.createElement(tag)
   for (const [name, value] of Object.entries(s.attrs)) el.setAttribute(name, value)
   for (const child of s.children?.() ?? []) el.appendChild(child)
@@ -433,6 +442,9 @@ const searchResult = fc.record({
 const SORT_KEYS = ['newest', 'price-asc', 'price-desc', 'name-asc']
 
 const PHASES: Phase[] = ['pending', 'failed', 'succeeded']
+
+/** The fragment a reset mail's link opens the reset page with. */
+const RESET_HASH = `token=${'a'.repeat(43)}`
 
 const pageItem = fc.record({
   variantId: word,
@@ -814,6 +826,10 @@ const FIXED: Record<Tag, State[]> = {
     state({ ...signedIn, addresses: 'fail' }),
     ...PHASES.map((phase) => state({ ...signedIn, addresses: [ADDRESS], phase })),
   ],
+  'nymbal-forgot-password-form': formStates(),
+  // Opened with no token, and with one: its form as rendered and submitted once in each phase.
+  'nymbal-reset-password-form': [state(), ...formStates({ hash: RESET_HASH })],
+  'nymbal-change-password-form': formStates(signedIn),
   'nymbal-checkout': [
     ...checkoutStates(),
     ...checkoutStates({
@@ -1181,6 +1197,15 @@ const ARBITRARY: Record<Tag, fc.Arbitrary<State>> = {
       phase: fc.option(fc.constantFrom(...PHASES)),
     })
     .map(({ addresses, phase }) => state({ ...signedIn, addresses, phase })),
+  'nymbal-forgot-password-form': fc
+    .option(fc.constantFrom(...PHASES))
+    .map((phase) => state({ phase })),
+  'nymbal-reset-password-form': fc
+    .record({ phase: fc.option(fc.constantFrom(...PHASES)), withToken: fc.boolean() })
+    .map(({ phase, withToken }) => state({ phase, ...(withToken && { hash: RESET_HASH }) })),
+  'nymbal-change-password-form': fc
+    .option(fc.constantFrom(...PHASES))
+    .map((phase) => state({ ...signedIn, phase })),
   'nymbal-checkout': fc
     .record({
       items: fc.array(cartItem, { maxLength: 3 }),
@@ -1562,6 +1587,13 @@ const INTERFACE: Array<{
     reactName: 'AddressBook',
     events: [{ name: 'nymbal:address-book:changed', prop: 'onChanged' }],
   },
+  { tag: 'nymbal-forgot-password-form', reactName: 'ForgotPasswordForm', events: [] },
+  {
+    tag: 'nymbal-reset-password-form',
+    reactName: 'ResetPasswordForm',
+    events: [{ name: 'nymbal:auth:signed-in', prop: 'onSignedIn' }],
+  },
+  { tag: 'nymbal-change-password-form', reactName: 'ChangePasswordForm', events: [] },
   // Catalogue and page elements
   {
     tag: 'nymbal-recently-viewed',

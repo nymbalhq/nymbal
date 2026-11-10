@@ -62,6 +62,7 @@ const CANDIDATE_BODIES: unknown[] = [
     postalCode: 'N1 1AA',
     country: 'GB',
   },
+  { currentPassword: 'a-current-password', newPassword: 'a-new-password' },
 ]
 
 describe('the guard and the parser over every registered route', () => {

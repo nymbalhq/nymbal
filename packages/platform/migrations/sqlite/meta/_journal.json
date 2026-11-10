@@ -183,6 +183,13 @@
       "when": 1794255124525,
       "tag": "0025_promotions",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1794263648257,
+      "tag": "0026_password_reset_tokens",
+      "breakpoints": true
     }
   ]
 }

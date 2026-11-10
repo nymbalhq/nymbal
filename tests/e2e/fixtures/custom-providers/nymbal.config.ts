@@ -44,6 +44,9 @@ export default {
       '/api/checkout': { requests: 1000, window: '1m', action: 'block' },
       '/api/orders/link': { requests: 1000, window: '1m', action: 'block' },
       '/api/alerts/subscribe': { requests: 1000, window: '1m', action: 'block' },
+      '/api/auth/forgot-password': { requests: 1000, window: '1m', action: 'block' },
+      '/api/auth/reset-password': { requests: 1000, window: '1m', action: 'block' },
+      '/api/customers/me/password': { requests: 1000, window: '1m', action: 'block' },
     },
     botProtection: { mode: 'managed', allowList: [] },
     headers: {

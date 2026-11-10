@@ -7,7 +7,13 @@ import {
   type ResponseEnvelope,
   type RouteOptions,
 } from '@nymbalhq/types'
-import { BUILT_IN_RATE_LIMITS, CHECKOUT_ADDRESS_CEILING, RateLimiter } from './rate-limit.js'
+import {
+  BUILT_IN_RATE_LIMITS,
+  CHECKOUT_ADDRESS_CEILING,
+  LOGIN_ACCOUNT_CEILING,
+  RateLimiter,
+  rateLimitAddress,
+} from './rate-limit.js'
 import type { ShopperAttestation } from './shopper-attestation.js'
 
 export const CSRF_COOKIE = 'nymbal.csrf'
@@ -54,10 +60,16 @@ export interface SecurityGuard {
 }
 
 /**
- * Counts failures only. The address bucket refuses; the account count never does, so failures from elsewhere cannot
- * lock an owner out, and reaching the rule's count logs one warn per window for the operator instead.
+ * Counts failures only. The address bucket refuses at the rule's count; the account count refuses only at
+ * LOGIN_ACCOUNT_CEILING times it, so failures from a few addresses cannot lock an owner out, and reaching the rule's
+ * count logs one warn per window for the operator instead.
  */
 const LOGIN_PATH = '/api/auth/login'
+/** A success on either proves control of the mailbox or the password, so it clears the account's failed logins. */
+const PASSWORD_SET_ROUTES = new Set([
+  'POST /api/auth/reset-password',
+  'PATCH /api/customers/me/password',
+])
 const CHECKOUT_PATH = '/api/checkout'
 const CART_COOKIE = 'nymbal.cart'
 
@@ -95,6 +107,13 @@ function isLogin(ctx: RequestContext): boolean {
   return ctx.method === 'POST' && ctx.path === LOGIN_PATH
 }
 
+/** The lowercased email of the customer a 2xx sign-in envelope answers, or null. */
+function signedInAccount(envelope: ResponseEnvelope): string | null {
+  const email = (envelope.body as { data?: { customer?: { email?: unknown } } } | undefined)?.data
+    ?.customer?.email
+  return typeof email === 'string' && email !== '' ? email.toLowerCase() : null
+}
+
 function isCheckout(ctx: RequestContext): boolean {
   return ctx.method === 'POST' && ctx.path === CHECKOUT_PATH
 }
@@ -113,9 +132,21 @@ export function createSecurityGuard(
   const rateLimiter = new RateLimiter({ ...BUILT_IN_RATE_LIMITS, ...security.rateLimit })
   const { attestation, secureCookies = false } = options
 
-  /** The shopper's address the storefront forward attested, or the request's own; a token that fails is ignored. */
+  /**
+   * The key of the shopper's address the storefront forward attested, or of the request's own; a token that fails is
+   * ignored. `ctx.ip` keeps the full address for the logs.
+   */
   function clientIp(ctx: RequestContext): string {
-    return attestation?.verify(ctx.headers[SHOPPER_ATTESTATION_HEADER]) ?? ctx.ip
+    return rateLimitAddress(attestation?.verify(ctx.headers[SHOPPER_ATTESTATION_HEADER]) ?? ctx.ip)
+  }
+
+  /** The address bucket, then the account's across every address. */
+  function checkLogin(ctx: RequestContext, ip: string) {
+    const address = rateLimiter.full(ctx.path, [ip])
+    if (address && !address.allowed) return address
+    const account = loginAccount(ctx)
+    if (account === null) return address
+    return rateLimiter.full(ctx.path, [`account:${account}`], LOGIN_ACCOUNT_CEILING)
   }
 
   /** The address bucket first: a request it refuses opens no cart bucket. */
@@ -139,7 +170,7 @@ export function createSecurityGuard(
     admit(ctx, options = {}) {
       const ip = clientIp(ctx)
       const decision = isLogin(ctx)
-        ? rateLimiter.full(ctx.path, [ip])
+        ? checkLogin(ctx, ip)
         : isCheckout(ctx)
           ? checkCheckout(ctx, ip)
           : rateLimiter.check(ip, ctx.path, ctx.headers)
@@ -169,13 +200,32 @@ export function createSecurityGuard(
           rateLimiter.clear(ctx.path, accountKey)
         } else {
           const [, failures] = rateLimiter.hit(ctx.path, [clientIp(ctx), ...accountKey])
-          if (failures !== undefined && failures === rateLimiter.requests(ctx.path)) {
+          const limit = rateLimiter.requests(ctx.path)
+          if (failures !== undefined && failures === limit) {
             ctx.logger.warn(
               { account, failures, path: ctx.path },
-              'Failed logins for one account reached the login limit; it is not locked, each address is',
+              `Failed logins for one account reached the login limit; the account is refused only at ${LOGIN_ACCOUNT_CEILING} times it`,
+            )
+          }
+          if (
+            failures !== undefined &&
+            limit !== undefined &&
+            failures === limit * LOGIN_ACCOUNT_CEILING
+          ) {
+            ctx.logger.warn(
+              { account, failures, path: ctx.path },
+              'Failed logins for one account reached the account ceiling; every login for it is refused until the window ends or a password reset',
             )
           }
         }
+      } else if (
+        PASSWORD_SET_ROUTES.has(`${ctx.method} ${ctx.path}`) &&
+        envelope.status >= 200 &&
+        envelope.status < 300
+      ) {
+        // The account bucket lives under the login rule's pattern; the address bucket is left, as at a login success.
+        const account = signedInAccount(envelope)
+        if (account !== null) rateLimiter.clear(LOGIN_PATH, [`account:${account}`])
       }
       return applyHeaders(envelope)
     },

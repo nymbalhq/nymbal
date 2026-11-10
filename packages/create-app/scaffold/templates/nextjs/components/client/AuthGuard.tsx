@@ -5,7 +5,12 @@ import { useRouter, usePathname } from 'next/navigation'
 import { useAuth } from '@nymbalhq/react'
 import { restoreSession } from '@/lib/client'
 
-export const PUBLIC_AUTH_PATHS = ['/account/login', '/account/register']
+export const PUBLIC_AUTH_PATHS = [
+  '/account/login',
+  '/account/register',
+  '/account/forgot-password',
+  '/account/reset-password',
+]
 
 export function AuthGuard({ children }: { children: ReactNode }) {
   const { isAuthenticated, loading } = useAuth()

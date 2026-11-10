@@ -47,13 +47,16 @@ export function kernelConfig(dialect: Dialect): NymbalConfig {
     security: {
       adapter: 'middleware',
       botProtection: { mode: 'off' },
-      // The harness overrides the built-in login and register limits, so suites that log in many times from
-      // 127.0.0.1 are not refused. Tests of the defaults remove these keys (`withoutAuthRateRules`). Checkout, the
+      // The harness overrides the built-in login, register and password limits, so suites that call them many times
+      // from 127.0.0.1 are not refused. Tests of the defaults remove these keys (`withoutAuthRateRules`). Checkout, the
       // order link request and review submission are raised for the same reason: their built-in limits are proven in
       // the http package.
       rateLimit: {
         '/api/auth/login': { requests: 1000, window: '1m', action: 'block' },
         '/api/auth/register': { requests: 1000, window: '1m', action: 'block' },
+        '/api/auth/forgot-password': { requests: 1000, window: '1m', action: 'block' },
+        '/api/auth/reset-password': { requests: 1000, window: '1m', action: 'block' },
+        '/api/customers/me/password': { requests: 1000, window: '1m', action: 'block' },
         '/api/checkout': { requests: 1000, window: '1m', action: 'block' },
         '/api/orders/link': { requests: 1000, window: '1m', action: 'block' },
         '/api/reviews': { requests: 1000, window: '1m', action: 'block' },
@@ -74,11 +77,14 @@ export function kernelConfig(dialect: Dialect): NymbalConfig {
   })
 }
 
-/** The kernel config with no user rule for login or register, so the built-in defaults apply. */
+/** The kernel config with no user rule for login, register or the password routes, so the built-in defaults apply. */
 export function withoutAuthRateRules(config: NymbalConfig): NymbalConfig {
   const rateLimit = { ...config.security.rateLimit }
   delete rateLimit['/api/auth/login']
   delete rateLimit['/api/auth/register']
+  delete rateLimit['/api/auth/forgot-password']
+  delete rateLimit['/api/auth/reset-password']
+  delete rateLimit['/api/customers/me/password']
   return { ...config, security: { ...config.security, rateLimit } }
 }
 

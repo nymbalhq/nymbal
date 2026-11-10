@@ -14,6 +14,7 @@
     "packages/platform/src/repositories/email-suppression.ts": 51.43,
     "packages/platform/src/repositories/order-access-key.ts": 85.37,
     "packages/platform/src/repositories/order-sequence.ts": 93.33,
+    "packages/platform/src/repositories/password-reset-token.ts": 77.97,
     "packages/platform/src/repositories/processed-event.ts": 65.31,
     "packages/platform/src/repositories/proposal.ts": 69.08,
     "packages/platform/src/repositories/report-rollup.ts": 63.04,

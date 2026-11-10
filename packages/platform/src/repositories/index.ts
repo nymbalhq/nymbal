@@ -18,6 +18,10 @@ import {
   type OrderAccessKeyRepository,
 } from './order-access-key.js'
 import {
+  createPasswordResetTokenRepository,
+  type PasswordResetTokenRepository,
+} from './password-reset-token.js'
+import {
   createInventoryReservationRepository,
   type InventoryReservationRepository,
 } from './inventory-reservation.js'
@@ -83,6 +87,7 @@ export interface Repositories {
   orderRefund: OrderRefundRepository
   orderSequence: OrderSequenceRepository
   orderAccessKey: OrderAccessKeyRepository
+  passwordResetToken: PasswordResetTokenRepository
   inventoryReservation: InventoryReservationRepository
   stockAdjustment: StockAdjustmentRepository
   review: ReviewRepository
@@ -116,6 +121,7 @@ export function buildRepositories(
     orderRefund: createOrderRefundRepository(commandStore),
     orderSequence: createOrderSequenceRepository(commandStore),
     orderAccessKey: createOrderAccessKeyRepository(commandStore),
+    passwordResetToken: createPasswordResetTokenRepository(commandStore),
     inventoryReservation: createInventoryReservationRepository(commandStore),
     stockAdjustment: createStockAdjustmentRepository(commandStore),
     review: createReviewRepository(commandStore),

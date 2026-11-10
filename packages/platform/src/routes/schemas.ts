@@ -218,6 +218,27 @@ export const routeSchemas: Record<string, RouteSchema> = {
     description: 'Revoke the refresh token and clear its cookie.',
     body: optionalRefresh,
   },
+  'POST /api/auth/forgot-password': {
+    name: 'auth.forgotPassword',
+    tool: false,
+    command: 'customer.requestPasswordReset',
+    description: 'Mail a password reset link to the account with this email, if there is one.',
+    body: z.object({ email: z.string().min(1) }),
+  },
+  'POST /api/auth/reset-password': {
+    name: 'auth.resetPassword',
+    tool: false,
+    command: 'customer.resetPassword',
+    description: "Set a password with a reset link's token and sign the customer in.",
+    body: z.object({ token: z.string().min(1), password: z.string().min(1) }),
+  },
+  'PATCH /api/customers/me/password': {
+    name: 'customers.changePassword',
+    tool: false,
+    command: 'customer.changePassword',
+    description: "Change the signed-in customer's password, ending every other session.",
+    body: z.object({ currentPassword: z.string().min(1), newPassword: z.string().min(1) }),
+  },
 
   // Store
   'GET /api/capabilities': {

@@ -1,3 +1,4 @@
+import { isIPv6 } from 'node:net'
 import { ORDER_EMAIL_HEADER, type RateLimitAction } from '@nymbalhq/types'
 
 export interface ParsedRule {
@@ -28,6 +29,10 @@ type RateLimitRules = Record<
 export const BUILT_IN_RATE_LIMITS: RateLimitRules = {
   '/api/auth/login': { requests: 10, window: '15m', action: 'block' },
   '/api/auth/register': { requests: 10, window: '1h', action: 'block' },
+  // Each match mails a reset link, at most one live per account.
+  '/api/auth/forgot-password': { requests: 5, window: '1h', action: 'block' },
+  '/api/auth/reset-password': { requests: 10, window: '15m', action: 'block' },
+  '/api/customers/me/password': { requests: 10, window: '15m', action: 'block' },
   // A record and a list per page view: 300 page views a minute, so shoppers behind one NAT keep their views.
   '/api/recently-viewed': { requests: 600, window: '1m', action: 'block' },
   // Each accepted subscribe mails a confirmation: the bound on how much mail one IP can make the store send.
@@ -62,6 +67,48 @@ const PRUNE_THRESHOLD = 1024
  * other's, and per address at this multiple of it, since carts are free to mint.
  */
 export const CHECKOUT_ADDRESS_CEILING = 10
+
+/**
+ * Failed logins for one account, from any address, are refused at this multiple of the login rule's count: at the
+ * rule's own count ten requests from anywhere would lock any owner out, while here a stranger needs ten addresses each
+ * window to hold the lock, and the owner's reset link clears it.
+ */
+export const LOGIN_ACCOUNT_CEILING = 10
+
+/**
+ * The key an address counts under: an IPv6 address by its /64, the block one host is given, in one spelling; an
+ * IPv4-mapped address by its IPv4 address, since its /64 would hold all of IPv4. Anything else comes back as given.
+ */
+export function rateLimitAddress(ip: string): string {
+  const address = ip.split('%')[0] ?? ip
+  if (!isIPv6(address)) return ip
+  const groups = ipv6Groups(address)
+  if (groups.slice(0, 5).every((g) => g === 0) && groups[5] === 0xffff) {
+    const [hi = 0, lo = 0] = groups.slice(6)
+    return `${hi >> 8}.${hi & 0xff}.${lo >> 8}.${lo & 0xff}`
+  }
+  return `${groups
+    .slice(0, 4)
+    .map((g) => g.toString(16))
+    .join(':')}::/64`
+}
+
+/** The eight 16-bit groups of a valid IPv6 address, a dotted IPv4 tail read as the last two. */
+function ipv6Groups(address: string): number[] {
+  const parse = (part: string): number[] => {
+    if (part === '') return []
+    return part.split(':').flatMap((group) => {
+      if (!group.includes('.')) return [parseInt(group, 16)]
+      const [a = 0, b = 0, c = 0, d = 0] = group.split('.').map(Number)
+      return [(a << 8) | b, (c << 8) | d]
+    })
+  }
+  const [head = '', tail] = address.split('::')
+  if (tail === undefined) return parse(head)
+  const before = parse(head)
+  const after = parse(tail)
+  return [...before, ...Array<number>(8 - before.length - after.length).fill(0), ...after]
+}
 
 export class RateLimiter {
   readonly #rules: ParsedRule[]
@@ -103,16 +150,17 @@ export class RateLimiter {
   }
 
   /**
-   * For a route that counts failures only: refuses when any of `keys` already holds the rule's full count, without
-   * counting this request. `hit` and `clear` record the outcome once the handler has answered.
+   * For a route that counts failures only: refuses when any of `keys` already holds the rule's full count, times
+   * `scale` for a key that pools several, without counting this request. `hit` and `clear` record the outcome once the
+   * handler has answered.
    */
-  full(path: string, keys: string[]): RateLimitDecision | null {
+  full(path: string, keys: string[], scale = 1): RateLimitDecision | null {
     const rule = this.#ruleFor(path)
     if (!rule) return null
     const now = Date.now()
     for (const key of keys) {
       const bucket = this.#buckets.get(`${rule.pattern}|${key}`)
-      if (bucket && bucket.resetAt > now && bucket.count >= rule.requests) {
+      if (bucket && bucket.resetAt > now && bucket.count >= rule.requests * scale) {
         return { allowed: false, action: rule.action, retryAfter: retryAfter(bucket, now) }
       }
     }

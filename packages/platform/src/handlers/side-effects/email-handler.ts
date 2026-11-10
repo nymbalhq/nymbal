@@ -1,12 +1,15 @@
+import { randomBytes } from 'node:crypto'
 import { v7 as uuidv7 } from 'uuid'
 import {
   EVT_CART_ABANDONED,
   EVT_CUSTOMER_CREATED,
+  EVT_CUSTOMER_PASSWORD_RESET_REQUESTED,
   EVT_ORDER_CONFIRMATION_RESEND_REQUESTED,
   EVT_ORDER_PAID,
   EVT_ORDER_SHIPPED,
   type CartAbandonedV1Payload,
   type CustomerCreatedV1Payload,
+  type CustomerPasswordResetRequestedV1Payload,
   type EmailAdapter,
   type EventBusAdapter,
   type EventHandler,
@@ -19,9 +22,12 @@ import {
 import { formatMoney } from '../../money.js'
 import { mintOrderKey } from '../../order-access-key.js'
 import { trackingUrl } from '../../tracking-url.js'
+import { hashResetToken, PASSWORD_RESET_TTL_MS } from '../../services/auth-service.js'
 import { withIdempotency } from '../idempotency.js'
+import type { CustomerRepository } from '../../repositories/customer.js'
 import type { OrderAccessKeyRepository } from '../../repositories/order-access-key.js'
 import type { OrderRepository } from '../../repositories/order.js'
+import type { PasswordResetTokenRepository } from '../../repositories/password-reset-token.js'
 import type { ProcessedEventRepository } from '../../repositories/processed-event.js'
 
 /** The handler name of the order-placed email's records: one per order, whatever number of order.paid it gets. */
@@ -34,6 +40,8 @@ export interface RegisterEmailHandlerDeps {
   processedEventRepo: ProcessedEventRepository
   orderRepo: OrderRepository
   orderAccessKeyRepo: OrderAccessKeyRepository
+  customerRepo: CustomerRepository
+  passwordResetTokenRepo: PasswordResetTokenRepository
   storeName: string
   /** The storefront's URL, with no trailing `/`; with none, the order-placed email links nowhere and mints no key. */
   storeUrl?: string
@@ -71,6 +79,7 @@ function itemsList(order: Order): string {
 
 export async function registerEmailHandler(deps: RegisterEmailHandlerDeps): Promise<void> {
   const { eventBus, email, logger, processedEventRepo, orderRepo, orderAccessKeyRepo } = deps
+  const { customerRepo, passwordResetTokenRepo: resetRepo } = deps
   const { storeName, storeUrl } = deps
   const keyLifetimeMs = deps.keyLifetimeMs ?? DEFAULT_EMAIL_KEY_LIFETIME_MS
 
@@ -196,6 +205,56 @@ export async function registerEmailHandler(deps: RegisterEmailHandlerDeps): Prom
     })
   }
 
+  /**
+   * Mints the link's token here, so only its hash is stored and no event holds it. One live link per account: a
+   * request while one is live sends nothing. A send that fails takes its link back, so the relay's retry mints anew.
+   * Reset mail goes to a suppressed address too: the shopper asked for it, as for a receipt.
+   */
+  const onPasswordResetRequested: EventHandler<CustomerPasswordResetRequestedV1Payload> = async (
+    event,
+  ) => {
+    const { customerId } = event.payload
+    const customer = await customerRepo.store.read((tx) => customerRepo.findById(tx, customerId))
+    if (customer === null || !canReceiveMail(customer.email)) return
+    if (storeUrl === undefined) {
+      logger.warn(
+        { customerId, eventId: event.id },
+        'email handler: store.url is not set, so no password reset link can be mailed',
+      )
+      return
+    }
+    const now = new Date()
+    const token = randomBytes(32).toString('base64url')
+    const tokenHash = hashResetToken(token)
+    const minted = await resetRepo.store.transaction(async (tx) => {
+      if ((await resetRepo.findLiveForCustomer(tx, customerId, now)) !== null) return false
+      await resetRepo.purgeExpired(tx, now)
+      await resetRepo.insert(tx, {
+        id: uuidv7(),
+        customerId,
+        tokenHash,
+        expiresAt: new Date(now.getTime() + PASSWORD_RESET_TTL_MS),
+        createdAt: now,
+      })
+      return true
+    })
+    if (!minted) return
+    try {
+      await email.sendTransactional({
+        template: 'password-reset',
+        to: customer.email,
+        vars: {
+          storeName,
+          resetUrl: `${storeUrl}/account/reset-password#token=${token}`,
+          expiresMinutes: PASSWORD_RESET_TTL_MS / 60_000,
+        },
+      })
+    } catch (err) {
+      await resetRepo.store.transaction((tx) => resetRepo.consume(tx, tokenHash, now))
+      throw err
+    }
+  }
+
   const onCartAbandoned: EventHandler<CartAbandonedV1Payload> = async (event) => {
     logger.debug({ cartId: event.payload.cartId }, 'email handler: cart abandoned (stub)')
   }
@@ -227,6 +286,14 @@ export async function registerEmailHandler(deps: RegisterEmailHandlerDeps): Prom
       logger,
     }),
     { name: 'email-customer-created' },
+  )
+  await eventBus.subscribe(
+    EVT_CUSTOMER_PASSWORD_RESET_REQUESTED,
+    withIdempotency('email:password-reset', onPasswordResetRequested as EventHandler, {
+      repo: processedEventRepo,
+      logger,
+    }),
+    { name: 'email-password-reset' },
   )
   await eventBus.subscribe(
     EVT_CART_ABANDONED,

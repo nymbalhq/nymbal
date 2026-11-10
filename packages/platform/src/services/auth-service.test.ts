@@ -1,6 +1,13 @@
+import { randomUUID } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
 import fc from 'fast-check'
-import { AuthError, EVT_CUSTOMER_CREATED, ValidationError } from '@nymbalhq/types'
+import {
+  AuthError,
+  EVT_CUSTOMER_CREATED,
+  EVT_CUSTOMER_PASSWORD_RESET_REQUESTED,
+  EVT_CUSTOMER_UPDATED,
+  ValidationError,
+} from '@nymbalhq/types'
 import { SignJWT, decodeJwt } from 'jose'
 import { InMemoryDocumentStore } from '../document-store/in-memory.js'
 import { InProcessEventBus } from '../event-bus/in-process.js'
@@ -9,7 +16,7 @@ import { runMigrations } from '../db/migrate.js'
 import { buildRepositories } from '../repositories/index.js'
 import { createEventPublisher, createRelay } from '../index.js'
 import { wirePublisher } from '../tests/publisher.js'
-import { createAuthService } from './auth-service.js'
+import { createAuthService, hashResetToken } from './auth-service.js'
 import { createLogger } from '../logger.js'
 import { runAsActor } from '../audit/actor.js'
 import { auditedCommand } from '../audit/audit.js'
@@ -300,16 +307,14 @@ describe('AuthService', () => {
     const units = Object.keys(unitMs) as Array<keyof typeof unitMs>
     // A refresh token must outlive the second it is minted in to be presented by the next run.
     const ttl = (minMs: number) =>
-      fc
-        .constantFrom(...units)
-        .chain((unit) =>
-          fc
-            .integer({
-              min: Math.max(1, Math.ceil(minMs / unitMs[unit])),
-              max: unit === 'ms' ? 1_000_000 : 1000,
-            })
-            .map((qty) => ({ text: `${qty}${unit}`, ms: qty * unitMs[unit] })),
-        )
+      fc.constantFrom(...units).chain((unit) =>
+        fc
+          .integer({
+            min: Math.max(1, Math.ceil(minMs / unitMs[unit])),
+            max: unit === 'ms' ? 1_000_000 : 1000,
+          })
+          .map((qty) => ({ text: `${qty}${unit}`, ms: qty * unitMs[unit] })),
+      )
     // A whole second, so exp − iat is the ttl's whole seconds with nothing lost to truncation.
     vi.useFakeTimers({ toFake: ['Date'], now: 1_800_000_000_000 })
     try {
@@ -512,6 +517,243 @@ describe('AuthService: audit notes', () => {
     expect(await noted(commandStore)).toEqual([
       { actor: admin, command: 'customer.register', subjects: [], outcome: 'refused', status: 400 },
     ])
+    await commandStore.close()
+  })
+})
+
+// A reset link is a row holding the token's hash; the mail handler writes it, so these write it directly.
+async function resetLink(
+  { repos, commandStore }: Awaited<ReturnType<typeof setup>>,
+  customerId: string,
+  expiresAt = new Date(Date.now() + 15 * 60_000),
+): Promise<string> {
+  const token = randomUUID()
+  await commandStore.transaction((tx) =>
+    repos.passwordResetToken.insert(tx, {
+      id: randomUUID(),
+      customerId,
+      tokenHash: hashResetToken(token),
+      expiresAt,
+      createdAt: new Date(),
+    }),
+  )
+  return token
+}
+
+const refreshes = (auth: Awaited<ReturnType<typeof setup>>['auth'], token: string) =>
+  auth.refresh(token).then(
+    () => true,
+    () => false,
+  )
+const signsIn = (auth: Awaited<ReturnType<typeof setup>>['auth'], email: string, password: string) =>
+  auth.login(email, password).then(
+    () => true,
+    () => false,
+  )
+
+const LINK_INVALID = {
+  status: 400,
+  code: 'auth.reset_link_invalid',
+  message: 'This reset link is no longer valid. Ask for a new one.',
+}
+const CURRENT_INVALID = {
+  status: 400,
+  code: 'auth.current_password_invalid',
+  message: 'The current password is not correct.',
+}
+
+describe('AuthService: password reset and change', () => {
+  it('hashResetToken is the hex SHA-256 of the token', () => {
+    expect(hashResetToken('abc')).toBe(
+      'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
+    )
+  })
+
+  it('two access tokens minted in one second for one customer differ by their jti', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.now() })
+    try {
+      const { auth, commandStore } = await setup()
+      const { tokens } = await auth.register({ email: 'twice@test.com', password: 'password123' })
+      const again = await auth.login('twice@test.com', 'password123')
+      const [first, second] = [decodeJwt(tokens.accessToken), decodeJwt(again.tokens.accessToken)]
+      expect(first.iat).toBe(second.iat)
+      expect(first.jti).toEqual(expect.any(String))
+      expect(first.jti).not.toBe(second.jti)
+      await commandStore.close()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('requestPasswordReset publishes one request naming the customer, whatever the case of the address, and nothing for an unknown address; each request is noted', async () => {
+    const ctx = await setup()
+    const { auth, eventBus, commandStore } = ctx
+    const { customer } = await auth.register({ email: 'forgot@test.com', password: 'password123' })
+    const requested: unknown[] = []
+    await eventBus.subscribe(EVT_CUSTOMER_PASSWORD_RESET_REQUESTED, (e) => {
+      requested.push(e.payload)
+    })
+    const guest = { kind: 'guest', id: 'anonymous' } as const
+    await runAsActor(guest, () => auth.requestPasswordReset('FORGOT@Test.com'))
+    await runAsActor(guest, () => auth.requestPasswordReset('ghost@test.com'))
+    expect(requested).toEqual([{ customerId: customer.id }])
+    expect(await noted(commandStore)).toEqual([
+      {
+        actor: guest,
+        command: 'customer.requestPasswordReset',
+        subjects: [{ type: 'customer', id: customer.id }],
+        outcome: 'applied',
+        status: null,
+      },
+    ])
+    await commandStore.close()
+  })
+
+  it('resetPassword with a live link sets the password, clears the reset flag, takes away every link, ends every earlier session, publishes the change and signs in; the link then answers reset_link_invalid', async () => {
+    const ctx = await setup()
+    const { auth, repos, eventBus, commandStore } = ctx
+    const imported = await auth.importCustomer({ email: 'moved@test.com' })
+    const { customer, tokens: first } = await auth.register({
+      email: 'reset@test.com',
+      password: 'oldpassword1',
+    })
+    const second = (await auth.login('reset@test.com', 'oldpassword1')).tokens
+    const token = await resetLink(ctx, customer.id)
+    const spare = await resetLink(ctx, customer.id)
+    const otherLink = await resetLink(ctx, imported.id)
+    const updated: Array<{ customerId: string; customer: { id: string } }> = []
+    await eventBus.subscribe(EVT_CUSTOMER_UPDATED, (e) => {
+      updated.push(e.payload as { customerId: string; customer: { id: string } })
+    })
+
+    const guest = { kind: 'guest', id: 'anonymous' } as const
+    const result = await runAsActor(guest, () => auth.resetPassword(token, 'newpassword1'))
+
+    expect(result.customer).toMatchObject({ id: customer.id, email: 'reset@test.com' })
+    expect(result.customer).not.toHaveProperty('passwordHash')
+    expect((await auth.verifyAccessToken(result.tokens.accessToken)).sub).toBe(customer.id)
+    expect(await refreshes(auth, first.refreshToken)).toBe(false)
+    expect(await refreshes(auth, second.refreshToken)).toBe(false)
+    expect(await refreshes(auth, result.tokens.refreshToken)).toBe(true)
+    expect(await signsIn(auth, 'reset@test.com', 'oldpassword1')).toBe(false)
+    expect(await signsIn(auth, 'reset@test.com', 'newpassword1')).toBe(true)
+    expect(updated.map((p) => [p.customerId, p.customer.id])).toEqual([
+      [customer.id, customer.id],
+    ])
+    const now = new Date()
+    expect(
+      await commandStore.read((tx) => repos.passwordResetToken.findLiveForCustomer(tx, customer.id, now)),
+    ).toBeNull()
+    expect(
+      await commandStore.read((tx) => repos.passwordResetToken.findLiveForCustomer(tx, imported.id, now)),
+    ).not.toBeNull()
+    for (const used of [token, spare]) {
+      await expect(auth.resetPassword(used, 'thirdpassword')).rejects.toMatchObject(LINK_INVALID)
+    }
+    expect(await signsIn(auth, 'reset@test.com', 'newpassword1')).toBe(true)
+    expect(
+      (await noted(commandStore)).filter((e) => e.command === 'customer.resetPassword'),
+    ).toEqual([
+      {
+        actor: guest,
+        command: 'customer.resetPassword',
+        subjects: [{ type: 'customer', id: customer.id }],
+        outcome: 'applied',
+        status: null,
+      },
+    ])
+
+    // An imported customer has no password until a link sets one, and then needs no reset.
+    expect(await signsIn(auth, 'moved@test.com', 'IMPORTED_NO_PASSWORD')).toBe(false)
+    await auth.resetPassword(otherLink, 'movedpassword')
+    const moved = await commandStore.read((tx) => repos.customer.findById(tx, imported.id))
+    expect(moved?.requiresPasswordReset).toBe(false)
+    expect(await signsIn(auth, 'moved@test.com', 'movedpassword')).toBe(true)
+    await commandStore.close()
+  })
+
+  it('resetPassword refuses an unknown or expired link with one answer, and a short password before the link is used, leaving the hash and the link as they were', async () => {
+    const ctx = await setup()
+    const { auth, repos, commandStore } = ctx
+    const { customer } = await auth.register({ email: 'keep@test.com', password: 'oldpassword1' })
+    const expired = await resetLink(ctx, customer.id, new Date(Date.now() - 1))
+    const token = await resetLink(ctx, customer.id)
+    const hash = async () =>
+      (await commandStore.read((tx) => repos.customer.findById(tx, customer.id)))?.passwordHash
+
+    const before = await hash()
+    for (const t of [expired, randomUUID()]) {
+      await expect(auth.resetPassword(t, 'newpassword1')).rejects.toMatchObject(LINK_INVALID)
+    }
+    await expect(auth.resetPassword(token, '1234567')).rejects.toThrow(ValidationError)
+    expect(await hash()).toBe(before)
+
+    // A link another reset consumed between the read and the write is refused the same way.
+    vi.spyOn(repos.passwordResetToken, 'consume').mockResolvedValueOnce(null)
+    await expect(auth.resetPassword(token, 'newpassword1')).rejects.toMatchObject(LINK_INVALID)
+    expect(await hash()).toBe(before)
+
+    await auth.resetPassword(token, '12345678')
+    expect(await signsIn(auth, 'keep@test.com', '12345678')).toBe(true)
+    await commandStore.close()
+  })
+
+  it('changePassword with the current password sets the new one, ends every other session and starts a fresh one', async () => {
+    const { auth, eventBus, commandStore } = await setup()
+    const { customer, tokens: first } = await auth.register({
+      email: 'change@test.com',
+      password: 'oldpassword1',
+    })
+    const other = await auth.register({ email: 'other@test.com', password: 'otherpassword' })
+    const second = (await auth.login('change@test.com', 'oldpassword1')).tokens
+    const updated: string[] = []
+    await eventBus.subscribe(EVT_CUSTOMER_UPDATED, (e) => {
+      updated.push((e.payload as { customerId: string }).customerId)
+    })
+    const self = { kind: 'customer', id: customer.id } as const
+    const result = await runAsActor(self, () =>
+      auth.changePassword(customer.id, 'oldpassword1', '12345678'),
+    )
+
+    expect(result.customer).toMatchObject({ id: customer.id, email: 'change@test.com' })
+    expect(result.customer).not.toHaveProperty('passwordHash')
+    expect((await auth.verifyAccessToken(result.tokens.accessToken)).sub).toBe(customer.id)
+    expect(await refreshes(auth, first.refreshToken)).toBe(false)
+    expect(await refreshes(auth, second.refreshToken)).toBe(false)
+    expect(await refreshes(auth, result.tokens.refreshToken)).toBe(true)
+    expect(await refreshes(auth, other.tokens.refreshToken)).toBe(true)
+    expect(await signsIn(auth, 'change@test.com', 'oldpassword1')).toBe(false)
+    expect(await signsIn(auth, 'change@test.com', '12345678')).toBe(true)
+    expect(updated).toEqual([customer.id])
+    expect(await noted(commandStore)).toEqual([
+      {
+        actor: self,
+        command: 'customer.changePassword',
+        subjects: [{ type: 'customer', id: customer.id }],
+        outcome: 'applied',
+        status: null,
+      },
+    ])
+    await commandStore.close()
+  })
+
+  it('changePassword refuses a wrong current password, an unknown customer and a short new password, and changes nothing', async () => {
+    const { auth, commandStore } = await setup()
+    const { customer, tokens } = await auth.register({
+      email: 'refused@test.com',
+      password: 'oldpassword1',
+    })
+    await expect(
+      auth.changePassword(customer.id, 'wrongpassword', 'newpassword1'),
+    ).rejects.toMatchObject(CURRENT_INVALID)
+    await expect(
+      auth.changePassword(randomUUID(), 'oldpassword1', 'newpassword1'),
+    ).rejects.toMatchObject(CURRENT_INVALID)
+    await expect(auth.changePassword(customer.id, 'oldpassword1', '1234567')).rejects.toThrow(
+      ValidationError,
+    )
+    expect(await signsIn(auth, 'refused@test.com', 'oldpassword1')).toBe(true)
+    expect(await refreshes(auth, tokens.refreshToken)).toBe(true)
     await commandStore.close()
   })
 })

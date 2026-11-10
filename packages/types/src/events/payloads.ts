@@ -188,6 +188,10 @@ export interface CustomerUpdatedV1Payload {
 export interface CustomerDeletedV1Payload {
   customerId: string
 }
+/** A shopper asked for a password reset link; the email handler mints the link's token when it sends, so none is here. */
+export interface CustomerPasswordResetRequestedV1Payload {
+  customerId: string
+}
 
 /** A visitor's views now belong to the customer who signed in carrying its cookie. */
 export interface VisitorMergedV1Payload {

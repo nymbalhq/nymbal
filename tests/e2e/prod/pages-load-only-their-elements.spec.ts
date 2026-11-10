@@ -91,6 +91,9 @@ const NOT_ON_HOME = [
   'nymbal-profile-form',
   'nymbal-address-form',
   'nymbal-address-book',
+  'nymbal-forgot-password-form',
+  'nymbal-reset-password-form',
+  'nymbal-change-password-form',
 ]
 
 interface Elements {

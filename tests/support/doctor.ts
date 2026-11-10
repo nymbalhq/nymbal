@@ -182,9 +182,10 @@ function hasPackage(slot: Slot, provider: string): boolean {
  * commerce slot, `ai host` (where the assistant's requests go; these configs keep `slot ai` up, and a down `slot ai`
  * has no `ai host` line), `slot security` (with `package security` when `security.adapter` is not `middleware`),
  * `primitive <name>` per primitive, `events` (the event log's dead and retrying events), `agents` (how ready the agent
- * surfaces are), `trust proxy` (the proxy list, and client-address header, the server reads client addresses through) and
- * `origin lock` (whether requests must carry the CDN's secret, and whether the zone sends it). A slot is named as its
- * folder is (`document-store`), never by its config key.
+ * surfaces are), `trust proxy` (the proxy list, and client-address header, the server reads client addresses through),
+ * `origin lock` (whether requests must carry the CDN's secret, and whether the zone sends it) and `access token
+ * lifetime` (whether an https store's access tokens outlive 15 minutes). A slot is named as its folder is
+ * (`document-store`), never by its config key.
  */
 export function expectedCheckNames(config: NymbalConfig): string[] {
   const names = ['config', 'command store', 'migrations', 'events', 'agents']
@@ -205,7 +206,7 @@ export function expectedCheckNames(config: NymbalConfig): string[] {
     if (provider !== undefined && hasPackage(primitive, provider))
       names.push(`package ${slotFolder(primitive)}`)
   }
-  names.push('trust proxy', 'origin lock')
+  names.push('trust proxy', 'origin lock', 'access token lifetime')
   return names.sort()
 }
 

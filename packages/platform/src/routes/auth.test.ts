@@ -113,6 +113,9 @@ function makeAuthService(overrides?: Partial<AuthService>): AuthService {
       .fn()
       .mockResolvedValue({ sub: 'cust-1', email: 'test@example.com', roles: ['customer'] }),
     importCustomer: vi.fn().mockResolvedValue(testCustomer),
+    requestPasswordReset: vi.fn().mockResolvedValue(undefined),
+    resetPassword: vi.fn().mockResolvedValue({ customer: testCustomer, tokens: testTokens }),
+    changePassword: vi.fn().mockResolvedValue({ customer: testCustomer, tokens: testTokens }),
     ...overrides,
   }
 }

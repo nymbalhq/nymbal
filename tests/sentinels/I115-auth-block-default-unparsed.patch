@@ -1,15 +1,15 @@
 # id: I115
 # kind: injected
 # defect: security.auth falls back to .default({}) instead of .prefault({}), so a config that leaves the block out gets an unparsed {} with no JWT secret and no access or refresh TTL
-# where: packages/config/src/schema.ts:326
+# where: packages/config/src/schema.ts:430
 # killed-by: packages/config/src/block-defaults.test.ts (with every such block omitted the store keeps today's values; parsing with blocks omitted equals parsing them {})
 # suite: pnpm vitest run --project config packages/config/src/block-defaults.test.ts
 diff --git a/packages/config/src/schema.ts b/packages/config/src/schema.ts
 --- a/packages/config/src/schema.ts
 +++ b/packages/config/src/schema.ts
-@@ -323,7 +323,7 @@
-         .regex(/^\d+(ms|s|m|h|d)$/, 'TTL must look like "7d"')
-         .default('7d'),
+@@ -427,7 +427,7 @@
+         })
+       }
      })
 -    .prefault({}),
 +    .default({}),

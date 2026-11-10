@@ -37,7 +37,7 @@
     "packages/platform/src/repositories/stock-adjustment.ts": 80.95,
     "packages/platform/src/repositories/variant.ts": 54.39,
     "packages/platform/src/services/alert-token.ts": 100,
-    "packages/platform/src/services/auth-service.ts": 63.3,
+    "packages/platform/src/services/auth-service.ts": 69.77,
     "packages/platform/src/services/cart-service.ts": 96.54,
     "packages/platform/src/services/category-service.ts": 86.89,
     "packages/platform/src/services/checkout-service.ts": 78.32,

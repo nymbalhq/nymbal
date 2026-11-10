@@ -33,6 +33,8 @@ export default defineConfig({
       'packages/platform/tests/integration/audit-*.test.ts',
       'packages/platform/tests/integration/report-rollups*.test.ts',
       'packages/platform/tests/integration/admin-reports*.test.ts',
+      'packages/platform/tests/integration/password-*.test.ts',
+      'packages/platform/tests/integration/login-account-ceiling.test.ts',
       'packages/platform/src/events/*.test.ts',
       'packages/platform/src/services/proposal-service.test.ts',
       // The assistant's boundary: what its loop and the tool surface refuse, mask and keep for a person. The golden set's

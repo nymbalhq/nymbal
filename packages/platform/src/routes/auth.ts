@@ -1,14 +1,16 @@
 import {
   AuthError,
+  type Customer,
   type HttpAdapter,
   type RequestContext,
   type ResponseEnvelope,
   type ResponseCookie,
 } from '@nymbalhq/types'
-import { parseDurationToMs, type AuthService } from '../services/auth-service.js'
+import { parseDurationToMs, type AuthService, type AuthTokens } from '../services/auth-service.js'
 import { ok, fail, renderError } from './envelope.js'
 import { expiredVisitorCookie } from './recently-viewed.js'
 import { expiredCartCookie } from './cart.js'
+import { requireAuth } from './role-middleware.js'
 
 /** Runs once a login or register has succeeded; the cookies it answers join the response. */
 export type AfterSignIn = (ctx: RequestContext, customerId: string) => Promise<ResponseCookie[]>
@@ -29,6 +31,17 @@ interface LoginBody {
 }
 interface RefreshBody {
   refreshToken?: string
+}
+interface ForgotBody {
+  email: string
+}
+interface ResetBody {
+  token: string
+  password: string
+}
+interface ChangeBody {
+  currentPassword: string
+  newPassword: string
 }
 
 const REFRESH_COOKIE = 'nymbal.refresh'
@@ -75,7 +88,7 @@ async function runAfterSignIn(
 
 /**
  * `refreshTtl` is the config's `security.auth.refreshTtl`: the cookie lives as long as the token it carries.
- * `afterSignIn` runs after every successful login and register.
+ * `afterSignIn` runs after every successful login, register and password reset.
  */
 export function registerAuthRoutes(
   adapter: HttpAdapter,
@@ -118,6 +131,23 @@ export function registerAuthRoutes(
     }
   })
 
+  /** The login envelope with a fresh refresh cookie, and `extra` cookies beside it. */
+  function signedIn(
+    result: { customer: Customer; tokens: AuthTokens },
+    extra: ResponseCookie[] = [],
+  ): ResponseEnvelope {
+    const envelope = ok({
+      customer: result.customer,
+      accessToken: result.tokens.accessToken,
+      expiresIn: result.tokens.expiresIn,
+    })
+    envelope.cookies = [
+      ...refreshCookies(result.tokens.refreshToken, refreshMaxAge, secure()),
+      ...extra,
+    ]
+    return envelope as ResponseEnvelope
+  }
+
   adapter.registerRoute('POST', '/api/auth/login', async (ctx) => {
     try {
       const body = ctx.body as LoginBody | undefined
@@ -153,6 +183,41 @@ export function registerAuthRoutes(
       return renderError(err, ctx.logger)
     }
   })
+
+  // One answer whatever the address: whether it has an account is not the caller's to learn here.
+  adapter.registerRoute('POST', '/api/auth/forgot-password', async (ctx) => {
+    try {
+      await auth.requestPasswordReset((ctx.body as ForgotBody).email)
+      return ok({ sent: 'if-matched' }, undefined, 202) as ResponseEnvelope
+    } catch (err) {
+      return renderError(err, ctx.logger)
+    }
+  })
+
+  adapter.registerRoute('POST', '/api/auth/reset-password', async (ctx) => {
+    try {
+      const body = ctx.body as ResetBody
+      const result = await auth.resetPassword(body.token, body.password)
+      return signedIn(result, await runAfterSignIn(afterSignIn, ctx, result.customer.id))
+    } catch (err) {
+      return renderError(err, ctx.logger)
+    }
+  })
+
+  adapter.registerRoute(
+    'PATCH',
+    '/api/customers/me/password',
+    requireAuth(async (ctx) => {
+      try {
+        const body = ctx.body as ChangeBody
+        return signedIn(
+          await auth.changePassword(ctx.auth!.userId!, body.currentPassword, body.newPassword),
+        )
+      } catch (err) {
+        return renderError(err, ctx.logger)
+      }
+    }),
+  )
 
   adapter.registerRoute('POST', '/api/auth/logout', async (ctx) => {
     try {

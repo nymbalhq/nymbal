@@ -6,6 +6,7 @@ import { errorText, HEALTH_CHECK_TIMEOUT_MS } from '@nymbalhq/types'
 import { loadProject } from '../utils/project.js'
 import { resolveMigrations } from './migrate.js'
 import { formatDoctorReport } from './doctor-report.js'
+import { accessTtlCheck } from './doctor-access-ttl.js'
 import { originLockCheck } from './doctor-origin-lock.js'
 import { trustProxyCheck } from './doctor-trust-proxy.js'
 
@@ -63,6 +64,7 @@ export const doctorCommand = defineCommand({
       report.checks.push(
         trustProxyCheck(loaded.config, process.env, report.network),
         originLockCheck(loaded.config, process.env, report),
+        accessTtlCheck(loaded.config, process.env),
       )
     }
     const text = formatDoctorReport(report, {

@@ -24,6 +24,9 @@ export default {
     rateLimit: {
       '/api/auth/login': { requests: 1000, window: '1m', action: 'block' },
       '/api/auth/register': { requests: 1000, window: '1m', action: 'block' },
+      '/api/auth/forgot-password': { requests: 1000, window: '1m', action: 'block' },
+      '/api/auth/reset-password': { requests: 1000, window: '1m', action: 'block' },
+      '/api/customers/me/password': { requests: 1000, window: '1m', action: 'block' },
       '/api/recently-viewed': { requests: 1000, window: '1m', action: 'block' },
       '/api/checkout': { requests: 1000, window: '1m', action: 'block' },
       '/api/orders/link': { requests: 1000, window: '1m', action: 'block' },

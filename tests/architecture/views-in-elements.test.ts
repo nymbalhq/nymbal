@@ -39,6 +39,10 @@ const MOVED_IDS = [
   'profile-save',
   'save-address',
   'addresses-list',
+  // The password forms were born as elements; the templates only place them.
+  'forgot-submit',
+  'reset-submit',
+  'change-submit',
 ] as const
 
 const SKIP_DIRS = new Set(['node_modules', '.next', '.astro', 'dist', '.turbo', 'coverage'])

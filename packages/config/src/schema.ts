@@ -328,6 +328,23 @@ const OWNED_HEADERS = [
   'x-real-ip',
 ]
 
+const DURATION_UNIT_MS = { ms: 1, s: 1_000, m: 60_000, h: 3_600_000, d: 86_400_000 } as const
+const DURATION = /^(\d+)(ms|s|m|h|d)$/
+
+/** A duration such as `15m` in ms, or undefined when it is not one. */
+export function durationMs(text: string): number | undefined {
+  const match = DURATION.exec(text)
+  if (match === null) return undefined
+  return Number(match[1]) * DURATION_UNIT_MS[match[2] as keyof typeof DURATION_UNIT_MS]
+}
+
+/**
+ * An access token outlives a sign-out and a changed password until it expires, so it is bounded; a refresh token that
+ * died first would end every session at each access token's expiry.
+ */
+const ACCESS_TTL_MIN_MS = 60_000
+const ACCESS_TTL_MAX_MS = 3_600_000
+
 const originLockHeaderSchema = z.string().superRefine((header, ctx) => {
   const lower = header.toLowerCase()
   const problem = !HEADER_TOKEN.test(header)
@@ -390,6 +407,25 @@ const securityFields = z.object({
         .string()
         .regex(/^\d+(ms|s|m|h|d)$/, 'TTL must look like "7d"')
         .default('7d'),
+    })
+    .superRefine((auth, ctx) => {
+      const access = durationMs(auth.accessTtl)
+      const refresh = durationMs(auth.refreshTtl)
+      if (access === undefined || refresh === undefined) return
+      if (access < ACCESS_TTL_MIN_MS || access > ACCESS_TTL_MAX_MS) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['accessTtl'],
+          message: `security.auth.accessTtl must be between 1m and 1h; it is ${auth.accessTtl}`,
+        })
+      }
+      if (refresh <= access) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['refreshTtl'],
+          message: `security.auth.refreshTtl must be longer than the access token's ${auth.accessTtl}; it is ${auth.refreshTtl}`,
+        })
+      }
     })
     .prefault({}),
   cloudflare: cloudflareSchema.optional(),

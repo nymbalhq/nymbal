@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-11-03T19:17:36.898Z",
-  "sourceHash": "850b3c1f54bb8a03",
+  "generatedAt": "2026-11-09T22:43:07.101Z",
+  "sourceHash": "30916e559418c0f3",
   "components": [
     "AddToCart",
     "AddressBook",
@@ -9,7 +9,9 @@
     "CartDrawer",
     "CartPage",
     "CategoryNav",
+    "ChangePasswordForm",
     "Checkout",
+    "ForgotPasswordForm",
     "ImageGallery",
     "LoginForm",
     "MiniCart",
@@ -25,6 +27,7 @@
     "QuantitySelector",
     "RecentlyViewed",
     "RegisterForm",
+    "ResetPasswordForm",
     "ReviewForm",
     "ReviewList",
     "SearchBar",

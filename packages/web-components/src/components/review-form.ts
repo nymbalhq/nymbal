@@ -1,5 +1,6 @@
 import '@nymbalhq/sdk/ns/auth'
 import { css, html, nothing } from 'lit'
+import { apiErrorCode } from '../api-error.js'
 import { baseStyles, propertiesOf, type ElementSchema } from '../base-element.js'
 import { NymbalFormElement } from '../form-element.js'
 import { buttonStyles, fieldStyles } from '../view-styles.js'
@@ -21,13 +22,6 @@ const SCHEMA: ElementSchema = {
 }
 
 const GENERIC_FAILURE = 'Something went wrong. Please try again.'
-
-/** The code of an SDK `NymbalApiError`, read by its shape so the element carries none of the SDK's runtime. */
-function apiErrorCode(err: unknown): string | undefined {
-  if (!(err instanceof Error) || err.name !== 'NymbalApiError') return undefined
-  const { code } = err as Error & { code?: unknown }
-  return typeof code === 'string' ? code : undefined
-}
 
 const RATINGS: Array<[string, string]> = [
   ['5', '5 - Excellent'],

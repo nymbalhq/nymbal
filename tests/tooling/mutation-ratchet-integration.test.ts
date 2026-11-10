@@ -58,6 +58,7 @@ const INTEGRATION_FILES = [
   'packages/platform/src/services/description.ts',
   'packages/platform/src/repositories/audit-entry.ts',
   'packages/platform/src/repositories/report-rollup.ts',
+  'packages/platform/src/repositories/password-reset-token.ts',
   'packages/platform/src/assistant/loop.ts',
   'packages/platform/src/assistant/mask.ts',
   'packages/platform/src/mcp/invoke.ts',
@@ -68,6 +69,7 @@ const INTEGRATION_FILES = [
 const INTEGRATION_ONLY = [
   'packages/platform/src/repositories/alert-subscription.ts',
   'packages/platform/src/repositories/email-suppression.ts',
+  'packages/platform/src/repositories/password-reset-token.ts',
   'packages/platform/src/repositories/proposal.ts',
   'packages/platform/src/repositories/report-rollup.ts',
   'packages/platform/src/repositories/review.ts',

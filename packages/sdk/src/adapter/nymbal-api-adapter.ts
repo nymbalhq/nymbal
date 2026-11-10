@@ -120,6 +120,21 @@ export function createNymbalApiAdapter(fetchClient: FetchClient): CommerceAdapte
       login(email: string, password: string) {
         return fetchClient.request<AuthResult>('POST', '/api/auth/login', { email, password })
       },
+      async requestPasswordReset(email: string) {
+        await fetchClient.request<{ sent: string }>('POST', '/api/auth/forgot-password', { email })
+      },
+      resetPassword(token: string, password: string) {
+        return fetchClient.request<AuthResult>('POST', '/api/auth/reset-password', {
+          token,
+          password,
+        })
+      },
+      changePassword(currentPassword: string, newPassword: string) {
+        return fetchClient.request<AuthResult>('PATCH', '/api/customers/me/password', {
+          currentPassword,
+          newPassword,
+        })
+      },
       async logout() {
         await fetchClient.request<{ ok: boolean }>('POST', '/api/auth/logout')
       },

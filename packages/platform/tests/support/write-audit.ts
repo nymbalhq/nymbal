@@ -21,6 +21,8 @@ export const EXEMPT_TABLES: Readonly<Record<string, string>> = {
   events: 'the event log itself; its updates are the relay bookkeeping',
   processed_events: "a handler's record of the events it has handled",
   refresh_tokens: 'a credential; no read model is built from it',
+  password_reset_tokens:
+    'a credential the email handler mints in its delivery, consumed by a reset; no read model is built from it',
   order_sequences: 'the order-number counter; no read model is built from it',
   audit_entries: 'the audit trail, written beside the command it records',
   order_access_keys: 'a credential checkout mints in its own write after placement settles',
@@ -32,10 +34,14 @@ export const EXEMPT_TABLES: Readonly<Record<string, string>> = {
     'read from its own table by the engine and the admin routes, no read model; an admin edit publishes no event',
   reviews:
     "the native reviews adapter's own store, read from its table, no read model; a submission publishes its event after the adapter's write",
-  report_sales_hours: 'a figure the report handler folds from an event it is delivered, in that delivery',
-  report_funnel_days: 'a figure the report handler folds from an event it is delivered, in that delivery',
-  report_product_days: 'a figure the report handler folds from an event it is delivered, in that delivery',
-  report_search_days: 'a figure the report handler folds from an event it is delivered, in that delivery',
+  report_sales_hours:
+    'a figure the report handler folds from an event it is delivered, in that delivery',
+  report_funnel_days:
+    'a figure the report handler folds from an event it is delivered, in that delivery',
+  report_product_days:
+    'a figure the report handler folds from an event it is delivered, in that delivery',
+  report_search_days:
+    'a figure the report handler folds from an event it is delivered, in that delivery',
   report_members: 'a digest the report handler writes beside a figure, in that delivery',
 }
 
@@ -46,6 +52,8 @@ export const NOTIFICATION_ONLY: Readonly<Record<string, string>> = {
   'visitor.merged.v1': "a sign-in's fold of a visitor's views, recorded as its event alone",
   'order.confirmation_resend_requested.v1':
     'asks the email handler to send the confirmation again; nothing about the order changes',
+  'customer.password_reset_requested.v1':
+    'asks the email handler to mail a reset link, which it mints and stores in its own delivery; nothing about the customer changes',
   'payment.failed.v1':
     "a payment provider's report, recorded as it arrives; its handler changes the order in its own delivery",
   'review.submitted.v1':

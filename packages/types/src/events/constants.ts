@@ -42,6 +42,7 @@ export const EVT_INVENTORY_OUT_OF_STOCK = 'inventory.out_of_stock.v1'
 export const EVT_CUSTOMER_CREATED = 'customer.created.v1'
 export const EVT_CUSTOMER_UPDATED = 'customer.updated.v1'
 export const EVT_CUSTOMER_DELETED = 'customer.deleted.v1'
+export const EVT_CUSTOMER_PASSWORD_RESET_REQUESTED = 'customer.password_reset_requested.v1'
 // Legacy alias (kept so Prompt 1 seed code continues to compile).
 export const EVT_CUSTOMER_REGISTERED = EVT_CUSTOMER_CREATED
 
@@ -122,6 +123,7 @@ export const STANDARD_EVENT_TYPES = [
   EVT_CUSTOMER_CREATED,
   EVT_CUSTOMER_UPDATED,
   EVT_CUSTOMER_DELETED,
+  EVT_CUSTOMER_PASSWORD_RESET_REQUESTED,
   EVT_VISITOR_MERGED,
   EVT_CART_CREATED,
   EVT_CART_ITEM_ADDED,

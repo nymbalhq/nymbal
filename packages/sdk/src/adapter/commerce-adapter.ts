@@ -59,6 +59,12 @@ export interface CommerceAdapter {
   customers: {
     register(params: RegisterParams): Promise<AuthResult>
     login(email: string, password: string): Promise<AuthResult>
+    /** Asks the store to mail a reset link; it answers alike whether or not the address has an account. */
+    requestPasswordReset(email: string): Promise<void>
+    /** Sets a password with a reset link's token, and signs the customer in. */
+    resetPassword(token: string, password: string): Promise<AuthResult>
+    /** Sets a new password given the current one; every other session ends and this one is renewed. */
+    changePassword(currentPassword: string, newPassword: string): Promise<AuthResult>
     logout(): Promise<void>
     refresh(): Promise<{ accessToken: string; expiresIn: number }>
     getProfile(): Promise<Customer>

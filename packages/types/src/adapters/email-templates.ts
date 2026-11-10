@@ -35,6 +35,10 @@ const TEMPLATES: Record<string, { subject: string; body: string }> = {
     subject: 'Welcome to {{storeName}}',
     body: `Welcome {{customerName}}! Your account is ready.`,
   },
+  'password-reset': {
+    subject: 'Reset your {{storeName}} password',
+    body: `Hi,\n\nSomeone asked to reset the password of your {{storeName}} account. Choose a new one by following this link within {{expiresMinutes}} minutes:\n\n{{resetUrl}}\n\nThe link works once. If you did not ask, ignore this email and your password stays as it is.`,
+  },
   'cart-abandoned': {
     subject: "Don't forget your cart at {{storeName}}",
     body: `Hi,\n\nYou left items in your cart. Pick up where you left off: {{resumeUrl}}`,

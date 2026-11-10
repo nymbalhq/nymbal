@@ -148,6 +148,22 @@ export const refreshTokens = pgTable(
   }),
 )
 
+/** A password reset link's token: only its SHA-256 is kept, so the mail alone opens it. */
+export const passwordResetTokens = pgTable(
+  'password_reset_tokens',
+  {
+    id: text('id').primaryKey(),
+    customerId: text('customer_id').notNull(),
+    tokenHash: text('token_hash').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    tokenHashIdx: uniqueIndex('password_reset_tokens_token_hash_idx').on(t.tokenHash),
+    customerIdx: index('password_reset_tokens_customer_idx').on(t.customerId),
+  }),
+)
+
 // --- Orders ----------------------------------------------------------------
 
 /**
@@ -726,6 +742,7 @@ export const schema = {
   productCategories,
   customers,
   refreshTokens,
+  passwordResetTokens,
   orders,
   orderHistory,
   orderSequences,

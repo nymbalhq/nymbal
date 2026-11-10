@@ -97,6 +97,8 @@ export async function registerHandlers(deps: RegisterHandlersDeps): Promise<void
     processedEventRepo: repos.processedEvent,
     orderRepo: repos.order,
     orderAccessKeyRepo: repos.orderAccessKey,
+    customerRepo: repos.customer,
+    passwordResetTokenRepo: repos.passwordResetToken,
     storeName: config.store.name,
     ...(config.store.url !== undefined && { storeUrl: config.store.url }),
     keyLifetimeMs: parseDurationToMs(config.commerce.orders.keyLifetime.email),

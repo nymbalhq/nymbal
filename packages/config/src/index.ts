@@ -35,6 +35,7 @@ export {
   DEFAULT_CUSTOMER_FIELDS,
   DEFAULT_JWT_SECRET,
   DEFAULT_AGENT_CRAWLERS,
+  durationMs,
   nymbalConfigSchema,
   storeSchema,
   infrastructureSchema,
