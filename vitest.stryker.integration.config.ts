@@ -44,7 +44,7 @@ export default defineConfig({
       'packages/platform/tests/integration/assistant-bulk.test.ts',
       'packages/platform/tests/integration/assistant-masking.test.ts',
       'packages/platform/src/assistant/loop*.test.ts',
-      'packages/platform/src/assistant/mask.test.ts',
+      'packages/platform/src/assistant/mask*.test.ts',
       'packages/platform/src/mcp/invoke*.test.ts',
       'packages/platform/src/mcp/withhold.test.ts',
       'packages/platform/src/repositories/email-suppression.test.ts',
