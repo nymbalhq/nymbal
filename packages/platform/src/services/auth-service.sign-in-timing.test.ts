@@ -20,11 +20,12 @@ import {
 // A sign-in answers alike for a known address, an unknown one and an imported one with no password: each spends one
 // bcrypt round at the store's cost, against the customer's hash or a dummy at the same cost, and each refuses with the
 // one message. The dummy is published with the code, so its password signs nobody in, an imported customer included.
-// Timings are real bcrypt at the real cost, five runs each, compared by median.
+// Timings are real bcrypt at the real cost. A shared machine slows for seconds at a time, so the three are timed in
+// turn within each round and compared within the round: a slow stretch falls on every class, not on one.
 
 const PASSWORD = 'sign-in-timing-correct-horse'
 const WRONG = 'sign-in-timing-wrong-horse'
-const RUNS = 5
+const ROUNDS = 12
 const LOWEST = 0.4
 const HIGHEST = 2.5
 
@@ -72,16 +73,51 @@ async function refusalOf(p: Promise<unknown>): Promise<{ code: string; message: 
   }
 }
 
-/** The median wall time of `runs` calls, each awaited to its settlement. */
-async function medianMs(call: () => Promise<unknown>, runs = RUNS): Promise<number> {
-  const times: number[] = []
-  for (let i = 0; i < runs; i += 1) {
-    const start = performance.now()
-    await call().catch(() => undefined)
-    times.push(performance.now() - start)
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b)
+  const mid = Math.floor(sorted.length / 2)
+  return sorted.length % 2 === 1 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2
+}
+
+/** The wall time of one call, awaited to its settlement. */
+async function timeMs(call: () => Promise<unknown>): Promise<number> {
+  const start = performance.now()
+  await call().catch(() => undefined)
+  return performance.now() - start
+}
+
+const ORDERS = [
+  [0, 1, 2],
+  [1, 2, 0],
+  [2, 0, 1],
+  [0, 2, 1],
+  [2, 1, 0],
+  [1, 0, 2],
+] as const
+
+/**
+ * Times the three sign-ins once each per round, in an order that turns every round so none always runs first or last,
+ * and returns each class's median time and the median over rounds of its time over the known address's in that round.
+ */
+async function timeInTurn(
+  known: () => Promise<unknown>,
+  unknown: () => Promise<unknown>,
+  imported: () => Promise<unknown>,
+  rounds = ROUNDS,
+) {
+  const calls = [known, unknown, imported]
+  const times: [number[], number[], number[]] = [[], [], []]
+  for (let round = 0; round < rounds; round += 1) {
+    for (const i of ORDERS[round % ORDERS.length]!) times[i]!.push(await timeMs(calls[i]!))
   }
-  times.sort((a, b) => a - b)
-  return times[Math.floor(runs / 2)]!
+  const [k, u, m] = times
+  return {
+    ms: { known: median(k), unknown: median(u), imported: median(m) },
+    ratio: {
+      unknown: median(u.map((t, r) => t / k[r]!)),
+      imported: median(m.map((t, r) => t / k[r]!)),
+    },
+  }
 }
 
 describe('AC-1: a sign-in answers in one time and one message for known, unknown and imported addresses', () => {
@@ -93,21 +129,22 @@ describe('AC-1: a sign-in answers in one time and one message for known, unknown
       // The first compare in a process pays for compilation; it is no sample.
       await auth.login('known@timing.test', WRONG).catch(() => undefined)
 
-      const known = await medianMs(() => auth.login('known@timing.test', WRONG))
-      const unknown = await medianMs(() => auth.login('nobody@timing.test', WRONG))
-      const imported = await medianMs(() => auth.login('imported@timing.test', WRONG))
+      const { ms, ratio } = await timeInTurn(
+        () => auth.login('known@timing.test', WRONG),
+        () => auth.login('nobody@timing.test', WRONG),
+        () => auth.login('imported@timing.test', WRONG),
+      )
       const refusals = [
         await refusalOf(auth.login('known@timing.test', WRONG)),
         await refusalOf(auth.login('nobody@timing.test', WRONG)),
         await refusalOf(auth.login('imported@timing.test', WRONG)),
       ]
 
-      const ratios = { unknown: unknown / known, imported: imported / known }
-      const label = `known ${known.toFixed(1)} ms, unknown ${unknown.toFixed(1)} ms, imported ${imported.toFixed(1)} ms`
-      expect(ratios.unknown, label).toBeGreaterThanOrEqual(LOWEST)
-      expect(ratios.unknown, label).toBeLessThanOrEqual(HIGHEST)
-      expect(ratios.imported, label).toBeGreaterThanOrEqual(LOWEST)
-      expect(ratios.imported, label).toBeLessThanOrEqual(HIGHEST)
+      const label = `median of ${ROUNDS} rounds: known ${ms.known.toFixed(1)} ms, unknown ${ms.unknown.toFixed(1)} ms (${ratio.unknown.toFixed(2)}x), imported ${ms.imported.toFixed(1)} ms (${ratio.imported.toFixed(2)}x)`
+      expect(ratio.unknown, label).toBeGreaterThanOrEqual(LOWEST)
+      expect(ratio.unknown, label).toBeLessThanOrEqual(HIGHEST)
+      expect(ratio.imported, label).toBeGreaterThanOrEqual(LOWEST)
+      expect(ratio.imported, label).toBeLessThanOrEqual(HIGHEST)
       expect(refusals.map((r) => r.code)).toEqual(refusals.map(() => 'auth.invalid_credentials'))
       expect(new Set(refusals.map((r) => r.message)).size).toBe(1)
     } finally {
