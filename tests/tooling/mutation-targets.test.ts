@@ -1,4 +1,4 @@
-// Reads: scripts/mutation-ratchet.ts, mutation-targets.json, stryker.config.mjs, stryker.integration.config.mjs
+// Reads: scripts/mutation-ratchet.ts, mutation-targets.json, stryker.config.mjs, stryker.integration.config.mjs, scripts/machine-budget.ts
 import { execFile, execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -79,6 +79,9 @@ function scratch(
     writeFileSync(join(dir, path), text)
   }
   for (const [path, text] of Object.entries(configs)) write(path, text)
+  // The real configs read their concurrency from the machine budget beside them, an ES module as in the repository.
+  write('scripts/machine-budget.ts', readFileSync(join(REPO, 'scripts/machine-budget.ts'), 'utf8'))
+  write('package.json', '{ "type": "module" }\n')
   FILES.forEach((path, i) => write(path, `export const n${i} = ${i}\n`))
   write('mutation-ratchet.json', ratchet(unit))
   write('mutation-ratchet.integration.json', ratchet(integration))

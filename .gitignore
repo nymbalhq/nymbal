@@ -44,3 +44,6 @@ packages/create-app/scaffold/templates/nextjs/AGENTS.md
 # `next dev` and `next build` write different next-env.d.ts files; Next regenerates it, so it is not tracked.
 templates/nextjs/next-env.d.ts
 packages/create-app/scaffold/templates/nextjs/next-env.d.ts
+
+# The machine budget's per-machine settings (scripts/machine-budget.ts).
+/.nymbal-machine.env

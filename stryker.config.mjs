@@ -5,8 +5,14 @@
 // checkout and its restore replaces them with copies. The sandbox holds only what the platform unit tests and the
 // importer's mapper tests need, and is deleted after the run together with the per-worker setup files the Vitest
 // runner writes into it.
+import { machineBudget } from './scripts/machine-budget.ts'
+
+// The machine's budget (scripts/machine-budget.ts), not the cores less one, unless CI sizes its own.
+const concurrency = machineBudget().stryker
+
 /** @type {import('@stryker-mutator/api/core').PartialStrykerOptions} */
 export default {
+  ...(concurrency === undefined ? {} : { concurrency }),
   testRunner: 'vitest',
   vitest: { configFile: 'vitest.stryker.config.ts' },
   plugins: ['@stryker-mutator/vitest-runner'],

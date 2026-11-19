@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig, devices } from '@playwright/test'
+import { e2eGlobalTimeoutMs, machineBudget } from '../../scripts/machine-budget'
 import { stack } from '../../scripts/stack'
 import { e2eReporters } from './support/reporters'
 
@@ -270,20 +271,24 @@ function servers() {
   return [apiServer, astroServer(astroURL, NATIVE_API), nextjsServer(nextjsURL, NATIVE_API)]
 }
 
+// The machine's budget (scripts/machine-budget.ts), not half the cores, unless CI sizes its own; read again by each
+// worker, which takes the same number.
+const workers = machineBudget().playwright
+
 // A whole run is bounded: each target is its own invocation, and one that hangs (the admin project once ran 389 s
 // against a 9.5 s median) is red at the bound instead of holding everything behind it. GitHub's runners get twice
-// the local bound; NYMBAL_E2E_GLOBAL_TIMEOUT_MS overrides either. Unbounded when run by hand without CI.
+// the local bound, and a run under fewer workers than Playwright's own gets the bound grown by the cut;
+// NYMBAL_E2E_GLOBAL_TIMEOUT_MS overrides either. Unbounded when run by hand without CI.
 const globalTimeout = process.env.NYMBAL_E2E_GLOBAL_TIMEOUT_MS
   ? Number(process.env.NYMBAL_E2E_GLOBAL_TIMEOUT_MS)
   : isCI
-    ? process.env.GITHUB_ACTIONS
-      ? 10 * 60_000
-      : 5 * 60_000
+    ? e2eGlobalTimeoutMs(process.env, workers)
     : 0
 
 export default defineConfig({
   testDir: './journeys',
   fullyParallel: true,
+  ...(workers === undefined ? {} : { workers }),
   forbidOnly: isCI,
   retries: isCI ? 2 : 0,
   // With retries a test that passes only on a retry leaves the exit status green; the JSON report per target is

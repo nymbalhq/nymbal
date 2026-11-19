@@ -1,4 +1,4 @@
-// Reads: scripts/mutation-ratchet.ts, stryker.config.mjs, stryker.integration.config.mjs, vitest.config.ts
+// Reads: scripts/mutation-ratchet.ts, stryker.config.mjs, stryker.integration.config.mjs, vitest.config.ts, scripts/machine-budget.ts
 import { execFile, execFileSync } from 'node:child_process'
 import {
   globSync,
@@ -257,6 +257,9 @@ function gitScratch(integration: Scores, unit: Scores = UNIT_ENTRIES): string {
   }
   write('stryker.config.mjs', readFileSync(join(REPO, 'stryker.config.mjs'), 'utf8'))
   write(INTEGRATION_CONFIG, readFileSync(join(REPO, INTEGRATION_CONFIG), 'utf8'))
+  // Both configs read their concurrency from the machine budget beside them, an ES module as in the repository.
+  write('scripts/machine-budget.ts', readFileSync(join(REPO, 'scripts/machine-budget.ts'), 'utf8'))
+  write('package.json', '{ "type": "module" }\n')
   ;[...SET, ...UNIT_ONLY].forEach((path, i) => write(path, `export const n${i} = ${i}\n`))
   write(UNIT_RATCHET, ratchetText(unit))
   write(INTEGRATION_RATCHET, ratchetText(integration))

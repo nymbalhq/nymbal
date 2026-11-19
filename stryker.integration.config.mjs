@@ -5,8 +5,14 @@
 // The sandbox keeps every package: the integration tests import the Fastify adapter from packages/http/src. It keeps
 // the repository's shared test servers too (tests/support): without them order-email-retry fails to load there and
 // kills nothing. Every run is a full measurement, so there is no incremental file.
+import { machineBudget } from './scripts/machine-budget.ts'
+
+// The machine's budget (scripts/machine-budget.ts), not the cores less one, unless CI sizes its own.
+const concurrency = machineBudget().stryker
+
 /** @type {import('@stryker-mutator/api/core').PartialStrykerOptions} */
 export default {
+  ...(concurrency === undefined ? {} : { concurrency }),
   testRunner: 'vitest',
   vitest: { configFile: 'vitest.stryker.integration.config.ts' },
   plugins: ['@stryker-mutator/vitest-runner'],

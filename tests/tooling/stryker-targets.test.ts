@@ -1,4 +1,4 @@
-// Reads: stryker.config.mjs, vitest.stryker.config.ts
+// Reads: stryker.config.mjs, vitest.stryker.config.ts, scripts/machine-budget.ts
 import { execFileSync } from 'node:child_process'
 import {
   chmodSync,
@@ -127,6 +127,11 @@ describe('strykerTargets with an untracked file', () => {
     const git = (...args: string[]): string =>
       execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
     copyFileSync(join(REPO, 'stryker.config.mjs'), join(root, 'stryker.config.mjs'))
+    // The config reads its concurrency from the machine budget beside it.
+    write(
+      'scripts/machine-budget.ts',
+      readFileSync(join(REPO, 'scripts/machine-budget.ts'), 'utf8'),
+    )
     write('packages/platform/src/services/tracked-service.ts', 'export const tracked = 1\n')
     git('init', '-q')
     git('add', '.')
