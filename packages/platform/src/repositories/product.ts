@@ -25,6 +25,7 @@ export interface ProductInsert {
   seoDescription?: string
   media?: ProductMedia[]
   metadata?: Record<string, unknown>
+  taxCode?: string | null
   createdAt: Date
   updatedAt: Date
 }
@@ -70,6 +71,7 @@ function rowToProduct(store: CommandStore['kind'], row: Record<string, unknown>)
     seoDescription: String(row.seoDescription ?? ''),
     media: parseJson<ProductMedia[]>(store, row.media, []),
     metadata: parseJson<Record<string, unknown>>(store, row.metadata, {}),
+    taxCode: (row.taxCode as string | null) ?? null,
     createdAt: fromTimestamp(row.createdAt),
     updatedAt: fromTimestamp(row.updatedAt),
   }
@@ -177,6 +179,7 @@ export function createProductRepository(store: CommandStore): ProductRepository 
         type: p.type ?? 'simple',
         seoTitle: p.seoTitle ?? '',
         seoDescription: p.seoDescription ?? '',
+        taxCode: p.taxCode ?? null,
       }
       if (tx.kind === 'sqlite') {
         sqliteDb(tx)

@@ -12,6 +12,7 @@ import {
   trustedProxyMessage,
   trustedProxyProblem,
 } from './trusted-proxies.js'
+import { US_STATES } from './us-states.js'
 
 const rateLimitRuleSchema = z.object({
   requests: z.number().int().positive(),
@@ -64,8 +65,10 @@ export const storeSchema = z.object({
     .url()
     .transform((url) => url.replace(/\/+$/, ''))
     .optional(),
-  /** Where parcels are sent from, for shipping rates. */
+  /** Where parcels are sent from, for shipping rates and tax. */
   shipFrom: shipFromSchema.optional(),
+  /** Prices hold their tax: tax is extracted from them, not added on top. */
+  pricesIncludeTax: z.boolean().default(false),
 })
 
 const quotedList = (values: readonly string[]): string => values.map((v) => `'${v}'`).join(', ')
@@ -509,6 +512,69 @@ function promotionsBlock() {
     .superRefine((block, ctx) => packageBesideBuiltIn('promotions', block, ctx))
 }
 
+/** A percent from 0 to 100 written with at most four decimals, so it is a whole number of parts per million. */
+const taxPercentSchema = z
+  .number()
+  .min(0)
+  .max(100)
+  .refine(
+    (percent) => Math.abs(percent * 10_000 - Math.round(percent * 10_000)) < 1e-6,
+    'a tax percent has at most four decimals, such as 8.875',
+  )
+
+/** A jurisdiction the store collects tax in: a country, or one of its regions (a US state by its postal code). */
+const taxRateSchema = z
+  .object({
+    country: z.string().regex(/^[A-Z]{2}$/, 'country must be two upper-case letters, such as "GB"'),
+    region: z.string().min(1).optional(),
+    percent: taxPercentSchema,
+    /** The rate for a tax code in this jurisdiction, over `percent`. */
+    codes: z.record(z.string(), taxPercentSchema).optional(),
+  })
+  .superRefine((row, ctx) => {
+    if (row.country === 'US' && row.region !== undefined && !Object.hasOwn(US_STATES, row.region)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['region'],
+        message: `a US region is a state's two-letter code or DC, such as "CA"; '${row.region}' is not one`,
+      })
+    }
+  })
+
+/** The tax slot's block: every other slot's fields, the native rate table, and what checkout does when the engine is down. */
+function taxBlock() {
+  return z
+    .object({
+      provider: providerNameSchema('tax.provider'),
+      config: z.record(z.string(), z.unknown()).optional(),
+      package: packageNameSchema.optional(),
+      onUnavailable: z.enum(['refuse', 'native']).default('refuse'),
+      rates: z.array(taxRateSchema).default([]),
+    })
+    .superRefine((block, ctx) => {
+      packageBesideBuiltIn('tax', block, ctx)
+      const seen = new Set<string>()
+      block.rates.forEach((row, i) => {
+        const key = `${row.country}/${row.region?.trim().toUpperCase() ?? ''}`
+        if (seen.has(key)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['rates', i],
+            message: `two rows for ${row.region === undefined ? row.country : `${row.country} ${row.region}`}; a jurisdiction has one row`,
+          })
+        }
+        seen.add(key)
+      })
+      if (block.onUnavailable === 'native' && block.rates.length === 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['rates'],
+          message: "onUnavailable 'native' falls back to the rate table, which is empty",
+        })
+      }
+    })
+}
+
 export const commerceSchema = z.object({
   payments: adapterBlock('payments'),
   email: adapterBlock('email'),
@@ -516,7 +582,7 @@ export const commerceSchema = z.object({
   search: adapterBlock('search'),
   analytics: adapterBlock('analytics'),
   shipping: adapterBlock('shipping'),
-  tax: adapterBlock('tax'),
+  tax: taxBlock(),
   // Absent is the kernel's own engine, so a config written before the slot existed keeps working.
   promotions: promotionsBlock().default({ provider: 'native', onUnavailable: 'proceed' }),
   ai: adapterBlock('ai'),

@@ -142,7 +142,8 @@ export class CheckoutError extends NymbalError {
       | 'reservation_failed'
       | 'finalize_failed'
       | 'total_changed'
-      | 'promotions_unavailable',
+      | 'promotions_unavailable'
+      | 'tax_unavailable',
     message: string,
     options: { cause?: unknown; context?: ErrorContext } = {},
   ) {

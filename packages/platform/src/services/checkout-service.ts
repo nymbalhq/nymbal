@@ -16,6 +16,8 @@ import {
   type CaptureMethod,
   type Cart,
   type CheckoutPayment,
+  type CheckoutTotals,
+  type Customer,
   type Logger,
   type Order,
   type OrderLineItem,
@@ -24,6 +26,7 @@ import {
   type PaymentIntent,
   type PaymentStatus,
   type PromotionsAdapter,
+  type TaxQuote,
   type Variant,
 } from '@nymbalhq/types'
 import { audit } from '../audit/audit.js'
@@ -37,8 +40,11 @@ import {
   orderPromotionRecord,
   PROMOTIONS_BOUND_MS,
   sameQuote,
+  settleInputOf,
+  type PlaceQuote,
   type SessionExtras,
 } from './promotions-quote.js'
+import { taxedTotals, type TaxAnswer, type TaxQuoter, type TaxRequest } from './tax-quote.js'
 import { mintOrderKey } from '../order-access-key.js'
 import type { InventoryService } from './inventory-service.js'
 import type { OrderService } from './order-service.js'
@@ -141,6 +147,10 @@ export interface CreateCheckoutServiceDeps {
   promotionsBoundMs?: number
   /** A cart with no code when the engine is down: place at full price, or refuse. A cart with a code always refuses. */
   promotionsOnUnavailable?: 'proceed' | 'refuse'
+  /** Absent: no engine, and no order is taxed. */
+  tax?: TaxQuoter
+  /** The store's prices hold their tax; false when not given. */
+  pricesIncludeTax?: boolean
 }
 
 /** The checkout keys an order keeps: each mint past this deletes the oldest, so a checkout loop cannot grow the table. */
@@ -155,6 +165,30 @@ interface DraftMetadata {
   correlationId?: string
   /** What the engine applied, present only when it accepted a code, moved money or named an evaluation. */
   promotions?: Record<string, unknown>
+  /** The tax engine's whole answer, when it taxed anything, came from a provider, or was the native fallback. */
+  tax?: TaxQuote & { fallback?: true }
+}
+
+/** Who is checking out and where the parcel goes. */
+type PlaceExtras = SessionExtras & { shipTo: Address }
+
+/** A place quote with the tax the engine answered for its discounted lines; no tax when the store has no engine. */
+type TaxedQuote = PlaceQuote & { tax: TaxAnswer | null }
+
+/** Each line's amount tax is due on: its subtotal less its discount. */
+const taxableAmounts = (totals: CheckoutTotals): number[] =>
+  totals.lines.map((line) => line.subtotalMinor - line.discountMinor)
+
+/** A customer's exemption as their metadata records it, when it is `{ kind: string, certificateId?: string }`. */
+function exemptionOf(
+  customer: Pick<Customer, 'metadata'> | null,
+): { kind: string; certificateId?: string } | undefined {
+  const value = customer?.metadata.taxExemption
+  if (typeof value !== 'object' || value === null) return undefined
+  const { kind, certificateId } = value as Record<string, unknown>
+  if (typeof kind !== 'string') return undefined
+  if (certificateId !== undefined && typeof certificateId !== 'string') return undefined
+  return { kind, ...(certificateId !== undefined && { certificateId }) }
 }
 
 /** A line whose released reservation cannot be re-taken: another order has the stock now. */
@@ -222,26 +256,102 @@ export function createCheckoutService(
 ): CheckoutService & ManualPayments {
   const { store, repos, publisher, logger, cart, orders, inventory, payments, currency } = deps
   const keyLifetimeMs = deps.keyLifetimeMs ?? DEFAULT_CHECKOUT_KEY_LIFETIME_MS
+  const pricesIncludeTax = deps.pricesIncludeTax ?? false
   const quotes = createPlaceQuoter({
     engine: deps.promotions,
     boundMs: deps.promotionsBoundMs ?? PROMOTIONS_BOUND_MS,
     onUnavailable: deps.promotionsOnUnavailable ?? 'proceed',
+    pricesIncludeTax,
     store,
     catalogue: repos,
     logger,
   })
 
-  /** Refuses a charge the caller was not shown. */
-  function refuseChangedTotal(input: BeginCheckoutInput, due: number): void {
+  /**
+   * Refuses a charge the caller was not shown: a total other than the one it sent, or tax added on top of prices for a
+   * caller that sent none.
+   */
+  function refuseChangedTotal(input: BeginCheckoutInput, totals: CheckoutTotals): void {
     const quoted = input.expectedTotalMinor
-    if (quoted !== undefined && quoted !== due) {
+    const due = totals.totalMinor
+    const unseenTax = quoted === undefined && !totals.pricesIncludeTax && totals.taxTotalMinor > 0
+    if (unseenTax || (quoted !== undefined && quoted !== due)) {
       throw new CheckoutError('total_changed', 'The total has changed', {
-        context: { quoted, due },
+        context: { quoted: quoted ?? null, due },
       })
     }
   }
 
-  function sessionExtras(input: BeginCheckoutInput, cartDoc: Cart): SessionExtras {
+  /** What a tax engine is asked for the cart's lines at these totals, shipped where the caller says. */
+  async function taxRequest(
+    tx: Tx,
+    cartDoc: Cart,
+    extras: PlaceExtras,
+    totals: CheckoutTotals,
+  ): Promise<TaxRequest> {
+    const amounts = taxableAmounts(totals)
+    const lines: TaxRequest['lines'][number][] = []
+    for (const [i, item] of cartDoc.items.entries()) {
+      const variant = await repos.variant.findById(tx, item.variantId)
+      if (!variant) {
+        throw new CheckoutError('variant_missing', `Variant missing: ${item.variantId}`)
+      }
+      const product = await repos.product.findById(tx, item.productId)
+      const taxCode = variant.taxCode ?? product?.taxCode ?? null
+      lines.push({
+        id: item.variantId,
+        sku: variant.sku,
+        ...(taxCode !== null && { taxCode }),
+        amountMinor: amounts[i]!,
+        qty: item.qty,
+      })
+    }
+    const exemption =
+      extras.customerId === null
+        ? undefined
+        : exemptionOf(await repos.customer.findById(tx, extras.customerId))
+    return {
+      currency: cartDoc.currency,
+      shipTo: extras.shipTo,
+      customer: { id: extras.customerId, ...(exemption !== undefined && { exemption }) },
+      lines,
+      shipping: null,
+      reference: cartDoc.token,
+    }
+  }
+
+  /**
+   * The promotions quote with tax on its discounted lines and its totals settled again with that tax. `earlier`'s tax
+   * is kept when the discounted amounts have not moved, so an engine is asked once per checkout in the common case.
+   */
+  async function taxed(
+    tx: Tx,
+    cartDoc: Cart,
+    extras: PlaceExtras,
+    promo: PlaceQuote,
+    earlier: TaxedQuote | null,
+  ): Promise<TaxedQuote> {
+    if (deps.tax === undefined) return { ...promo, tax: null }
+    const amounts = taxableAmounts(promo.totals)
+    const unmoved = (q: TaxedQuote) =>
+      taxableAmounts(q.totals).every((amount, i) => amount === amounts[i])
+    const tax =
+      earlier?.tax != null && unmoved(earlier)
+        ? earlier.tax
+        : await deps.tax.quote(await taxRequest(tx, cartDoc, extras, promo.totals))
+    const totals = taxedTotals(settleInputOf(cartDoc, promo.effects, pricesIncludeTax), tax.quote)
+    return { ...promo, totals, tax }
+  }
+
+  /** What the order keeps of the tax answer, when there is anything to keep. */
+  function orderTaxRecord(tax: TaxAnswer | null): DraftMetadata['tax'] {
+    if (tax === null) return undefined
+    const { quote, fallback } = tax
+    if (!fallback && quote.totalTaxMinor === 0 && quote.provider === 'native') return undefined
+    return { ...quote, ...(fallback && { fallback: true as const }) }
+  }
+
+  function sessionExtras(input: BeginCheckoutInput, cartDoc: Cart): PlaceExtras {
     return {
       customerId: input.customerId ?? cartDoc.customerId,
       email: input.email,
@@ -706,8 +816,8 @@ export function createCheckoutService(
 
     // Before anything is cancelled, so an outage or a changed total leaves a pending order and its intent as they were.
     const extras = sessionExtras(input, cartDoc)
-    const dryQuote = await quotes.dry(cartDoc, extras)
-    refuseChangedTotal(input, dryQuote.totals.totalMinor)
+    const dryQuote = await taxed(tx, cartDoc, extras, await quotes.dry(cartDoc, extras), null)
+    refuseChangedTotal(input, dryQuote.totals)
 
     const pending = await repos.order.findPendingByCartToken(tx, input.cartToken)
     if (pending !== null) {
@@ -749,11 +859,17 @@ export function createCheckoutService(
       }
     }
     // After the stock, so the commonest refusal never reaches the reservation.
-    const quote = await quotes.reserve(cartDoc, extras, orderId)
-    refuseChangedTotal(input, quote.totals.totalMinor)
-    const discounts = new Map(quote.totals.lines.map((l) => [l.id, l.discountMinor]))
+    const quote = await taxed(
+      tx,
+      cartDoc,
+      extras,
+      await quotes.reserve(cartDoc, extras, orderId),
+      dryQuote,
+    )
+    refuseChangedTotal(input, quote.totals)
+    const settled = new Map(quote.totals.lines.map((l) => [l.id, l]))
     const lineItems: OrderLineItem[] = cartDoc.items.map((item) => {
-      const lineDiscountMinor = discounts.get(item.variantId)!
+      const { discountMinor: lineDiscountMinor, taxMinor } = settled.get(item.variantId)!
       return {
         variantId: item.variantId,
         productId: item.productId,
@@ -763,7 +879,7 @@ export function createCheckoutService(
         qty: item.qty,
         unitPriceMinor: item.priceMinor,
         lineSubtotalMinor: item.priceMinor * item.qty,
-        lineTaxMinor: 0,
+        lineTaxMinor: taxMinor,
         lineTotalMinor: item.priceMinor * item.qty,
         ...(lineDiscountMinor > 0 && { lineDiscountMinor }),
         imageUrl: item.imageUrl,
@@ -772,6 +888,7 @@ export function createCheckoutService(
     const promotions = deps.promotions
       ? orderPromotionRecord(deps.promotions.providerName, cartDoc.token, quote)
       : undefined
+    const tax = orderTaxRecord(quote.tax)
     const order = await orders.createFromCheckout({
       orderId,
       customerId: input.customerId ?? null,
@@ -785,12 +902,14 @@ export function createCheckoutService(
       discountTotalMinor: quote.totals.discountTotalMinor,
       totalMinor: quote.totals.totalMinor,
       currency: cartDoc.currency,
+      pricesIncludeTax: quote.totals.pricesIncludeTax,
       ...(input.notes !== undefined && { notes: input.notes }),
       metadata: {
         cartToken: cartDoc.token,
         reservationIds,
         ...(correlationId !== undefined && { correlationId }),
         ...(promotions !== undefined && { promotions }),
+        ...(tax !== undefined && { tax }),
       } satisfies DraftMetadata,
       cartToken: cartDoc.token,
       source: cartDoc.source,
@@ -803,6 +922,17 @@ export function createCheckoutService(
         toStatus: order.status,
         actor: 'system:checkout',
         note: 'promotions.skipped: the promotions engine was unavailable and the order was placed at full price',
+        timestamp: new Date(),
+      })
+    }
+    if (quote.tax?.fallback === true) {
+      await repos.orderHistory.append(tx, {
+        id: uuidv7(),
+        orderId: order.id,
+        fromStatus: order.status,
+        toStatus: order.status,
+        actor: 'system:checkout',
+        note: 'tax.fallback: the tax engine was unavailable and the order was taxed from the native rate table',
         timestamp: new Date(),
       })
     }

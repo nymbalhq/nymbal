@@ -462,7 +462,7 @@ export function OrderDetailPage() {
               </div>
               {order.taxTotalMinor > 0 && (
                 <div className="flex justify-between text-sm text-zinc-500">
-                  <span>Tax</span>
+                  <span>{order.pricesIncludeTax === true ? 'Tax (included)' : 'Tax'}</span>
                   <span className="font-mono">
                     {formatMoney(order.taxTotalMinor, order.currency)}
                   </span>

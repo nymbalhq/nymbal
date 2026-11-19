@@ -11,8 +11,8 @@ import { describe, expect, it } from 'vitest'
 // the scaffold's copies of the template sources are the templates' own byte for byte; and the template sources have
 // fewer lines than at d9b47e7 (`wc -l` 4395 over templates/astro/src), and Next's fewer than 3892 over
 // templates/nextjs/{app,components,lib}: its d9b47e7 count left no room for the order page's server path, nor for the
-// shopper header's fallback, the cart page's projection, Try Again's retry, `?category=` and the chrome's category
-// links, none of which is a component moving back.
+// shopper header's fallback, the cart page's projection, Try Again's retry, `?category=`, the chrome's category
+// links and the inclusive tax label on the order and account pages, none of which is a component moving back.
 // Files are what git tracks plus what it would add (untracked, not ignored), so a build output never counts.
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
@@ -82,7 +82,7 @@ const SOURCES = {
  * refund line, the forgot and reset password pages and the change-password form, the email confirmation page and the
  * sign-in page's link to it.
  */
-const BASE_LINES = { astro: 4395, nextjs: 4155 } as const
+const BASE_LINES = { astro: 4395, nextjs: 4159 } as const
 
 /** Every file git tracks or would add under `dir`, relative to the repo root. */
 function filesUnder(dir: string): string[] {

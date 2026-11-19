@@ -102,12 +102,14 @@ function cartQuoter(engine: ReturnType<typeof scriptedEngine>) {
 function placeQuoter(
   engine: ReturnType<typeof scriptedEngine> | undefined,
   onUnavailable: 'proceed' | 'refuse' = 'proceed',
+  pricesIncludeTax?: boolean,
 ) {
   const { store, rolledBack } = fakeStore()
   const quoter = createPlaceQuoter({
     engine: engine?.adapter,
     boundMs: BOUND_MS,
     onUnavailable,
+    ...(pricesIncludeTax !== undefined && { pricesIncludeTax }),
     store,
     catalogue,
     logger,
@@ -195,6 +197,13 @@ describe('cartTotals', () => {
     cart.promotions!.effects = [{ kind: 'order', amountMinor: 700, label: 'SAVE', code: 'SAVE' }]
     expect(cartTotals(cart)).toMatchObject({ discountTotalMinor: 700, totalMinor: 4300 })
     expect(cartTotals(cartOf())).toMatchObject({ discountTotalMinor: 0, totalMinor: 5000 })
+  })
+
+  // Kills: a store that never set the flag showing its cart prices as tax-inclusive.
+  it('reads prices as tax-exclusive unless the store says they include tax', () => {
+    expect(cartTotals(cartOf()).pricesIncludeTax).toBe(false)
+    expect(cartTotals(cartOf(), false).pricesIncludeTax).toBe(false)
+    expect(cartTotals(cartOf(), true).pricesIncludeTax).toBe(true)
   })
 })
 
@@ -310,6 +319,23 @@ describe('createPlaceQuoter', () => {
     const engine = scriptedEngine()
     await expect(placeQuoter(engine).quoter.dry(cartOf(), extras)).resolves.toMatchObject(plain)
     expect(engine.calls).toEqual([])
+  })
+
+  // Kills: a store that never set the flag placing orders as tax-inclusive, or one that set it placing them exclusive.
+  it('every quote carries the store’s inclusive flag, false when the store gives none', async () => {
+    for (const flag of [true, false, undefined]) {
+      const asked = await placeQuoter(scriptedEngine(), 'proceed', flag).quoter.dry(
+        cartOf(['SAVE']),
+        extras,
+      )
+      const unasked = await placeQuoter(undefined, 'proceed', flag).quoter.dry(
+        cartOf(['SAVE']),
+        extras,
+      )
+      for (const quote of [asked, unasked]) {
+        expect(quote.totals.pricesIncludeTax, String(flag)).toBe(flag ?? false)
+      }
+    }
   })
 
   it('a dry quote carries the checkout’s extras; a reservation carries the order id', async () => {
@@ -447,6 +473,7 @@ describe('sameQuote', () => {
     return {
       totalMinor: quote.totals.totalMinor,
       discountTotalMinor: quote.totals.discountTotalMinor,
+      taxTotalMinor: quote.totals.taxTotalMinor,
       currency: cart.currency,
       shippingAddress: address,
       metadata: codes.length > 0 ? { promotions: { codes } } : {},
@@ -538,5 +565,110 @@ describe('the bound clears its timer', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  // Kills: an engine that throws before returning a promise leaving the timer to reject unheld at the bound.
+  it('an engine that throws synchronously rejects with its error and leaves no timer behind', async () => {
+    vi.useFakeTimers()
+    try {
+      const engine = scriptedEngine()
+      const throwing = {
+        ...engine.adapter,
+        evaluate: () => {
+          throw new Error('engine threw before answering')
+        },
+      }
+      await expect(evaluateBounded(throwing, session, {}, BOUND_MS)).rejects.toThrow(
+        'engine threw before answering',
+      )
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
+describe('AC-12: a payment is for the quote it was placed at, tax included', () => {
+  const home = {
+    firstName: 'A',
+    lastName: 'B',
+    addressLine1: '1 St',
+    city: 'L',
+    region: '',
+    postalCode: 'E1',
+    country: 'GB',
+  } as Address
+  const abroad = { ...home, city: 'Paris', postalCode: '75001', country: 'FR' } as Address
+
+  /** The place quote for `cart` with each line taxed `taxMinor` and the store's flag. */
+  const taxedQuote = (cart: Cart, taxMinor: number, inclusive: boolean): PlaceQuote => ({
+    totals: settleTotals({
+      currency: cart.currency,
+      lines: cart.items.map((i) => ({ id: i.variantId, unitMinor: i.priceMinor, qty: i.qty })),
+      shipping: null,
+      effects: [],
+      tax: { lines: cart.items.map((i) => ({ id: i.variantId, taxMinor })), shippingTaxMinor: 0 },
+      pricesIncludeTax: inclusive,
+    }),
+    effects: [],
+    skipped: false,
+  })
+
+  /** The pending order written from this cart at this quote, its tax columns as the quote set them. */
+  const placedAt = (cart: Cart, quote: PlaceQuote, shipTo: Address): Order =>
+    ({
+      totalMinor: quote.totals.totalMinor,
+      discountTotalMinor: quote.totals.discountTotalMinor,
+      taxTotalMinor: quote.totals.taxTotalMinor,
+      pricesIncludeTax: quote.totals.pricesIncludeTax,
+      currency: cart.currency,
+      shippingAddress: shipTo,
+      metadata: {},
+      lineItems: cart.items.map((i) => ({
+        variantId: i.variantId,
+        qty: i.qty,
+        unitPriceMinor: i.priceMinor,
+        lineTaxMinor: taxMinor(quote, i.variantId),
+      })),
+    }) as unknown as Order
+
+  const taxMinor = (quote: PlaceQuote, id: string): number =>
+    quote.totals.lines.find((l) => l.id === id)!.taxMinor
+
+  // Kills: a pending order reused with a stale tax column (an inclusive rate change keeps the total), or with the
+  // other flag; an exclusive shopper who changed address paying the old tax.
+  it('AC-12: property: sameQuote is false when only the tax or only the inclusive flag differs, false when the address moves to another rate, and true for an unchanged resubmit', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 0, max: 800 }),
+        fc.integer({ min: 0, max: 800 }),
+        fc.boolean(),
+        (placedTax, nowTax, inclusive) => {
+          const cart = cartOf()
+          const placed = taxedQuote(cart, placedTax, inclusive)
+          const order = placedAt(cart, placed, home)
+
+          expect(sameQuote(order, cart, placed, home), 'an unchanged resubmit').toBe(true)
+
+          // The rate changed between attempts. On an inclusive store the total is the same.
+          const requoted = taxedQuote(cart, nowTax, inclusive)
+          expect(requoted.totals.totalMinor - placed.totals.totalMinor).toBe(
+            inclusive ? 0 : nowTax - placedTax,
+          )
+          expect(sameQuote(order, cart, requoted, home), 'the tax changed').toBe(
+            placedTax === nowTax,
+          )
+
+          // Only the flag differs: the order's columns otherwise exactly the quote's.
+          const otherFlag = { ...order, pricesIncludeTax: !inclusive } as Order
+          expect(sameQuote(otherFlag, cart, placed, home), 'the inclusive flag differs').toBe(false)
+
+          // The shopper moved the parcel to a destination taxed at another rate.
+          const there = taxedQuote(cart, nowTax, inclusive)
+          expect(sameQuote(order, cart, there, abroad), 'the address moved').toBe(false)
+        },
+      ),
+      { numRuns: 300 },
+    )
   })
 })

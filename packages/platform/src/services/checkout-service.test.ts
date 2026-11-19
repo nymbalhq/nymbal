@@ -20,6 +20,7 @@ import {
   type PaymentsAdapter,
   type PaymentStatus,
   type PromotionsAdapter,
+  type TaxQuote,
 } from '@nymbalhq/types'
 import { InMemoryDocumentStore } from '../document-store/in-memory.js'
 import { InProcessEventBus } from '../event-bus/in-process.js'
@@ -33,6 +34,7 @@ import { createInventoryService } from './inventory-service.js'
 import { createOrderService } from './order-service.js'
 import { createCartService } from './cart-service.js'
 import { createCheckoutService } from './checkout-service.js'
+import type { TaxAnswer, TaxQuoter, TaxRequest } from './tax-quote.js'
 import { createNativeStubPaymentsAdapter } from '../adapters/payments/native-stub.js'
 import { createLogger } from '../logger.js'
 import { scriptedEngine, type EngineAnswer, type ScriptedEngine } from '../tests/promotions.js'
@@ -42,6 +44,8 @@ import { v7 as uuidv7 } from 'uuid'
 interface SetupOptions {
   promotions?: PromotionsAdapter
   onUnavailable?: 'proceed' | 'refuse'
+  tax?: TaxQuoter
+  pricesIncludeTax?: boolean
 }
 
 async function setup(options: SetupOptions = {}) {
@@ -102,6 +106,8 @@ async function setup(options: SetupOptions = {}) {
     currency: 'GBP',
     ...(options.promotions && { promotions: options.promotions }),
     ...(options.onUnavailable && { promotionsOnUnavailable: options.onUnavailable }),
+    ...(options.tax && { tax: options.tax }),
+    ...(options.pricesIncludeTax !== undefined && { pricesIncludeTax: options.pricesIncludeTax }),
   })
   return {
     commandStore,
@@ -2726,6 +2732,391 @@ describe('CheckoutService: mark-paid, the duplicate-capture backstop and the can
     expect((await historyOf(env, o.started.orderId)).at(-1)!.note).toBe(
       'captured payment not applied: order_not_pending: processing',
     )
+    await env.commandStore.close()
+  })
+})
+
+// The checkout's side of a tax engine, with a quoter scripted here: what it asks for, when it refuses a charge the
+// caller was not shown, when it asks again, and what the order keeps of the answer. The quoter's own outage rules are
+// tax-quote.test.ts's; the HTTP wiring is the integration suites'.
+describe('CheckoutService: tax at checkout', () => {
+  type Env = Awaited<ReturnType<typeof setup>>
+  interface TaxLine {
+    priceMinor: number
+    qty: number
+    variantCode?: string
+    productCode?: string
+  }
+  interface Scripted {
+    /** Tax per line as a percent of its amount, rounded down; may differ per call. */
+    percent: (request: TaxRequest, call: number) => number
+    provider?: string
+    fallback?: boolean
+    inclusive?: boolean
+  }
+
+  /** A quoter answering `script`, recording each request and answer. */
+  function scriptedQuoter(script: Scripted) {
+    const requests: TaxRequest[] = []
+    const answers: TaxAnswer[] = []
+    const quoter: TaxQuoter = {
+      async quote(request) {
+        requests.push(structuredClone(request))
+        const percent = script.percent(request, requests.length)
+        const lines = request.lines.map((line) => ({
+          id: line.id,
+          taxableMinor: line.amountMinor,
+          taxMinor: Math.floor((line.amountMinor * percent) / 100),
+        }))
+        const quote: TaxQuote = {
+          provider: script.provider ?? 'scripted-tax',
+          inclusive: script.inclusive ?? false,
+          lines,
+          shippingTaxMinor: 0,
+          totalTaxMinor: lines.reduce((sum, l) => sum + l.taxMinor, 0),
+        }
+        const answer = { quote, fallback: script.fallback ?? false }
+        answers.push(structuredClone(answer))
+        return answer
+      },
+    }
+    return { quoter, requests, answers }
+  }
+
+  /** A product and variant per line, with the tax codes asked for, and a cart holding them. */
+  async function taxCart(env: Env, lines: TaxLine[]) {
+    const now = new Date()
+    const made = await env.commandStore.transaction(async (tx) => {
+      const out = []
+      for (const [i, line] of lines.entries()) {
+        const tag = uuidv7()
+        const productId = uuidv7()
+        const variantId = uuidv7()
+        await env.repos.product.insert(tx, {
+          id: productId,
+          slug: `tax-${tag}`,
+          name: `Tax ${i}`,
+          status: 'active',
+          taxCode: line.productCode ?? null,
+          createdAt: now,
+          updatedAt: now,
+        })
+        await env.repos.variant.insert(tx, {
+          id: variantId,
+          productId,
+          sku: `TAX-${tag}`,
+          name: `V${i}`,
+          priceMinor: line.priceMinor,
+          stock: 10,
+          options: [],
+          taxCode: line.variantCode ?? null,
+          createdAt: now,
+          updatedAt: now,
+        })
+        out.push({ productId, variantId, sku: `TAX-${tag}` })
+      }
+      return out
+    })
+    const cart = await env.cart.getOrCreate()
+    for (const [i, m] of made.entries()) {
+      await env.cart.addItem(cart.token, {
+        variantId: m.variantId,
+        productId: m.productId,
+        productName: `Tax ${i}`,
+        variantName: `V${i}`,
+        priceMinor: lines[i]!.priceMinor,
+        imageUrl: '',
+        qty: lines[i]!.qty,
+      })
+    }
+    return { token: cart.token, made }
+  }
+
+  const begin = (
+    env: Env,
+    cartToken: string,
+    opts: { expectedTotalMinor?: number; customerId?: string } = {},
+  ) =>
+    env.checkout.beginCheckout({
+      cartToken,
+      email: 'shopper+stub-pending@example.com',
+      billingAddress: makeAddr(),
+      shippingAddress: makeAddr(),
+      ...opts,
+    })
+
+  const orderOf = async (env: Env, orderId: string) =>
+    (await env.commandStore.read((tx) => env.repos.order.findById(tx, orderId)))!
+  const orderCount = (env: Env) =>
+    env.commandStore.read(async (tx) => (await env.repos.order.list(tx, { limit: 100 })).length)
+  const stockOf = async (env: Env, variantId: string) =>
+    (await env.commandStore.read((tx) => env.repos.variant.findById(tx, variantId)))!.stock
+  const notesOf = async (env: Env, orderId: string) =>
+    (await env.commandStore.read((tx) => env.repos.orderHistory.listByOrder(tx, orderId))).map(
+      (h) => h.note ?? '',
+    )
+
+  const LINES: TaxLine[] = [
+    { priceMinor: 2500, qty: 2 },
+    { priceMinor: 999, qty: 1 },
+  ]
+  // 10 % rounded down on each line: 500 + 99.
+  const TAX = 599
+  const SUBTOTAL = 5999
+
+  // Kills: tax added on top of a total the caller never saw; a refusal that still reserves stock or writes an order.
+  it('on an exclusive store, tax refuses a caller that sent no total or the untaxed one, writing nothing; the taxed total places', async () => {
+    const tax = scriptedQuoter({ percent: () => 10 })
+    const env = await setup({ tax: tax.quoter })
+    const { token, made } = await taxCart(env, LINES)
+
+    await expect(begin(env, token)).rejects.toMatchObject({
+      code: 'checkout.total_changed',
+      context: { quoted: null, due: SUBTOTAL + TAX },
+    })
+    await expect(begin(env, token, { expectedTotalMinor: SUBTOTAL })).rejects.toMatchObject({
+      code: 'checkout.total_changed',
+      context: { quoted: SUBTOTAL, due: SUBTOTAL + TAX },
+    })
+    expect(await orderCount(env)).toBe(0)
+    expect(await stockOf(env, made[0]!.variantId)).toBe(10)
+
+    const placed = await begin(env, token, { expectedTotalMinor: SUBTOTAL + TAX })
+
+    const order = await orderOf(env, placed.orderId)
+    expect(order).toMatchObject({ taxTotalMinor: TAX, totalMinor: SUBTOTAL + TAX })
+    expect(placed.totalMinor).toBe(SUBTOTAL + TAX)
+    await env.commandStore.close()
+  })
+
+  // Kills: an inclusive store's tax, or a zero tax, refused as if it had been added on top.
+  it('with no total sent, an inclusive store’s tax and an exclusive store’s zero tax place without refusal', async () => {
+    const within = scriptedQuoter({ percent: () => 10, inclusive: true })
+    const inclusive = await setup({ tax: within.quoter, pricesIncludeTax: true })
+    const a = await taxCart(inclusive, LINES)
+    const placedWithin = await begin(inclusive, a.token)
+    expect(await orderOf(inclusive, placedWithin.orderId)).toMatchObject({
+      taxTotalMinor: TAX,
+      totalMinor: SUBTOTAL,
+      pricesIncludeTax: true,
+    })
+
+    const none = scriptedQuoter({ percent: () => 0 })
+    const exclusive = await setup({ tax: none.quoter })
+    const b = await taxCart(exclusive, LINES)
+    const placedNone = await begin(exclusive, b.token)
+    expect(await orderOf(exclusive, placedNone.orderId)).toMatchObject({
+      taxTotalMinor: 0,
+      totalMinor: SUBTOTAL,
+    })
+    await inclusive.commandStore.close()
+    await exclusive.commandStore.close()
+  })
+
+  // Kills: an order line taxed other than the quote said; a quote reshaped, kept when it says nothing, or lost when it
+  // came from a provider or the fallback.
+  it('each order line’s tax is the quote’s; metadata.tax is kept except for a native zero quote, and a fallback is marked and noted', async () => {
+    const cases: Array<{ percent: number; provider?: string; fallback?: boolean; kept: boolean }> =
+      [
+        { percent: 10, kept: true },
+        { percent: 0, provider: 'native', kept: false },
+        { percent: 0, provider: 'acme-tax', kept: true },
+        { percent: 0, provider: 'native', fallback: true, kept: true },
+        { percent: 10, provider: 'native', fallback: true, kept: true },
+      ]
+    for (const c of cases) {
+      const what = JSON.stringify(c)
+      const tax = scriptedQuoter({ ...c, percent: () => c.percent })
+      const env = await setup({ tax: tax.quoter })
+      const { token } = await taxCart(env, LINES)
+
+      const placed = await begin(env, token, {
+        expectedTotalMinor: SUBTOTAL + (c.percent === 10 ? TAX : 0),
+      })
+
+      const { quote } = tax.answers.at(-1)!
+      const order = await orderOf(env, placed.orderId)
+      const byLine = new Map(quote.lines.map((l) => [l.id, l.taxMinor]))
+      expect(
+        order.lineItems.map((l) => l.lineTaxMinor),
+        what,
+      ).toEqual(order.lineItems.map((l) => byLine.get(l.variantId)))
+      expect(
+        order.lineItems.map((l) => l.lineTaxMinor),
+        what,
+      ).toEqual(c.percent === 10 ? [500, 99] : [0, 0])
+      expect(order.taxTotalMinor, what).toBe(quote.totalTaxMinor)
+      const kept = (order.metadata as { tax?: object }).tax
+      const expected = !c.kept
+        ? undefined
+        : c.fallback === true
+          ? { ...quote, fallback: true }
+          : quote
+      expect(kept, what).toEqual(expected)
+      expect(kept !== undefined && 'fallback' in kept, what).toBe(c.fallback === true)
+      const fallbackNotes = (await notesOf(env, order.id)).filter((n) =>
+        n.startsWith('tax.fallback: the tax engine was unavailable'),
+      )
+      expect(fallbackNotes.length, what).toBe(c.fallback === true ? 1 : 0)
+      await env.commandStore.close()
+    }
+  })
+
+  // Kills: an engine handed the gross amount, another cart's token, a shipping charge it was not given, or the product's
+  // code over the variant's own; and a second quote asked when nothing moved.
+  it('asks once, for each line’s id, sku, amount and quantity with the variant’s tax code, else the product’s, else none, the cart’s currency and token, the shipping address and no shipping', async () => {
+    const tax = scriptedQuoter({ percent: () => 0 })
+    const env = await setup({ tax: tax.quoter })
+    const lines: TaxLine[] = [
+      { priceMinor: 1000, qty: 1, variantCode: 'food', productCode: 'books' },
+      { priceMinor: 1100, qty: 2, productCode: 'books' },
+      { priceMinor: 1200, qty: 3 },
+      { priceMinor: 1300, qty: 1, variantCode: 'clothing' },
+    ]
+    const { token, made } = await taxCart(env, lines)
+
+    await begin(env, token)
+
+    expect(tax.requests).toEqual([
+      {
+        currency: 'GBP',
+        shipTo: makeAddr(),
+        customer: { id: null },
+        lines: [
+          { id: made[0]!.variantId, sku: made[0]!.sku, taxCode: 'food', amountMinor: 1000, qty: 1 },
+          {
+            id: made[1]!.variantId,
+            sku: made[1]!.sku,
+            taxCode: 'books',
+            amountMinor: 2200,
+            qty: 2,
+          },
+          { id: made[2]!.variantId, sku: made[2]!.sku, amountMinor: 3600, qty: 3 },
+          {
+            id: made[3]!.variantId,
+            sku: made[3]!.sku,
+            taxCode: 'clothing',
+            amountMinor: 1300,
+            qty: 1,
+          },
+        ],
+        shipping: null,
+        reference: token,
+      },
+    ])
+    expect(Object.hasOwn(tax.requests[0]!.lines[2]!, 'taxCode')).toBe(false)
+    await env.commandStore.close()
+  })
+
+  // Kills: an exemption passed on from a malformed metadata value, or a customer sent as a guest.
+  it('sends the customer’s id, with an exemption exactly when metadata.taxExemption is { kind: string, certificateId?: string }', async () => {
+    const cases: Array<{ metadata: Record<string, unknown>; exemption?: unknown }> = [
+      {
+        metadata: { taxExemption: { kind: 'resale', certificateId: 'CERT-1' } },
+        exemption: { kind: 'resale', certificateId: 'CERT-1' },
+      },
+      { metadata: { taxExemption: { kind: 'nonprofit' } }, exemption: { kind: 'nonprofit' } },
+      { metadata: {} },
+      { metadata: { taxExemption: 'resale' } },
+      { metadata: { taxExemption: null } },
+      { metadata: { taxExemption: { kind: 5 } } },
+      { metadata: { taxExemption: { certificateId: 'CERT-2' } } },
+      { metadata: { taxExemption: { kind: 'resale', certificateId: 7 } } },
+    ]
+    const tax = scriptedQuoter({ percent: () => 0 })
+    const env = await setup({ tax: tax.quoter })
+    for (const c of cases) {
+      const customerId = uuidv7()
+      const now = new Date()
+      await env.commandStore.transaction((tx) =>
+        env.repos.customer.insert(tx, {
+          id: customerId,
+          email: `${customerId}@example.com`,
+          passwordHash: 'x',
+          metadata: c.metadata,
+          createdAt: now,
+          updatedAt: now,
+        }),
+      )
+      const { token } = await taxCart(env, [{ priceMinor: 1500, qty: 1 }])
+      const from = tax.requests.length
+
+      await begin(env, token, { customerId })
+
+      expect(
+        tax.requests.slice(from).map((r) => r.customer),
+        JSON.stringify(c.metadata),
+      ).toEqual([
+        c.exemption === undefined ? { id: customerId } : { id: customerId, exemption: c.exemption },
+      ])
+    }
+    await env.commandStore.close()
+  })
+
+  // Kills: the dry quote's tax kept after the reservation's evaluation moved the discounted amounts, or a second quote
+  // asked when they did not move.
+  it('asks again at the reservation only when its discount moved the amounts, and the order takes the second answer', async () => {
+    const takes =
+      (amountMinor: number): EngineAnswer =>
+      (session) => ({
+        effects: session.codes.flatMap((code) => [
+          { kind: 'code_accepted' as const, code },
+          { kind: 'order' as const, amountMinor, label: code, code },
+        ]),
+      })
+    for (const moved of [false, true]) {
+      const engine = scriptedEngine()
+      engine.answer(takes(500))
+      // 10 % on the first quote, 20 % on any after, so the order shows which answer it took.
+      const tax = scriptedQuoter({ percent: (_r, call) => (call === 1 ? 10 : 20), inclusive: true })
+      const env = await setup({
+        promotions: engine.adapter,
+        tax: tax.quoter,
+        pricesIncludeTax: true,
+      })
+      const { token, made } = await taxCart(env, [{ priceMinor: 2500, qty: 2 }])
+      await env.cart.addCode(token, 'SAVE')
+      engine.answer((session, opts) =>
+        takes(moved && opts?.orderId !== undefined ? 100 : 500)(session, opts),
+      )
+
+      const placed = await begin(env, token)
+
+      const order = await orderOf(env, placed.orderId)
+      expect(
+        tax.requests.map((r) => r.lines.map((l) => l.amountMinor)),
+        `moved ${moved}`,
+      ).toEqual(moved ? [[4500], [4900]] : [[4500]])
+      expect(
+        order.lineItems.map((l) => l.lineTaxMinor),
+        `moved ${moved}`,
+      ).toEqual([moved ? 980 : 450])
+      expect(order.lineItems[0]!.variantId).toBe(made[0]!.variantId)
+      expect(order.taxTotalMinor).toBe(tax.answers.at(-1)!.quote.totalTaxMinor)
+      await env.commandStore.close()
+    }
+  })
+
+  // Kills: a cart line whose variant is gone sent to the engine with no SKU.
+  it('a cart line whose variant no longer exists refuses with checkout.variant_missing before the engine is asked', async () => {
+    const tax = scriptedQuoter({ percent: () => 0 })
+    const env = await setup({ tax: tax.quoter })
+    const cart = await env.cart.getOrCreate()
+    await env.cart.addItem(cart.token, {
+      variantId: uuidv7(),
+      productId: uuidv7(),
+      productName: 'Gone',
+      variantName: 'Gone',
+      priceMinor: 1000,
+      imageUrl: '',
+      qty: 1,
+    })
+
+    await expect(begin(env, cart.token)).rejects.toMatchObject({
+      code: 'checkout.variant_missing',
+    })
+    expect(tax.requests).toEqual([])
+    expect(await orderCount(env)).toBe(0)
     await env.commandStore.close()
   })
 })

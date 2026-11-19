@@ -54,6 +54,7 @@ const CHECKOUT_STATUS: Record<string, number> = {
   'checkout.variant_missing': 422,
   'checkout.total_changed': 409,
   'checkout.promotions_unavailable': 503,
+  'checkout.tax_unavailable': 503,
 }
 
 const INTERNAL_MESSAGE = 'Internal server error'

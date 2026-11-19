@@ -281,26 +281,80 @@ export interface ShippingAdapter extends CommerceAdapter {
 
 // --- Tax -------------------------------------------------------------------
 
-export interface TaxLine {
+export type TaxCapability = 'quote' | 'commit' | 'refund' | 'codes' | 'exemptions' | 'inclusive'
+
+export interface TaxQuoteLine {
+  /** The cart line's variant id. */
+  id: string
+  sku: string
+  /** The variant's tax code, else its product's; absent when neither has one. */
+  taxCode?: string
+  /** The whole line after its discount (unit × qty − the line's discount), not a unit price. */
   amountMinor: number
   qty: number
 }
 
-export interface TaxCalculationParams {
+export interface TaxQuoteParams {
   currency: string
-  shippingCountry: string
-  shippingRegion: string
-  lines: TaxLine[]
+  shipTo: Address
+  /** `store.shipFrom`, when configured. */
+  shipFrom?: Address
+  customer: { id: string | null; exemption?: { kind: string; certificateId?: string } }
+  lines: readonly TaxQuoteLine[]
+  /** Null while shipping is not charged. */
+  shipping: { amountMinor: number; taxCode?: string } | null
+  pricesIncludeTax: boolean
+  /** The cart token, in every quote; the order id reaches a provider at `commit` (`ref.orderId`). */
+  reference: string
 }
 
-export interface TaxCalculationResult {
+export interface TaxJurisdiction {
+  name: string
+  level: string
+  ratePpm: number
+  amountMinor: number
+}
+
+/**
+ * A provider's answer. The kernel takes it only when it is whole: one line per request line under the request's ids,
+ * every amount a non-negative integer, `totalTaxMinor` the lines' tax plus `shippingTaxMinor`, `inclusive` the
+ * request's flag, and an inclusive line's tax within its amount. Any other answer counts as the engine being down.
+ */
+export interface TaxQuote {
+  provider: string
+  inclusive: boolean
+  lines: {
+    id: string
+    taxableMinor: number
+    taxMinor: number
+    /** Parts per million: 7.25% is 72 500. */
+    ratePpm?: number
+    jurisdictions?: TaxJurisdiction[]
+  }[]
+  shippingTaxMinor: number
   totalTaxMinor: number
-  ratePerLine: Array<{ taxMinor: number }>
+  quoteId?: string
+}
+
+export interface TaxDocument {
+  provider: string
+  documentId: string
 }
 
 export interface TaxAdapter extends CommerceAdapter {
   readonly kind: 'tax'
-  calculate(params: TaxCalculationParams): Promise<TaxCalculationResult>
+  capabilities(): readonly TaxCapability[]
+  quote(params: TaxQuoteParams): Promise<TaxQuote>
+  /** Files a paid order. Idempotent per `ref.orderId`: a repeat answers the same document. */
+  commit?(
+    quote: TaxQuote,
+    ref: { orderId: string; orderNumber: string; currency: string },
+  ): Promise<TaxDocument>
+  /** Files a refund of a committed order. Idempotent per `refund.refundId`. */
+  refund?(
+    doc: TaxDocument,
+    refund: { refundId: string; amountMinor: number; currency: string },
+  ): Promise<void>
 }
 
 // --- Promotions ------------------------------------------------------------

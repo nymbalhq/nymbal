@@ -191,6 +191,7 @@ export function registerAllRoutes(deps: RegisterAllRoutesDeps): void {
     productRepo: repos.product,
     variantRepo: repos.variant,
     secureCookies: secure,
+    pricesIncludeTax: config.store.pricesIncludeTax,
   })
   registerRecentlyViewedRoutes(adapter, {
     recentlyViewed: services.recentlyViewed,

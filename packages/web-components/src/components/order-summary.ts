@@ -20,6 +20,8 @@ const SCHEMA: ElementSchema = {
     { name: 'tax-minor', prop: 'taxMinor', type: 'number' },
     { name: 'total-minor', prop: 'totalMinor', type: 'number' },
     { name: 'currency', prop: 'currency', type: 'string' },
+    // The order's prices hold its tax: the tax row says so, and the total does not add it.
+    { name: 'prices-include-tax', prop: 'pricesIncludeTax', type: 'boolean' },
   ],
   events: [],
   parts: ['summary', 'line', 'totals', 'subtotal', 'discount', 'shipping', 'tax', 'total'],
@@ -109,6 +111,7 @@ export class NymbalOrderSummary extends NymbalElement {
   declare taxMinor: number | undefined
   declare totalMinor: number | undefined
   declare currency: string | undefined
+  declare pricesIncludeTax: boolean
 
   protected override render() {
     const lines = parsedJson<Line[]>(this, 'items', this.items)
@@ -139,7 +142,7 @@ export class NymbalOrderSummary extends NymbalElement {
             ? row('discount', 'Discount', this.discountMinor, (m) => `−${money(m)}`)
             : nothing}
           ${row('shipping', 'Shipping', this.shippingMinor, (m) => (m === 0 ? 'Free' : money(m)))}
-          ${row('tax', 'Tax', this.taxMinor)}
+          ${row('tax', this.pricesIncludeTax ? 'Tax (included)' : 'Tax', this.taxMinor)}
         </dl>
         ${known(this.totalMinor)
           ? html`<div part="total">

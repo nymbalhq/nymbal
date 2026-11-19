@@ -10,6 +10,8 @@ export default defineConfig({
     currency: 'GBP',
     locale: 'en-GB',
     timezone: 'Europe/London',
+    // Prices hold their tax (VAT-style): checkout extracts tax from them instead of adding it on top.
+    pricesIncludeTax: false,
   },
 
   template: 'astro',
@@ -54,7 +56,15 @@ export default defineConfig({
     search: { provider: 'native' },
     analytics: { provider: 'native' },
     shipping: { provider: 'native' },
-    tax: { provider: 'native' },
+    tax: {
+      provider: 'native',
+      // A row per jurisdiction the store collects in: a country, or a US state by its code. A tax code's rate
+      // replaces the row's percent for a product or variant carrying that code. No row: no tax.
+      // rates: [{ country: 'GB', percent: 20, codes: { food: 0 } }, { country: 'US', region: 'CA', percent: 7.25 }],
+      rates: [],
+      // When a third-party engine is down: refuse the checkout, or tax from the rates above.
+      onUnavailable: 'refuse',
+    },
     promotions: { provider: 'native' },
     ai: {
       provider: 'anthropic',

@@ -2,6 +2,8 @@ import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto'
 import type {
   ShippingAdapter,
   TaxAdapter,
+  TaxQuoteLine,
+  TaxQuoteParams,
   WebhookDelivery,
   WebhookEventDraft,
   WebhookHeaders,
@@ -113,13 +115,24 @@ export function createTestHooksAdapter(opts: TestHooksOptions = {}): ShippingAda
   return hookOnly as ShippingAdapter
 }
 
-/** The same provider shape in the tax slot, for a store with a second hooked (or same-named) slot. */
+/** The same provider shape in the tax slot, for a store with a second hooked (or same-named) slot: it taxes nothing. */
 export function createTestHooksTaxAdapter(opts: TestHooksOptions = {}): TaxAdapter {
   return {
     kind: 'tax',
     ...base(opts),
-    async calculate(params) {
-      return { totalTaxMinor: 0, ratePerLine: params.lines.map(() => ({ taxMinor: 0 })) }
+    capabilities: () => ['quote'],
+    async quote(params: TaxQuoteParams) {
+      return {
+        provider: opts.providerName ?? TEST_HOOKS,
+        inclusive: params.pricesIncludeTax,
+        lines: params.lines.map((l: TaxQuoteLine) => ({
+          id: l.id,
+          taxableMinor: l.amountMinor,
+          taxMinor: 0,
+        })),
+        shippingTaxMinor: 0,
+        totalTaxMinor: 0,
+      }
     },
   }
 }

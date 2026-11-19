@@ -39,7 +39,7 @@ export {
 } from './search-oracle.js'
 export { runAnalyticsContract } from './analytics.js'
 export { runShippingContract, type ShippingContractOptions } from './shipping.js'
-export { runTaxContract } from './tax.js'
+export { runTaxContract, type TaxContractOptions } from './tax.js'
 export { runPromotionsContract } from './promotions.js'
 export { runWebhookContract, type WebhookContractOptions, type WebhookRequest } from './webhook.js'
 export {

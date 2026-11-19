@@ -240,7 +240,7 @@ export function slotBuilders(deps: Omit<BuildAdaptersDeps, 'payments' | 'securit
       }),
     analytics: () => slot('analytics', { native: () => createNativeAnalyticsAdapter(logger) }),
     shipping: () => slot('shipping', { native: () => createNativeShippingAdapter(logger) }),
-    tax: () => slot('tax', { native: () => createNativeTaxAdapter(logger) }),
+    tax: () => slot('tax', { native: () => createNativeTaxAdapter({ logger, rates: config.commerce.tax.rates }) }),
     promotions: () =>
       slot('promotions', {
         native: () =>

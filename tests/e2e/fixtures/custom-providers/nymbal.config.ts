@@ -5,7 +5,8 @@ import { createFixturePaymentsAdapter, createFixtureSearchAdapter } from './adap
 
 // The swap config: the repository root's config with `search` and `payments` set to `custom`, the adapters injected
 // through the `adapters` export (`nymbal dev` passes it to createApp), and the API on 3011 so a custom E2E run never
-// reaches the native store on 3001. Its email is Mailgun with the SMTP relay pointed at Mailpit, so the alert journeys
+// reaches the native store on 3001. Its prices include tax, at 20% to a GB address, so the swap runs show an inclusive
+// order's tax. Its email is Mailgun with the SMTP relay pointed at Mailpit, so the alert journeys
 // read what the store sends, and its webhook signing key is the tests' own, so a journey signs Mailgun's bounces and
 // complaints; tests/e2e/playwright.config.ts passes the stack slot's Mailpit SMTP port as NYMBAL_E2E_SMTP_PORT. Its
 // shipping is EasyPost with the tests' webhook secret, so a journey signs EasyPost's tracker updates.
@@ -26,6 +27,8 @@ export default {
     // The order email links here. One API serves both custom storefronts, so a journey opens the mailed link's path
     // and query on its own storefront: the key belongs to the API, not to an origin.
     url: env('NYMBAL_STOREFRONT_URL', 'http://localhost:4331'),
+    // An inclusive total is the shelf prices' sum, so the other journeys on this store keep their totals.
+    pricesIncludeTax: true,
   },
   template: 'astro',
   infrastructure: {
@@ -81,7 +84,7 @@ export default {
     search: { provider: 'custom' },
     analytics: { provider: 'native' },
     shipping: { provider: 'easypost', config: { webhookSecret: EASYPOST_TEST_WEBHOOK_SECRET } },
-    tax: { provider: 'native' },
+    tax: { provider: 'native', rates: [{ country: 'GB', percent: 20 }] },
     ai: { provider: 'none' },
   },
   http: {

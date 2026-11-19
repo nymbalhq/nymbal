@@ -47,6 +47,8 @@ export interface OrderCreateDraftInput {
   cartToken?: string | null
   /** The source of the cart the order is placed from; `storefront` when not given. */
   source?: CartSource
+  /** The line prices hold the tax; false when not given. */
+  pricesIncludeTax?: boolean
 }
 
 /** An imported order's source is always `import`. */
@@ -176,6 +178,7 @@ export function createOrderService(deps: CreateOrderServiceDeps): OrderService {
           paymentIntentId: input.paymentIntentId ?? null,
           cartToken: input.cartToken ?? null,
           ...(input.source !== undefined && { source: input.source }),
+          pricesIncludeTax: input.pricesIncludeTax ?? false,
           createdAt: now,
           updatedAt: now,
         })

@@ -78,7 +78,7 @@ import AccountLayout from '../../../layouts/AccountLayout.astro'
             ` : ''}
             ${order.taxTotalMinor != null ? `
               <div class="confirmation-total-row">
-                <span>Tax</span>
+                <span>${order.pricesIncludeTax === true ? 'Tax (included)' : 'Tax'}</span>
                 <span>${formatPrice(order.taxTotalMinor, order.currency)}</span>
               </div>
             ` : ''}

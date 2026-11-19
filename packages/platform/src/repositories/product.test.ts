@@ -57,6 +57,7 @@ const FULL = {
   seoDescription: 'meta',
   media: [{ url: 'https://cdn.test/a.jpg', alt: 'a' }],
   metadata: { colour: 'red' },
+  taxCode: 'clothing',
 } as unknown as Partial<ProductInsert>
 
 describe('ProductRepository on SQLite', () => {
@@ -186,6 +187,7 @@ describe('ProductRepository on SQLite', () => {
       seoDescription: '',
       media: [],
       metadata: {},
+      taxCode: null,
       createdAt: CREATED.toISOString(),
       updatedAt: CREATED.toISOString(),
     })
@@ -274,7 +276,7 @@ async function withPostgres(
 }
 
 const COLUMNS =
-  '"id", "slug", "name", "description", "short_description", "status", "type", "seo_title", "seo_description", "media", "metadata", "created_at", "updated_at"'
+  '"id", "slug", "name", "description", "short_description", "status", "type", "seo_title", "seo_description", "media", "metadata", "tax_code", "created_at", "updated_at"'
 const SELECT = `select ${COLUMNS} from "products"`
 const ORDER = 'order by "products"."created_at" asc, "products"."id" asc'
 const NAME_HOLDS = 'strpos(lower("products"."name"), lower(cast($1 as text))) > 0'
@@ -291,6 +293,7 @@ const ROW = [
   'meta',
   [{ url: 'a.jpg' }],
   { colour: 'red' },
+  null,
   CREATED.toISOString(),
   UPDATED.toISOString(),
 ]
@@ -306,6 +309,7 @@ const MAPPED = {
   seoDescription: 'meta',
   media: [{ url: 'a.jpg' }],
   metadata: { colour: 'red' },
+  taxCode: null,
   createdAt: CREATED.toISOString(),
   updatedAt: UPDATED.toISOString(),
 }
@@ -397,7 +401,7 @@ describe('ProductRepository on Postgres', () => {
       }),
     )
 
-    const text = `insert into "products" (${COLUMNS}) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`
+    const text = `insert into "products" (${COLUMNS}) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`
     const iso = CREATED.toISOString()
     expect(sent).toEqual([
       {
@@ -414,6 +418,7 @@ describe('ProductRepository on Postgres', () => {
           '',
           '[]',
           '{}',
+          null,
           iso,
           iso,
         ],
@@ -432,6 +437,7 @@ describe('ProductRepository on Postgres', () => {
           'meta',
           JSON.stringify(FULL.media),
           JSON.stringify(FULL.metadata),
+          'clothing',
           iso,
           iso,
         ],

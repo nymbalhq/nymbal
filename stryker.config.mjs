@@ -14,6 +14,7 @@ export default {
     'packages/platform/src/services/**/*.ts',
     'packages/platform/src/repositories/**/*.ts',
     'packages/platform/src/adapters/promotions/**/*.ts',
+    'packages/platform/src/adapters/tax/**/*.ts',
     // Measured by the integration run too (stryker.integration.config.mjs); here by the unit tests beside them.
     'packages/platform/src/events/relay.ts',
     'packages/platform/src/events/publisher.ts',

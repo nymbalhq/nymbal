@@ -67,6 +67,7 @@ const summary = order && {
   'tax-minor': String(order.taxTotalMinor ?? 0),
   'total-minor': String(order.totalMinor),
   currency: order.currency,
+  ...(order.pricesIncludeTax === true && { 'prices-include-tax': '' }),
 }
 
 const shippingAddress = order?.shippingAddress

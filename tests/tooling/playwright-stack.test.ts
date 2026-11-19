@@ -544,6 +544,7 @@ const CAPABILITY_JOURNEYS = [
   'search-pages.spec.ts AC-8',
   'search.spec.ts AC-3',
   'shipped-email.spec.ts AC-10',
+  'tax-included.spec.ts AC-22',
   'verification-rescue.spec.ts AC-24',
 ]
 

@@ -49,6 +49,8 @@ export const products = sqliteTable(
     seoDescription: text('seo_description').notNull().default(''),
     media: text('media').notNull().default('[]'),
     metadata: text('metadata').notNull().default('{}'),
+    /** What a tax engine taxes the product's variants as, unless a variant has its own; null for the standard rate. */
+    taxCode: text('tax_code'),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },
@@ -77,6 +79,7 @@ export const variants = sqliteTable(
     status: text('status', { enum: ['active', 'inactive'] })
       .notNull()
       .default('active'),
+    taxCode: text('tax_code'),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },
@@ -215,6 +218,8 @@ export const orders = sqliteTable(
     captureMethod: text('capture_method', { enum: ['provider', 'manual', 'import'] }),
     /** `storefront`, `import` or `agent:<name>`: who brought the order. */
     source: text('source').notNull().default('storefront'),
+    /** The order's line prices hold its tax: `tax_total_minor` is part of `total_minor`, not added to it. */
+    pricesIncludeTax: integer('prices_include_tax', { mode: 'boolean' }).notNull().default(false),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },

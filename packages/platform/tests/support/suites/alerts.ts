@@ -15,13 +15,7 @@ import {
 } from '@nymbalhq/types'
 import { createCommandStore } from '../../../src/db/command-store.js'
 import { runMigrations } from '../../../src/db/migrate.js'
-import { InMemoryDocumentStore } from '../../../src/document-store/in-memory.js'
-import { InProcessEventBus } from '../../../src/event-bus/in-process.js'
-import { createEventPublisher, createRelay } from '../../../src/index.js'
 import { createLogger } from '../../../src/logger.js'
-import { buildRepositories } from '../../../src/repositories/index.js'
-import { createProductService } from '../../../src/services/product-service.js'
-import { wirePublisher } from '../../../src/tests/publisher.js'
 import { serveKernel, type ServedKernel } from '../http.js'
 import { kernelConfig, MIGRATIONS_ROOT, type Dialect, type Kernel } from '../kernel.js'
 import { eventRows } from '../outbox.js'
@@ -947,50 +941,33 @@ async function migrate(dialect: Dialect, target: string, root: string): Promise<
   }
 }
 
-/** A product with two variants and its events, written by the product service on the schema as it stands. */
+/**
+ * A product with two variants, written in SQL: today's repositories read and write columns a later migration adds, so
+ * they cannot write the schema as it stood before this one.
+ */
 async function seedAt(dialect: Dialect, target: string): Promise<void> {
-  const store = createCommandStore(kernelConfig(dialect), storageOf(dialect, target))
-  try {
-    const logger = createLogger({ pretty: false, level: 'error' })
-    const repos = buildRepositories(store, new InMemoryDocumentStore({ sweepIntervalMs: 0 }))
-    const { publisher } = wirePublisher(
-      { createEventPublisher, createRelay },
-      { store, eventLog: repos.eventLog, eventBus: new InProcessEventBus({ logger }), logger },
+  const tag = randomUUID().slice(0, 8)
+  const productId = randomUUID()
+  const now = new Date().toISOString()
+  await writeAt(
+    dialect,
+    target,
+    'INSERT INTO products (id, slug, name, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+    [productId, `before-alerts-${tag}`, 'Before Alerts', 'active', now, now],
+  )
+  for (const [i, [name, stock]] of (
+    [
+      ['One', 0],
+      ['Two', 4],
+    ] as const
+  ).entries()) {
+    await writeAt(
+      dialect,
+      target,
+      'INSERT INTO variants (id, product_id, sku, name, price_minor, stock, created_at, updated_at) ' +
+        'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [randomUUID(), productId, `BA-${i + 1}-${tag}`, name, 900, stock, now, now],
     )
-    const product = createProductService({
-      store,
-      repos,
-      publisher,
-      logger,
-      currency: kernelConfig(dialect).store.currency,
-    })
-    const tag = randomUUID().slice(0, 8)
-    await product.create({
-      slug: `before-alerts-${tag}`,
-      name: 'Before Alerts',
-      description: '',
-      status: 'active',
-      variants: [
-        {
-          sku: `BA-1-${tag}`,
-          name: 'One',
-          priceMinor: 900,
-          stock: 0,
-          lowStockThreshold: 0,
-          options: [],
-        },
-        {
-          sku: `BA-2-${tag}`,
-          name: 'Two',
-          priceMinor: 900,
-          stock: 4,
-          lowStockThreshold: 0,
-          options: [],
-        },
-      ],
-    })
-  } finally {
-    await store.close()
   }
 }
 

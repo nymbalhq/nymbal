@@ -299,7 +299,9 @@ export function orderStatusMigrationSuite(
               expect(instant(orderRow['updated_at']), `${context}: updated_at`).toBe(instant(order.updatedAt))
               if (!isMoney(order.status)) {
                 const dumpedOrder = dumped.orders.find((o) => o['id'] === order.id)!
-                expect(orderRow, `${context}: a non-money order`).toEqual(dumpedOrder)
+                // Column by column as dumped: a later migration may add a column, which 0023 does not write.
+                const kept = Object.fromEntries(Object.keys(dumpedOrder).map((k) => [k, orderRow[k]]))
+                expect(kept, `${context}: a non-money order`).toEqual(dumpedOrder)
               }
               if (!order.history.some((r) => isMoney(r.from_status) || isMoney(r.to_status))) {
                 expect(rows, `${context}: a history with no money value`).toEqual(

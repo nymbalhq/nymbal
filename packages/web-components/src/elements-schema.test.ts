@@ -1743,6 +1743,7 @@ const INTERFACE: Array<{
       { name: 'tax-minor', type: 'number' },
       { name: 'total-minor', type: 'number' },
       { name: 'currency', type: 'string' },
+      { name: 'prices-include-tax', type: 'boolean' },
     ],
   },
   {

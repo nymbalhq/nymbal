@@ -100,6 +100,7 @@ function fillOrder(view: HTMLElement, order: ShopperOrder): void {
     summary.setAttribute('tax-minor', String(order.taxTotalMinor ?? 0))
     summary.setAttribute('total-minor', String(order.totalMinor))
     summary.setAttribute('currency', order.currency)
+    summary.toggleAttribute('prices-include-tax', order.pricesIncludeTax === true)
   }
   const shipping = field(view, 'shipping')
   if (shipping) {

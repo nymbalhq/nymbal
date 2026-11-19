@@ -33,6 +33,7 @@ export function summaryAttributes(order: ShopperOrder): Record<string, string> {
     'tax-minor': String(order.taxTotalMinor ?? 0),
     'total-minor': String(order.totalMinor),
     currency: order.currency,
+    ...(order.pricesIncludeTax === true && { 'prices-include-tax': '' }),
   }
 }
 
@@ -123,6 +124,7 @@ export function OrderView({
           taxMinor={order.taxTotalMinor ?? 0}
           totalMinor={order.totalMinor}
           currency={order.currency}
+          pricesIncludeTax={order.pricesIncludeTax === true}
           {...(summaryHtml !== undefined && { serverHtml: summaryHtml })}
         />
 

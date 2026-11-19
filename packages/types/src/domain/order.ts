@@ -118,6 +118,8 @@ export interface Order {
   refundedMinor: number
   captureMethod: CaptureMethod | null
   source: OrderSource
+  /** The line prices hold the tax, so `taxTotalMinor` is part of `totalMinor`. Absent reads as false. */
+  pricesIncludeTax?: boolean
   createdAt: string
   updatedAt: string
 }

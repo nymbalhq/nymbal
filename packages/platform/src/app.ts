@@ -10,6 +10,7 @@ import {
   type CommerceSlot,
   type HealthReport,
   type PaymentsAdapter,
+  type TaxAdapter,
   type ResolvedNetwork,
 } from '@nymbalhq/types'
 import { createPlatform, resolvePrimitives, type Platform } from './platform.js'
@@ -115,6 +116,18 @@ export interface CreateAppOptions extends ResolvePrimitivesOptions {
 
 /** Who an ACP agent's keyed requests are recorded as: the agent's own name is a label anyone holding the key can set. */
 const ACP_ACTOR: Actor = { kind: 'system', id: 'acp' }
+
+/** Prices that hold their tax need an engine that extracts it: one that only adds tax would tax them twice. */
+function refuseTaxOnTopOfInclusivePrices(config: NymbalConfig, tax: TaxAdapter): void {
+  if (!config.store.pricesIncludeTax || tax.capabilities().includes('inclusive')) return
+  const provider = config.commerce.tax.provider
+  throw new ConfigError(
+    `store.pricesIncludeTax is true, but the tax provider "${provider}" (${tax.providerName}) does not declare ` +
+      "'inclusive', so it would add tax on top of prices that already hold it; set pricesIncludeTax to false or use " +
+      'a provider that extracts tax from prices.',
+    { code: 'config.tax_not_inclusive', context: { provider } },
+  )
+}
 
 /**
  * A production process must not run on the stub payments adapter (its unsigned webhook confirms any order) or sign
@@ -313,6 +326,7 @@ export async function createApp(
       settings: settings.values,
       ...(options.adapters !== undefined && { injected: options.adapters }),
     })
+    refuseTaxOnTopOfInclusivePrices(config, adapters.tax)
     const relay = createRelay({
       store: platform.commandStore,
       eventLog: repos.eventLog,
@@ -352,6 +366,7 @@ export async function createApp(
       email: adapters.email,
       reviews: adapters.reviews,
       promotions: adapters.promotions,
+      tax: adapters.tax,
       jwtSecret: jwt.secret,
       executeProposal: (row, auth) => {
         if (mcp === undefined)

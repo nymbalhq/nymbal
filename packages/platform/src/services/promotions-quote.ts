@@ -14,7 +14,7 @@ import {
 } from '@nymbalhq/types'
 import type { CommandStore } from '../db/command-store.js'
 import type { Repositories } from '../repositories/index.js'
-import { settleQuote, settleTotals } from './totals.js'
+import { settleQuote, settleTotals, type SettleInput } from './totals.js'
 
 /** How long any engine not marked `inTransaction` may take before it counts as down. */
 export const PROMOTIONS_BOUND_MS = 3000
@@ -34,7 +34,9 @@ export function evaluateBounded(
       boundMs,
     )
   })
-  return Promise.race([engine.evaluate(session, opts), bound]).finally(() => clearTimeout(timer))
+  // Started inside the chain: an engine that throws before returning a promise still clears the timer.
+  const answer = Promise.resolve().then(() => engine.evaluate(session, opts))
+  return Promise.race([answer, bound]).finally(() => clearTimeout(timer))
 }
 
 export interface SessionExtras {
@@ -88,20 +90,28 @@ async function sessionOf(
 const linesOf = (cart: Cart) =>
   cart.items.map((i) => ({ id: i.variantId, unitMinor: i.priceMinor, qty: i.qty }))
 
-function settleInput(cart: Cart, effects: readonly PromotionEffect[]) {
+/** What the cart's lines settle from with these effects, untaxed, under the store's flag. */
+export function settleInputOf(
+  cart: Cart,
+  effects: readonly PromotionEffect[],
+  pricesIncludeTax: boolean,
+): SettleInput {
   return {
     currency: cart.currency,
     lines: linesOf(cart),
     shipping: null,
     effects,
     tax: null,
-    pricesIncludeTax: false,
+    pricesIncludeTax,
   }
 }
 
-/** The totals a cart shows: its stored effects, none while the engine was down at the last evaluation. */
-export function cartTotals(cart: Cart): CheckoutTotals {
-  return settleTotals(settleInput(cart, cart.promotions?.effects ?? []))
+/**
+ * The totals a cart shows: its stored effects, none while the engine was down at the last evaluation. A cart has no
+ * address, so no tax; the flag says whether its prices hold it.
+ */
+export function cartTotals(cart: Cart, pricesIncludeTax = false): CheckoutTotals {
+  return settleTotals(settleInputOf(cart, cart.promotions?.effects ?? [], pricesIncludeTax))
 }
 
 export type CartCodeStatus = {
@@ -167,7 +177,7 @@ export function createCartQuoter(
           customerId: cart.customerId,
         })
         const evaluation = await evaluateBounded(engine, session, { dry: true }, boundMs)
-        const { effects } = settleQuote(settleInput(cart, evaluation.effects))
+        const { effects } = settleQuote(settleInputOf(cart, evaluation.effects, false))
         if (codes.length === 0 && effects.length === 0) return undefined
         return stored(effects, false)
       } catch (err) {
@@ -215,14 +225,21 @@ export function createPlaceQuoter(
     engine: PromotionsAdapter | undefined
     boundMs: number
     onUnavailable: 'proceed' | 'refuse'
+    /** The store's flag, which every place quote's totals carry; false when not given. */
+    pricesIncludeTax?: boolean
     logger: Logger
   },
 ): PlaceQuoter {
   const { engine, boundMs, onUnavailable, logger, store } = deps
+  const pricesIncludeTax = deps.pricesIncludeTax ?? false
   const automatic = engine?.capabilities().includes('automatic') === true
 
   function plain(cart: Cart, skipped: boolean): PlaceQuote {
-    return { totals: settleTotals(settleInput(cart, [])), effects: [], skipped }
+    return {
+      totals: settleTotals(settleInputOf(cart, [], pricesIncludeTax)),
+      effects: [],
+      skipped,
+    }
   }
 
   async function quoted(
@@ -234,7 +251,9 @@ export function createPlaceQuoter(
     if (engine === undefined || (codes.length === 0 && !automatic)) return plain(cart, false)
     const session = await sessionOf(deps, cart, codes, extras)
     const evaluation = await evaluateBounded(engine, session, opts, boundMs)
-    const { totals, effects, refused } = settleQuote(settleInput(cart, evaluation.effects))
+    const { totals, effects, refused } = settleQuote(
+      settleInputOf(cart, evaluation.effects, pricesIncludeTax),
+    )
     const quote: PlaceQuote = {
       totals,
       effects,
@@ -307,12 +326,14 @@ function sameAddress(a: Address, b: Address): boolean {
 
 /**
  * The pending order is for exactly this cart at exactly this quote: the same lines, quantities and prices, the same
- * accepted codes and discount, and the same shipping address.
+ * accepted codes and discount, the same tax under the same flag, and the same shipping address.
  */
 export function sameQuote(order: Order, cart: Cart, quote: PlaceQuote, shipTo: Address): boolean {
   if (
     order.totalMinor !== quote.totals.totalMinor ||
     order.discountTotalMinor !== quote.totals.discountTotalMinor ||
+    order.taxTotalMinor !== quote.totals.taxTotalMinor ||
+    (order.pricesIncludeTax ?? false) !== quote.totals.pricesIncludeTax ||
     order.currency !== cart.currency ||
     order.lineItems.length !== cart.items.length ||
     !sameAddress(order.shippingAddress, shipTo)

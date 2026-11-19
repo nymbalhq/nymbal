@@ -27,6 +27,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 // twin declares a word without its method, has a method without its word, declares tracking with no webhook, labels
 // without rates, an unknown word or one twice, and fails only the words case; a twin that buys a new label on a repeated
 // rate id fails only the labels cases; one with no word runs no rates, labels or tracking case at all.
+// The tax suite runs the same way on an in-memory provider that files documents: one twin answers its first line twice
+// and loses the second, one puts half a unit on a line's tax, one answers a total one more than its lines; each fails
+// only the case named for its defect, and the provider itself passes every case.
 // The reviews suite's submit case runs the same way: an adapter without submit that stores a review anyway, beside the
 // one that refuses it (seeded through `seed`), and a submit adapter that drops the customer and order beside the
 // control; each fails only the submit case.
@@ -54,6 +57,9 @@ const REVIEW_SUBMIT = /\bsubmit:/
 const SHIPPING_WORDS = /\bwords:/
 const SHIPPING_LABELS = /\blabels:/
 const REFUND_LIST = /\brefund list:/
+const TAX_LINES = /\blines:/
+const TAX_AMOUNTS = /\bamounts:/
+const TAX_TOTAL = /\btotal:/
 
 interface Outcome {
   passed: string[]
@@ -446,4 +452,23 @@ describe('the published shipping suite fails an adapter whose words and methods 
       'words',
     ])
   })
+})
+
+describe('the published tax suite fails a provider whose quote the kernel must refuse', () => {
+  // Kills: a suite a provider passes while answering a quote checkout refuses as an outage.
+  it.each([
+    ['answers a repeated line id', 'tax-repeated-line', TAX_LINES],
+    ['answers a fractional amount', 'tax-fractional-amount', TAX_AMOUNTS],
+    ['answers a total that is not the sum of its lines', 'tax-total-not-sum', TAX_TOTAL],
+  ] as const)(
+    'AC-19: a tax provider that %s fails that case and nothing else; the same provider without the defect passes every case',
+    (_defect, broken, about) => {
+      const run = compare(broken, 'tax-control', about)
+
+      expect(run.failed.length, run.why).toBeGreaterThan(0)
+      expect(run.offTopic, run.why).toEqual([])
+      expect(run.controlFailed, run.why).toEqual([])
+      expect(run.controlPassed).toBe(run.badTotal)
+    },
+  )
 })

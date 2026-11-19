@@ -54,6 +54,8 @@ export const products = pgTable(
     seoDescription: text('seo_description').notNull().default(''),
     media: jsonb('media').notNull().default([]),
     metadata: jsonb('metadata').notNull().default({}),
+    /** What a tax engine taxes the product's variants as, unless a variant has its own; null for the standard rate. */
+    taxCode: text('tax_code'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   },
@@ -82,6 +84,7 @@ export const variants = pgTable(
     status: text('status', { enum: ['active', 'inactive'] })
       .notNull()
       .default('active'),
+    taxCode: text('tax_code'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   },
@@ -224,6 +227,8 @@ export const orders = pgTable(
     captureMethod: text('capture_method', { enum: ['provider', 'manual', 'import'] }),
     /** `storefront`, `import` or `agent:<name>`: who brought the order. */
     source: byteOrderedText('source').notNull().default('storefront'),
+    /** The order's line prices hold its tax: `tax_total_minor` is part of `total_minor`, not added to it. */
+    pricesIncludeTax: boolean('prices_include_tax').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   },

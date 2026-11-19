@@ -162,6 +162,8 @@ export interface OrderInsert {
   capture?: OrderCapture & { refundedMinor: number }
   /** Who brought the order; `storefront` when not given. */
   source?: OrderSource
+  /** The line prices hold the tax; false when not given. */
+  pricesIncludeTax?: boolean
   createdAt: Date
   updatedAt: Date
 }
@@ -197,6 +199,7 @@ function rowToOrder(store: CommandStore['kind'], row: Record<string, unknown>): 
     refundedMinor: Number(row.refundedMinor ?? 0),
     captureMethod: (row.captureMethod as CaptureMethod | null) ?? null,
     source: String(row.source) as OrderSource,
+    pricesIncludeTax: Boolean(row.pricesIncludeTax),
     createdAt: fromTimestamp(row.createdAt),
     updatedAt: fromTimestamp(row.updatedAt),
   }
@@ -606,6 +609,7 @@ export function createOrderRepository(store: CommandStore): OrderRepository {
         refundedMinor: o.capture?.refundedMinor ?? 0,
         captureMethod: o.capture?.method ?? null,
         source: o.source ?? 'storefront',
+        pricesIncludeTax: o.pricesIncludeTax ?? false,
       }
       if (tx.kind === 'sqlite') {
         sqliteDb(tx)

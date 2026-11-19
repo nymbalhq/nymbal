@@ -17,6 +17,7 @@ const checkoutStatus: Record<CheckoutCode, number> = {
   finalize_failed: 500,
   total_changed: 409,
   promotions_unavailable: 503,
+  tax_unavailable: 503,
 }
 
 interface Rendered {

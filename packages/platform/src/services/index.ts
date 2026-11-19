@@ -11,7 +11,9 @@ import type { Repositories } from '../repositories/index.js'
 import type { EventPublisher } from '../events/publisher.js'
 import { createProductService, type ProductService } from './product-service.js'
 import { createCategoryService, type CategoryService } from './category-service.js'
-import type { PromotionsAdapter } from '@nymbalhq/types'
+import type { Address, PromotionsAdapter, TaxAdapter } from '@nymbalhq/types'
+import { createNativeTaxAdapter } from '../adapters/tax/native-adapter.js'
+import { createTaxQuoter, TAX_BOUND_MS } from './tax-quote.js'
 import { createCartCatalogue, createCartService, type CartService } from './cart-service.js'
 import { createCustomerService, type CustomerService } from './customer-service.js'
 import { createAuthService, parseDurationToMs, type AuthService } from './auth-service.js'
@@ -100,6 +102,7 @@ export interface BuildServicesDeps {
   email: EmailAdapter
   reviews: ReviewsAdapter
   promotions: PromotionsAdapter
+  tax: TaxAdapter
   /** The effective JWT secret (`resolveAuthSecret`), not the config's field. */
   jwtSecret: string
   /** Runs a stored proposal through its route: the tool surface `attachHttp` builds. */
@@ -118,6 +121,7 @@ export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
     email,
     reviews,
     promotions,
+    tax,
     jwtSecret,
   } = deps
   const inventory = createInventoryService({
@@ -144,6 +148,8 @@ export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
     pendingOrders: repos.order,
     promotions,
   })
+  const { shipFrom, pricesIncludeTax } = config.store
+  const taxLogger = logger.child({ service: 'tax' })
   const checkout = createCheckoutService({
     store,
     repos,
@@ -151,6 +157,17 @@ export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
     logger: logger.child({ service: 'checkout' }),
     promotions,
     promotionsOnUnavailable: config.commerce.promotions.onUnavailable,
+    tax: createTaxQuoter({
+      adapter: tax,
+      fallback: createNativeTaxAdapter({ logger: taxLogger, rates: config.commerce.tax.rates }),
+      onUnavailable: config.commerce.tax.onUnavailable,
+      pricesIncludeTax,
+      // The schema leaves an absent optional field out rather than undefined, so the parsed address is an Address.
+      ...(shipFrom !== undefined && { shipFrom: shipFrom as Address }),
+      boundMs: TAX_BOUND_MS,
+      logger: taxLogger,
+    }),
+    pricesIncludeTax,
     cart,
     orders,
     inventory,

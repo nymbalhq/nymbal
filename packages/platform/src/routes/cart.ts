@@ -29,8 +29,12 @@ interface UpdateBody {
 const CODE_MAX_LENGTH = 64
 
 /** A cart as the routes answer it: its lines, what it comes to, and what the engine said of each code. */
-function priced(cart: Cart) {
-  return { ...cart, totals: cartTotals(cart), promotions: cartCodes(cart.promotions) }
+function pricedAt(cart: Cart, pricesIncludeTax: boolean) {
+  return {
+    ...cart,
+    totals: cartTotals(cart, pricesIncludeTax),
+    promotions: cartCodes(cart.promotions),
+  }
 }
 
 function cookie(token: string, secure = false): ResponseCookie[] {
@@ -70,6 +74,8 @@ export interface RegisterCartRoutesDeps {
   productRepo: ProductRepository
   variantRepo: VariantRepository
   secureCookies?: SecureCookies
+  /** The store's prices hold their tax; false when not given. */
+  pricesIncludeTax?: boolean
 }
 
 /** Who a cart this request opens is for: only the tool invoker sets `ctx.agent`, so no header makes it an agent's. */
@@ -79,6 +85,7 @@ function sourceOf(ctx: RequestContext): CartSource {
 
 export function registerCartRoutes(adapter: HttpAdapter, deps: RegisterCartRoutesDeps): void {
   const { cart, productRepo, variantRepo } = deps
+  const priced = (c: Cart) => pricedAt(c, deps.pricesIncludeTax ?? false)
 
   adapter.registerRoute('GET', '/api/cart', async (ctx) => {
     try {

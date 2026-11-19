@@ -147,7 +147,9 @@ export default function OrderDetailPage() {
             </span>
           </div>
           <div className={confirmStyles.totalRow}>
-            <span className={confirmStyles.totalLabel}>Tax</span>
+            <span className={confirmStyles.totalLabel}>
+              {order.pricesIncludeTax === true ? 'Tax (included)' : 'Tax'}
+            </span>
             <span>{formatPrice(order.taxTotalMinor, order.currency)}</span>
           </div>
           <div className={`${confirmStyles.totalRow} ${confirmStyles.totalGrand}`}>
