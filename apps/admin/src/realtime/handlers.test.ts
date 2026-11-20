@@ -2,7 +2,12 @@ import fc from 'fast-check'
 import { QueryClient, QueryObserver, hashKey, type QueryKey } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 // Shared shapes, read from source: the admin depends on @nymbalhq/types.
-import type { Order, OrderStatus } from '../../../../packages/types/src/index'
+import type {
+  Order,
+  OrderStatus,
+  ProductSnapshot,
+  Variant,
+} from '../../../../packages/types/src/index'
 import { useNotifications } from '@/hooks/useNotifications'
 import { createEventHandlers, resyncLiveQueries } from './handlers'
 
@@ -261,6 +266,261 @@ describe('AC-3: a placed order goes only into the lists whose filter admits it',
   })
 })
 
+/** A cached query's data and freshness, to compare before and after an event. */
+function stateOf(qc: QueryClient, queryKey: QueryKey) {
+  const state = qc.getQueryState(queryKey)!
+  return { data: state.data, isInvalidated: state.isInvalidated, dataUpdatedAt: state.dataUpdatedAt }
+}
+
+describe('AC-1: an order moved elsewhere refreshes every open order view', () => {
+  // Queries no order status change touches.
+  const UNRELATED: QueryKey[] = [
+    ['products', 'list', {}],
+    ['products', 'detail', 'linen-shirt'],
+    ['inventory', 'list', { sort: 'urgency', limit: 200 }],
+    ['inventory', 'history', 'var-1'],
+    ['proposals', 'list', 'pending'],
+    ['proposals', 'count'],
+  ]
+
+  it('AC-1: order.status_changed.v1 { orderId, from, to } marks every orders list, order detail and the dashboard stale with its data unchanged, and leaves products, inventory and proposals queries untouched (property)', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.uniqueArray(fc.oneof(firstPageFilters, anyFilters), {
+          minLength: 1,
+          maxLength: 3,
+          selector: (f) => hashKey(listKey(f)),
+        }),
+        fc.integer({ min: 1, max: 40 }),
+        fc.constantFrom(...STATUSES),
+        fc.constantFrom(...STATUSES),
+        async (filters, n, from, to) => {
+          const qc = freshClient()
+          const target = order(`o-${n}`, from, n)
+          const list = [order('o-other', 'confirmed', 0), target]
+          for (const f of filters) qc.setQueryData(listKey(f), list)
+          const details: QueryKey[] = [
+            ['orders', 'detail', target.orderNumber],
+            ['orders', 'detail', 'NYM-0001'],
+          ]
+          details.forEach((key, i) =>
+            qc.setQueryData(key, { ...order(`d-${i}`, from, i), history: [] }),
+          )
+          qc.setQueryData(['dashboard'], { revenueMinor: 1000, orderCount: 2 })
+          UNRELATED.forEach((key) => qc.setQueryData(key, { key }))
+          const watched = [...filters.map(listKey), ...details, ['dashboard']]
+          const before = new Map(
+            [...watched, ...UNRELATED].map((key) => [hashKey(key), stateOf(qc, key)]),
+          )
+
+          createEventHandlers(qc)('order.status_changed.v1', { orderId: target.id, from, to })
+
+          for (const key of watched) {
+            const label = `${from}->${to} ${hashKey(key)}`
+            expect(qc.getQueryData(key), `${label}: data`).toEqual(before.get(hashKey(key))!.data)
+            expect(qc.getQueryState(key)?.isInvalidated, `${label}: stale`).toBe(true)
+          }
+          for (const key of UNRELATED) {
+            expect(stateOf(qc, key), `untouched ${hashKey(key)}`).toEqual(
+              before.get(hashKey(key)),
+            )
+          }
+        },
+      ),
+      { numRuns: 100 },
+    )
+  })
+})
+
+const VARIANT_AT = '2026-10-18T10:00:00.000Z'
+
+function productVariant(productId: string, i: number, stock: number): Variant {
+  return {
+    id: `${productId}-var-${i}`,
+    productId,
+    sku: `${productId.toUpperCase()}-${i}`,
+    name: `Size ${i}`,
+    priceMinor: 2500 + i,
+    compareAtPriceMinor: null,
+    weightGrams: null,
+    dimensions: null,
+    stock,
+    lowStockThreshold: 2,
+    options: [{ name: 'Size', value: `S${i}` }],
+    status: 'active',
+    createdAt: VARIANT_AT,
+    updatedAt: VARIANT_AT,
+  }
+}
+
+function product(id: string, name: string, stock: number): ProductSnapshot {
+  return {
+    id,
+    slug: `${id}-slug`,
+    name,
+    description: '',
+    shortDescription: '',
+    status: 'active',
+    type: 'simple',
+    seoTitle: '',
+    seoDescription: '',
+    media: [],
+    metadata: {},
+    createdAt: VARIANT_AT,
+    updatedAt: VARIANT_AT,
+    variants: [productVariant(id, 0, stock)],
+    categoryIds: [],
+  }
+}
+
+describe('AC-3: a product or stock change elsewhere refreshes the products and inventory lists and nothing else', () => {
+  type Handle = ReturnType<typeof createEventHandlers>
+  // The event carries a copy that differs from every cached one, so a handler that wrote it in would be seen.
+  const elsewhere = product('prod-1', 'Renamed elsewhere', 99)
+  const EVENTS: Array<[string, (handle: Handle) => void]> = [
+    ['product.created.v1', (h) => h('product.created.v1', { product: product('prod-new', 'New', 5) })],
+    ['product.updated.v1', (h) => h('product.updated.v1', { product: elsewhere })],
+    ['product.deleted.v1', (h) => h('product.deleted.v1', { productId: 'prod-1', slug: 'prod-1-slug' })],
+    [
+      'product.published.v1',
+      (h) => h('product.published.v1', { productId: 'prod-1', slug: 'prod-1-slug' }),
+    ],
+    [
+      'product.unpublished.v1',
+      (h) => h('product.unpublished.v1', { productId: 'prod-1', slug: 'prod-1-slug' }),
+    ],
+    [
+      'product.restocked.v1',
+      (h) =>
+        h('product.restocked.v1', {
+          productId: 'prod-1',
+          variantId: 'prod-1-var-0',
+          previousQty: 0,
+          newQty: 7,
+        }),
+    ],
+    [
+      'product.variant_price_changed.v1',
+      (h) =>
+        h('product.variant_price_changed.v1', {
+          productId: 'prod-1',
+          variantId: 'prod-1-var-0',
+          previousPriceMinor: 2500,
+          priceMinor: 2700,
+          previousCompareAtPriceMinor: null,
+          compareAtPriceMinor: null,
+          currency: 'GBP',
+        }),
+    ],
+    [
+      'inventory.changed.v1',
+      (h) =>
+        h('inventory.changed.v1', {
+          variantId: 'prod-1-var-0',
+          previousQty: 3,
+          newQty: 7,
+          reason: 'manual',
+        }),
+    ],
+  ]
+
+  const productFilters = fc.record(
+    {
+      status: unsetOr(fc.constantFrom('active', 'draft', 'archived')),
+      q: unsetOr(fc.constantFrom('linen', 'wool')),
+      sort: unsetOr(fc.constantFrom('newest', 'name-asc')),
+      limit: unsetOr(fc.constantFrom(20, 100)),
+      offset: unsetOr(fc.constantFrom(0, 20)),
+    },
+    { requiredKeys: [] },
+  )
+  const inventoryFilters = fc.record(
+    {
+      q: unsetOr(fc.constantFrom('LIN', 'wool')),
+      status: unsetOr(fc.constantFrom('in_stock', 'low_stock', 'out_of_stock')),
+      sort: unsetOr(fc.constant('urgency')),
+      limit: unsetOr(fc.constant(200)),
+    },
+    { requiredKeys: [] },
+  )
+  const UNTOUCHED: QueryKey[] = [
+    ['orders', 'list', {}],
+    ['orders', 'detail', 'NYM-1001'],
+    ['dashboard'],
+    ['proposals', 'list', 'pending'],
+    ['customers', 'list', {}],
+    ['activity', {}],
+    ['inventory', 'history', 'prod-1-var-0'],
+  ]
+
+  it('AC-3: each of the seven product events and inventory.changed.v1 marks every products query and every inventory list stale with its data unchanged, and leaves orders, dashboard, proposals, customers, activity and inventory history untouched (property)', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.constantFrom(...EVENTS),
+        fc.uniqueArray(productFilters, {
+          minLength: 1,
+          maxLength: 3,
+          selector: (f) => hashKey(['products', 'list', f]),
+        }),
+        fc.subarray(['prod-1', 'prod-1-slug', 'prod-2-slug'], { minLength: 1 }),
+        fc.uniqueArray(inventoryFilters, {
+          minLength: 1,
+          maxLength: 3,
+          selector: (f) => hashKey(['inventory', 'list', f]),
+        }),
+        fc.integer({ min: 0, max: 20 }),
+        async ([type, fire], pFilters, details, iFilters, stock) => {
+          const qc = freshClient()
+          const list = [product('prod-1', 'Linen Shirt', stock), product('prod-2', 'Wool Scarf', 4)]
+          const rows = list.map((p) => ({
+            variantId: p.variants[0]!.id,
+            productId: p.id,
+            productName: p.name,
+            sku: p.variants[0]!.sku,
+            options: [],
+            stock: p.variants[0]!.stock,
+            threshold: 2,
+            status: 'in_stock',
+            updatedAt: VARIANT_AT,
+          }))
+          const refreshed: QueryKey[] = [
+            ...pFilters.map((f): QueryKey => ['products', 'list', f]),
+            ...details.map((idOrSlug): QueryKey => ['products', 'detail', idOrSlug]),
+            ...iFilters.map((f): QueryKey => ['inventory', 'list', f]),
+          ]
+          for (const key of refreshed) {
+            const data =
+              key[0] === 'inventory'
+                ? rows
+                : key[1] === 'list'
+                  ? list
+                  : list.find((p) => p.id === key[2] || p.slug === key[2])
+            qc.setQueryData(key, data)
+          }
+          UNTOUCHED.forEach((key) => qc.setQueryData(key, { key }))
+          const before = new Map(
+            [...refreshed, ...UNTOUCHED].map((key) => [hashKey(key), stateOf(qc, key)]),
+          )
+
+          fire(createEventHandlers(qc))
+
+          for (const key of refreshed) {
+            const label = `${type} ${hashKey(key)}`
+            expect(qc.getQueryData(key), `${label}: data`).toEqual(before.get(hashKey(key))!.data)
+            expect(qc.getQueryState(key)?.isInvalidated, `${label}: stale`).toBe(true)
+          }
+          for (const key of UNTOUCHED) {
+            expect(stateOf(qc, key), `${type}: untouched ${hashKey(key)}`).toEqual(
+              before.get(hashKey(key)),
+            )
+          }
+        },
+      ),
+      { numRuns: 150 },
+    )
+  })
+})
+
 describe('AC-4: notifications name what the payload carries', () => {
   // Prefixed so one generated value cannot contain another by accident; quantities and thresholds never overlap.
   const id = (prefix: string) => fc.stringMatching(/^[a-z0-9]{4,12}$/).map((s) => `${prefix}-${s}`)
@@ -358,16 +618,16 @@ async function fetchesSettled(qc: QueryClient): Promise<void> {
   })
 }
 
-describe('AC-3: a reconnect resyncs exactly the queries the live handlers maintain', () => {
+describe('AC-4: a reconnect resyncs exactly the queries the live handlers maintain, products included', () => {
   const LIVE_PREFIXES: QueryKey[] = [
     ['orders', 'list'],
     ['orders', 'detail'],
     ['dashboard'],
     ['inventory', 'list'],
-  ]
-  const OTHER_PREFIXES: QueryKey[] = [
     ['products', 'list'],
     ['products', 'detail'],
+  ]
+  const OTHER_PREFIXES: QueryKey[] = [
     ['me'],
     ['settings'],
     ['orders', 'notes'],
@@ -398,7 +658,7 @@ describe('AC-3: a reconnect resyncs exactly the queries the live handlers mainta
       return { live, active, queryKey }
     })
 
-  it('AC-3: resyncLiveQueries refetches every active live query, marks every inactive one stale, refetches a pending first fetch anew rather than joining it, and leaves every other query as it was (property)', async () => {
+  it('AC-4: resyncLiveQueries refetches every active live query (products lists and details among them), marks every inactive one stale, refetches a pending first fetch anew rather than joining it, and leaves every other query as it was (property)', async () => {
     await fc.assert(
       fc.asyncProperty(
         fc.uniqueArray(entryArb, {

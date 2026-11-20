@@ -43,9 +43,8 @@ export function InventoryPage() {
   const adjustStock = useAdjustStock()
 
   const handleAdjust =
-    (variantId: string) => (delta: number, reason: StockAdjustmentReason, idempotencyKey: string) => {
-      void adjustStock.mutateAsync({ variantId, delta, reason, idempotencyKey })
-    }
+    (variantId: string) => (delta: number, reason: StockAdjustmentReason, idempotencyKey: string) =>
+      adjustStock.mutateAsync({ variantId, delta, reason, idempotencyKey })
 
   const borderColor = (status: StockStatus) => {
     if (status === 'out_of_stock') return 'border-l-4 border-l-red-300'
