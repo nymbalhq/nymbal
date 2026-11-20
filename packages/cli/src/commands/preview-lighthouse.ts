@@ -302,6 +302,7 @@ export function planPreviewStorefront(
   projectRoot: string,
   template: TemplateName,
   env: NodeJS.ProcessEnv,
+  command = 'nymbal preview --lighthouse',
 ): PreviewStorefront | { error: string } {
   const cwd = isFlatScaffold(projectRoot, template)
     ? projectRoot
@@ -314,7 +315,7 @@ export function planPreviewStorefront(
   const bin = join(cwd, 'node_modules', '.bin', name)
   if (!existsSync(bin)) {
     return {
-      error: `Cannot find ${name} in ${join(cwd, 'node_modules', '.bin')}: install the storefront's dependencies, then run nymbal preview --lighthouse again`,
+      error: `Cannot find ${name} in ${join(cwd, 'node_modules', '.bin')}: install the storefront's dependencies, then run ${command} again`,
     }
   }
   return { template, cwd, bin, entry: null }

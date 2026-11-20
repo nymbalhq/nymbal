@@ -164,6 +164,10 @@ Add a provider by slot, a third-party adapter by package, or a service by recipe
 
 Move this store to the newest Nymbal release its adapters are certified with
 
+## `nymbal verify`
+
+Build the storefront for production and run a smoke journey (pages, cart, checkout, order, admin) on a throwaway store; your project's own store is not touched
+
 ## `nymbal doctor`
 
 Check the project without changing it: config, packages, command store, migrations, slots and primitives

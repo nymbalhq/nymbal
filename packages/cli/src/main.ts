@@ -19,6 +19,7 @@ import { replayCommand } from './commands/replay.js'
 import { mcpCommand } from './commands/mcp.js'
 import { evalCommand } from './commands/eval.js'
 import { upgradeCommand } from './commands/upgrade.js'
+import { verifyCommand } from './commands/verify.js'
 import {
   securityApplyCommand,
   securityDriftCommand,
@@ -53,6 +54,7 @@ export const main = defineCommand({
     'config:validate': configValidateCommand,
     add: addCommand,
     upgrade: upgradeCommand,
+    verify: verifyCommand,
     doctor: doctorCommand,
     'security:plan': securityPlanCommand,
     'security:apply': securityApplyCommand,
