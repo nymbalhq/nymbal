@@ -57,5 +57,7 @@ await services.checkout.beginCheckout({
   billingAddress: address,
   shippingAddress: address,
 })
+// The checkout answers before the relay delivers its events: let delivery reach the armed publish.
+await store.app.relay.drain()
 console.log('checkout completed without a kill')
 await store.stop()

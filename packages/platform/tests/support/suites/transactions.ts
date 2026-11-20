@@ -11,8 +11,9 @@ import { openRaw, type RawReader } from '../raw.js'
 import { unaudited } from '../write-audit.js'
 
 // AC-4 (SQLite) / AC-5 (Postgres): a transaction that writes through two repositories then throws leaves neither
-// write. AC-9 (both): events are delivered after commit, never after rollback, in order, before `transaction`
-// resolves; a rejected joined block poisons the outermost even when the outer callback catches it.
+// write. AC-9 (both): events are delivered after commit, never after rollback, in order, once the relay has drained
+// (a subscription that is not derived runs after `transaction` resolves); a rejected joined block poisons the
+// outermost even when the outer callback catches it.
 
 type Reserved = NymbalEvent<{ variantId: string; reservationId: string }>
 type Marker = NymbalEvent<{ variantId: string }>
@@ -105,6 +106,7 @@ export function transactionsSuite(
       for (let i = 0; i < attempts; i += 1) {
         await k.services.inventory.reserveStock(seeded.variantId, 1)
       }
+      await k.app.relay.drain()
 
       expect(seen).toHaveLength(attempts)
       expect(seen.filter((s) => s.viaStoreRead !== 'row' || s.viaSecondConnection !== 1)).toEqual(
@@ -129,11 +131,12 @@ export function transactionsSuite(
           throw new Error('abort after publish')
         }),
       ).rejects.toThrow('abort after publish')
+      await k.app.relay.drain()
 
       expect(delivered).toEqual([])
     })
 
-    it('AC-9: two publishes inside one transaction arrive in order, and transaction() resolves only after they are delivered', async () => {
+    it('AC-9: two publishes inside one transaction arrive in order once the relay has drained, and neither before the commit', async () => {
       const marker = `order-${randomUUID()}`
       const delivered: string[] = []
       await k.eventBus.subscribe([EVT_INVENTORY_LOW_STOCK, EVT_INVENTORY_OUT_OF_STOCK], (event) => {
@@ -151,8 +154,8 @@ export function transactionsSuite(
           return delivered.length
         }),
       )
+      await k.app.relay.drain()
 
-      // Nothing awaited between the resolution and this line.
       expect(delivered).toEqual([EVT_INVENTORY_LOW_STOCK, EVT_INVENTORY_OUT_OF_STOCK])
       expect(seenAtResolve).toBeLessThan(delivered.length)
     })
@@ -192,6 +195,7 @@ export function transactionsSuite(
         [outerSlug, innerSlug],
       )
       expect(products).toEqual([])
+      await k.app.relay.drain()
       expect(delivered).toEqual([])
     })
   })

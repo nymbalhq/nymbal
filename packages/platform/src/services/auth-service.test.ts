@@ -38,10 +38,10 @@ async function setup(verification?: 'required' | 'off') {
   const logger = createLogger({ pretty: false, level: 'error' })
   const eventBus = new InProcessEventBus({ logger })
   const repos = buildRepositories(commandStore, documentStore)
-  const publisher = wirePublisher(
+  const { publisher, relay } = wirePublisher(
     { createEventPublisher, createRelay },
     { store: commandStore, eventLog: repos.eventLog, eventBus, logger },
-  ).publisher
+  )
   const auth = createAuthService({
     repos,
     publisher,
@@ -51,12 +51,13 @@ async function setup(verification?: 'required' | 'off') {
     refreshTtl: '7d',
     ...(verification !== undefined && { verification }),
   })
-  return { auth, repos, eventBus, commandStore, publisher, logger }
+  // A command waits only for its events' derived subscriptions: a test reading its own subscriber drains `relay` first.
+  return { auth, repos, eventBus, commandStore, publisher, logger, relay }
 }
 
 describe('AuthService', () => {
   it('register creates customer and emits customer.created', async () => {
-    const { auth, eventBus, commandStore } = await setup()
+    const { auth, eventBus, commandStore, relay } = await setup()
     const events: unknown[] = []
     await eventBus.subscribe(EVT_CUSTOMER_CREATED, (e) => {
       events.push(e.payload)
@@ -71,18 +72,20 @@ describe('AuthService', () => {
     expect(customer.firstName).toBe('Jane')
     expect(tokens.accessToken).toBeTruthy()
     expect(tokens.refreshToken).toBeTruthy()
+    await relay.drain()
     expect(events).toHaveLength(1)
     await commandStore.close()
   })
 
   it("customer.created carries origin 'import' for an imported customer and no origin for a registered one", async () => {
-    const { auth, eventBus, commandStore } = await setup()
+    const { auth, eventBus, commandStore, relay } = await setup()
     const events: Array<{ email: string; origin?: string }> = []
     await eventBus.subscribe(EVT_CUSTOMER_CREATED, (e) => {
       events.push(e.payload as { email: string; origin?: string })
     })
     await auth.register({ email: 'shopper@example.com', password: 'password123' })
     await auth.importCustomer({ email: 'migrated@example.com' })
+    await relay.drain()
     expect(events.map((p) => [p.email, p.origin])).toEqual([
       ['shopper@example.com', undefined],
       ['migrated@example.com', 'import'],
@@ -590,7 +593,7 @@ describe('AuthService: password reset and change', () => {
 
   it('requestPasswordReset publishes one request naming the customer, whatever the case of the address, and nothing for an unknown address; each request is noted', async () => {
     const ctx = await setup()
-    const { auth, eventBus, commandStore } = ctx
+    const { auth, eventBus, commandStore, relay } = ctx
     const { customer } = await auth.register({ email: 'forgot@test.com', password: 'password123' })
     const requested: unknown[] = []
     await eventBus.subscribe(EVT_CUSTOMER_PASSWORD_RESET_REQUESTED, (e) => {
@@ -599,6 +602,7 @@ describe('AuthService: password reset and change', () => {
     const guest = { kind: 'guest', id: 'anonymous' } as const
     await runAsActor(guest, () => auth.requestPasswordReset('FORGOT@Test.com'))
     await runAsActor(guest, () => auth.requestPasswordReset('ghost@test.com'))
+    await relay.drain()
     expect(requested).toEqual([{ customerId: customer.id }])
     expect(await noted(commandStore)).toEqual([
       {
@@ -614,7 +618,7 @@ describe('AuthService: password reset and change', () => {
 
   it('resetPassword with a live link sets the password, clears the reset flag, takes away every link, ends every earlier session, publishes the change and signs in; the link then answers reset_link_invalid', async () => {
     const ctx = await setup()
-    const { auth, repos, eventBus, commandStore } = ctx
+    const { auth, repos, eventBus, commandStore, relay } = ctx
     const imported = await auth.importCustomer({ email: 'moved@test.com' })
     const { customer, tokens: first } = await auth.register({
       email: 'reset@test.com',
@@ -640,6 +644,7 @@ describe('AuthService: password reset and change', () => {
     expect(await refreshes(auth, result.tokens.refreshToken)).toBe(true)
     expect(await signsIn(auth, 'reset@test.com', 'oldpassword1')).toBe(false)
     expect(await signsIn(auth, 'reset@test.com', 'newpassword1')).toBe(true)
+    await relay.drain()
     expect(updated.map((p) => [p.customerId, p.customer.id])).toEqual([
       [customer.id, customer.id],
     ])
@@ -702,7 +707,7 @@ describe('AuthService: password reset and change', () => {
   })
 
   it('changePassword with the current password sets the new one, ends every other session and starts a fresh one', async () => {
-    const { auth, eventBus, commandStore } = await setup()
+    const { auth, eventBus, commandStore, relay } = await setup()
     const { customer, tokens: first } = await auth.register({
       email: 'change@test.com',
       password: 'oldpassword1',
@@ -727,6 +732,7 @@ describe('AuthService: password reset and change', () => {
     expect(await refreshes(auth, other.tokens.refreshToken)).toBe(true)
     expect(await signsIn(auth, 'change@test.com', 'oldpassword1')).toBe(false)
     expect(await signsIn(auth, 'change@test.com', '12345678')).toBe(true)
+    await relay.drain()
     expect(updated).toEqual([customer.id])
     expect(await noted(commandStore)).toEqual([
       {
@@ -874,6 +880,7 @@ describe('AuthService: sign-up verification', () => {
         phone: '+44 20 0000',
       }),
     )
+    await ctx.relay.drain()
 
     const row = (await stored(ctx, 'new@test.com'))!
     expect(row).toMatchObject({
@@ -929,6 +936,7 @@ describe('AuthService: sign-up verification', () => {
       lastName: 'Lovelace',
       phone: '+44 20 0000',
     })
+    await ctx.relay.drain()
     const before = (await stored(ctx, 'again@test.com'))!
     const created = await payloads<CreatedPayload>(ctx.eventBus, EVT_CUSTOMER_CREATED)
     const updated = await payloads<UpdatedPayload>(ctx.eventBus, EVT_CUSTOMER_UPDATED)
@@ -941,6 +949,7 @@ describe('AuthService: sign-up verification', () => {
     await runAsActor(guest, () =>
       ctx.auth.signUp({ email: 'AGAIN@test.com', password: 'secondpass2' }),
     )
+    await ctx.relay.drain()
 
     const after = (await stored(ctx, 'again@test.com'))!
     expect(after.id).toBe(before.id)
@@ -979,6 +988,7 @@ describe('AuthService: sign-up verification', () => {
     })
     const imported = await ctx.auth.importCustomer({ email: 'imported@test.com', phone: '+1 555' })
     const accounts = [confirmed, neverAsked, imported]
+    await ctx.relay.drain()
     const before = await Promise.all(accounts.map((c) => stored(ctx, c.email)))
     const told = await payloads<{ customerId: string }>(ctx.eventBus, EVT_CUSTOMER_REGISTERED_AGAIN)
     const updated = await payloads<UpdatedPayload>(ctx.eventBus, EVT_CUSTOMER_UPDATED)
@@ -998,6 +1008,7 @@ describe('AuthService: sign-up verification', () => {
         }),
       )
     }
+    await ctx.relay.drain()
 
     expect(await Promise.all(accounts.map((c) => stored(ctx, c.email)))).toEqual(before)
     expect(await signsIn(ctx.auth, 'confirmed@test.com', 'password123')).toBe(true)
@@ -1053,6 +1064,7 @@ describe('AuthService: sign-up verification', () => {
     expect((await stored(ctx, 'confirm@test.com'))?.emailVerification).toBe('pending')
 
     const result = await runAsActor(guest, () => ctx.auth.verifyEmail(token))
+    await ctx.relay.drain()
 
     expect(result.customer).toMatchObject({
       id,
@@ -1095,6 +1107,7 @@ describe('AuthService: sign-up verification', () => {
     const pending = await pendingAccount(ctx, 'pending@test.com')
     await confirmedAccount(ctx, 'done@test.com')
     await underPolicy(ctx, 'off').register({ email: 'old@test.com', password: 'password123' })
+    await ctx.relay.drain()
     const requested = await payloads<RequestedPayload>(
       ctx.eventBus,
       EVT_CUSTOMER_VERIFICATION_REQUESTED,
@@ -1103,6 +1116,7 @@ describe('AuthService: sign-up verification', () => {
     for (const email of ['PENDING@Test.com', 'done@test.com', 'old@test.com', 'ghost@test.com']) {
       await runAsActor(guest, () => ctx.auth.resendVerification(email))
     }
+    await ctx.relay.drain()
 
     expect(requested).toEqual([{ customerId: pending.id, reissue: 'if-stale' }])
     expect(await noted(ctx.commandStore)).toEqual([
@@ -1126,6 +1140,7 @@ describe('AuthService: sign-up verification', () => {
       password: 'password123',
     })
     const ghost = randomUUID()
+    await ctx.relay.drain()
     const requested = await payloads<RequestedPayload>(
       ctx.eventBus,
       EVT_CUSTOMER_VERIFICATION_REQUESTED,
@@ -1141,6 +1156,7 @@ describe('AuthService: sign-up verification', () => {
       notFound(ghost),
     )
 
+    await ctx.relay.drain()
     expect(requested).toEqual([{ customerId: pending.id, reissue: 'always' }])
     expect(await noted(ctx.commandStore)).toEqual([
       {
@@ -1183,6 +1199,7 @@ describe('AuthService: sign-up verification', () => {
       notFound(ghost),
     )
 
+    await ctx.relay.drain()
     expect(updated.map((p) => [p.customerId, p.customer.id])).toEqual([[pending.id, pending.id]])
     expect(await noted(ctx.commandStore)).toEqual([
       {

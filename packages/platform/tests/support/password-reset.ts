@@ -4,6 +4,7 @@ import { expect, vi } from 'vitest'
 import { nymbalConfigSchema, type NymbalConfig } from '@nymbalhq/config'
 import type { EmailAdapter, TransactionalEmail } from '@nymbalhq/types'
 import { createLogger } from '../../src/logger.js'
+import { createHold, type Hold } from '../../src/tests/settles-within.js'
 import { serveKernel, type ServedKernel } from './http.js'
 import type { Kernel } from './kernel.js'
 import { eventRows } from './outbox.js'
@@ -56,12 +57,18 @@ export interface Capture {
   attempts: TransactionalEmail[]
   /** Address → how many more sends to it the adapter refuses. */
   refuse: Map<string, number>
+  /** While held, every send waits at the adapter until released (`mail.hold.hold()`, `.release()`, `.waiting(n)`). */
+  hold: Hold
+  /** The sends waiting on the hold now, in arrival order. */
+  held: TransactionalEmail[]
 }
 
 function capture(): Capture {
   const sent: TransactionalEmail[] = []
   const attempts: TransactionalEmail[] = []
   const refuse = new Map<string, number>()
+  const hold = createHold()
+  const held: TransactionalEmail[] = []
   const adapter: EmailAdapter = {
     kind: 'email',
     providerName: 'password-capture',
@@ -72,6 +79,14 @@ function capture(): Capture {
     healthCheck: async () => ({ status: 'healthy' }),
     async sendTransactional(message) {
       attempts.push(message)
+      if (hold.holding) {
+        held.push(message)
+        try {
+          await hold.pass()
+        } finally {
+          held.splice(held.indexOf(message), 1)
+        }
+      }
       const left = refuse.get(message.to) ?? 0
       if (left > 0) {
         refuse.set(message.to, left - 1)
@@ -83,7 +98,7 @@ function capture(): Capture {
     syncCustomerToList: async () => undefined,
     removeCustomerFromList: async () => undefined,
   }
-  return { adapter, sent, attempts, refuse }
+  return { adapter, sent, attempts, refuse, hold, held }
 }
 
 export interface PasswordStore {

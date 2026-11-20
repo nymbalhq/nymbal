@@ -155,6 +155,8 @@ async function codedCart(
   seed: PromotionSeed,
   line: { priceMinor?: number; qty?: number; stock?: number } = {},
 ): Promise<CodedCart> {
+  // A raw write waits on the store's lock with the thread asleep: the last command's pass must be done first.
+  await k.app.relay.drain()
   const promotion = await seedPromotion(k, seed)
   const seeded = await seedVariant(k, line.stock ?? 50, { priceMinor: line.priceMinor ?? 2000 })
   const shop = await primedShopper(served.baseUrl)
@@ -212,6 +214,8 @@ describe('AC-16: an order is written from the settled totals', () => {
               ? Math.floor((subtotal * rule.bps) / 10_000) < subtotal
               : seed.amountOffMinor! < subtotal,
           )
+          // A raw write waits on the store's lock with the thread asleep: the last run's pass must be done first.
+          await k.app.relay.drain()
           await seedPromotion(k, seed)
           const seeded = await Promise.all(
             lines.map((l) => seedVariant(k, l.qty + 5, { priceMinor: l.priceMinor })),
@@ -363,6 +367,8 @@ describe('AC-17: a payment is for the quote it was placed at', () => {
       expect(f.status, JSON.stringify(f.body)).toBe(200)
       return { shop: s, seeded: seededVariant, first: f.body.data!, email: e }
     })()
+    // A raw write waits on the store's lock with the thread asleep: the last command's pass must be done first.
+    await k.app.relay.drain()
     const promotion = await seedPromotion(k, percent(2000))
     const added = (await putCode(shop, promotion.code)).body.data!
     expect(added.totals.discountTotalMinor).toBeGreaterThan(0)
@@ -376,6 +382,8 @@ describe('AC-17: a payment is for the quote it was placed at', () => {
 
   it('AC-17: a discount changed after the first attempt cancels the old intent, then the order, and places a new order at the new total', async () => {
     const { shop, first, email, promotion, cart } = await placed(percent(1000))
+    // A raw write waits on the store's lock with the thread asleep: the last command's pass must be done first.
+    await k.app.relay.drain()
     await updatePromotion(k, promotion.id, 'percent_bps', 2000)
     const subtotal = cart.totals.subtotalMinor
 
@@ -786,6 +794,8 @@ describe('AC-23: a slow engine', () => {
       imageUrl: '',
       qty: 1,
     })
+    // A raw write waits on the store's lock with the thread asleep: the cart's pass must be done first.
+    await k.app.relay.drain()
     await writeRaw(k.dialect, k.target, 'UPDATE carts SET promotions = ? WHERE token = ?', [
       JSON.stringify({
         codes: [code],

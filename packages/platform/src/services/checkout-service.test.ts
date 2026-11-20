@@ -63,10 +63,10 @@ async function setup(options: SetupOptions = {}) {
   const logger = createLogger({ pretty: false, level: 'error' })
   const eventBus = new InProcessEventBus({ logger })
   const repos = buildRepositories(commandStore, documentStore)
-  const publisher = wirePublisher(
+  const { publisher, relay } = wirePublisher(
     { createEventPublisher, createRelay },
     { store: commandStore, eventLog: repos.eventLog, eventBus, logger },
-  ).publisher
+  )
   const payments = createNativeStubPaymentsAdapter({ logger })
   const product = createProductService({
     store: commandStore,
@@ -123,6 +123,7 @@ async function setup(options: SetupOptions = {}) {
     payments,
     publisher,
     repos,
+    relay,
   }
 }
 
@@ -207,6 +208,7 @@ describe('CheckoutService', () => {
     expect(cleared?.items).toHaveLength(0)
 
     // Order placed + events emitted in order
+    await env.relay.drain()
     expect(events).toContain(EVT_ORDER_PLACED)
     expect(events).toContain(EVT_ORDER_PAID)
     expect(events).toContain(EVT_PAYMENT_CAPTURED)

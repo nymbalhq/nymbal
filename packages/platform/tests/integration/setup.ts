@@ -28,10 +28,10 @@ export async function createTestEnv() {
   const logger = createLogger({ pretty: false, level: 'error' })
   const eventBus = new InProcessEventBus({ logger })
   const repos = buildRepositories(commandStore, documentStore)
-  const publisher = wirePublisher(
+  const { publisher, relay } = wirePublisher(
     { createEventPublisher, createRelay },
     { store: commandStore, eventLog: repos.eventLog, eventBus, logger },
-  ).publisher
+  )
   const payments = createNativeStubPaymentsAdapter({ logger })
 
   const product = createProductService({
@@ -84,6 +84,7 @@ export async function createTestEnv() {
     eventBus,
     repos,
     publisher,
+    relay,
     product,
     inventory,
     order,

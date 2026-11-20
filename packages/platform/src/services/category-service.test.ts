@@ -33,12 +33,12 @@ async function setup() {
   const logger = createLogger({ pretty: false, level: 'error' })
   const eventBus = new InProcessEventBus({ logger })
   const repos = buildRepositories(commandStore, documentStore)
-  const publisher = wirePublisher(
+  const { publisher, relay } = wirePublisher(
     { createEventPublisher, createRelay },
     { store: commandStore, eventLog: repos.eventLog, eventBus, logger },
-  ).publisher
+  )
   const service = createCategoryService({ repos, publisher, logger })
-  return { commandStore, eventBus, service }
+  return { commandStore, eventBus, service, relay }
 }
 
 describe('CategoryService', () => {
@@ -49,7 +49,7 @@ describe('CategoryService', () => {
   })
 
   it('create returns category and emits category.created', async () => {
-    const { service, eventBus, commandStore } = await setup()
+    const { service, eventBus, commandStore, relay } = await setup()
     const events: unknown[] = []
     await eventBus.subscribe(EVT_CATEGORY_CREATED, (e) => {
       events.push(e.payload)
@@ -57,6 +57,7 @@ describe('CategoryService', () => {
     const cat = await service.create({ slug: 'apparel', name: 'Apparel' })
     expect(cat.id).toBeTruthy()
     expect(cat.slug).toBe('apparel')
+    await relay.drain()
     expect(events).toHaveLength(1)
     await commandStore.close()
   })
@@ -106,7 +107,7 @@ describe('CategoryService', () => {
   })
 
   it('update patches name and emits category.updated', async () => {
-    const { service, eventBus, commandStore } = await setup()
+    const { service, eventBus, commandStore, relay } = await setup()
     const events: unknown[] = []
     await eventBus.subscribe(EVT_CATEGORY_UPDATED, (e) => {
       events.push(e.payload)
@@ -120,6 +121,7 @@ describe('CategoryService', () => {
     const updated = await service.update(created.id, { name: 'Consumer Electronics' })
     // A patch changes only the fields it names; the event carries the row the caller got back.
     expect(updated).toEqual({ ...created, name: 'Consumer Electronics' })
+    await relay.drain()
     expect(events).toEqual([{ category: updated }])
     await commandStore.close()
   })
@@ -131,7 +133,7 @@ describe('CategoryService', () => {
   })
 
   it('delete removes category and emits category.deleted', async () => {
-    const { service, eventBus, commandStore } = await setup()
+    const { service, eventBus, commandStore, relay } = await setup()
     const events: unknown[] = []
     await eventBus.subscribe(EVT_CATEGORY_DELETED, (e) => {
       events.push(e.payload)
@@ -145,6 +147,7 @@ describe('CategoryService', () => {
     // Exactly one row goes, and it is the one named: a delete without its id filter empties the table.
     expect(after).toHaveLength(before.length - 1)
     expect(after.map((c) => c.id)).toEqual([kept.id])
+    await relay.drain()
     expect(events).toEqual([{ categoryId: created.id, slug: created.slug }])
     await commandStore.close()
   })

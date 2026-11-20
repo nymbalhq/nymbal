@@ -342,6 +342,8 @@ export const importCommand = defineCommand({
         ].join('\n'),
       )
     } finally {
+      // A command answers before its mail and other effects; deliver them before the app stops.
+      await app.relay.drain()
       await app.stop()
     }
   },

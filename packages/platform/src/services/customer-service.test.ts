@@ -30,10 +30,10 @@ async function setup() {
   const logger = createLogger({ pretty: false, level: 'error' })
   const eventBus = new InProcessEventBus({ logger })
   const repos = buildRepositories(commandStore, documentStore)
-  const publisher = wirePublisher(
+  const { publisher, relay } = wirePublisher(
     { createEventPublisher, createRelay },
     { store: commandStore, eventLog: repos.eventLog, eventBus, logger },
-  ).publisher
+  )
   const auth = createAuthService({
     repos,
     publisher,
@@ -43,7 +43,7 @@ async function setup() {
     refreshTtl: '7d',
   })
   const customerService = createCustomerService({ repos, publisher, logger })
-  return { auth, customerService, eventBus, commandStore, repos, logger }
+  return { auth, customerService, eventBus, commandStore, repos, logger, relay }
 }
 
 const addr = {
@@ -75,7 +75,7 @@ describe('CustomerService', () => {
   })
 
   it('updateProfile patches fields and emits customer.updated', async () => {
-    const { auth, customerService, eventBus, commandStore } = await setup()
+    const { auth, customerService, eventBus, commandStore, relay } = await setup()
     const events: unknown[] = []
     await eventBus.subscribe(EVT_CUSTOMER_UPDATED, (e) => {
       events.push(e.payload)
@@ -83,6 +83,7 @@ describe('CustomerService', () => {
     const { customer } = await auth.register({ email: 'update@test.com', password: 'password123' })
     const updated = await customerService.updateProfile(customer.id, { firstName: 'Updated' })
     expect(updated.firstName).toBe('Updated')
+    await relay.drain()
     expect(events.length).toBeGreaterThanOrEqual(1)
     await commandStore.close()
   })
@@ -281,7 +282,7 @@ describe('CustomerService: admin notes', () => {
   })
 
   it('addNote publishes customer.updated carrying the snapshot of the customer as written', async () => {
-    const { auth, customerService, eventBus, commandStore } = await setup()
+    const { auth, customerService, eventBus, commandStore, relay } = await setup()
     const { customer } = await auth.register({ email: 'noteevt@test.com', password: 'password123' })
     const events: unknown[] = []
     await eventBus.subscribe(EVT_CUSTOMER_UPDATED, (e) => {
@@ -289,6 +290,7 @@ describe('CustomerService: admin notes', () => {
     })
     await customerService.addNote(customer.id, first)
     const profile = await customerService.getProfile(customer.id)
+    await relay.drain()
     expect(events).toEqual([{ customerId: customer.id, customer: toCustomerSnapshot(profile) }])
     await commandStore.close()
   })
@@ -311,7 +313,7 @@ describe('CustomerService: admin notes', () => {
   })
 
   it('addNote on an unknown customer throws the customer not-found error and publishes nothing', async () => {
-    const { customerService, eventBus, commandStore } = await setup()
+    const { customerService, eventBus, commandStore, relay } = await setup()
     const events: unknown[] = []
     await eventBus.subscribe(EVT_CUSTOMER_UPDATED, (e) => {
       events.push(e.payload)
@@ -319,6 +321,7 @@ describe('CustomerService: admin notes', () => {
     const refusal = customerService.addNote('ghost', first)
     await expect(refusal).rejects.toThrow(NotFoundError)
     await expect(refusal).rejects.toThrow('customer not found: ghost')
+    await relay.drain()
     expect(events).toEqual([])
     await commandStore.close()
   })

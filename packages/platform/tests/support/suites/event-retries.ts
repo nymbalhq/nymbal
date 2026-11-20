@@ -20,7 +20,7 @@ import { createLogger } from '../../../src/logger.js'
 import { startEventRetentionSweeper } from '../../../src/sweepers/event-retention-sweeper.js'
 import { retryDeadOf, retryFloorOf, type DeadSelection } from '../../../src/tests/event-retry.js'
 import { address, checkoutOf, seedVariant, type Dialect, type Kernel } from '../kernel.js'
-import { eventRows, failPublishFor, maxSeq, type FailingBus } from '../outbox.js'
+import { eventRows, failPublishFor, firstTried, maxSeq, type FailingBus } from '../outbox.js'
 import { openRaw, writeRaw, type RawReader } from '../raw.js'
 import {
   DOCUMENT_COLLECTIONS,
@@ -460,6 +460,8 @@ async function apply(
         const email = `alert-${o.who}-${run}@retries.test`
         const kind = o.priceDrop ? 'price_drop' : 'back_in_stock'
         await s.alert.subscribe({ email, variantId: v.id, kind, origin: SHOP })
+        // The shopper confirms from the mail, which goes after the answer.
+        await k.app.relay.drain()
         const [row] = await raw.rows<{ confirm_token: string; status: string }>(
           'SELECT confirm_token, status FROM alert_subscriptions WHERE email = ? AND variant_id = ? AND kind = ?',
           [email, v.id, kind],
@@ -578,6 +580,8 @@ export function eventRetriesSuite(dialect: Dialect, options: RetriesSuiteOptions
         const before = await maxSeq(raw)
         let failedAt = clock.at
         await seedVariant(k, 1)
+        // The pass the commit started makes the first failure; its retry is a delay away, so this drain adds none.
+        await k.app.relay.drain()
         const { id } = await onlyRow(raw, before, EVT_PRODUCT_CREATED)
 
         for (let failure = 1; failure < MAX_ATTEMPTS; failure += 1) {
@@ -671,6 +675,8 @@ export function eventRetriesSuite(dialect: Dialect, options: RetriesSuiteOptions
             expect(toured, 'a tour command was refused, so the run proves less than it says').toBe(
               TOUR.length,
             )
+            // The tour's alerts go after its answers: hand them over before the tail can delete what they name.
+            await k.app.relay.drain()
             for (const o of tail) await apply(k, raw, world, run, o)
             await drainedOut(k, raw)
 
@@ -820,7 +826,8 @@ export function eventRetriesSuite(dialect: Dialect, options: RetriesSuiteOptions
       const number = `TRK${randomUUID().replace(/-/g, '').slice(0, 12).toUpperCase()}`
       const before = await maxSeq(raw)
       await k.services.order.markShipped(started.orderId, number, 'royal-mail', 'retries')
-      const { id } = await onlyRow(raw, before, EVT_ORDER_SHIPPED)
+      // The pass the commit started makes the first failure; each drain after it makes one more.
+      const { id } = await firstTried(raw, 'seq > ? AND type = ?', [before, EVT_ORDER_SHIPPED])
       await drains(k, MAX_ATTEMPTS - 1)
       const [row] = await eventRows(raw, 'id = ?', [id])
       expect([row!.attempts, row!.deadAt != null], 'the shipped event, killed by tracking').toEqual(
@@ -840,6 +847,8 @@ export function eventRetriesSuite(dialect: Dialect, options: RetriesSuiteOptions
         const refusing = failPublishFor(k.eventBus, [EVT_CATEGORY_CREATED])
         const before = await maxSeq(raw)
         await k.services.category.create({ slug: `dead-${randomUUID()}`, name: 'Dead' })
+        // The pass the commit started makes the first failure; its retry is a delay away, so this drain adds none.
+        await k.app.relay.drain()
         const { id } = await onlyRow(raw, before, EVT_CATEGORY_CREATED)
         for (let failure = 1; failure < MAX_ATTEMPTS; failure += 1) {
           clock.at = (await retryAtOf(raw, id))!
@@ -1019,6 +1028,7 @@ export function eventRetriesSuite(dialect: Dialect, options: RetriesSuiteOptions
       try {
         const before = await maxSeq(raw)
         await k.services.category.create({ slug: `delivered-${randomUUID()}`, name: 'Delivered' })
+        await k.app.relay.drain()
         const { id, deliveredAt } = await onlyRow(raw, before, EVT_CATEGORY_CREATED)
         expect(deliveredAt != null, 'the fixture: the event delivered at its commit').toBe(true)
         await k.store.transaction((tx) => k.repos.eventLog.recordFailure(tx, id, new Date(), 1))

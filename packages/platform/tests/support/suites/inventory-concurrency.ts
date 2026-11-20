@@ -95,6 +95,7 @@ export function inventoryConcurrencySuite(
           k.services.inventory.releaseReservation(reservationId, 'expired'),
           k.services.inventory.commitReservation(reservationId, 'tester'),
         ])
+        await k.app.relay.drain()
 
         expect(release!.status).toBe('fulfilled')
         const winner = commit!.status === 'fulfilled' ? 'commit' : 'release'

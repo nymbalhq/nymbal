@@ -1,3 +1,4 @@
+import { expect, vi } from 'vitest'
 import type { EventBusAdapter, NymbalEvent } from '@nymbalhq/types'
 import type { RawReader } from './raw.js'
 
@@ -48,6 +49,30 @@ export async function eventRows(
     attempts: Number(row.attempts),
     deadAt: row.dead_at,
   }))
+}
+
+/**
+ * The one row `where` selects, once a relay pass has tried it (delivered it, or counted a failure). It asks the relay
+ * for no pass: a command's answer does not wait for the pass it started, and a drain here would be one more attempt.
+ */
+export async function firstTried(
+  raw: RawReader,
+  where: string,
+  params: unknown[] = [],
+): Promise<EventRow> {
+  let tried: EventRow | undefined
+  await vi.waitFor(
+    async () => {
+      const rows = await eventRows(raw, where, params)
+      expect(
+        rows.map((r) => r.attempts > 0 || r.deliveredAt != null),
+        where,
+      ).toEqual([true])
+      tried = rows[0]
+    },
+    { timeout: 10_000, interval: 10 },
+  )
+  return tried!
 }
 
 /** The highest `seq` so far (0 for an empty log): rows a step appends are the ones above it. */

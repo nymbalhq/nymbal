@@ -334,6 +334,8 @@ export function stuckProposalsSuite(dialect: Dialect, fresh: FreshDatabase): voi
 
             const sweep = sweeper()
             await sweep.tick()
+            // The settled event's relay pass is not awaited by the tick: delivery stamps its row, so it is done first.
+            await kernel.app.relay.drain()
 
             expect((await read(stuck.id)).status).toBe('failed')
             expect(await read(notStuck.id)).toEqual(notStuck)
@@ -343,6 +345,7 @@ export function stuckProposalsSuite(dialect: Dialect, fresh: FreshDatabase): voi
             expect(eventsAfterFirst).toHaveLength(1)
 
             await sweep.tick()
+            await kernel.app.relay.drain()
 
             expect(await read(stuck.id)).toEqual(settledRow)
             expect(await settledEvents(raw, stuck.id)).toEqual(eventsAfterFirst)

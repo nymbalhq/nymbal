@@ -97,12 +97,13 @@ const testItem = {
 
 describe('CartService', () => {
   it('getOrCreate creates a new cart and emits cart.created', async () => {
-    const { service, eventBus } = await makeDeps()
+    const { service, eventBus, relay } = await makeDeps()
     const received: unknown[] = []
     await eventBus.subscribe(EVT_CART_CREATED, (e) => {
       received.push(e.payload)
     })
     const cart = await service.getOrCreate()
+    await relay.drain()
     expect(cart.token).toBeTruthy()
     expect(cart.items).toHaveLength(0)
     expect(received).toHaveLength(1)
@@ -121,7 +122,7 @@ describe('CartService', () => {
   })
 
   it('addItem adds item to cart and emits item.added + updated', async () => {
-    const { service, eventBus } = await makeDeps()
+    const { service, eventBus, relay } = await makeDeps()
     const added: unknown[] = []
     const updated: unknown[] = []
     await eventBus.subscribe(EVT_CART_ITEM_ADDED, (e) => {
@@ -132,6 +133,7 @@ describe('CartService', () => {
     })
     const cart = await service.getOrCreate()
     const updated_cart = await service.addItem(cart.token, testItem)
+    await relay.drain()
     expect(updated_cart.items).toHaveLength(1)
     expect(updated_cart.subtotalMinor).toBe(1000)
     expect(added).toHaveLength(1)
@@ -170,7 +172,7 @@ describe('CartService', () => {
   })
 
   it('updateItemQuantity with qty=0 removes item and emits removed', async () => {
-    const { service, eventBus } = await makeDeps()
+    const { service, eventBus, relay } = await makeDeps()
     const removed: unknown[] = []
     await eventBus.subscribe(EVT_CART_ITEM_REMOVED, (e) => {
       removed.push(e.payload)
@@ -178,6 +180,7 @@ describe('CartService', () => {
     const cart = await service.getOrCreate()
     await service.addItem(cart.token, testItem)
     const updated = await service.updateItemQuantity(cart.token, testItem.variantId, 0)
+    await relay.drain()
     expect(updated.items).toHaveLength(0)
     expect(removed).toHaveLength(1)
   })
@@ -200,7 +203,7 @@ describe('CartService', () => {
   })
 
   it('removeItem removes item and emits removed', async () => {
-    const { service, eventBus } = await makeDeps()
+    const { service, eventBus, relay } = await makeDeps()
     const removed: unknown[] = []
     await eventBus.subscribe(EVT_CART_ITEM_REMOVED, (e) => {
       removed.push(e.payload)
@@ -208,12 +211,13 @@ describe('CartService', () => {
     const cart = await service.getOrCreate()
     await service.addItem(cart.token, testItem)
     const updated = await service.removeItem(cart.token, testItem.variantId)
+    await relay.drain()
     expect(updated.items).toHaveLength(0)
     expect(removed).toHaveLength(1)
   })
 
   it('removeItem on non-existent variant still resolves (no event)', async () => {
-    const { service, eventBus } = await makeDeps()
+    const { service, eventBus, relay } = await makeDeps()
     const removed: unknown[] = []
     await eventBus.subscribe(EVT_CART_ITEM_REMOVED, (e) => {
       removed.push(e.payload)
@@ -221,7 +225,7 @@ describe('CartService', () => {
     const cart = await service.getOrCreate()
     const updated = await service.removeItem(cart.token, 'var-ghost')
     expect(updated.items).toHaveLength(0)
-    await new Promise((r) => setTimeout(r, 10))
+    await relay.drain()
     expect(removed).toHaveLength(0)
   })
 
@@ -789,6 +793,8 @@ describe('merge and signIn', () => {
       ['b', 3],
     ])
     selling = new Set(['a'])
+    // The setup's commits answered before their delivery; only signIn's events are recorded.
+    await relay.drain()
     const seen = await recordEvents(eventBus)
 
     const result = await service.signIn(guest.token, 'cust')
@@ -843,6 +849,8 @@ describe('merge and signIn', () => {
     const { service, eventBus, relay } = await makeDeps(() => true, { now: () => new Date(t) })
     const own = await cartOf(service, 'cust', [['a', 4]])
     t += 60_000
+    // The setup's commits answered before their delivery; only signIn's events are recorded.
+    await relay.drain()
     const seen = await recordEvents(eventBus)
 
     const results = [

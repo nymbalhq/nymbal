@@ -51,10 +51,10 @@ async function setup() {
   const logger = createLogger({ pretty: false, level: 'error' })
   const eventBus = new InProcessEventBus({ logger })
   const repos = buildRepositories(commandStore, documentStore)
-  const publisher = wirePublisher(
+  const { publisher, relay } = wirePublisher(
     { createEventPublisher, createRelay },
     { store: commandStore, eventLog: repos.eventLog, eventBus, logger },
-  ).publisher
+  )
   const product = createProductService({
     store: commandStore,
     repos,
@@ -70,7 +70,7 @@ async function setup() {
     orderNumberPrefix: 'TEST',
     orderNumberStart: 1000,
   })
-  return { commandStore, eventBus, orderService, product, repos }
+  return { commandStore, eventBus, orderService, product, repos, relay }
 }
 
 async function createLine(price = 2500, qty = 1): Promise<OrderLineItem> {
@@ -91,7 +91,7 @@ async function createLine(price = 2500, qty = 1): Promise<OrderLineItem> {
 
 describe('OrderService', () => {
   it('createFromCheckout emits order.placed + returns order with orderNumber', async () => {
-    const { commandStore, eventBus, orderService } = await setup()
+    const { commandStore, eventBus, orderService, relay } = await setup()
     const received: unknown[] = []
     await eventBus.subscribe(EVT_ORDER_PLACED, (e) => {
       received.push(e.payload)
@@ -113,6 +113,7 @@ describe('OrderService', () => {
     })
     expect(order.orderNumber).toMatch(/^TEST-/)
     expect(order.status).toBe('pending')
+    await relay.drain()
     expect(received).toHaveLength(1)
     await commandStore.close()
   })
@@ -298,7 +299,7 @@ describe('OrderService', () => {
   })
 
   it('markShipped emits shipped event', async () => {
-    const { commandStore, eventBus, orderService } = await setup()
+    const { commandStore, eventBus, orderService, relay } = await setup()
     const id = uuidv7()
     const line = await createLine()
     await orderService.createFromCheckout({
@@ -323,12 +324,13 @@ describe('OrderService', () => {
     })
     const shipped = await orderService.markShipped(id, 'TRK123', 'Royal Mail', 'admin')
     expect(shipped.status).toBe('shipped')
+    await relay.drain()
     expect(received).toHaveLength(1)
     await commandStore.close()
   })
 
   it('markDelivered transitions shipped → delivered', async () => {
-    const { commandStore, eventBus, orderService } = await setup()
+    const { commandStore, eventBus, orderService, relay } = await setup()
     const id = uuidv7()
     const line = await createLine()
     await orderService.createFromCheckout({
@@ -354,12 +356,13 @@ describe('OrderService', () => {
     })
     const delivered = await orderService.markDelivered(id, 'admin')
     expect(delivered.status).toBe('delivered')
+    await relay.drain()
     expect(received).toHaveLength(1)
     await commandStore.close()
   })
 
   it('cancel emits order.cancelled', async () => {
-    const { commandStore, eventBus, orderService } = await setup()
+    const { commandStore, eventBus, orderService, relay } = await setup()
     const id = uuidv7()
     const line = await createLine()
     await orderService.createFromCheckout({
@@ -382,12 +385,13 @@ describe('OrderService', () => {
     })
     const cancelled = await orderService.cancel(id, 'test reason', 'admin')
     expect(cancelled.status).toBe('cancelled')
+    await relay.drain()
     expect(received).toHaveLength(1)
     await commandStore.close()
   })
 
   it('importOrder inserts historical order and emits order.placed', async () => {
-    const { commandStore, eventBus, orderService } = await setup()
+    const { commandStore, eventBus, orderService, relay } = await setup()
     const received: unknown[] = []
     await eventBus.subscribe(EVT_ORDER_PLACED, (e) => {
       received.push(e.payload)
@@ -417,6 +421,7 @@ describe('OrderService', () => {
     expect(order.orderNumber).toBe('WC-1001')
     expect(order.status).toBe('confirmed')
     expect(order.notes).toBe('Imported from WooCommerce')
+    await relay.drain()
     expect(received).toHaveLength(1)
     await commandStore.close()
   })

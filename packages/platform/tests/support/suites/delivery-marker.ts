@@ -65,6 +65,8 @@ export function deliveryMarkerSuite(
 
       expect(outcome, 'the outer create never resolved').not.toBe(timedOut)
       expect(elapsed).toBeLessThan(boundMs)
+      // The probe is not derived: the pass the create started runs it, after the create's answer.
+      await k.app.relay.drain()
       expect(inner.length).toBe(1)
       const innerId = await inner[0]!
       expect((await k.services.product.getById(innerId))?.id).toBe(innerId)

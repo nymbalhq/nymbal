@@ -12,7 +12,7 @@
     "packages/importers/src/woocommerce/mappers/units.ts": 100,
     "packages/platform/src/adapters/promotions/native-adapter.ts": 87.23,
     "packages/platform/src/adapters/tax/native-adapter.ts": 60,
-    "packages/platform/src/events/publisher.ts": 82.14,
+    "packages/platform/src/events/publisher.ts": 96.97,
     "packages/platform/src/events/relay.ts": 72.33,
     "packages/platform/src/repositories/audit-entry.ts": 59.83,
     "packages/platform/src/repositories/cart.ts": 66.94,

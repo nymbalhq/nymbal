@@ -64,6 +64,8 @@ writeFileSync(
   JSON.stringify({ orderId: started.orderId, paymentIntentId: started.paymentIntent.id }),
 )
 
+// The setup's commands answered before their delivery: let it finish, so the armed publish is finalize's.
+await store.app.relay.drain()
 armChaos(store.app.platform.eventBus)
 await services.checkout.finalize(started.paymentIntent.id, {
   amountMinor: started.totalMinor,

@@ -99,6 +99,8 @@ export async function runImportRollback(run: ImportRollbackRun): Promise<void> {
     console.error(err.message)
     refused = true
   } finally {
+    // A command answers before its mail and other effects; deliver them before the app stops.
+    await app.relay.drain()
     await app.stop()
   }
   if (refused) process.exit(1)

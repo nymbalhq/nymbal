@@ -28,7 +28,11 @@ async function lookupFor(
   }
 }
 
-/** `report-rollups`: one delivery, one transaction. The claim and the counters commit or roll back together. */
+/**
+ * `report-rollups`: one delivery, one transaction. The claim and the counters commit or roll back together, so the
+ * relay's delivery after the command's own (it is derived, so reports count an order straight after the answer) adds
+ * nothing.
+ */
 export async function registerReportRollupProjection(
   deps: RegisterReportRollupProjectionDeps,
 ): Promise<void> {
@@ -44,5 +48,5 @@ export async function registerReportRollupProjection(
     })
     logger.debug({ type: event.type }, 'report rollup applied')
   }
-  await eventBus.subscribe([...ROLLUP_EVENT_TYPES], handle, { name: NAME })
+  await eventBus.subscribe([...ROLLUP_EVENT_TYPES], handle, { name: NAME, derived: true })
 }

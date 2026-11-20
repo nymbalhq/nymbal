@@ -184,6 +184,8 @@ async function basket(
   lines: readonly Line[],
   bps: number | null = null,
 ): Promise<Basket> {
+  // A raw write waits on the store's lock with the thread asleep: the last command's pass must be done first.
+  await s.k.app.relay.drain()
   const promotion =
     bps === null
       ? undefined

@@ -132,6 +132,8 @@ async function basket(
   const seeded = await Promise.all(
     lines.map((l) => seedVariant(s.k, l.qty + 5, { priceMinor: l.priceMinor })),
   )
+  // A raw write waits on the store's lock with the thread asleep: the last command's pass must be done first.
+  await s.k.app.relay.drain()
   await opts.before?.(seeded)
   const shop = await primedShopper(s.served.baseUrl)
   let auth: Record<string, string> = {}
@@ -139,6 +141,7 @@ async function basket(
   if (opts.signedIn !== undefined) {
     const customer = await registeredCustomer(s.k)
     if (opts.signedIn.metadata !== undefined) {
+      await s.k.app.relay.drain()
       await writeRaw(s.k.dialect, s.k.target, 'UPDATE customers SET metadata = ? WHERE id = ?', [
         JSON.stringify(opts.signedIn.metadata),
         customer.id,
@@ -158,6 +161,7 @@ async function basket(
     expect(added.status, JSON.stringify(added.body)).toBe(200)
   }
   if (opts.bps !== undefined) {
+    await s.k.app.relay.drain()
     const promotion = await seedPromotion(s.k, {
       code: uniqueCode('ENGINE'),
       kind: 'percent',

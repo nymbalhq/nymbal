@@ -17,7 +17,12 @@ export interface SubscriptionConfig {
    * handled by every subscriber on every instance. On a single-process bus the two are the same.
    */
   name?: string
-  /** The subscriber only maintains derived state (a projection, a search index): it also receives `replay`. */
+  /**
+   * The subscriber only maintains derived state (a projection, a search index): it also receives `replay`. The kernel
+   * runs a derived subscription before a command answers, through `replay`, and again when the relay delivers the
+   * event, so its handler must be idempotent. A subscription that is not derived (mail, a webhook) runs after the
+   * answer.
+   */
   derived?: boolean
 }
 
