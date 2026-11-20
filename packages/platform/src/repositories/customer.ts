@@ -1,9 +1,11 @@
-import { and, asc, eq, gt, gte, isNotNull, lt, sql } from 'drizzle-orm'
+import { and, asc, eq, gt, gte, isNotNull, lt, notExists, sql, type SQL } from 'drizzle-orm'
 import type { Customer, CustomerAddress, Role } from '@nymbalhq/types'
 import {
   postgresDb,
   sqliteDb,
   type CommandStore,
+  type PostgresClient,
+  type SqliteClient,
   type ReadTx,
   type StoreRepository,
   type Tx,
@@ -75,6 +77,41 @@ function rowToCustomer(
   }
 }
 
+/** The window an unconfirmed account is judged in: last written before `before`, links compared with `now`. */
+export interface UnconfirmedWindow {
+  before: Date
+  now: Date
+}
+
+// An account never confirmed, last written before `before`, with no order and no verification or reset link still open
+// at `now`. The list and the conditional delete read this one predicate, so a delete re-checks all of it.
+function sqliteUnconfirmedDue(db: SqliteClient, w: UnconfirmedWindow): SQL {
+  const { customers: c, orders, emailVerificationTokens, passwordResetTokens } = sqliteSchema
+  const now = w.now.toISOString()
+  const one = { one: sql`1` }
+  return and(
+    eq(c.emailVerification, 'pending'),
+    lt(c.updatedAt, w.before.toISOString()),
+    notExists(db.select(one).from(orders).where(eq(orders.customerId, c.id))),
+    ...[emailVerificationTokens, passwordResetTokens].map((t) =>
+      notExists(db.select(one).from(t).where(and(eq(t.customerId, c.id), gt(t.expiresAt, now)))),
+    ),
+  )!
+}
+
+function postgresUnconfirmedDue(db: PostgresClient, w: UnconfirmedWindow): SQL {
+  const { customers: c, orders, emailVerificationTokens, passwordResetTokens } = postgresSchema
+  const one = { one: sql`1` }
+  return and(
+    eq(c.emailVerification, 'pending'),
+    lt(c.updatedAt, w.before),
+    notExists(db.select(one).from(orders).where(eq(orders.customerId, c.id))),
+    ...[emailVerificationTokens, passwordResetTokens].map((t) =>
+      notExists(db.select(one).from(t).where(and(eq(t.customerId, c.id), gt(t.expiresAt, w.now)))),
+    ),
+  )!
+}
+
 /** A stored customer: its roles column is always read. */
 export type CustomerWithHash = Customer & { passwordHash: string; roles: Role[] }
 
@@ -94,6 +131,13 @@ export interface CustomerRepository extends StoreRepository {
     updatedAt: Date,
   ): Promise<void>
   delete(tx: Tx, id: string): Promise<void>
+  /** Ids of accounts due for removal as never confirmed, after `after`, ascending, at most `limit`. */
+  listUnconfirmed(
+    tx: ReadTx,
+    opts: UnconfirmedWindow & { after?: string; limit: number },
+  ): Promise<string[]>
+  /** Deletes the row only while it is still due; true when it went. Its credential rows are the caller's. */
+  deleteUnconfirmed(tx: Tx, id: string, window: UnconfirmedWindow): Promise<boolean>
   /** Accounts created in `since <= created_at < until` that were asked to confirm, and of those the confirmed. */
   verificationFunnel(tx: ReadTx, since: Date, until: Date): Promise<VerificationFunnel>
 }
@@ -298,6 +342,48 @@ export function createCustomerRepository(store: CommandStore): CustomerRepositor
         .from(t)
         .where(and(gte(t.createdAt, since), lt(t.createdAt, until), isNotNull(t.emailVerification)))
       return { started: Number(row?.started ?? 0), verified: Number(row?.verified ?? 0) }
+    },
+    async listUnconfirmed(tx, opts) {
+      const { after, limit } = opts
+      if (tx.kind === 'sqlite') {
+        const db = sqliteDb(tx)
+        const t = sqliteSchema.customers
+        const rows = db
+          .select({ id: t.id })
+          .from(t)
+          .where(and(sqliteUnconfirmedDue(db, opts), after === undefined ? undefined : gt(t.id, after)))
+          .orderBy(asc(t.id))
+          .limit(limit)
+          .all()
+        return rows.map((r) => r.id)
+      }
+      const db = postgresDb(tx)
+      const t = postgresSchema.customers
+      const rows = await db
+        .select({ id: t.id })
+        .from(t)
+        .where(and(postgresUnconfirmedDue(db, opts), after === undefined ? undefined : gt(t.id, after)))
+        .orderBy(asc(t.id))
+        .limit(limit)
+      return rows.map((r) => r.id)
+    },
+    async deleteUnconfirmed(tx, id, window) {
+      if (tx.kind === 'sqlite') {
+        const db = sqliteDb(tx)
+        const t = sqliteSchema.customers
+        const result = db
+          .delete(t)
+          .where(and(eq(t.id, id), sqliteUnconfirmedDue(db, window)))
+          .run()
+        return result.changes > 0
+      }
+      const db = postgresDb(tx)
+      const t = postgresSchema.customers
+      const rows = await db
+        .delete(t)
+        .where(and(eq(t.id, id), postgresUnconfirmedDue(db, window)))
+        .returning({ id: t.id })
+      return rows.length > 0
     },
     async delete(tx, id) {
       if (tx.kind === 'sqlite') {

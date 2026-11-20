@@ -24,3 +24,8 @@ export {
   startStuckProposalSweeper,
   type StuckProposalSweeperDeps,
 } from './stuck-proposal-sweeper.js'
+export {
+  startUnconfirmedAccountSweeper,
+  UNCONFIRMED_ACCOUNT_TTL_MS,
+  type UnconfirmedAccountSweeperDeps,
+} from './unconfirmed-account-sweeper.js'

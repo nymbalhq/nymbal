@@ -44,6 +44,7 @@ import {
   startRefreshTokenSweeper,
   startRefundReconcileSweeper,
   startStuckProposalSweeper,
+  startUnconfirmedAccountSweeper,
   type EventArchiveWriter,
   type SweeperHandle,
 } from './sweepers/index.js'
@@ -112,6 +113,8 @@ export interface CreateAppOptions extends ResolvePrimitivesOptions {
   refundReconcileSweep?: { intervalMs?: number }
   /** How often approved proposals that never settled are swept, and after how long they count; tests shorten both. */
   proposalSweep?: { intervalMs?: number; stuckAfterMs?: number }
+  /** How often accounts never confirmed are looked for; tests shorten it. The 30 days they are kept is fixed. */
+  unconfirmedAccountSweep?: { intervalMs?: number }
 }
 
 /** Who an ACP agent's keyed requests are recorded as: the agent's own name is a label anyone holding the key can set. */
@@ -451,6 +454,16 @@ export async function createApp(
         publisher,
         logger,
         ...options.proposalSweep,
+      }),
+      startUnconfirmedAccountSweeper({
+        store: platform.commandStore,
+        repos,
+        publisher,
+        logger,
+        verification: services.auth.verification,
+        ...(options.unconfirmedAccountSweep?.intervalMs !== undefined && {
+          intervalMs: options.unconfirmedAccountSweep.intervalMs,
+        }),
       }),
     ]
 
