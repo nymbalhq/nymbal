@@ -1,6 +1,7 @@
 import type {
   CartItem,
   CheckoutPayment,
+  CheckoutQuote,
   Customer,
   Address,
   Facet,
@@ -91,20 +92,15 @@ export interface SearchState {
 
 export type CheckoutStep = 'contact' | 'shipping' | 'payment' | 'confirmation'
 
-export interface ShippingMethod {
-  carrier: string
-  service: string
-  amountMinor: number
-  currency: string
-  estimatedDays: number
-}
-
 export interface CheckoutState {
   step: CheckoutStep
   email: string
   shippingAddress: Address | null
   billingAddress: Address | null
-  shippingMethod: ShippingMethod | null
+  /** The checkout priced for the shipping address and the chosen option: what Place Order acknowledges. */
+  quote: CheckoutQuote | null
+  /** A quote request is in flight; Place Order waits for its answer. */
+  quoting: boolean
   /** What the server said about the payment; `succeeded` only once the order is paid. */
   paymentStatus: 'idle' | 'processing' | 'requires_action' | 'succeeded' | 'failed'
   error: string | null
@@ -160,6 +156,16 @@ export interface CheckoutDetails {
   billingAddress: Address
   shippingAddress: Address
   notes?: string
+  /** The delivery option from the quote. */
+  shippingOptionId?: string
+  /** The total the shopper was shown: the server refuses to charge any other. */
+  expectedTotalMinor?: number
+}
+
+export interface CheckoutQuoteDetails {
+  shippingAddress: Address
+  shippingOptionId?: string
+  email?: string
 }
 
 export interface CheckoutResult {

@@ -83,7 +83,15 @@ export default {
     reviews: { provider: 'native' },
     search: { provider: 'custom' },
     analytics: { provider: 'native' },
-    shipping: { provider: 'easypost', config: { webhookSecret: EASYPOST_TEST_WEBHOOK_SECRET } },
+    // Standard first and free, so every other journey on this store keeps its totals; Express is the paid choice.
+    shipping: {
+      provider: 'easypost',
+      config: { webhookSecret: EASYPOST_TEST_WEBHOOK_SECRET },
+      rates: [
+        { id: 'standard', name: 'Standard', amountMinor: 0, estimatedDays: 3 },
+        { id: 'express', name: 'Express', amountMinor: 499, estimatedDays: 1 },
+      ],
+    },
     tax: { provider: 'native', rates: [{ country: 'GB', percent: 20 }] },
     ai: { provider: 'none' },
   },

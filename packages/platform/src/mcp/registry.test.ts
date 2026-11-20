@@ -67,6 +67,7 @@ const CART_HANDLES = [
   'DELETE /api/cart/items/:variantId',
   'DELETE /api/cart',
   'POST /api/checkout',
+  'POST /api/checkout/quote',
 ].sort()
 
 /** Listed for nobody until a guest's order key can travel as an argument. */
@@ -232,7 +233,7 @@ describe('AC-1: one tool per registry entry', () => {
     expect(streamed.filter((name) => !marked.includes(name))).toEqual([])
   })
 
-  it("AC-1: each tool's inputSchema is one object whose properties are its params, query and body keys flattened, plus cart on the six cookie-named cart routes and idempotencyKey on every admin command, and whose required keys are the parts' required keys", () => {
+  it("AC-1: each tool's inputSchema is one object whose properties are its params, query and body keys flattened, plus cart on the seven cookie-named cart routes and idempotencyKey on every admin command, and whose required keys are the parts' required keys", () => {
     const handled = Object.entries(routeSchemas)
       .filter(([, entry]) => entry.handles?.['cart'] === 'nymbal.cart')
       .map(([key]) => key)

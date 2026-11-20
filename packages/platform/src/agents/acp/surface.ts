@@ -11,6 +11,7 @@ import {
   type AgentSurfaceUrls,
   type Caller,
   type Cart,
+  type CheckoutQuote,
   type DocumentStoreAdapter,
   type Logger,
   type Order,
@@ -19,6 +20,8 @@ import {
 } from '@nymbalhq/types'
 import { requestHash } from '../../audit/idempotency.js'
 import type { BeginCheckoutResult, CheckoutService } from '../../services/checkout-service.js'
+import { shippingOptions, type ShippingRate } from '../../services/shipping-quote.js'
+import { formatMoney } from '../../money.js'
 import { ucpProduct, type ListedProduct } from '../catalog.js'
 import { toNymbalAddress } from './address.js'
 import { acpAgentName } from './agent-name.js'
@@ -36,10 +39,12 @@ import {
   cartLines,
   missingMessages,
   orderLines,
+  orderTotals,
   STANDARD_FULFILLMENT,
   type AcpMessage,
   type AcpOrder,
   type AcpStatus,
+  type SessionPricing,
   type StoredSession,
 } from './session.js'
 
@@ -70,7 +75,9 @@ export interface AcpSurfaceDeps {
     pending(token: string): Promise<Order | null>
   }
   sessions: DocumentStoreAdapter
-  checkout: Pick<CheckoutService, 'beginCheckout'>
+  checkout: Pick<CheckoutService, 'beginCheckout' | 'quote'>
+  /** `commerce.shipping.rates`: which options an address is offered, and whether a session with none shows any. */
+  shippingRates: readonly ShippingRate[]
   idempotent: AcpIdempotent
   payments: { providerName: string; environment: 'test' | 'production' }
   urls: () => AgentSurfaceUrls
@@ -340,6 +347,135 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
     return null
   }
 
+  // --- Pricing a session -----------------------------------------------------------------------------------------
+
+  /** What a session shows before it is priced: the free standard option on a store with no table, else none. */
+  const unpriced: SessionPricing = {
+    kind: 'unpriced',
+    options: deps.shippingRates.length === 0 ? [STANDARD_FULFILLMENT] : [],
+  }
+
+  /** The option ids an address is offered: the ids never depend on the goods, only their amounts do. */
+  function offeredIds(details: StoredSession['fulfillment_details']): string[] {
+    if (details?.address === undefined) return unpriced.options.map((option) => option.id)
+    const shipTo = toNymbalAddress(details.address, details.phone_number)
+    return shippingOptions(deps.shippingRates, shipTo, 0).map((option) => option.id)
+  }
+
+  function info(content: string): AcpMessage {
+    return {
+      type: 'info',
+      severity: 'high',
+      resolution: 'recoverable',
+      content_type: 'plain',
+      content,
+    }
+  }
+
+  /** Why a quote was refused, as the session's status and message; null for a refusal a session does not show. */
+  function quoteRefusal(err: unknown): AcpMessage | null {
+    if (!(err instanceof CheckoutError)) return null
+    switch (err.code) {
+      case 'checkout.tax_unavailable':
+        return info(
+          'The tax for this order could not be worked out just now. Retry this request shortly.',
+        )
+      case 'checkout.promotions_unavailable':
+        return info(
+          'The discounts for this order could not be worked out just now. Retry this request shortly.',
+        )
+      case 'checkout.no_shipping':
+        return message(
+          'region_restricted',
+          'The store does not deliver to this address.',
+          '$.fulfillment_details.address',
+        )
+      case 'checkout.variant_missing':
+        return message('out_of_stock', 'An item is no longer in stock.', '$.line_items')
+      default:
+        return null
+    }
+  }
+
+  interface Priced {
+    pricing: SessionPricing
+    quote?: CheckoutQuote
+    /** Why the session could not be priced; it is then not ready for payment. */
+    refusal?: AcpMessage
+  }
+
+  /**
+   * An open session with an address, priced by the checkout quote at its stored choice, or at the address's first
+   * option when it no longer offers that one; a session with an order, at the order's columns; any other unpriced.
+   */
+  async function price(loaded: Loaded): Promise<Priced> {
+    if (loaded.status === 'completed' || loaded.status === 'complete_in_progress') {
+      const { order } = loaded
+      // The option the order recorded; an order from a store with no table was placed at the free standard one.
+      const shipping = (order.metadata as { shipping?: { optionId: string; name: string } })
+        .shipping
+      const option =
+        shipping === undefined
+          ? STANDARD_FULFILLMENT
+          : { id: shipping.optionId, name: shipping.name, amountMinor: 0, estimatedDays: null }
+      return {
+        pricing: {
+          kind: 'priced',
+          options: [{ ...option, amountMinor: order.shippingTotalMinor }],
+          optionId: option.id,
+          totals: orderTotals(order),
+        },
+      }
+    }
+    const details = loaded.stored.fulfillment_details
+    if (loaded.status === 'canceled' || details?.address === undefined) {
+      return {
+        pricing:
+          loaded.status === 'canceled'
+            ? { kind: 'unpriced', options: [STANDARD_FULFILLMENT] }
+            : unpriced,
+      }
+    }
+    const asked = {
+      cartToken: loaded.token,
+      shippingAddress: toNymbalAddress(details.address, details.phone_number),
+      ...(loaded.stored.buyer?.email !== undefined && { email: loaded.stored.buyer.email }),
+    }
+    const chosen = loaded.stored.selected_fulfillment_options?.[0]?.option_id
+    try {
+      let quote: CheckoutQuote
+      try {
+        quote = await deps.checkout.quote({
+          ...asked,
+          ...(chosen !== undefined && { shippingOptionId: chosen }),
+        })
+      } catch (err) {
+        if (
+          !(err instanceof CheckoutError && err.code === 'checkout.shipping_option_unavailable')
+        ) {
+          throw err
+        }
+        quote = await deps.checkout.quote(asked)
+      }
+      return {
+        pricing: {
+          kind: 'priced',
+          options: quote.options,
+          optionId: quote.shippingOptionId,
+          totals: quote.totals,
+        },
+        quote,
+      }
+    } catch (err) {
+      // A cart emptied outside the session has nothing to price; it reads as its lines do.
+      if (err instanceof CheckoutError && err.code === 'checkout.cart_empty')
+        return { pricing: unpriced }
+      const refusal = quoteRefusal(err)
+      if (refusal === null) throw err
+      return { pricing: unpriced, refusal }
+    }
+  }
+
   // --- Reading a session -----------------------------------------------------------------------------------------
 
   type Loaded = { token: string; stored: StoredSession } & (
@@ -370,14 +506,30 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
     return key === undefined ? base : `${base}?key=${encodeURIComponent(key)}`
   }
 
-  function render(
+  interface RenderOptions {
+    messages?: AcpMessage[]
+    status?: AcpStatus
+    orderKey?: string
+    /** A POST's answer: the priced total and option are stored as what `complete` acknowledges. */
+    write?: boolean
+    /** The total moved since the agent was last answered: the answer warns the buyer to review it. */
+    priceChanged?: boolean
+  }
+
+  async function render(
     loaded: Loaded,
-    opts: { messages?: AcpMessage[]; status?: AcpStatus; orderKey?: string } = {},
-  ): Record<string, unknown> {
+    opts: RenderOptions = {},
+  ): Promise<Record<string, unknown>> {
+    const { pricing, quote, refusal } = await price(loaded)
+    if (opts.write === true && quote !== undefined) {
+      const quoted = { totalMinor: quote.totals.totalMinor, optionId: quote.shippingOptionId }
+      await save(loaded.token, { ...loaded.stored, quoted })
+    }
     const common = {
       stored: loaded.stored,
       links: config.links,
       handler: handler(),
+      pricing,
     }
     if (loaded.status === 'completed') {
       const { order } = loaded
@@ -406,25 +558,45 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
       loaded.status === 'ready_for_payment' || loaded.status === 'not_ready_for_payment'
         ? missingMessages(loaded.stored)
         : []
+    const changed =
+      opts.priceChanged === true && quote !== undefined
+        ? [priceChange(quote.totals.totalMinor, quote.currency)]
+        : []
     return acpSession({
       ...common,
       id: loaded.token,
-      status: opts.status ?? loaded.status,
+      status: refusal === undefined ? (opts.status ?? loaded.status) : 'not_ready_for_payment',
       lines,
       currency: cart.currency,
       expiresAt: cart.expiresAt,
-      messages: [...missing, ...(opts.messages ?? [])],
+      messages: [
+        ...missing,
+        ...(refusal === undefined ? [] : [refusal]),
+        ...changed,
+        ...(opts.messages ?? []),
+      ],
     })
+  }
+
+  function priceChange(totalMinor: number, currency: string): AcpMessage {
+    return {
+      type: 'warning',
+      code: 'price_change',
+      severity: 'high',
+      resolution: 'requires_buyer_review',
+      content_type: 'plain',
+      content: `The total is now ${formatMoney(totalMinor, currency)}. Review it with the buyer before completing the checkout.`,
+    }
   }
 
   async function answer(
     token: string,
     status: number,
-    opts?: Parameters<typeof render>[1],
+    opts?: RenderOptions,
   ): Promise<ResponseEnvelope> {
     const loaded = await load(token)
     if (loaded === null) return notFound(token)
-    return { status, body: render(loaded, opts) }
+    return { status, body: await render(loaded, opts) }
   }
 
   async function save(token: string, stored: StoredSession): Promise<void> {
@@ -571,7 +743,7 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
           fulfillment_details: data.fulfillment_details,
         }),
       })
-      return answer(token, 201)
+      return answer(token, 201, { write: true })
     })
   }
 
@@ -587,15 +759,6 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
     if (data.line_items !== undefined && data.line_items.length === 0) {
       return invalid('A session holds at least one item', '$.line_items')
     }
-    const other = (data.selected_fulfillment_options ?? []).findIndex(
-      (option) => option.option_id !== STANDARD_FULFILLMENT,
-    )
-    if (other >= 0) {
-      return invalid(
-        `The only fulfillment option is ${STANDARD_FULFILLMENT}`,
-        `$.selected_fulfillment_options[${other}].option_id`,
-      )
-    }
     const caller = callerOf(request)
     const lines = data.line_items === undefined ? undefined : mergeItems(data.line_items)
     return keyed('acp.update', request, async () => {
@@ -604,23 +767,38 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
       if (loaded.status !== 'ready_for_payment' && loaded.status !== 'not_ready_for_payment') {
         return closed()
       }
+      const { stored } = loaded
+      const details =
+        data.fulfillment_details === undefined
+          ? stored.fulfillment_details
+          : { ...stored.fulfillment_details, ...data.fulfillment_details }
+      // Checked against the address this update leaves, before anything changes.
+      const offered = offeredIds(details)
+      const other = (data.selected_fulfillment_options ?? []).findIndex(
+        (option) => !offered.includes(option.option_id),
+      )
+      if (other >= 0) {
+        return invalid(
+          offered.length === 0
+            ? 'No fulfillment option is offered until the session has an address the store delivers to'
+            : `The fulfillment options for this address are ${offered.join(', ')}`,
+          `$.selected_fulfillment_options[${other}].option_id`,
+        )
+      }
       if (lines !== undefined) {
         const refused =
           (await check(lines, caller)) ?? (await replaceLines(id, loaded.cart, lines, caller))
         if (refused !== null) return refused
       }
-      const { stored } = loaded
       await save(id, {
         ...stored,
         ...(data.buyer !== undefined && { buyer: { ...stored.buyer, ...data.buyer } }),
-        ...(data.fulfillment_details !== undefined && {
-          fulfillment_details: { ...stored.fulfillment_details, ...data.fulfillment_details },
-        }),
+        ...(details !== undefined && { fulfillment_details: details }),
         ...(data.selected_fulfillment_options !== undefined && {
           selected_fulfillment_options: data.selected_fulfillment_options,
         }),
       })
-      return answer(id, 200)
+      return answer(id, 200, { write: true })
     })
   }
 
@@ -667,6 +845,7 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
         return invalid('The session is not ready for payment', first.param!)
       }
       const shippingAddress = toNymbalAddress(details.address, details.phone_number)
+      const { quoted } = loaded.stored
       let result: BeginCheckoutResult
       try {
         result = await deps.checkout.beginCheckout({
@@ -677,6 +856,11 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
             payment.billing_address === undefined
               ? shippingAddress
               : toNymbalAddress(payment.billing_address),
+          // The total and option the agent was last answered: anything else is refused and answered re-priced.
+          ...(quoted !== undefined && {
+            expectedTotalMinor: quoted.totalMinor,
+            shippingOptionId: quoted.optionId,
+          }),
           delegatedPayment: { token: credential.token },
         })
       } catch (err) {
@@ -705,7 +889,7 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
     const loaded = await load(id)
     if (loaded === null) return notFound(id)
     const open = loaded.status === 'ready_for_payment' || loaded.status === 'not_ready_for_payment'
-    return { status: 200, body: render(loaded, open ? { messages: [why] } : {}) }
+    return { status: 200, body: await render(loaded, open ? { messages: [why] } : {}) }
   }
 
   async function refusedCheckout(id: string, err: unknown): Promise<ResponseEnvelope> {
@@ -733,12 +917,20 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
         if (loaded === null) return notFound(id)
         return {
           status: 200,
-          body: render(loaded, {
+          body: await render(loaded, {
             status: 'not_ready_for_payment',
             messages: [message('out_of_stock', 'An item is no longer in stock.', '$.line_items')],
           }),
         }
       }
+      case 'checkout.total_changed':
+      case 'checkout.shipping_option_unavailable':
+        return answer(id, 200, { write: true, priceChanged: true })
+      case 'checkout.tax_unavailable':
+      case 'checkout.promotions_unavailable':
+      case 'checkout.no_shipping':
+        // Priced again, the session carries the refusal's message; were the engine back, it is ready to retry.
+        return answer(id, 200, { write: true })
       default:
         throw err
     }

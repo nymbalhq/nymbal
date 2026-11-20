@@ -1,6 +1,7 @@
 import type {
   AlertKind,
   Cart,
+  CheckoutQuote,
   Customer,
   CustomerAddress,
   PublicReviewsResult,
@@ -15,6 +16,7 @@ import type {
   ProductSearchParams,
   ProductSearchResult,
   CheckoutDetails,
+  CheckoutQuoteDetails,
   CheckoutResult,
   RegisterParams,
   AuthResult,
@@ -56,6 +58,8 @@ export interface CommerceAdapter {
   }
   checkout: {
     create(details: CheckoutDetails): Promise<CheckoutResult>
+    /** The checkout priced for an address and a delivery option, before anything is placed. */
+    quote(details: CheckoutQuoteDetails): Promise<CheckoutQuote>
   }
   customers: {
     /** Signs the customer in, or, on a store that confirms addresses, mails a link and signs nobody in. */

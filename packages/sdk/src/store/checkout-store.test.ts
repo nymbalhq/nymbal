@@ -29,10 +29,30 @@ const orderResult = {
   currency: 'GBP',
 }
 
+/** The quote a store holds before it places: Place Order posts only once it has one. */
+const quoteAnswer = {
+  currency: 'GBP',
+  options: [{ id: 'standard', name: 'Standard', amountMinor: 0, estimatedDays: null }],
+  shippingOptionId: 'standard',
+  totals: {
+    currency: 'GBP',
+    subtotalMinor: 1000,
+    discountTotalMinor: 0,
+    shippingTotalMinor: 0,
+    shippingDiscountMinor: 0,
+    taxTotalMinor: 0,
+    totalMinor: 1000,
+    pricesIncludeTax: false,
+    lines: [],
+    applied: [],
+  },
+}
+
 function makeAdapter(): CommerceAdapter {
   return {
     checkout: {
       create: vi.fn().mockResolvedValue(orderResult),
+      quote: vi.fn().mockResolvedValue(quoteAnswer),
     },
   } as unknown as CommerceAdapter
 }
@@ -57,18 +77,6 @@ describe('CheckoutStore', () => {
     expect(store.getState().billingAddress).toEqual(addr)
   })
 
-  it('setShippingMethod advances step to payment', () => {
-    const store = createCheckoutStore(makeAdapter())
-    store.setShippingMethod({
-      carrier: 'Royal Mail',
-      service: 'Standard',
-      amountMinor: 0,
-      currency: 'GBP',
-      estimatedDays: 3,
-    })
-    expect(store.getState().step).toBe('payment')
-  })
-
   it('submitPayment without addresses sets error', async () => {
     const store = createCheckoutStore(makeAdapter())
     await store.submitPayment()
@@ -82,6 +90,7 @@ describe('CheckoutStore', () => {
     const store = createCheckoutStore(adapter)
     store.setShippingAddress(addr)
     store.setBillingAddress(addr)
+    await store.quote()
     await store.submitPayment()
     expect(store.getState().paymentStatus).toBe('failed')
     expect(store.getState().error).toBe('card declined')
@@ -123,14 +132,18 @@ describe('AC-5: CheckoutStore follows the server payment status', () => {
     }
   }
 
-  function readyStore(result: unknown) {
+  async function readyStore(result: unknown) {
     const adapter = {
-      checkout: { create: vi.fn().mockResolvedValue(result) },
+      checkout: {
+        create: vi.fn().mockResolvedValue(result),
+        quote: vi.fn().mockResolvedValue(quoteAnswer),
+      },
     } as unknown as CommerceAdapter
     const store = createCheckoutStore(adapter)
     store.setEmail('buyer@example.com')
     store.setShippingAddress(addr)
     store.setBillingAddress(addr)
+    await store.quote()
     return store
   }
 
@@ -141,7 +154,7 @@ describe('AC-5: CheckoutStore follows the server payment status', () => {
         fc.stringMatching(/^NYM-[0-9]{4}$/),
         async (status, orderNumber) => {
           const result = serverResult(status, orderNumber)
-          const store = readyStore(result)
+          const store = await readyStore(result)
           const resolved = await store.submitPayment()
           expect(store.getState().paymentStatus).toBe(result.payment.status)
           expect(resolved).toEqual(result)
@@ -153,7 +166,7 @@ describe('AC-5: CheckoutStore follows the server payment status', () => {
   })
 
   it('AC-5: a Stripe checkout (requires_action) is not succeeded until markConfirmed, then it is', async () => {
-    const store = readyStore(serverResult('requires_action'))
+    const store = await readyStore(serverResult('requires_action'))
     await store.submitPayment()
     const beforeConfirm = store.getState().paymentStatus
     expect(beforeConfirm).toBe('requires_action')
@@ -171,6 +184,7 @@ describe('AC-5: CheckoutStore follows the server payment status', () => {
     const rejected = createCheckoutStore(rejecting)
     rejected.setShippingAddress(addr)
     rejected.setBillingAddress(addr)
+    await rejected.quote()
 
     expect(await missing.submitPayment()).toBeNull()
     expect(await rejected.submitPayment()).toBeNull()
@@ -202,7 +216,10 @@ describe('AC-6: CheckoutStore keeps the order key', () => {
     await fc.assert(
       fc.asyncProperty(fc.array(answer, { minLength: 1, maxLength: 4 }), async (answers) => {
         let next: () => Promise<unknown> = () => Promise.reject(new Error('no answer staged'))
-        const adapter = { checkout: { create: () => next() } } as unknown as CommerceAdapter
+        let quoted: () => Promise<unknown> = () => Promise.resolve(quoteAnswer)
+        const adapter = {
+          checkout: { create: () => next(), quote: () => quoted() },
+        } as unknown as CommerceAdapter
         const store = createCheckoutStore(adapter)
         store.setEmail('buyer@example.com')
         store.setShippingAddress(addr)
@@ -210,6 +227,18 @@ describe('AC-6: CheckoutStore keeps the order key', () => {
 
         for (const [i, a] of answers.entries()) {
           const label = `answer ${i} (${a.kind}, ${a.orderKey === undefined ? 'no key' : 'a key'})`
+          // The cart already became the order: the quote is refused as the checkout is, naming it with no key, and the
+          // store still posts so the server's keyed refusal can answer.
+          quoted =
+            a.kind === 'refused' && a.code === 'checkout.cart_empty'
+              ? () =>
+                  Promise.reject(
+                    new NymbalApiError(a.code, `This cart is already order ${a.orderNumber}`, 409, {
+                      orderNumber: a.orderNumber,
+                    }),
+                  )
+              : () => Promise.resolve(quoteAnswer)
+          await store.quote()
           next =
             a.kind === 'placed'
               ? () =>
@@ -284,7 +313,10 @@ describe('the checkout store keeps the code of a refused submit', () => {
     await fc.assert(
       fc.asyncProperty(fc.array(answer, { minLength: 1, maxLength: 6 }), async (answers) => {
         const create = vi.fn()
-        const store = createCheckoutStore({ checkout: { create } } as unknown as CommerceAdapter)
+        const quote = vi.fn().mockResolvedValue(quoteAnswer)
+        const store = createCheckoutStore({
+          checkout: { create, quote },
+        } as unknown as CommerceAdapter)
         store.setEmail('buyer@example.com')
         store.setShippingAddress(addr)
         store.setBillingAddress(addr)
@@ -298,6 +330,7 @@ describe('the checkout store keeps the code of a refused submit', () => {
             create.mockResolvedValueOnce({ ...orderResult, payment: { status: 'succeeded' } })
           }
 
+          await store.quote()
           const result = await store.submitPayment()
 
           const { error, errorCode } = store.getState()

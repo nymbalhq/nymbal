@@ -326,12 +326,23 @@ function sameAddress(a: Address, b: Address): boolean {
 
 /**
  * The pending order is for exactly this cart at exactly this quote: the same lines, quantities and prices, the same
- * accepted codes and discount, the same tax under the same flag, and the same shipping address.
+ * accepted codes and discount, the same tax under the same flag, the same shipping option and amount, and the same
+ * shipping address. An order with no recorded option was placed at `standard`.
  */
-export function sameQuote(order: Order, cart: Cart, quote: PlaceQuote, shipTo: Address): boolean {
+export function sameQuote(
+  order: Order,
+  cart: Cart,
+  quote: PlaceQuote,
+  shipTo: Address,
+  optionId = 'standard',
+): boolean {
+  const placedOption =
+    (order.metadata as { shipping?: { optionId?: string } }).shipping?.optionId ?? 'standard'
   if (
     order.totalMinor !== quote.totals.totalMinor ||
     order.discountTotalMinor !== quote.totals.discountTotalMinor ||
+    order.shippingTotalMinor !== quote.totals.shippingTotalMinor ||
+    placedOption !== optionId ||
     order.taxTotalMinor !== quote.totals.taxTotalMinor ||
     (order.pricesIncludeTax ?? false) !== quote.totals.pricesIncludeTax ||
     order.currency !== cart.currency ||

@@ -9,6 +9,8 @@ export interface TaxRate {
   region?: string | undefined
   percent: number
   codes?: Record<string, number> | undefined
+  /** Absent reads as true, as the config defaults it. */
+  taxShipping?: boolean | undefined
 }
 
 const MILLION = 1_000_000n
@@ -62,7 +64,10 @@ function percentFor(row: TaxRate, taxCode: string | undefined): number {
   return row.percent
 }
 
-/** The table's quote: each line taxed on its own amount at its code's rate, else its row's; 0 outside every row. */
+/**
+ * The table's quote: each line taxed on its own amount at its code's rate, else its row's; shipping at the row's
+ * percent unless the row exempts it; 0 outside every row.
+ */
 export function quoteNative(rates: readonly TaxRate[], params: TaxQuoteParams): TaxQuote {
   const row = matchRate(rates, params.shipTo)
   const taxOf = params.pricesIncludeTax ? inclusiveTax : exclusiveTax
@@ -76,7 +81,10 @@ export function quoteNative(rates: readonly TaxRate[], params: TaxQuoteParams): 
       ratePpm,
     }
   })
-  const shippingTaxMinor = 0
+  const shippingTaxMinor =
+    row === null || params.shipping === null || row.taxShipping === false
+      ? 0
+      : taxOf(params.shipping.amountMinor, ppmOf(row.percent))
   return {
     provider: 'native',
     inclusive: params.pricesIncludeTax,

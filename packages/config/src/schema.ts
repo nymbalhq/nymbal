@@ -530,6 +530,8 @@ const taxRateSchema = z
     percent: taxPercentSchema,
     /** The rate for a tax code in this jurisdiction, over `percent`. */
     codes: z.record(z.string(), taxPercentSchema).optional(),
+    /** Delivery is taxed at `percent` unless this is false; `codes` do not reach it. */
+    taxShipping: z.boolean().default(true),
   })
   .superRefine((row, ctx) => {
     if (row.country === 'US' && row.region !== undefined && !Object.hasOwn(US_STATES, row.region)) {
@@ -575,13 +577,58 @@ function taxBlock() {
     })
 }
 
+/** A flat delivery option, priced in `store.currency`'s minor units. */
+const shippingRateSchema = z.object({
+  id: z
+    .string()
+    .regex(
+      /^[a-z0-9_-]{1,64}$/,
+      'a shipping option id is 1 to 64 of a-z, 0-9, _ and -, such as "express"',
+    ),
+  name: z.string().min(1).max(64),
+  /** Absent: every country no other row names. */
+  countries: z
+    .array(z.string().regex(/^[A-Z]{2}$/, 'country must be two upper-case letters, such as "GB"'))
+    .min(1)
+    .optional(),
+  amountMinor: z.number().int().nonnegative(),
+  /** Free when the goods, after their discount, come to at least this. */
+  freeOverMinor: z.number().int().positive().optional(),
+  estimatedDays: z.number().int().nonnegative().optional(),
+})
+
+/** The shipping slot's block: every other slot's fields and the native rate table the checkout prices from. */
+function shippingBlock() {
+  return z
+    .object({
+      provider: providerNameSchema('shipping.provider'),
+      config: z.record(z.string(), z.unknown()).optional(),
+      package: packageNameSchema.optional(),
+      rates: z.array(shippingRateSchema).default([]),
+    })
+    .superRefine((block, ctx) => {
+      packageBesideBuiltIn('shipping', block, ctx)
+      const seen = new Set<string>()
+      block.rates.forEach((row, i) => {
+        if (seen.has(row.id)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['rates', i, 'id'],
+            message: `two shipping options with the id '${row.id}'; a caller chooses an option by its id`,
+          })
+        }
+        seen.add(row.id)
+      })
+    })
+}
+
 export const commerceSchema = z.object({
   payments: adapterBlock('payments'),
   email: adapterBlock('email'),
   reviews: adapterBlock('reviews'),
   search: adapterBlock('search'),
   analytics: adapterBlock('analytics'),
-  shipping: adapterBlock('shipping'),
+  shipping: shippingBlock(),
   tax: taxBlock(),
   // Absent is the kernel's own engine, so a config written before the slot existed keeps working.
   promotions: promotionsBlock().default({ provider: 'native', onUnavailable: 'proceed' }),

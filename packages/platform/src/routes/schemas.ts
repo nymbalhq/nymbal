@@ -418,6 +418,19 @@ export const routeSchemas: Record<string, RouteSchema> = {
       shippingAddress: address,
       notes: z.string().optional(),
       expectedTotalMinor: z.number().int().nonnegative().optional(),
+      shippingOptionId: z.string().min(1).max(64).optional(),
+    }),
+  },
+  'POST /api/checkout/quote': {
+    name: 'checkout.quote',
+    handles: cartHandle,
+    command: null,
+    description:
+      'Price the cart for a shipping address and a delivery option: the options offered there, the one the totals use, and the totals with discount, shipping and tax. Send its shippingOptionId and totals.totalMinor as expectedTotalMinor to checkout.begin.',
+    body: z.object({
+      shippingAddress: address,
+      shippingOptionId: z.string().min(1).max(64).optional(),
+      email: z.string().min(1).optional(),
     }),
   },
   'GET /api/orders': {

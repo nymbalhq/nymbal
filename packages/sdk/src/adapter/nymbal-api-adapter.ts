@@ -3,6 +3,7 @@ import {
   ORDER_KEY_HEADER,
   type AlertKind,
   type Cart,
+  type CheckoutQuote,
   type Customer,
   type CustomerAddress,
   type Order,
@@ -20,6 +21,7 @@ import type {
   ProductSearchParams,
   ProductSearchResult,
   CheckoutDetails,
+  CheckoutQuoteDetails,
   CheckoutResult,
   RegisterParams,
   AuthResult,
@@ -109,6 +111,12 @@ export function createNymbalApiAdapter(fetchClient: FetchClient): CommerceAdapte
       create(details: CheckoutDetails) {
         // Placed as the signed-in customer or refused: never re-sent as a guest after a failed refresh.
         return fetchClient.request<CheckoutResult>('POST', '/api/checkout', details, {
+          keepIdentity: true,
+        })
+      },
+      quote(details: CheckoutQuoteDetails) {
+        // Priced as the signed-in customer (their exemption) or refused, as the checkout it leads to is.
+        return fetchClient.request<CheckoutQuote>('POST', '/api/checkout/quote', details, {
           keepIdentity: true,
         })
       },

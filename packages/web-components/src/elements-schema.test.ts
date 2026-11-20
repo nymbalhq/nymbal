@@ -233,17 +233,45 @@ async function readSettled(el: HTMLElement): Promise<void> {
   }
 }
 
-/** The checkout SDK the checkout drives: its setters keep what they are given; `submitPayment()` answers as `phase` says. */
+/** The quote the fake answers: the one free option, at the order's total. */
+const WALK_QUOTE = {
+  currency: 'GBP',
+  options: [{ id: 'standard', name: 'Standard', amountMinor: 0, estimatedDays: null }],
+  shippingOptionId: 'standard',
+  totals: {
+    currency: 'GBP',
+    subtotalMinor: 1200,
+    discountTotalMinor: 0,
+    shippingTotalMinor: 0,
+    shippingDiscountMinor: 0,
+    taxTotalMinor: 0,
+    totalMinor: 1200,
+    pricesIncludeTax: false,
+    lines: [],
+    applied: [],
+  },
+}
+
+/**
+ * The checkout SDK the checkout drives: its setters keep what they are given, a quote answers WALK_QUOTE at once, and
+ * `submitPayment()` answers as `phase` says.
+ */
 function installCheckout(client: Record<string, unknown>, phase: Phase): void {
   const checkout = client['checkout'] as Record<string, unknown> & {
     setState(partial: Record<string, unknown>): void
   }
   const keep = (key: string) => (value: unknown) => checkout.setState({ [key]: value })
+  const quoted = (shippingOptionId: string) => {
+    const quote = { ...WALK_QUOTE, shippingOptionId }
+    checkout.setState({ quote, quoting: false })
+    return Promise.resolve(quote)
+  }
   Object.assign(checkout, {
     setEmail: keep('email'),
     setShippingAddress: keep('shippingAddress'),
     setBillingAddress: keep('billingAddress'),
-    setShippingMethod: keep('shippingMethod'),
+    quote: () => quoted('standard'),
+    selectShippingOption: (id: string) => quoted(id),
     markConfirmed: () => undefined,
     reset: () => undefined,
     submitPayment: () => {
@@ -615,6 +643,11 @@ function walkTo(stop: CheckoutStop, billingDiffers = false): (el: HTMLElement) =
     if (stop === 'shipping') return
     fillAddress(el, 'shipping')
     await press(el, 'shipping-continue')
+    // The step moves to payment once the quote answers.
+    for (let turn = 0; turn < 3; turn += 1) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 0))
+      await settledDeep(el)
+    }
     if (billingDiffers) {
       field(el, 'billing-same').click()
       await settledDeep(el)

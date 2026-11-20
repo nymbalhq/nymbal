@@ -120,7 +120,27 @@ export function stubAdapter(data: StubData = defaultData()): CommerceAdapter {
         facets: [],
       }),
     },
-    checkout: { create: async () => placed },
+    checkout: {
+      create: async () => placed,
+      // The one free option at the goods' total: a store with no shipping table.
+      quote: async () => ({
+        currency: 'GBP',
+        options: [{ id: 'standard', name: 'Standard', amountMinor: 0, estimatedDays: null }],
+        shippingOptionId: 'standard',
+        totals: {
+          currency: 'GBP',
+          subtotalMinor: 0,
+          discountTotalMinor: 0,
+          shippingTotalMinor: 0,
+          shippingDiscountMinor: 0,
+          taxTotalMinor: 0,
+          totalMinor: 0,
+          pricesIncludeTax: false,
+          lines: [],
+          applied: [],
+        },
+      }),
+    },
     customers: {
       register: auth,
       login: auth,

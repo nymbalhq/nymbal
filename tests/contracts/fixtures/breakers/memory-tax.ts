@@ -6,10 +6,11 @@ import type {
   TaxQuoteParams,
 } from '@nymbalhq/types'
 
-// An in-memory tax provider that files documents, and its defective twins. While whole it taxes each line 10% on top,
-// or extracts 10% from a price that includes it, rounding half up in whole units; files one document per order however
-// often it is asked; and accepts a refund however often it is filed. Each twin breaks one rule of the quote, and only
-// where a line has money in it, so the cases about lines of no amount stay on topic.
+// An in-memory tax provider that files documents, and its defective twins. While whole it taxes each line, and the
+// shipping when the request has some, 10% on top, or extracts 10% from a price that includes it, rounding half up in
+// whole units; files one document per order however often it is asked; and accepts a refund however often it is
+// filed. Each twin breaks one rule of the quote, and only where a line has money in it, so the cases about lines of no
+// amount stay on topic.
 
 export interface TaxFlaws {
   /** The first line answered twice, the second line lost. */
@@ -18,7 +19,17 @@ export interface TaxFlaws {
   fractionalAmount?: boolean
   /** A total one more than the lines add up to. */
   totalNotSum?: boolean
+  /** No tax on shipping, whatever the request's shipping. */
+  ignoresShipping?: boolean
+  /** A shipping tax on a request that sent no shipping, as if a standard delivery had been sent. */
+  shippingWhenNull?: boolean
 }
+
+/** The runner's options for every memory-tax run: it taxes shipping, so the suite checks that it does. */
+export const TAXED_SHIPPING = { taxedShipping: { amountMinor: 499 } }
+
+/** What a request with no shipping is taxed for by the twin that taxes it anyway. */
+const ASSUMED_SHIPPING_MINOR = 499
 
 const RATE_PPM = 100_000n
 const MILLION = 1_000_000n
@@ -55,12 +66,20 @@ export function memoryTax(flaws: TaxFlaws = {}): TaxAdapter {
         const line = lines.find((l) => l.taxableMinor > 0)!
         line.taxMinor = Math.max(0, line.taxMinor - 1) + 0.5
       }
-      const total = lines.reduce((s, l) => s + l.taxMinor, 0)
+      const shippingTaxMinor =
+        flaws.ignoresShipping === true
+          ? 0
+          : params.shipping !== null
+            ? taxOf(params.shipping.amountMinor, params.pricesIncludeTax)
+            : flaws.shippingWhenNull === true && taxed
+              ? taxOf(ASSUMED_SHIPPING_MINOR, params.pricesIncludeTax)
+              : 0
+      const total = lines.reduce((s, l) => s + l.taxMinor, 0) + shippingTaxMinor
       return {
         provider: 'memory-tax',
         inclusive: params.pricesIncludeTax,
         lines,
-        shippingTaxMinor: 0,
+        shippingTaxMinor,
         totalTaxMinor: flaws.totalNotSum === true && taxed ? total + 1 : total,
       }
     },

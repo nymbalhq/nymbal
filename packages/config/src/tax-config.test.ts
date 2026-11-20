@@ -94,13 +94,17 @@ describe('AC-6: the tax config', () => {
     ).toBe(true)
   })
 
-  it('AC-6: property: a table of distinct rows with two-letter countries, US state codes and percents of up to four decimals parses as written, under either outage setting', () => {
+  it('AC-6: property: a table of distinct rows with two-letter countries, US state codes and percents of up to four decimals parses as written, with taxShipping defaulted to true, under either outage setting', () => {
     fc.assert(
       fc.property(arbTable, fc.constantFrom('refuse', 'native'), (rates, onUnavailable) => {
         const parsed = nymbalConfigSchema.parse(
           config({ provider: 'native', onUnavailable, rates }),
         )
-        expect(parsed.commerce.tax).toEqual({ provider: 'native', onUnavailable, rates })
+        expect(parsed.commerce.tax).toEqual({
+          provider: 'native',
+          onUnavailable,
+          rates: rates.map((row) => ({ ...row, taxShipping: true })),
+        })
       }),
       { numRuns: 200 },
     )

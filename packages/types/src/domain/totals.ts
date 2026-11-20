@@ -41,3 +41,23 @@ export interface CheckoutTotals {
   /** The effects that moved money, each at the amount that counted. */
   applied: PromotionEffect[]
 }
+
+/** A delivery the checkout offers an address, priced for the cart. */
+export interface ShippingOption {
+  /** Stable across quotes: what a caller sends back to choose it. */
+  id: string
+  name: string
+  /** What this cart pays for it now: 0 when the goods reach its free-over threshold. */
+  amountMinor: number
+  estimatedDays: number | null
+}
+
+/** The checkout priced for an address and a delivery option, before anything is reserved. */
+export interface CheckoutQuote {
+  currency: string
+  /** In the table's order; never empty in an answer. */
+  options: ShippingOption[]
+  /** The option the totals use. */
+  shippingOptionId: string
+  totals: CheckoutTotals
+}

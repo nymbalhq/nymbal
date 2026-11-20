@@ -56,12 +56,23 @@ const arbRequestLines = fc.uniqueArray(
   { minLength: 2, maxLength: 5, selector: (line) => line.id },
 )
 
-/** A request and a quote the port accepts for it: each line's tax at most its amount, so it is valid either way. */
+/**
+ * A request and a quote the port accepts for it: each line's tax at most its amount, so it is valid either way, and
+ * shipping sent and at least its tax whenever the quote taxes shipping (no shipping sent only with no shipping tax).
+ */
 const arbValid = fc
-  .tuple(arbRequestLines, fc.boolean(), fc.integer({ min: 0, max: 5_000 }))
-  .chain(([lines, inclusive, shippingTaxMinor]) =>
+  .tuple(
+    arbRequestLines,
+    fc.boolean(),
+    fc.integer({ min: 0, max: 5_000 }),
+    fc.integer({ min: 0, max: 10_000 }),
+    fc.boolean(),
+  )
+  .chain(([lines, inclusive, shippingTaxMinor, above, sendNone]) =>
     fc.tuple(...lines.map((l) => fc.integer({ min: 1, max: l.amountMinor }))).map((taxes) => {
-      const params = paramsOf(lines, inclusive)
+      const shipping =
+        shippingTaxMinor === 0 && sendNone ? null : { amountMinor: shippingTaxMinor + above }
+      const params = { ...paramsOf(lines, inclusive), shipping }
       const quote: TaxQuote = {
         provider: 'stub',
         inclusive,
@@ -167,6 +178,45 @@ describe('AC-24: validQuote', () => {
     expect(validQuote(params, quote)).toBe(true)
     expect(validQuote({ ...params, pricesIncludeTax: true }, { ...quote, inclusive: true })).toBe(
       false,
+    )
+  })
+})
+
+describe('AC-4: validQuote and shipping', () => {
+  /** The quote with its shipping tax moved to `to`, the total kept the sum. */
+  const withShippingTax = (quote: TaxQuote, to: number): TaxQuote => ({
+    ...quote,
+    shippingTaxMinor: to,
+    totalTaxMinor: quote.totalTaxMinor - quote.shippingTaxMinor + to,
+  })
+
+  // Kills: a provider's tax on shipping that was never sent reaching the order.
+  it('AC-4: property: a quote taxing shipping by any whole amount above 0 is refused when the request sent no shipping', () => {
+    fc.assert(
+      fc.property(arbValid, fc.integer({ min: 1, max: 5_000 }), ({ params, quote }, tax) => {
+        const none = { ...params, shipping: null }
+        expect(validQuote(none, withShippingTax(quote, 0))).toBe(true)
+        expect(validQuote(none, withShippingTax(quote, tax))).toBe(false)
+      }),
+      { numRuns: 300 },
+    )
+  })
+
+  // Kills: an inclusive shipping tax above the shipping it is inside, so the order's net shipping is negative.
+  it('AC-4: property: an inclusive quote’s shipping tax is valid up to the shipping amount and refused one unit above it; an exclusive one is not bounded by it', () => {
+    fc.assert(
+      fc.property(arbValid, fc.integer({ min: 0, max: 5_000 }), ({ params, quote }, amount) => {
+        const shipping = { amountMinor: amount }
+        const inclusive = { ...params, pricesIncludeTax: true, shipping }
+        const exclusive = { ...params, pricesIncludeTax: false, shipping }
+        const asInclusive = { ...quote, inclusive: true }
+        const asExclusive = { ...quote, inclusive: false }
+        // Line taxes are within their amounts in arbValid, so only the shipping tax decides.
+        expect(validQuote(inclusive, withShippingTax(asInclusive, amount))).toBe(true)
+        expect(validQuote(inclusive, withShippingTax(asInclusive, amount + 1))).toBe(false)
+        expect(validQuote(exclusive, withShippingTax(asExclusive, amount + 1))).toBe(true)
+      }),
+      { numRuns: 300 },
     )
   })
 })

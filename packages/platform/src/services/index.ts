@@ -168,6 +168,7 @@ export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
       logger: taxLogger,
     }),
     pricesIncludeTax,
+    shippingRates: config.commerce.shipping.rates,
     cart,
     orders,
     inventory,

@@ -17,7 +17,8 @@ const isWhole = (amount: number): boolean => Number.isSafeInteger(amount) && amo
 /**
  * The quote is one the kernel can put on an order: one line per request line under the request's ids, every amount a
  * whole non-negative number, the total the lines' tax plus the shipping tax, the request's inclusive flag, and an
- * inclusive line's tax within its amount.
+ * inclusive line's tax within its amount, no shipping tax when no shipping was sent, and an inclusive shipping tax within
+ * the shipping amount.
  */
 export function validQuote(params: TaxQuoteParams, quote: TaxQuote): boolean {
   if (quote.inclusive !== params.pricesIncludeTax) return false
@@ -32,6 +33,14 @@ export function validQuote(params: TaxQuoteParams, quote: TaxQuote): boolean {
     if (!isWhole(line.taxableMinor) || !isWhole(line.taxMinor)) return false
     if (params.pricesIncludeTax && line.taxMinor > amount) return false
     lineTax += line.taxMinor
+  }
+  if (params.shipping === null && quote.shippingTaxMinor !== 0) return false
+  if (
+    params.pricesIncludeTax &&
+    params.shipping !== null &&
+    quote.shippingTaxMinor > params.shipping.amountMinor
+  ) {
+    return false
   }
   return (
     isWhole(quote.shippingTaxMinor) &&

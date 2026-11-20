@@ -557,6 +557,7 @@ export async function createApp(
               },
               sessions: platform.documentStore,
               checkout: services.checkout,
+              shippingRates: config.commerce.shipping.rates,
               idempotent: (command, { key, hash }, run) =>
                 runAsActor(ACP_ACTOR, () =>
                   idempotentCommand(

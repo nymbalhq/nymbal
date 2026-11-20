@@ -15,10 +15,17 @@ import {
 // is the sum, and the same answer for the same request; an inclusive quote keeps each line's tax within the line. A
 // provider that files documents answers the same document for a repeated order and accepts a repeated refund, because
 // the kernel retries both. Any other answer is refused at checkout as an outage, so the suite refuses it first.
+// Shipping is asked about as the kernel asks: no shipping tax when none was sent, a valid one when it was, and a shipping
+// tax above 0 for the request the runner names as one its provider taxes.
 
 export interface TaxContractOptions extends ContractOptions<TaxAdapter> {
   /** A destination the adapter taxes: the native engine taxes only where its table has a row. A GB address when absent. */
   shipTo?: Address
+  /**
+   * A shipping amount the adapter charges tax on at `shipTo`, so the suite can check that delivery is taxed. Absent, the
+   * adapter is not asked to tax shipping (a provider that never does); every other shipping case still runs.
+   */
+  taxedShipping?: { amountMinor: number }
 }
 
 const GB: Address = {
@@ -39,6 +46,7 @@ function request(
   shipTo: Address,
   amounts: readonly number[],
   pricesIncludeTax = false,
+  shipping: TaxQuoteParams['shipping'] = null,
 ): TaxQuoteParams {
   return {
     currency: 'GBP',
@@ -50,7 +58,7 @@ function request(
       amountMinor,
       qty: i + 1,
     })),
-    shipping: null,
+    shipping,
     pricesIncludeTax,
     reference: 'contract-cart',
   }
@@ -58,6 +66,11 @@ function request(
 
 /** Two or three lines of 1p to £10,000 each. */
 const arbAmounts = fc.array(fc.integer({ min: 1, max: 1_000_000 }), { minLength: 2, maxLength: 3 })
+
+/** No shipping, or a shipping amount of up to £1,000. */
+const arbShipping = fc.option(fc.record({ amountMinor: fc.integer({ min: 0, max: 100_000 }) }), {
+  nil: null,
+})
 
 const RUNS = { numRuns: 3 }
 
@@ -121,19 +134,90 @@ export function runTaxContract(
       CASE_MS,
     )
 
-    // Kills: a total the order's lines do not add up to.
+    // Kills: a total the order's lines do not add up to, with or without shipping in the request.
     it(
-      'total: property: totalTaxMinor is the sum of the lines’ tax and the shipping tax',
+      'total: property: totalTaxMinor is the sum of the lines’ tax and the shipping tax, with and without shipping',
       () =>
         using(build, async (adapter) => {
           await fc.assert(
-            fc.asyncProperty(arbAmounts, async (amounts) => {
-              const quote = await adapter.quote(request(shipTo, amounts))
+            fc.asyncProperty(arbAmounts, arbShipping, async (amounts, shipping) => {
+              const quote = await adapter.quote(request(shipTo, amounts, false, shipping))
               expect(quote.totalTaxMinor, JSON.stringify(quote)).toBe(
                 sum(quote.lines.map((l: QuoteLine) => l.taxMinor)) + quote.shippingTaxMinor,
               )
             }),
             RUNS,
+          )
+        }),
+      CASE_MS,
+    )
+
+    // Kills: a provider charging tax on a delivery the kernel never sent, which checkout would put on the order.
+    it(
+      'shipping-null: property: with no shipping in the request, the shipping tax is 0',
+      () =>
+        using(build, async (adapter) => {
+          await fc.assert(
+            fc.asyncProperty(arbAmounts, fc.boolean(), async (amounts, inclusive) => {
+              const quote = await adapter.quote(
+                request(shipTo, amounts, inclusive && declares(adapter, 'inclusive')),
+              )
+              expect(quote.shippingTaxMinor, JSON.stringify(quote)).toBe(0)
+            }),
+            RUNS,
+          )
+        }),
+      CASE_MS,
+    )
+
+    // Kills: a shipping tax the kernel refuses as an outage (a fraction, or more than the delivery it is inside), or
+    // shipping folded into a line's tax.
+    it(
+      'shipping-valid: property: with a shipping amount, the shipping tax is whole and, when prices include tax, within the amount, and every line’s tax is as without shipping',
+      () =>
+        using(build, async (adapter) => {
+          await fc.assert(
+            fc.asyncProperty(
+              arbAmounts,
+              fc.integer({ min: 0, max: 100_000 }),
+              fc.boolean(),
+              async (amounts, amountMinor, wantInclusive) => {
+                const inclusive = wantInclusive && declares(adapter, 'inclusive')
+                const shipped = await adapter.quote(
+                  request(shipTo, amounts, inclusive, { amountMinor }),
+                )
+                const unshipped = await adapter.quote(request(shipTo, amounts, inclusive))
+                expect(isWhole(shipped.shippingTaxMinor), JSON.stringify(shipped)).toBe(true)
+                if (inclusive) {
+                  expect(shipped.shippingTaxMinor, JSON.stringify(shipped)).toBeLessThanOrEqual(
+                    amountMinor,
+                  )
+                }
+                const taxes = (q: TaxQuote) =>
+                  q.lines.map((l: QuoteLine) => [l.id, l.taxMinor]).sort()
+                expect(taxes(shipped)).toEqual(taxes(unshipped))
+              },
+            ),
+            RUNS,
+          )
+        }),
+      CASE_MS,
+    )
+
+    // Kills: a provider package that passes the suite while never charging tax on delivery.
+    it(
+      'shipping-taxed: the shipping its runner names as taxed is answered a shipping tax above 0, and twice that shipping no less',
+      (ctx) =>
+        using(build, async (adapter) => {
+          const taxed = options.taxedShipping
+          if (taxed === undefined) return ctx.skip()
+          const once = await adapter.quote(request(shipTo, [2_500, 1_000], false, taxed))
+          const twice = await adapter.quote(
+            request(shipTo, [2_500, 1_000], false, { amountMinor: taxed.amountMinor * 2 }),
+          )
+          expect(once.shippingTaxMinor, JSON.stringify(once)).toBeGreaterThan(0)
+          expect(twice.shippingTaxMinor, JSON.stringify(twice)).toBeGreaterThanOrEqual(
+            once.shippingTaxMinor,
           )
         }),
       CASE_MS,

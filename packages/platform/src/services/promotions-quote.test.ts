@@ -473,6 +473,7 @@ describe('sameQuote', () => {
     return {
       totalMinor: quote.totals.totalMinor,
       discountTotalMinor: quote.totals.discountTotalMinor,
+      shippingTotalMinor: quote.totals.shippingTotalMinor,
       taxTotalMinor: quote.totals.taxTotalMinor,
       currency: cart.currency,
       shippingAddress: address,
@@ -619,6 +620,7 @@ describe('AC-12: a payment is for the quote it was placed at, tax included', () 
     ({
       totalMinor: quote.totals.totalMinor,
       discountTotalMinor: quote.totals.discountTotalMinor,
+      shippingTotalMinor: quote.totals.shippingTotalMinor,
       taxTotalMinor: quote.totals.taxTotalMinor,
       pricesIncludeTax: quote.totals.pricesIncludeTax,
       currency: cart.currency,
@@ -670,5 +672,105 @@ describe('AC-12: a payment is for the quote it was placed at, tax included', () 
       ),
       { numRuns: 300 },
     )
+  })
+})
+
+describe('AC-10: a payment is for the quote it was placed at, shipping included', () => {
+  const home = {
+    firstName: 'A',
+    lastName: 'B',
+    addressLine1: '1 St',
+    city: 'L',
+    region: '',
+    postalCode: 'E1',
+    country: 'GB',
+  } as Address
+
+  const OPTION_IDS = ['standard', 'collect', 'express'] as const
+
+  /** The place quote for `cart` with `shippingMinor` of shipping. */
+  const shippedQuote = (cart: Cart, shippingMinor: number): PlaceQuote => ({
+    totals: settleTotals({
+      currency: cart.currency,
+      lines: cart.items.map((i) => ({ id: i.variantId, unitMinor: i.priceMinor, qty: i.qty })),
+      shipping: { amountMinor: shippingMinor },
+      effects: [],
+      tax: null,
+      pricesIncludeTax: false,
+    }),
+    effects: [],
+    skipped: false,
+  })
+
+  /**
+   * The pending order written from this cart at this quote with option `optionId`; `metadata.shipping` absent when
+   * `recorded` is false, as on an order from a store with no table.
+   */
+  const placedWith = (cart: Cart, quote: PlaceQuote, optionId: string, recorded: boolean): Order =>
+    ({
+      totalMinor: quote.totals.totalMinor,
+      discountTotalMinor: quote.totals.discountTotalMinor,
+      shippingTotalMinor: quote.totals.shippingTotalMinor,
+      taxTotalMinor: quote.totals.taxTotalMinor,
+      pricesIncludeTax: quote.totals.pricesIncludeTax,
+      currency: cart.currency,
+      shippingAddress: home,
+      metadata: recorded
+        ? {
+            shipping: {
+              provider: 'native',
+              optionId,
+              name: optionId,
+              amountMinor: quote.totals.shippingTotalMinor,
+              estimatedDays: null,
+            },
+          }
+        : {},
+      lineItems: cart.items.map((i) => ({
+        variantId: i.variantId,
+        qty: i.qty,
+        unitPriceMinor: i.priceMinor,
+      })),
+    }) as unknown as Order
+
+  // Kills: a shopper who switched from Standard to Collect (both free) or Express after a first attempt paying on the
+  // reused pending order written for the first option, or an order whose shipping column differs reused anyway.
+  it('AC-10: property: sameQuote holds exactly when the order’s option is the one asked for, and is false when only the shipping column differs', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 0, max: 2_000 }),
+        fc.constantFrom(...OPTION_IDS),
+        fc.constantFrom(...OPTION_IDS),
+        (shippingMinor, placedOption, askedOption) => {
+          const cart = cartOf()
+          const quote = shippedQuote(cart, shippingMinor)
+          const order = placedWith(cart, quote, placedOption, true)
+
+          expect(sameQuote(order, cart, quote, home, placedOption), 'an unchanged resubmit').toBe(
+            true,
+          )
+          expect(sameQuote(order, cart, quote, home, askedOption), 'another option asked').toBe(
+            placedOption === askedOption,
+          )
+          const otherShipping = {
+            ...order,
+            shippingTotalMinor: order.shippingTotalMinor + 1,
+          } as Order
+          expect(
+            sameQuote(otherShipping, cart, quote, home, placedOption),
+            'the shipping column differs',
+          ).toBe(false)
+        },
+      ),
+      { numRuns: 200 },
+    )
+  })
+
+  it('AC-10: an order with no metadata.shipping is the standard option, and not another at the same amount', () => {
+    const cart = cartOf()
+    const quote = shippedQuote(cart, 0)
+    const legacy = placedWith(cart, quote, 'standard', false)
+    expect(sameQuote(legacy, cart, quote, home, 'standard')).toBe(true)
+    expect(sameQuote(legacy, cart, quote, home, 'collect')).toBe(false)
   })
 })

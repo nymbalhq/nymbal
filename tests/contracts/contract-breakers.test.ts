@@ -60,6 +60,8 @@ const REFUND_LIST = /\brefund list:/
 const TAX_LINES = /\blines:/
 const TAX_AMOUNTS = /\bamounts:/
 const TAX_TOTAL = /\btotal:/
+const TAX_SHIPPING_NULL = /\bshipping-null:/
+const TAX_SHIPPING_TAXED = /\bshipping-taxed:/
 
 interface Outcome {
   passed: string[]
@@ -462,6 +464,25 @@ describe('the published tax suite fails a provider whose quote the kernel must r
     ['answers a total that is not the sum of its lines', 'tax-total-not-sum', TAX_TOTAL],
   ] as const)(
     'AC-19: a tax provider that %s fails that case and nothing else; the same provider without the defect passes every case',
+    (_defect, broken, about) => {
+      const run = compare(broken, 'tax-control', about)
+
+      expect(run.failed.length, run.why).toBeGreaterThan(0)
+      expect(run.offTopic, run.why).toEqual([])
+      expect(run.controlFailed, run.why).toEqual([])
+      expect(run.controlPassed).toBe(run.badTotal)
+    },
+  )
+})
+
+describe('the published tax suite fails a provider that gets shipping wrong', () => {
+  // Kills: a suite a provider package passes while never charging tax on delivery, or while charging it on a delivery
+  // that was never sent.
+  it.each([
+    ['answers no tax on the shipping its runner names as taxed', 'tax-ignores-shipping', TAX_SHIPPING_TAXED],
+    ['taxes shipping on a request that sent none', 'tax-shipping-when-null', TAX_SHIPPING_NULL],
+  ] as const)(
+    'AC-27: a tax provider that %s fails that case and nothing else; the same provider without the defect passes every case',
     (_defect, broken, about) => {
       const run = compare(broken, 'tax-control', about)
 

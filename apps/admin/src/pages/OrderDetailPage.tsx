@@ -191,6 +191,12 @@ function AddressBlock({ address, label }: { address: Order['billingAddress']; la
   )
 }
 
+/** The delivery option the shopper chose, when the order records one (a store with a shipping table). */
+function shippingNameOf(metadata: unknown): string | null {
+  const shipping = (metadata as { shipping?: { name?: unknown } } | null | undefined)?.shipping
+  return typeof shipping?.name === 'string' ? shipping.name : null
+}
+
 /** The shopper's checkout note: the column as it stands, or the shopper's entry once staff or system notes joined it. */
 function shopperNoteOf(notes: string): string | null {
   try {
@@ -267,6 +273,7 @@ export function OrderDetailPage() {
   }
 
   const shopperNote = order.notes ? shopperNoteOf(order.notes) : null
+  const shippingName = shippingNameOf(order.metadata)
 
   const primaryAction = () => {
     if (order.status === 'pending' && order.payment.capturedMinor === 0)
@@ -468,9 +475,9 @@ export function OrderDetailPage() {
                   </span>
                 </div>
               )}
-              {order.shippingTotalMinor > 0 && (
+              {(order.shippingTotalMinor > 0 || shippingName !== null) && (
                 <div className="flex justify-between text-sm text-zinc-500">
-                  <span>Shipping</span>
+                  <span>{shippingName === null ? 'Shipping' : `Shipping (${shippingName})`}</span>
                   <span className="font-mono">
                     {formatMoney(order.shippingTotalMinor, order.currency)}
                   </span>

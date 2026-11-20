@@ -1,4 +1,4 @@
-import type { Cart, Order } from '@nymbalhq/types'
+import type { Cart, Order, ShippingOption } from '@nymbalhq/types'
 import type { AcpAddress } from './address.js'
 
 /** The statuses this store answers a session with, of the protocol's. */
@@ -37,16 +37,37 @@ export interface StoredSession {
   selected_fulfillment_options?: AcpSelectedFulfillment[]
   /** ISO time the agent cancelled the session; only this mark makes a session `canceled`. */
   canceledAt?: string
+  /** The total and option the last POST answered: what `complete` acknowledges. */
+  quoted?: { totalMinor: number; optionId: string }
 }
 
-/** One of a session's `messages`: ACP's `MessageError`. */
-export interface AcpMessage {
+/** ACP's `MessageError`. */
+export interface AcpErrorMessage {
   type: 'error'
   code: string
   content_type: 'plain'
   content: string
   param?: string
 }
+
+/** One of a session's `messages`: ACP's `MessageError`, `MessageWarning` or `MessageInfo`. */
+export type AcpMessage =
+  | AcpErrorMessage
+  | {
+      type: 'warning'
+      code: string
+      severity: 'high'
+      resolution: 'requires_buyer_review'
+      content_type: 'plain'
+      content: string
+    }
+  | {
+      type: 'info'
+      severity: 'high'
+      resolution: 'recoverable'
+      content_type: 'plain'
+      content: string
+    }
 
 /** ACP's `Order`, as a session answers it once completed. */
 export interface AcpOrder {
@@ -58,8 +79,43 @@ export interface AcpOrder {
   status: string
 }
 
-/** The one fulfillment option a session offers: the free shipping the storefront's checkout charges. */
-export const STANDARD_FULFILLMENT = 'standard'
+/** The option a store with no shipping table offers: free. */
+export const STANDARD_FULFILLMENT: ShippingOption = {
+  id: 'standard',
+  name: 'Standard shipping',
+  amountMinor: 0,
+  estimatedDays: null,
+}
+
+/** A session's money, as a checkout quote or an order's columns give it. */
+export interface SessionTotals {
+  subtotalMinor: number
+  discountTotalMinor: number
+  shippingTotalMinor: number
+  taxTotalMinor: number
+  totalMinor: number
+  pricesIncludeTax: boolean
+}
+
+/**
+ * What a session is charged: priced (a quote, or the order's columns) at an option the totals used; or unpriced, its
+ * lines' sum with the options it can show and the agent's stored choice.
+ */
+export type SessionPricing =
+  | { kind: 'priced'; options: ShippingOption[]; optionId: string; totals: SessionTotals }
+  | { kind: 'unpriced'; options: ShippingOption[] }
+
+/** An order's money columns. */
+export function orderTotals(order: Order): SessionTotals {
+  return {
+    subtotalMinor: order.subtotalMinor,
+    discountTotalMinor: order.discountTotalMinor,
+    shippingTotalMinor: order.shippingTotalMinor,
+    taxTotalMinor: order.taxTotalMinor,
+    totalMinor: order.totalMinor,
+    pricesIncludeTax: order.pricesIncludeTax ?? false,
+  }
+}
 
 interface SessionLine {
   variantId: string
@@ -94,8 +150,8 @@ function total(type: string, display_text: string, amount: number) {
 }
 
 /** The `missing` messages of a session without the buyer's email or the address to ship to. */
-export function missingMessages(stored: StoredSession): AcpMessage[] {
-  const messages: AcpMessage[] = []
+export function missingMessages(stored: StoredSession): AcpErrorMessage[] {
+  const messages: AcpErrorMessage[] = []
   if (stored.buyer?.email === undefined) {
     messages.push({
       type: 'error',
@@ -117,9 +173,21 @@ export function missingMessages(stored: StoredSession): AcpMessage[] {
   return messages
 }
 
+/** ACP's totals for a priced session: the goods, their discount, shipping, tax, and the total charged. */
+function pricedTotals(t: SessionTotals) {
+  return [
+    total('items_base_amount', 'Item(s) total', t.subtotalMinor),
+    ...(t.discountTotalMinor > 0 ? [total('discount', 'Discount', t.discountTotalMinor)] : []),
+    total('subtotal', 'Subtotal', t.subtotalMinor - t.discountTotalMinor),
+    total('fulfillment', 'Shipping', t.shippingTotalMinor),
+    total('tax', t.pricesIncludeTax ? 'Tax (included)' : 'Tax', t.taxTotalMinor),
+    total('total', 'Total', t.totalMinor),
+  ]
+}
+
 /**
- * A session in ACP's `CheckoutSession` shape. Money is the lines' minor units, unconverted: the session's total is the
- * sum of its line totals, which is the cart's subtotal and what checkout charges (no shipping, no tax).
+ * A session in ACP's `CheckoutSession` shape. Money is in minor units, unconverted: a priced session's totals are its
+ * checkout quote's (or its order's), an unpriced one's the sum of its lines with no shipping or tax.
  */
 export function acpSession(input: {
   id: string
@@ -132,6 +200,7 @@ export function acpSession(input: {
   links: readonly unknown[]
   handler: Record<string, unknown>
   order?: AcpOrder | undefined
+  pricing: SessionPricing
 }): Record<string, unknown> {
   const { stored } = input
   const lineItems = input.lines.map((line) => {
@@ -147,6 +216,17 @@ export function acpSession(input: {
     }
   })
   const sum = lineItems.reduce((n, line) => n + line.unit_amount * line.quantity, 0)
+  const { pricing } = input
+  const selected =
+    pricing.kind === 'priced'
+      ? [
+          {
+            type: 'shipping',
+            option_id: pricing.optionId,
+            item_ids: lineItems.map((line) => line.id),
+          },
+        ]
+      : stored.selected_fulfillment_options
   return {
     id: input.id,
     status: input.status,
@@ -156,24 +236,23 @@ export function acpSession(input: {
     ...(stored.fulfillment_details !== undefined && {
       fulfillment_details: stored.fulfillment_details,
     }),
-    fulfillment_options: [
-      {
-        type: 'shipping',
-        id: STANDARD_FULFILLMENT,
-        title: 'Standard shipping',
-        totals: [total('total', 'Shipping', 0)],
-      },
-    ],
-    ...(stored.selected_fulfillment_options !== undefined && {
-      selected_fulfillment_options: stored.selected_fulfillment_options,
-    }),
-    totals: [
-      total('items_base_amount', 'Item(s) total', sum),
-      total('subtotal', 'Subtotal', sum),
-      total('fulfillment', 'Shipping', 0),
-      total('tax', 'Tax', 0),
-      total('total', 'Total', sum),
-    ],
+    fulfillment_options: pricing.options.map((option) => ({
+      type: 'shipping',
+      id: option.id,
+      title: option.name,
+      totals: [total('total', 'Shipping', option.amountMinor)],
+    })),
+    ...(selected !== undefined && { selected_fulfillment_options: selected }),
+    totals:
+      pricing.kind === 'priced'
+        ? pricedTotals(pricing.totals)
+        : [
+            total('items_base_amount', 'Item(s) total', sum),
+            total('subtotal', 'Subtotal', sum),
+            total('fulfillment', 'Shipping', 0),
+            total('tax', 'Tax', 0),
+            total('total', 'Total', sum),
+          ],
     messages: input.messages,
     links: input.links.map((link) => ({ ...(link as Record<string, unknown>) })),
     capabilities: { payment: { handlers: [input.handler] } },

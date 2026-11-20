@@ -92,7 +92,7 @@ function throwawayConfig(config: NymbalConfig, ai: NymbalConfig['commerce']['ai'
       reviews: native,
       search: native,
       analytics: native,
-      shipping: native,
+      shipping: { ...native, rates: [] },
       tax: { ...native, onUnavailable: 'refuse', rates: [] },
       promotions: { ...native, onUnavailable: 'proceed' },
       ai,

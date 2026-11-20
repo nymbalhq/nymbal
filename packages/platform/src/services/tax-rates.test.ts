@@ -405,3 +405,66 @@ describe('AC-5: native tax codes', () => {
     expect(await adapter.quote(params)).toEqual(quoteNative(coded, params))
   })
 })
+
+const arbShippingRow = arbRow.chain((row) =>
+  fc.boolean().map((taxShipping) => ({ ...row, taxShipping })),
+)
+
+const arbShippingTable = fc.uniqueArray(arbShippingRow, {
+  maxLength: 6,
+  selector: (row) => `${row.country}/${row.region ?? ''}`,
+})
+
+const arbShipping = fc.option(
+  fc.record({ amountMinor: fc.integer({ min: 0, max: 10_000_000 }) }),
+  { nil: null },
+)
+
+describe('AC-3: native tax on shipping', () => {
+  // Kills: shipping never taxed (VAT on delivery not collected), taxed where the row exempts it, taxed at a line's
+  // code rate instead of the row's percent, taxed when no shipping was sent, or left out of the total.
+  it('AC-3: property: shippingTaxMinor is the row’s percent of the request’s shipping, exclusive or inclusive as lines are, when the row taxes shipping; 0 when it does not, when no row matches, or when shipping is null; the total adds it; the lines do not move; the quote is valid', () => {
+    fc.assert(
+      fc.property(
+        arbShippingTable,
+        arbLines,
+        arbShipTo,
+        fc.boolean(),
+        arbShipping,
+        (rates, lines, shipTo, inclusive, shipping) => {
+          const params: TaxQuoteParams = { ...paramsOf(lines, shipTo, inclusive), shipping }
+          const quote = quoteNative(rates, params)
+          const row = matchRate(rates, shipTo) as (RateRow & { taxShipping: boolean }) | null
+          const taxOf = inclusive ? inclusiveTax : exclusiveTax
+          const expected =
+            shipping === null || row === null || !row.taxShipping
+              ? 0
+              : taxOf(shipping.amountMinor, ppmOf(row.percent))
+
+          expect(quote.shippingTaxMinor).toBe(expected)
+          expect(quote.totalTaxMinor).toBe(
+            sum(quote.lines.map((l: QuoteLine) => l.taxMinor)) + quote.shippingTaxMinor,
+          )
+          const withoutShipping = quoteNative(rates, paramsOf(lines, shipTo, inclusive))
+          expect(quote.lines).toEqual(withoutShipping.lines)
+          expect(validQuote(params, quote)).toBe(true)
+        },
+      ),
+      { numRuns: 500 },
+    )
+  })
+
+  it('AC-3: GB 20% on £4.99 of shipping is 100 on top, 83 included, and 0 on a row with taxShipping false', () => {
+    const gb = (taxShipping: boolean) => [{ country: 'GB', percent: 20, codes: { food: 0 }, taxShipping }]
+    const line = [{ id: 'v1', sku: 'SKU-1', taxCode: 'food', amountMinor: 1000, qty: 1 }]
+    const at = (taxShipping: boolean, inclusive: boolean) =>
+      quoteNative(gb(taxShipping), {
+        ...paramsOf(line, addressIn('GB'), inclusive),
+        shipping: { amountMinor: 499 },
+      }).shippingTaxMinor
+    expect(at(true, false)).toBe(100)
+    expect(at(true, true)).toBe(499 - Math.round(499 / 1.2))
+    expect(at(false, false)).toBe(0)
+    expect(at(false, true)).toBe(0)
+  })
+})

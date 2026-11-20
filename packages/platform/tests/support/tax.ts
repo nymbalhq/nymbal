@@ -19,6 +19,8 @@ export interface RateRow {
   region?: string
   percent: number
   codes?: Record<string, number>
+  /** Whether the row taxes shipping; the config defaults it to true. */
+  taxShipping?: boolean
 }
 
 export interface TaxSetup {
