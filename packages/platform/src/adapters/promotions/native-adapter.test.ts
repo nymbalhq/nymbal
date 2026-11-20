@@ -6,7 +6,7 @@ import { createCommandStore, rawClients, type CommandStore } from '../../db/comm
 import { runMigrations } from '../../db/migrate.js'
 import { InMemoryDocumentStore } from '../../document-store/in-memory.js'
 import { createLogger } from '../../logger.js'
-import { buildRepositories, type Repositories } from '../../repositories/index.js'
+import { buildRepositories, type Promotion, type Repositories } from '../../repositories/index.js'
 import {
   isMoneyEffect,
   promotionRow,
@@ -403,13 +403,20 @@ describe('a reserving evaluation', () => {
       )
       .all(promotionId) as { orderId: string; sessionId: string }[]
 
-  /** The engine over a promotion repository whose `lock` is recorded and may be replaced. */
-  function lockingEngine(lock: Repositories['promotion']['lock'] = repos.promotion.lock) {
+  /**
+   * The engine over a promotion repository whose `lock` is recorded and may be replaced, and whose found rows arrive in
+   * the order `arrive` gives them.
+   */
+  function lockingEngine(
+    lock: Repositories['promotion']['lock'] = repos.promotion.lock,
+    arrive: (rows: Promotion[]) => Promotion[] = (rows) => rows,
+  ) {
     const locked: string[] = []
     const adapter = createNativePromotionsAdapter({
       repos: {
         promotion: {
           ...repos.promotion,
+          findByCodes: async (tx, codes) => arrive(await repos.promotion.findByCodes(tx, codes)),
           lock: (tx, id) => {
             locked.push(id)
             return lock(tx, id)
@@ -460,16 +467,22 @@ describe('a reserving evaluation', () => {
     expect(redemptionsOf(loser)).toEqual([])
   })
 
-  it('property: every code is locked once, in id order, however the session lists them', async () => {
+  // Defect: rows are locked in the order the store returns them, so two checkouts of the same codes can deadlock.
+  it('property: every code is locked once, in id order, however the session lists them and the rows arrive', async () => {
     const seeded = ['A', 'B', 'C', 'D'].map((tag) => {
       const code = uniqueCode(`LOCK${tag}`)
       return { code, id: seed({ code, kind: 'percent', percentBps: 1000 }) }
     })
     const ids = seeded.map((s) => s.id).sort((a, b) => a.localeCompare(b))
+    // The ids are random, so the store's own order matches id order in one draw in 24; arrival is drawn here instead.
+    const permutation = fc.shuffledSubarray(seeded, { minLength: 4 })
     await fc.assert(
-      fc.asyncProperty(fc.shuffledSubarray(seeded, { minLength: 4 }), async (listed) => {
+      fc.asyncProperty(permutation, permutation, async (listed, arrival) => {
         const sessionId = `cart-${randomUUID()}`
-        const { adapter, locked } = lockingEngine()
+        const at = arrival.map((s) => s.id)
+        const { adapter, locked } = lockingEngine(repos.promotion.lock, (rows) =>
+          [...rows].sort((a, b) => at.indexOf(a.id) - at.indexOf(b.id)),
+        )
         await adapter.evaluate(
           session(
             listed.map((s) => s.code),
@@ -482,7 +495,8 @@ describe('a reserving evaluation', () => {
         )
         expect(locked).toEqual(ids)
       }),
-      { numRuns: 8 },
+      // Rows arriving in reverse id order, every run.
+      { numRuns: 8, examples: [[seeded, [...seeded].sort((a, b) => b.id.localeCompare(a.id))]] },
     )
   })
 

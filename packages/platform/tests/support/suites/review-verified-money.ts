@@ -3,13 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { paymentState, type OrderStatus } from '@nymbalhq/types'
 import { serveKernel, type ServedKernel } from '../http.js'
 import type { Kernel } from '../kernel.js'
-import {
-  productIn,
-  reviewer,
-  writeOrders,
-  type OrderSpec,
-  type Reviewer,
-} from '../reviews.js'
+import { productIn, reviewer, writeOrders, type OrderSpec, type Reviewer } from '../reviews.js'
 
 // A review's orderId on one dialect, through `POST /api/reviews` and the page loop of `newestHolding`: a fully refunded
 // order never verifies, at any status; a partially refunded or paid one does; so does a delivered import that captured
@@ -73,7 +67,7 @@ export function reviewVerifiedMoneySuite(
           const productId = await productIn(k, 'active')
           const other = await productIn(k, 'active')
           const now = Date.now()
-          // Unique ages: a tie would make the expected order depend on the id.
+          // Ages can tie (3 + 0 and 1 + 2); the newest is then the greater id, as `newestHolding` orders them.
           const specs: Array<OrderSpec & { money: Money }> = orders.map((o, i) => ({
             customerId: who.id,
             status: o.status,
@@ -88,7 +82,11 @@ export function reviewVerifiedMoneySuite(
             .filter(({ spec }) => spec.productIds.includes(productId))
             .filter(({ spec }) => VERIFYING.includes(spec.status))
             .filter(({ spec }) => paymentState(moneyOf(spec.money)) !== 'refunded')
-            .sort((a, b) => b.spec.createdAt.getTime() - a.spec.createdAt.getTime())[0]?.i
+            .sort(
+              (a, b) =>
+                b.spec.createdAt.getTime() - a.spec.createdAt.getTime() ||
+                (ids[a.i]! < ids[b.i]! ? 1 : -1),
+            )[0]?.i
           const expected = newestIndex === undefined ? null : ids[newestIndex]!
 
           expect(
@@ -96,7 +94,19 @@ export function reviewVerifiedMoneySuite(
             JSON.stringify(specs.map((s) => [s.status, s.money, s.productIds[0] === productId])),
           ).toBe(expected)
         }),
-        { numRuns: opts.runs },
+        {
+          numRuns: opts.runs,
+          // Two orders holding the product at one instant, every run.
+          examples: [
+            [
+              [
+                { status: 'confirmed', money: 'none', holds: true, minutesAgo: 3 },
+                { status: 'confirmed', money: 'none', holds: false, minutesAgo: 1 },
+                { status: 'confirmed', money: 'none', holds: true, minutesAgo: 1 },
+              ],
+            ],
+          ],
+        },
       )
     }, 180_000)
 
