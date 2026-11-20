@@ -150,6 +150,8 @@ const peerArb = fc.oneof(
   fc.ipV6().filter((a) => !isLoopback(a)),
   fc.tuple(fc.nat(255), fc.nat(255), fc.nat(255)).map(([a, b, c]) => `127.${a}.${b}.${c}`),
   fc.constantFrom('::1', '::ffff:127.0.0.1'),
+  fc.tuple(fc.nat(255), fc.nat(255), fc.nat(255)).map(([a, b, c]) => `::127.${a}.${b}.${c}`),
+  fc.tuple(fc.nat(255), fc.nat(255), fc.nat(255)).map(([a, b, c]) => `::ffff:127.${a}.${b}.${c}`),
 )
 
 /** A different character at `at`. */
@@ -241,7 +243,7 @@ function getFrom(
 }
 
 describe('AC-2: the lock answers 403 origin_locked to every other machine without the secret', () => {
-  it('AC-2: property: over peers (non-loopback IPv4 and IPv6; 127.x.y.z, ::1, ::ffff:127.0.0.1), the header (absent, S, S with one character changed, S + x, S sent twice, a prefix of S) and targets (an API route, login, an unknown path, /health, /ready, /healthz, /ready/x), the answer is 403 origin_locked exactly when the peer is not loopback, the header is not exactly S and the target is not /health or /ready, and otherwise it is the answer the same request gets with the variable unset, where nothing is 403 origin_locked', async () => {
+  it('AC-2: property: over peers (non-loopback IPv4 and IPv6; 127.x.y.z, ::1, ::ffff:127.0.0.1; the IPv4-compatible ::127.x.y.z, which is another machine, and the IPv4-mapped ::ffff:127.x.y.z; and on every run ::127.0.0.1, ::127.0.0.0, ::7f00:1, ::ffff:127.0.0.1, ::1 and the non-IP junk without the header to /api/products), the header (absent, S, S with one character changed, S + x, S sent twice, a prefix of S) and targets (an API route, login, an unknown path, /health, /ready, /healthz, /ready/x), the answer is 403 origin_locked exactly when the peer is not loopback, the header is not exactly S and the target is not /health or /ready, and otherwise it is the answer the same request gets with the variable unset, where nothing is 403 origin_locked', async () => {
     const locked = await serverOf(await kernelWith(S))
     const unset = await serverOf(await kernelWith(undefined))
 
@@ -261,7 +263,16 @@ describe('AC-2: the lock answers 403 origin_locked to every other machine withou
           expect(refused ? null : summary(withLock)).toEqual(refused ? null : summary(without))
         },
       ),
-      { numRuns: 200 },
+      {
+        numRuns: 200,
+        examples: ['::127.0.0.1', '::127.0.0.0', '::7f00:1', '::ffff:127.0.0.1', '::1', 'junk'].map(
+          (peer): [string, Sent, (typeof TARGETS)[number]] => [
+            peer,
+            { kind: 'absent' },
+            TARGETS[0]!,
+          ],
+        ),
+      },
     )
   })
 

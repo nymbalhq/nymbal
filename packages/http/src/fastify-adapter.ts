@@ -8,7 +8,7 @@ import Fastify, {
   type FastifyRequest,
 } from 'fastify'
 import { createHash, timingSafeEqual } from 'node:crypto'
-import { isIP } from 'node:net'
+import { BlockList, isIP } from 'node:net'
 import fastifyCookie from '@fastify/cookie'
 import fastifyCors from '@fastify/cors'
 import proxyAddr from '@fastify/proxy-addr'
@@ -91,7 +91,17 @@ const STREAM_END_BOUND_MS = 500
 
 /** The platform's health checks reach the API directly, never through the CDN. */
 const UNLOCKED_ROUTES = new Set(['/health', '/ready'])
-const isLoopback = proxyAddr.compile('loopback')
+
+// Not proxy-addr's 'loopback': its parser reads an IPv4-compatible `::127.x.y.z` (another machine) as IPv4-mapped.
+const LOOPBACK = new BlockList()
+LOOPBACK.addSubnet('127.0.0.0', 8, 'ipv4')
+LOOPBACK.addAddress('::1', 'ipv6')
+LOOPBACK.addSubnet('::ffff:127.0.0.0', 104, 'ipv6')
+
+const isLoopback = (peer: string): boolean => {
+  const family = isIP(peer)
+  return family !== 0 && LOOPBACK.check(peer, family === 4 ? 'ipv4' : 'ipv6')
+}
 
 /** A fixed-length digest, so comparing it takes the same time whatever the length or content of the value sent. */
 const digest = (value: string): Buffer => createHash('sha256').update(value).digest()
@@ -523,7 +533,7 @@ export class FastifyHttpAdapter implements HttpAdapter {
   #refusesUnlocked(req: FastifyRequest): boolean {
     if (this.#lockHeader === undefined) return false
     const peer = req.raw.socket.remoteAddress
-    if (peer !== undefined && isLoopback(peer, 0)) return false
+    if (peer !== undefined && isLoopback(peer)) return false
     return req.is404 || !UNLOCKED_ROUTES.has(req.routeOptions.url ?? '')
   }
 
