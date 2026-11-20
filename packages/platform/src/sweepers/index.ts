@@ -17,6 +17,10 @@ export {
   type RefreshTokenSweeperDeps,
 } from './refresh-token-sweeper.js'
 export {
+  startLegacyPasswordSweeper,
+  type LegacyPasswordSweeperDeps,
+} from './legacy-password-sweeper.js'
+export {
   startRefundReconcileSweeper,
   type RefundReconcileSweeperDeps,
 } from './refund-reconcile-sweeper.js'

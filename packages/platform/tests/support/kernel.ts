@@ -130,6 +130,9 @@ export async function createKernel(
   // No wait before a retry unless a test asks for one, so a test that drains by hand after a failure retries at once.
   const relay = { retryDelayMs: 0, ...opts.appOptions?.relay }
   const app = await createApp(config, { ...opts.appOptions, relay, ...storage, logger })
+  // Boot does not wait for the start sweep of imported password hashes past their date. On SQLite's one connection a
+  // read waits its turn behind that sweep's transaction, so the audit installs after it has committed.
+  await app.platform.commandStore.read(async () => undefined)
   // Every transaction the test runs is checked for its event (write-audit.ts); boot's own writes are not.
   auditWrites(app.platform.commandStore)
   return {

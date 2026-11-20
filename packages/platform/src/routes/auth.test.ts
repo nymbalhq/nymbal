@@ -122,6 +122,7 @@ function makeAuthService(overrides?: Partial<AuthService>): AuthService {
     resendVerification: vi.fn().mockResolvedValue(undefined),
     sendVerification: vi.fn().mockResolvedValue(undefined),
     markVerified: vi.fn().mockResolvedValue(testCustomer),
+    importLegacyPassword: vi.fn().mockResolvedValue('unmatched'),
     ...overrides,
   }
 }

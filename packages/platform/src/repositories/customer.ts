@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, gte, isNotNull, lt, notExists, sql, type SQL } from 'drizzle-orm'
+import { and, asc, eq, gt, gte, isNotNull, like, lt, notExists, sql, type SQL } from 'drizzle-orm'
 import type { Customer, CustomerAddress, Role } from '@nymbalhq/types'
 import {
   postgresDb,
@@ -14,6 +14,7 @@ import * as sqliteSchema from '../db/schema/sqlite.js'
 import * as postgresSchema from '../db/schema/postgres.js'
 import type { KeysetPage } from './page.js'
 import { parseJson, fromTimestamp } from './json.js'
+import { IMPORTED_NO_PASSWORD, LEGACY_PASSWORD_PREFIX } from '../services/legacy-passwords.js'
 
 export interface CustomerInsert {
   id: string
@@ -140,7 +141,20 @@ export interface CustomerRepository extends StoreRepository {
   deleteUnconfirmed(tx: Tx, id: string, window: UnconfirmedWindow): Promise<boolean>
   /** Accounts created in `since <= created_at < until` that were asked to confirm, and of those the confirmed. */
   verificationFunnel(tx: ReadTx, since: Date, until: Date): Promise<VerificationFunnel>
+  /** Writes `passwordHash` only where the row still holds `from`; whether it did. */
+  replacePasswordHash(tx: Tx, id: string, change: PasswordHashChange): Promise<boolean>
+  /** Every row holding an imported legacy hash gets the no-password marker; the rows it changed, as they are now. */
+  sunsetLegacyPasswords(tx: Tx, updatedAt: Date): Promise<CustomerWithHash[]>
+  countLegacyPasswords(tx: ReadTx): Promise<number>
 }
+
+export interface PasswordHashChange {
+  from: string
+  passwordHash: string
+  requiresPasswordReset: boolean
+}
+
+const LEGACY_LIKE = `${LEGACY_PASSWORD_PREFIX}%`
 
 export function createCustomerRepository(store: CommandStore): CustomerRepository {
   return {
@@ -393,6 +407,63 @@ export function createCustomerRepository(store: CommandStore): CustomerRepositor
       await postgresDb(tx)
         .delete(postgresSchema.customers)
         .where(eq(postgresSchema.customers.id, id))
+    },
+    async replacePasswordHash(tx, id, change) {
+      const set = {
+        passwordHash: change.passwordHash,
+        requiresPasswordReset: change.requiresPasswordReset,
+      }
+      if (tx.kind === 'sqlite') {
+        const t = sqliteSchema.customers
+        const result = sqliteDb(tx)
+          .update(t)
+          .set({ ...set, updatedAt: new Date().toISOString() })
+          .where(and(eq(t.id, id), eq(t.passwordHash, change.from)))
+          .run()
+        return result.changes === 1
+      }
+      const t = postgresSchema.customers
+      const result = await postgresDb(tx)
+        .update(t)
+        .set({ ...set, updatedAt: new Date() })
+        .where(and(eq(t.id, id), eq(t.passwordHash, change.from)))
+      return result.rowCount === 1
+    },
+    async sunsetLegacyPasswords(tx, updatedAt) {
+      if (tx.kind === 'sqlite') {
+        const t = sqliteSchema.customers
+        return sqliteDb(tx)
+          .update(t)
+          .set({ passwordHash: IMPORTED_NO_PASSWORD, updatedAt: updatedAt.toISOString() })
+          .where(like(t.passwordHash, LEGACY_LIKE))
+          .returning()
+          .all()
+          .map((r) => rowToCustomer('sqlite', r as Record<string, unknown>))
+      }
+      const t = postgresSchema.customers
+      const rows = await postgresDb(tx)
+        .update(t)
+        .set({ passwordHash: IMPORTED_NO_PASSWORD, updatedAt })
+        .where(like(t.passwordHash, LEGACY_LIKE))
+        .returning()
+      return rows.map((r) => rowToCustomer('postgres', r as Record<string, unknown>))
+    },
+    async countLegacyPasswords(tx) {
+      if (tx.kind === 'sqlite') {
+        const t = sqliteSchema.customers
+        const row = sqliteDb(tx)
+          .select({ n: sql<number>`count(*)` })
+          .from(t)
+          .where(like(t.passwordHash, LEGACY_LIKE))
+          .get()
+        return Number(row?.n ?? 0)
+      }
+      const t = postgresSchema.customers
+      const [row] = await postgresDb(tx)
+        .select({ n: sql<number>`count(*)` })
+        .from(t)
+        .where(like(t.passwordHash, LEGACY_LIKE))
+      return Number(row?.n ?? 0)
     },
   }
 }

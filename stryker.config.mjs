@@ -26,6 +26,8 @@ export default {
     // Measured by the integration run too (stryker.integration.config.mjs); here by the unit tests beside them.
     'packages/platform/src/events/relay.ts',
     'packages/platform/src/events/publisher.ts',
+    // The sunset sweep of imported password hashes, by the unit test beside it.
+    'packages/platform/src/sweepers/legacy-password-sweeper.ts',
     'packages/importers/src/woocommerce/mappers/**/*.ts',
     // No unit test reaches these: stryker.integration.config.mjs measures them, and the services' composition root is
     // wiring every integration test runs through. Here they would score 0 and only cost time.
@@ -43,6 +45,8 @@ export default {
     '!packages/platform/src/repositories/report-rollup.ts',
     '!packages/platform/src/repositories/review.ts',
     '!**/*.test.ts',
+    // Test vectors and the helpers the tests derive from them, beside the code they test.
+    '!packages/platform/src/services/fixtures/**',
     '!**/*.d.ts',
     // Type tests (`expectTypeOf`): tsc checks them, nothing runs them, so every mutant would survive.
     '!**/*.test-d.ts',

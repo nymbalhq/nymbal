@@ -19,10 +19,33 @@ import {
 } from '@nymbalhq/types'
 import { audit } from '../audit/audit.js'
 import type { Tx } from '../db/command-store.js'
+import { withoutQueryParams } from '../db/query-error.js'
 import type { Repositories } from '../repositories/index.js'
 import type { CustomerWithHash } from '../repositories/customer.js'
 import type { EventPublisher } from '../events/publisher.js'
 import { toCustomerSnapshot } from '../history/views.js'
+import {
+  acceptLegacyHash,
+  bcryptCandidate,
+  bcryptUnits,
+  checkLegacyPassword,
+  DUMMY_PASSWORD_HASH_11,
+  DUMMY_PASSWORD_HASH_12,
+  DUMMY_PHPASS_SETTING,
+  IMPORTED_NO_PASSWORD,
+  isLegacyPasswordHash,
+  LEGACY_PASSWORD_MAX_BYTES,
+  legacyInput,
+  legacyWindowOpen,
+  NO_LEGACY_WORK,
+  phpass,
+  PHPASS_MAX_BYTES,
+  wordpressHmac,
+  type LegacyInput,
+  type LegacyMaxCost,
+  type LegacyRecipe,
+  type LegacyWork,
+} from './legacy-passwords.js'
 
 export interface AuthTokens {
   accessToken: string
@@ -93,7 +116,21 @@ export interface AuthService {
     currentPassword: string,
     newPassword: string,
   ): Promise<{ customer: Customer; tokens: AuthTokens }>
+  /**
+   * Attaches a password hash from the old platform to the customer with this email when they have no password of
+   * their own yet (none, or an earlier imported hash); `dryRun` answers the same and writes nothing.
+   */
+  importLegacyPassword(input: ImportLegacyPasswordInput): Promise<ImportLegacyPasswordAnswer>
 }
+
+export interface ImportLegacyPasswordInput {
+  email: string
+  recipe: LegacyRecipe
+  hash: string
+  dryRun?: boolean
+}
+
+export type ImportLegacyPasswordAnswer = 'stored' | 'has-password' | 'unmatched' | 'unsupported'
 
 export interface CreateAuthServiceDeps {
   repos: Repositories
@@ -105,6 +142,8 @@ export interface CreateAuthServiceDeps {
   issuer?: string
   /** `off` when absent. */
   verification?: VerificationPolicy
+  /** Imported password hashes are honoured while `now < until`; none are without an `until`. */
+  legacy?: { until?: Date; maxCost: LegacyMaxCost }
 }
 
 export function parseDurationToMs(s: string): number {
@@ -138,8 +177,8 @@ export const PASSWORD_HASH_ROUNDS = 10
 export const DUMMY_PASSWORD = 'nymbal-no-account-dummy-password'
 export const DUMMY_PASSWORD_HASH = '$2a$10$shMtNq7SQZ.7xjfzjruJBOiZMT6DSloRzH9UxejqCKdO0C6Pl.VkW'
 
-/** What an imported customer holds until they set a password through a reset link. */
-const IMPORTED_NO_PASSWORD = 'IMPORTED_NO_PASSWORD'
+/** A refusal's padding compares, costliest first. */
+const DUMMY_HASHES = [DUMMY_PASSWORD_HASH_12, DUMMY_PASSWORD_HASH_11, DUMMY_PASSWORD_HASH]
 
 /** How long a mailed reset link sets a password. */
 export const PASSWORD_RESET_TTL_MS = 15 * 60_000
@@ -202,9 +241,17 @@ function currentPasswordInvalid(): HttpError {
   })
 }
 
-/** Whether the customer holds a password a sign-in can be checked against. */
+/** Whether the customer holds a native password a sign-in can be checked against. */
 function hasPassword(customer: CustomerWithHash | null): customer is CustomerWithHash {
-  return customer !== null && customer.passwordHash !== IMPORTED_NO_PASSWORD
+  return (
+    customer !== null &&
+    customer.passwordHash !== IMPORTED_NO_PASSWORD &&
+    !isLegacyPasswordHash(customer.passwordHash)
+  )
+}
+
+function invalidCredentials(): AuthError {
+  return new AuthError('invalid_credentials', 'Invalid email or password')
 }
 
 function stripPassword(c: Customer & { passwordHash: string }): Customer {
@@ -215,6 +262,8 @@ function stripPassword(c: Customer & { passwordHash: string }): Customer {
 export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
   const { repos, publisher, logger, jwtSecret, accessTtl, refreshTtl } = deps
   const verification = deps.verification ?? 'off'
+  const legacyUntil = deps.legacy?.until
+  const maxCost = deps.legacy?.maxCost ?? 10
   const { store } = repos.customer
   const issuer = deps.issuer ?? 'nymbal'
   const secretKey = new TextEncoder().encode(jwtSecret)
@@ -324,6 +373,91 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
     const customer = await repos.customer.findById(tx, customerId)
     if (customer === null) throw customerNotFound(customerId)
     return customer
+  }
+
+  async function signedIn(
+    customer: CustomerWithHash,
+  ): Promise<{ customer: Customer; tokens: AuthTokens }> {
+    const tokens = await issueTokens(customer)
+    logger.info({ customerId: customer.id }, 'customer login')
+    return { customer: stripPassword(customer), tokens }
+  }
+
+  /** The row's own check while imported hashes are honoured: native bcrypt, a legacy recipe, or none to run. */
+  async function checkOwn(
+    customer: CustomerWithHash | null,
+    password: string,
+    input: LegacyInput,
+  ): Promise<{ ok: boolean; work: LegacyWork }> {
+    if (customer === null || customer.passwordHash === IMPORTED_NO_PASSWORD) {
+      return { ok: false, work: NO_LEGACY_WORK }
+    }
+    if (isLegacyPasswordHash(customer.passwordHash)) {
+      return checkLegacyPassword(customer.passwordHash, input, maxCost)
+    }
+    const ok = await bcryptCompare(bcryptCandidate(password), customer.passwordHash)
+    const units = bcryptUnits(customer.passwordHash)
+    return { ok, work: { ...NO_LEGACY_WORK, units, candidateSent: true } }
+  }
+
+  /**
+   * Spends what the refusal's own check did not, so every refusal while imported hashes are honoured costs the same
+   * whatever the row holds: bcrypt to 2^(maxCost - 10) cost-10 units, one phpass and one HMAC. Only the first compare
+   * is handed the typed password, cut as every compare's is; padding beyond it compares the published dummy.
+   */
+  async function padRefusal(work: LegacyWork, password: string, input: LegacyInput): Promise<void> {
+    const budget = 2 ** (maxCost - 10)
+    let units = work.units
+    let candidate = !work.candidateSent
+    for (const dummy of DUMMY_HASHES) {
+      const cost = bcryptUnits(dummy)
+      while (units + cost <= budget) {
+        await bcryptCompare(candidate ? bcryptCandidate(password) : DUMMY_PASSWORD, dummy)
+        candidate = false
+        units += cost
+      }
+    }
+    if (!work.phpass) phpass(DUMMY_PHPASS_SETTING, input.bytes.subarray(0, PHPASS_MAX_BYTES))
+    if (!work.hmac) wordpressHmac(input.bytes.subarray(0, LEGACY_PASSWORD_MAX_BYTES))
+  }
+
+  /**
+   * A right legacy password becomes a native hash of the password as typed. The write takes only where the row still
+   * holds the value that was checked, so a reset, a sweep or another import since the read wins over it.
+   */
+  async function upgrade(
+    customer: CustomerWithHash,
+    password: string,
+  ): Promise<{ customer: Customer; tokens: AuthTokens }> {
+    const passwordHash = await bcryptHash(password, PASSWORD_HASH_ROUNDS)
+    // The conditional write binds the imported hash it replaces, so a failed statement's error leaves without it.
+    const upgraded = await store
+      .transaction(async (tx) => {
+        const wrote = await repos.customer.replacePasswordHash(tx, customer.id, {
+          from: customer.passwordHash,
+          passwordHash,
+          requiresPasswordReset: false,
+        })
+        if (!wrote) return null
+        audit.note('customer.upgradePassword', [{ type: 'customer', id: customer.id }])
+        const fresh = (await repos.customer.findById(tx, customer.id))!
+        await publisher.publish(EVT_CUSTOMER_UPDATED, {
+          customerId: customer.id,
+          customer: toCustomerSnapshot(fresh),
+        })
+        return fresh
+      })
+      .catch((err: unknown) => {
+        throw withoutQueryParams(err)
+      })
+    if (upgraded !== null) return signedIn(upgraded)
+    // Another write took the row first. A native hash there is checked as any sign-in is (a concurrent upgrade of the
+    // same password passes); anything else is refused without a second legacy check.
+    const now = await store.read((tx) => repos.customer.findById(tx, customer.id))
+    if (hasPassword(now) && (await bcryptCompare(bcryptCandidate(password), now.passwordHash))) {
+      return signedIn(now)
+    }
+    throw invalidCredentials()
   }
 
   return {
@@ -488,17 +622,26 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
 
     async login(email, password) {
       const customer = await store.read((tx) => repos.customer.findByEmail(tx, email.toLowerCase()))
-      // One compare on every path, so the answer's time does not say whether the address has a password.
-      const real = hasPassword(customer)
-      const ok = await bcryptCompare(password, real ? customer.passwordHash : DUMMY_PASSWORD_HASH)
-      // After the compare and with the same refusal, so an unconfirmed account reads as a wrong password.
+      // After the check and with the same refusal, so an unconfirmed account reads as a wrong password.
       const unconfirmed = verification === 'required' && customer?.emailVerification === 'pending'
-      if (!real || !ok || unconfirmed) {
-        throw new AuthError('invalid_credentials', 'Invalid email or password')
+      if (!legacyWindowOpen(legacyUntil, new Date())) {
+        // One compare on every path, so the answer's time does not say whether the address has a password.
+        const real = hasPassword(customer)
+        const ok = await bcryptCompare(
+          bcryptCandidate(password),
+          real ? customer.passwordHash : DUMMY_PASSWORD_HASH,
+        )
+        if (!real || !ok || unconfirmed) throw invalidCredentials()
+        return signedIn(customer)
       }
-      const tokens = await issueTokens(customer)
-      logger.info({ customerId: customer.id }, 'customer login')
-      return { customer: stripPassword(customer), tokens }
+      const input = legacyInput(password)
+      const own = await checkOwn(customer, password, input)
+      if (customer === null || !own.ok || unconfirmed) {
+        await padRefusal(own.work, password, input)
+        throw invalidCredentials()
+      }
+      if (isLegacyPasswordHash(customer.passwordHash)) return upgrade(customer, password)
+      return signedIn(customer)
     },
 
     async refresh(refreshToken) {
@@ -626,6 +769,43 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
         return inserted
       })
       return stripPassword(customer)
+    },
+
+    async importLegacyPassword(input) {
+      const accepted = acceptLegacyHash(input.recipe, input.hash, maxCost)
+      if (!accepted.ok) return 'unsupported'
+      const email = input.email.toLowerCase()
+      // A password set on Nymbal, a pending sign-up's included, is never replaced from a file.
+      const holder = (customer: CustomerWithHash | null) =>
+        customer === null
+          ? ('unmatched' as const)
+          : customer.passwordHash === IMPORTED_NO_PASSWORD ||
+              isLegacyPasswordHash(customer.passwordHash)
+            ? customer
+            : ('has-password' as const)
+      if (input.dryRun === true) {
+        const found = holder(await store.read((tx) => repos.customer.findByEmail(tx, email)))
+        return typeof found === 'string' ? found : 'stored'
+      }
+      return store.transaction(async (tx) => {
+        const found = holder(await repos.customer.findByEmail(tx, email))
+        if (typeof found === 'string') return found
+        const wrote = await repos.customer.replacePasswordHash(tx, found.id, {
+          from: found.passwordHash,
+          passwordHash: accepted.stored,
+          requiresPasswordReset: true,
+        })
+        // Only on Postgres can a write since the read take the row (SQLite holds it for the transaction); the line then
+        // stores nothing, as for a password set since.
+        if (!wrote) return 'has-password'
+        audit.note('customer.importLegacyPassword', [{ type: 'customer', id: found.id }])
+        const fresh = (await repos.customer.findById(tx, found.id))!
+        await publisher.publish(EVT_CUSTOMER_UPDATED, {
+          customerId: found.id,
+          customer: toCustomerSnapshot(fresh),
+        })
+        return 'stored'
+      })
     },
 
     async requestPasswordReset(email) {

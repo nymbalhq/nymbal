@@ -1,0 +1,262 @@
+{
+  "made": {
+    "by": "WordPress 7.1: PasswordHash(8, true)->HashPassword for phpass, wp_hash_password with the wp_hash_password_options filter answering the cost for wp bcrypt, and PHP password_hash for plain bcrypt (what a bcrypt plugin writes), each of the password as posted (addslashes, as wp_magic_quotes slashes $_POST); each checked with wp_check_password of the trimmed posted password",
+    "wordpress": "7.1",
+    "php": "8.4.27",
+    "command": "php wordpress-hashes.php <wordpress-7.1 root> > wordpress-hashes.json && prettier --write wordpress-hashes.json",
+    "nymbalVerifies": "false only where Nymbal refuses what WordPress accepts: phpass over 256 bytes",
+    "unslashedHash": "the same recipe over the password as typed, which WordPress does not sign in through a form"
+  },
+  "vectors": [
+    {
+      "name": "phpass ascii",
+      "format": "phpass",
+      "cost": null,
+      "password": "correct horse battery staple",
+      "posted": "correct horse battery staple",
+      "bytes": 28,
+      "hash": "$P$BJBvrnticjeb6ap2jg6pjQ3IWITdyU0",
+      "nymbalVerifies": true
+    },
+    {
+      "name": "phpass utf-8",
+      "format": "phpass",
+      "cost": null,
+      "password": "pässwörd-🦊-ünïcode",
+      "posted": "pässwörd-🦊-ünïcode",
+      "bytes": 25,
+      "hash": "$P$BRkHEcDR/mS2LfUe/Hs5KUWFA9mady0",
+      "nymbalVerifies": true
+    },
+    {
+      "name": "phpass 5 characters",
+      "format": "phpass",
+      "cost": null,
+      "password": "tiny5",
+      "posted": "tiny5",
+      "bytes": 5,
+      "hash": "$P$BVUcVDwhP3ULZPHlM.V1prao609Lmf/",
+      "nymbalVerifies": true
+    },
+    {
+      "name": "phpass 256 bytes",
+      "format": "phpass",
+      "cost": null,
+      "password": "phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-p",
+      "posted": "phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-p",
+      "bytes": 256,
+      "hash": "$P$BecsdUUAwfVaTCwLcTave60D7n96gk0",
+      "nymbalVerifies": true
+    },
+    {
+      "name": "phpass 300 bytes",
+      "format": "phpass",
+      "cost": null,
+      "password": "phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-read",
+      "posted": "phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-reads-256-phpass-read",
+      "bytes": 300,
+      "hash": "$P$BM6RHAwirnsraQs488h/5GCZUlK0zQ.",
+      "nymbalVerifies": false
+    },
+    {
+      "name": "wp bcrypt 10 ascii",
+      "format": "wp-bcrypt",
+      "cost": 10,
+      "password": "correct horse battery staple",
+      "posted": "correct horse battery staple",
+      "bytes": 28,
+      "hash": "$wp$2y$10$UMVQ/3jC2mDr/tPNySawbeZJXk1xvDD6UdfWOEtGdRKK8iLuOIUra",
+      "nymbalVerifies": true
+    },
+    {
+      "name": "wp bcrypt 10 utf-8",
+      "format": "wp-bcrypt",
+      "cost": 10,
+      "password": "pässwörd-🦊-ünïcode",
+      "posted": "pässwörd-🦊-ünïcode",
+      "bytes": 25,
+      "hash": "$wp$2y$10$rR/Ubd13L6Sq6p4COobeO.IczhYU7ajFp3XqLosctr4DrPlOqeHVi",
+      "nymbalVerifies": true
+    },
+    {
+      "name": "wp bcrypt 10 5 characters",
+      "format": "wp-bcrypt",
+      "cost": 10,
+      "password": "tiny5",
+      "posted": "tiny5",
+      "bytes": 5,
+      "hash": "$wp$2y$10$MMO6zyZNRe3pDeDoGTI1tuO5RUSCTcGkSugLNUL6VFz3F42hoU2TS",
+      "nymbalVerifies": true
+    },
+    {
+      "name": "wp bcrypt 10 100 bytes",
+      "format": "wp-bcrypt",
+      "cost": 10,
+      "password": "hmac-keeps-all-100-hmac-keeps-all-100-hmac-keeps-all-100-hmac-keeps-all-100-hmac-keeps-all-100-hmac-",
+      "posted": "hmac-keeps-all-100-hmac-keeps-all-100-hmac-keeps-all-100-hmac-keeps-all-100-hmac-keeps-all-100-hmac-",
+      "bytes": 100,
+      "hash": "$wp$2y$10$R2kd32Io2arCdDDkn49Yh.u/pxykqO6OY6ktsW8kAkYXbJuoiw/E6",
+      "nymbalVerifies": true
+    },
+    {
+      "name": "wp bcrypt 11 ascii",
+      "format": "wp-bcrypt",
+      "cost": 11,
+      "password": "eleven rounds of salt",
+      "posted": "eleven rounds of salt",
+      "bytes": 21,
+      "hash": "$wp$2y$11$/QHeqAcdAn916FpaL/nynurpgLMMp1FeeE5BGg04mzUDwvmfI.1Yu",
+      "nymbalVerifies": true
+    },
+    {
+      "name": "wp bcrypt 12 ascii",
+      "format": "wp-bcrypt",
+      "cost": 12,
+      "password": "twelve rounds of salt",
+      "posted": "twelve rounds of salt",
+      "bytes": 21,
+      "hash": "$wp$2y$12$tlH1nva74YmRPGcrZbEyPuHpc.ATKl/e8T/leTZuBCffElBO2J3i6",
+      "nymbalVerifies": true
+    },
+    {
+      "name": "bcrypt 10 ascii",
+      "format": "bcrypt",
+      "cost": 10,
+      "password": "plain bcrypt plugin",
+      "posted": "plain bcrypt plugin",
+      "bytes": 19,
+      "hash": "$2y$10$QE5rsS08NfB4i19FV2UK7uOl4uf1dcJVJ7EvAc8BzrwWmLBjedVqy",
+      "nymbalVerifies": true
+    },
+    {
+      "name": "bcrypt 10 utf-8",
+      "format": "bcrypt",
+      "cost": 10,
+      "password": "pläin-bcrÿpt-🦊",
+      "posted": "pläin-bcrÿpt-🦊",
+      "bytes": 19,
+      "hash": "$2y$10$IPDzkiykzCgso45swfMQx.gxqLFpCkyRN6/UzVjWhSH/QT4yvDE6.",
+      "nymbalVerifies": true
+    },
+    {
+      "name": "bcrypt 11 ascii",
+      "format": "bcrypt",
+      "cost": 11,
+      "password": "plain bcrypt eleven",
+      "posted": "plain bcrypt eleven",
+      "bytes": 19,
+      "hash": "$2y$11$ldSXVjnVQFZ0ucxgR3J8l.h.OX9x5lEIfxoToaeJ79nn6OlQjAr9G",
+      "nymbalVerifies": true
+    },
+    {
+      "name": "phpass apostrophe",
+      "format": "phpass",
+      "cost": null,
+      "password": "it's-me",
+      "posted": "it\\'s-me",
+      "bytes": 7,
+      "hash": "$P$BN3Y24AZrY/Uo6exhaVt.roaHk94Oz.",
+      "nymbalVerifies": true,
+      "unslashedHash": "$P$BJ2J9.8WyMP9ch0Lep1/gzjy4YzzsD1"
+    },
+    {
+      "name": "wp bcrypt 10 apostrophe",
+      "format": "wp-bcrypt",
+      "cost": 10,
+      "password": "it's-me",
+      "posted": "it\\'s-me",
+      "bytes": 7,
+      "hash": "$wp$2y$10$h.o0qkRCkJhAetl5yvFogeNVRVn1iA8opGTKL673lIPDQsfdcp7Yi",
+      "nymbalVerifies": true,
+      "unslashedHash": "$wp$2y$10$P0pVHu1NaJqidd7Yd3SJCOym.and3KrvnTTkMt4QXhybdMVQ8fnem"
+    },
+    {
+      "name": "bcrypt 10 apostrophe",
+      "format": "bcrypt",
+      "cost": 10,
+      "password": "it's-me",
+      "posted": "it\\'s-me",
+      "bytes": 7,
+      "hash": "$2y$10$GfEqvi4tALXo.7T32TZYuuHrLuq.FdGJbSyBt89zFpJevu9HZ4IUS",
+      "nymbalVerifies": true,
+      "unslashedHash": "$2y$10$iwbvHFwniQtiwFU6isMG7O4hNo4yeWyHyebvJDM7XGpF7To4m.x7S"
+    },
+    {
+      "name": "phpass double quotes",
+      "format": "phpass",
+      "cost": null,
+      "password": "say \"hi\"",
+      "posted": "say \\\"hi\\\"",
+      "bytes": 8,
+      "hash": "$P$BE2ek1EneSiyUM0be9RQlsXHz1fniZ.",
+      "nymbalVerifies": true,
+      "unslashedHash": "$P$B5TMPBju5sJAeh9rY7cUJAh7h1Vh3f/"
+    },
+    {
+      "name": "wp bcrypt 10 double quotes",
+      "format": "wp-bcrypt",
+      "cost": 10,
+      "password": "say \"hi\"",
+      "posted": "say \\\"hi\\\"",
+      "bytes": 8,
+      "hash": "$wp$2y$10$7FJRXcbBfJ88qZuT02XRduKENT6y1Ewgcrnh8iTaufSfMAFbOUUUG",
+      "nymbalVerifies": true,
+      "unslashedHash": "$wp$2y$10$aOxTzjsUj/BArC.mcbRDeutgxhKtLXAtyb91klCk6eMmBKe554yP6"
+    },
+    {
+      "name": "bcrypt 10 double quotes",
+      "format": "bcrypt",
+      "cost": 10,
+      "password": "say \"hi\"",
+      "posted": "say \\\"hi\\\"",
+      "bytes": 8,
+      "hash": "$2y$10$ZZLqUIsx0mKcoQOdHQQ7fOBXtScrqDRKv67JmMvMuDDubdT04Tjp6",
+      "nymbalVerifies": true,
+      "unslashedHash": "$2y$10$gHsZvhmES1X.BWhMLHBlwOnQAkogxC0/NB5.E80COEEwNISNuAZ2e"
+    },
+    {
+      "name": "phpass backslash",
+      "format": "phpass",
+      "cost": null,
+      "password": "back\\slash",
+      "posted": "back\\\\slash",
+      "bytes": 10,
+      "hash": "$P$Bj1cMVa5ixdsnArie.uve9TQhiqy9x/",
+      "nymbalVerifies": true,
+      "unslashedHash": "$P$BG8ctzKh/KCPbONAgJdbd8VmYdQc2B."
+    },
+    {
+      "name": "wp bcrypt 10 backslash",
+      "format": "wp-bcrypt",
+      "cost": 10,
+      "password": "back\\slash",
+      "posted": "back\\\\slash",
+      "bytes": 10,
+      "hash": "$wp$2y$10$dPexOTRkIzwRNFLcf8MaouJaQN6VTfXz./jiXsox5EmBip.ExzCVm",
+      "nymbalVerifies": true,
+      "unslashedHash": "$wp$2y$10$.2lzsuKa47e6nGg2cpilV.gqhoVJ58kFFdXuQOI1Wml9XbXyQuKGS"
+    },
+    {
+      "name": "bcrypt 10 backslash",
+      "format": "bcrypt",
+      "cost": 10,
+      "password": "back\\slash",
+      "posted": "back\\\\slash",
+      "bytes": 10,
+      "hash": "$2y$10$EpZSsvBR7P/Yp2N/bePu1.2P6eXtXcb3sI6DNQDRjSTfTr/9dvHQy",
+      "nymbalVerifies": true,
+      "unslashedHash": "$2y$10$vxPsi3ztOX9h/ToouLeU1O7pXoAoaEP8RCIo/5zCQT2cQAH/cjPku"
+    },
+    {
+      "name": "wp bcrypt 10 NUL at the end",
+      "format": "wp-bcrypt",
+      "cost": 10,
+      "password": "nul-at-the-end\u0000",
+      "posted": "nul-at-the-end\\0",
+      "bytes": 15,
+      "hash": "$wp$2y$10$hTXP8OPLoJY2.2Bf7FRbeOjGAReprnYRkOR7w17VSHFpvLLrtQO7S",
+      "nymbalVerifies": true,
+      "unslashedHash": "$wp$2y$10$9UDF8ufIwr88nNc5F0bx4ucKWzv4wR646nHAeb8eUu0nfGqmnBh.u"
+    }
+  ]
+}

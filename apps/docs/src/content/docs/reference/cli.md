@@ -120,6 +120,7 @@ Migrate content from WooCommerce (or other sources) into Nymbal
 | `--rollback` | boolean | Remove every record the imports in this project created, from .nymbal-migration.json; needs no source or credentials | `false` |
 | `--yes` | boolean | With --rollback: remove without asking | `false` |
 | `--since` | string | Bring over what changed in WooCommerce since the last finished import (last), a date (2026-10-01, UTC) or a date-time with a zone |  |
+| `--password-hashes` | string | Attach WordPress password hashes (email&lt;TAB&gt;hash per line, from WP-CLI) to imported customers with no password; needs security.auth.legacy.until and no source credentials |  |
 
 ## `nymbal preview`
 

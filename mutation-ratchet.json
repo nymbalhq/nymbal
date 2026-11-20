@@ -17,7 +17,7 @@
     "packages/platform/src/repositories/audit-entry.ts": 59.83,
     "packages/platform/src/repositories/cart.ts": 66.94,
     "packages/platform/src/repositories/category.ts": 69.05,
-    "packages/platform/src/repositories/customer.ts": 54.96,
+    "packages/platform/src/repositories/customer.ts": 58.80,
     "packages/platform/src/repositories/event-log.ts": 51.62,
     "packages/platform/src/repositories/index.ts": 100,
     "packages/platform/src/repositories/inventory-reservation.ts": 54.9,
@@ -38,12 +38,13 @@
     "packages/platform/src/repositories/stock-adjustment.ts": 80.95,
     "packages/platform/src/repositories/variant.ts": 54.39,
     "packages/platform/src/services/alert-token.ts": 100,
-    "packages/platform/src/services/auth-service.ts": 69.77,
+    "packages/platform/src/services/auth-service.ts": 75.08,
     "packages/platform/src/services/cart-service.ts": 96.54,
     "packages/platform/src/services/category-service.ts": 86.89,
     "packages/platform/src/services/checkout-service.ts": 78.32,
     "packages/platform/src/services/customer-service.ts": 97.01,
     "packages/platform/src/services/inventory-service.ts": 75.63,
+    "packages/platform/src/services/legacy-passwords.ts": 83.07,
     "packages/platform/src/services/mail-health.ts": 88.52,
     "packages/platform/src/services/order-correlation.ts": 100,
     "packages/platform/src/services/order-service.ts": 68.16,
@@ -56,6 +57,7 @@
     "packages/platform/src/services/shipping-quote.ts": 97.14,
     "packages/platform/src/services/tax-quote.ts": 84.62,
     "packages/platform/src/services/tax-rates.ts": 95.31,
-    "packages/platform/src/services/totals.ts": 80.63
+    "packages/platform/src/services/totals.ts": 80.63,
+    "packages/platform/src/sweepers/legacy-password-sweeper.ts": 58.33
   }
 }

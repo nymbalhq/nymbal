@@ -27,6 +27,7 @@ export {
   type MigrateOptions,
   type MigrationState,
 } from './db/migrate.js'
+export { withoutQueryParams } from './db/query-error.js'
 // Legacy thin repositories (kept for seed + existing consumers).
 export {
   createProductRepository as createLegacyProductRepository,

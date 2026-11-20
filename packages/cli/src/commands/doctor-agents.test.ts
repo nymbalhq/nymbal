@@ -91,6 +91,7 @@ describe('AC-2: nymbal doctor reports how ready the agent surfaces are', () => {
     expect(names.indexOf('agents')).toBeLessThan(names.indexOf('trust proxy'))
     expect(names.slice(names.indexOf('events'), names.indexOf('trust proxy') + 1)).toEqual([
       'events',
+      'legacy passwords',
       'agents',
       'trust proxy',
     ])

@@ -348,6 +348,50 @@ export function durationMs(text: string): number | undefined {
 const ACCESS_TTL_MIN_MS = 60_000
 const ACCESS_TTL_MAX_MS = 3_600_000
 
+const LEGACY_UNTIL = 'security.auth.legacy.until'
+/** Imported password hashes are weaker than the store's own, so one setting keeps them honoured for a year at most. */
+const LEGACY_UNTIL_MAX_DAYS = 366
+
+/** A `YYYY-MM-DD` that names a real day, as ms at 00:00 UTC; undefined for anything else. */
+function calendarDateMs(text: string): number | undefined {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return undefined
+  const at = Date.parse(`${text}T00:00:00.000Z`)
+  return !Number.isNaN(at) && new Date(at).toISOString().startsWith(text) ? at : undefined
+}
+
+/** When imported WordPress password hashes stop being honoured, and the costliest bcrypt among them the store accepts. */
+const legacyPasswordsSchema = z.object({
+  until: z
+    .string({ error: `${LEGACY_UNTIL} must be a date written YYYY-MM-DD` })
+    .superRefine((until, ctx) => {
+      const at = calendarDateMs(until)
+      if (at === undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `${LEGACY_UNTIL} must be a calendar date written YYYY-MM-DD; it is "${until}"`,
+        })
+        return
+      }
+      const now = new Date()
+      const bound = Date.UTC(
+        now.getUTCFullYear(),
+        now.getUTCMonth(),
+        now.getUTCDate() + LEGACY_UNTIL_MAX_DAYS,
+      )
+      if (at > bound) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `${LEGACY_UNTIL} must be at most ${LEGACY_UNTIL_MAX_DAYS} days from today; it is ${until}`,
+        })
+      }
+    }),
+  maxCost: z
+    .union([z.literal(10), z.literal(11), z.literal(12)], {
+      error: 'security.auth.legacy.maxCost must be 10, 11 or 12',
+    })
+    .default(10),
+})
+
 const originLockHeaderSchema = z.string().superRefine((header, ctx) => {
   const lower = header.toLowerCase()
   const problem = !HEADER_TOKEN.test(header)
@@ -415,6 +459,7 @@ const securityFields = z.object({
        * adapter delivers (anything but `native`), else `off`.
        */
       verification: z.enum(['required', 'off']).optional(),
+      legacy: legacyPasswordsSchema.optional(),
     })
     .superRefine((auth, ctx) => {
       const access = durationMs(auth.accessTtl)

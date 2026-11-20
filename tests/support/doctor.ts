@@ -152,7 +152,10 @@ export const TEXT_STATUS: Record<DoctorJsonCheck['status'], LineStatus> = {
 
 export const PRIMITIVES = ['documentStore', 'eventBus', 'media'] as const
 
-/** The check order: config, packages, command store, migrations, slots, primitives, the event log, agents. */
+/**
+ * The check order: config, packages, command store, migrations, slots, primitives, the event log, legacy passwords,
+ * agents.
+ */
 export function categoryOf(name: string): number {
   if (name === 'config') return 0
   if (name.startsWith('package ')) return 1
@@ -161,7 +164,8 @@ export function categoryOf(name: string): number {
   if (name.startsWith('slot ') || name === 'ai host') return 4
   if (name.startsWith('primitive ')) return 5
   if (name === 'events') return 6
-  if (name === 'agents') return 7
+  if (name === 'legacy passwords') return 7
+  if (name === 'agents') return 8
   return 99
 }
 
@@ -181,7 +185,8 @@ function hasPackage(slot: Slot, provider: string): boolean {
  * provider resolves to a package (neither `custom` nor a built-in), `command store`, `migrations`, `slot <name>` per
  * commerce slot, `ai host` (where the assistant's requests go; these configs keep `slot ai` up, and a down `slot ai`
  * has no `ai host` line), `slot security` (with `package security` when `security.adapter` is not `middleware`),
- * `primitive <name>` per primitive, `events` (the event log's dead and retrying events), `agents` (how ready the agent
+ * `primitive <name>` per primitive, `events` (the event log's dead and retrying events), `legacy passwords` (the
+ * imported password hashes the store holds, and until when it honours them), `agents` (how ready the agent
  * surfaces are), `trust proxy` (the proxy list, and client-address header, the server reads client addresses through),
  * `origin lock` (whether requests must carry the CDN's secret, and whether the zone sends it), `access token
  * lifetime` (whether an https store's access tokens outlive 15 minutes), `email verification` (what an https store's
@@ -189,7 +194,7 @@ function hasPackage(slot: Slot, provider: string): boolean {
  * is (`document-store`), never by its config key.
  */
 export function expectedCheckNames(config: NymbalConfig): string[] {
-  const names = ['config', 'command store', 'migrations', 'events', 'agents']
+  const names = ['config', 'command store', 'migrations', 'events', 'legacy passwords', 'agents']
   for (const { slot, provider } of commerceSlots(config)) {
     names.push(`slot ${slot}`)
     if (slot === 'ai') names.push('ai host')

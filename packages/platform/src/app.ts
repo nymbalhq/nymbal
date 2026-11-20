@@ -32,6 +32,7 @@ import { loadBootSettings } from './settings/load.js'
 import { addSecret, scrubbingLogger } from './settings/secret-set.js'
 import { isLoopbackHost, JWT_SECRET_ENV, resolveAuthSecret } from './auth-secret.js'
 import { buildServices, type ServiceRegistry } from './services/index.js'
+import { legacyUntilOf } from './services/legacy-passwords.js'
 import { createEventPublisher, type EventPublisher } from './events/publisher.js'
 import { createRelay, deliveringBus, type CreateRelayOptions, type Relay } from './events/relay.js'
 import { createOutageProbe, type OutageSubject } from './events/outage.js'
@@ -41,6 +42,7 @@ import {
   startInventoryReservationSweeper,
   startCartAbandonmentSweeper,
   startEventRetentionSweeper,
+  startLegacyPasswordSweeper,
   startRefreshTokenSweeper,
   startRefundReconcileSweeper,
   startStuckProposalSweeper,
@@ -109,6 +111,8 @@ export interface CreateAppOptions extends ResolvePrimitivesOptions {
   relay?: Pick<CreateRelayOptions, 'maxAttempts' | 'retryDelayMs' | 'intervalMs' | 'now'>
   /** How often expired and used refresh tokens are deleted; tests shorten it. */
   refreshTokenSweep?: { intervalMs?: number }
+  /** How often imported password hashes past `security.auth.legacy.until` are swept (hourly); tests shorten it. */
+  legacyPasswordSweep?: { intervalMs?: number }
   /** How often pending refunds are reconciled with the provider; tests shorten it. */
   refundReconcileSweep?: { intervalMs?: number }
   /** How often approved proposals that never settled are swept, and after how long they count; tests shorten both. */
@@ -410,6 +414,21 @@ export async function createApp(
     await relay.drain()
     relay.start()
 
+    // Past its sunset date a store sweeps the imported password hashes at start, without holding its boot for the
+    // sweep: sign-in refuses them by the date alone.
+    const legacyPasswordSweeper = startLegacyPasswordSweeper({
+      store: platform.commandStore,
+      customers: repos.customer,
+      publisher,
+      logger,
+      ...(config.security.auth.legacy !== undefined && {
+        until: legacyUntilOf(config.security.auth.legacy.until),
+      }),
+      ...(options.legacyPasswordSweep?.intervalMs !== undefined && {
+        intervalMs: options.legacyPasswordSweep.intervalMs,
+      }),
+    })
+
     const sweepers: SweeperHandle[] = [
       startInventoryReservationSweeper({
         inventoryService: services.inventory,
@@ -439,6 +458,7 @@ export async function createApp(
           intervalMs: options.refreshTokenSweep.intervalMs,
         }),
       }),
+      legacyPasswordSweeper,
       startRefundReconcileSweeper({
         store: platform.commandStore,
         refunds: repos.orderRefund,

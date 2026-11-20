@@ -54,6 +54,8 @@ import { buildDocumentStore, buildEventBus, buildMedia, redisUrlOf } from './pla
 import { agentReadiness } from './agents/readiness.js'
 import { createEventLogRepository, retryFloor } from './repositories/event-log.js'
 import { buildRepositories, type SettingRow } from './repositories/index.js'
+import { createCustomerRepository } from './repositories/customer.js'
+import { daysUntil, legacyUntilOf, legacyWindowOpen } from './services/legacy-passwords.js'
 import { listStoredSettings, settingValues } from './settings/load.js'
 import type { SettingValue } from './settings/resolve.js'
 import { scrub, scrubbingLogger } from './settings/secret-set.js'
@@ -480,6 +482,13 @@ export async function diagnose(
         ? { name: 'events', status: 'down', detail: notChecked('migrations') }
         : await eventLogCheck(commandStore, timeoutMs, config.events.retentionDays)
 
+  const legacyCheck: DiagnosisCheck =
+    commandStore === undefined
+      ? { name: 'legacy passwords', status: 'down', detail: notChecked('command store') }
+      : migrationsCheck.status !== 'ok'
+        ? { name: 'legacy passwords', status: 'down', detail: notChecked('migrations') }
+        : await legacyPasswordsCheck(commandStore, timeoutMs, config.security.auth.legacy?.until)
+
   for (const close of closers) {
     const closed = await within(timeoutMs, close)
     if (!closed.ok) logger.debug({ detail: closed.detail }, 'diagnose: a connection did not close')
@@ -496,6 +505,7 @@ export async function diagnose(
     ...slots,
     ...primitives,
     eventsCheck,
+    legacyCheck,
     agentReadiness(config, env),
   ].map((check) => ({
     ...check,
@@ -561,6 +571,41 @@ async function eventLogCheck(
     name: 'events',
     status: 'degraded',
     detail: `${dead} dead: ${named.join(', ')}; ${waiting} waiting to retry; ${hint}`,
+  }
+}
+
+/** How many imported password hashes the store holds and whether they are honoured: read only. */
+async function legacyPasswordsCheck(
+  store: CommandStore,
+  timeoutMs: number,
+  until: string | undefined,
+): Promise<DiagnosisCheck> {
+  const name = 'legacy passwords'
+  const customers = createCustomerRepository(store)
+  const read = await within(timeoutMs, () => store.read((tx) => customers.countLegacyPasswords(tx)))
+  if (!read.ok) return { name, status: 'down', detail: read.detail }
+  const held = read.value
+  if (held === 0) return { name, status: 'ok', detail: 'none held' }
+  if (until === undefined) {
+    return {
+      name,
+      status: 'degraded',
+      detail: `${held} held and not honoured: set security.auth.legacy.until, or they stay at rest`,
+    }
+  }
+  const now = new Date()
+  const at = legacyUntilOf(until)
+  if (!legacyWindowOpen(at, now)) {
+    return {
+      name,
+      status: 'degraded',
+      detail: `${held} held past security.auth.legacy.until: (re)start the store; its sweep runs at start and hourly`,
+    }
+  }
+  return {
+    name,
+    status: 'ok',
+    detail: `${held} held; honoured until ${until} (${daysUntil(at, now)} days)`,
   }
 }
 

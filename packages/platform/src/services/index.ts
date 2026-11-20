@@ -38,6 +38,7 @@ import {
   type ProposalServiceDeps,
 } from './proposal-service.js'
 import { createImportRemovalService, type ImportRemovalService } from './import-removal-service.js'
+import { legacyUntilOf } from './legacy-passwords.js'
 
 export * from './product-service.js'
 export * from './category-service.js'
@@ -54,6 +55,18 @@ export * from './alert-service.js'
 export * from './review-service.js'
 export * from './proposal-service.js'
 export * from './import-removal-service.js'
+export {
+  acceptLegacyHash,
+  IMPORTED_NO_PASSWORD,
+  isLegacyPasswordHash,
+  LEGACY_PASSWORD_PREFIX,
+  LEGACY_RECIPES,
+  legacyUntilOf,
+  legacyWindowOpen,
+  type LegacyAcceptance,
+  type LegacyMaxCost,
+  type LegacyRecipe,
+} from './legacy-passwords.js'
 export { newAlertToken } from './alert-token.js'
 export { sanitizeDescription } from './description.js'
 
@@ -124,6 +137,7 @@ export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
     tax,
     jwtSecret,
   } = deps
+  const { legacy } = config.security.auth
   const inventory = createInventoryService({
     store,
     repos,
@@ -203,6 +217,9 @@ export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
       accessTtl: config.security.auth.accessTtl,
       refreshTtl: config.security.auth.refreshTtl,
       verification: resolveVerification(config.security.auth.verification, emailDelivers(email)),
+      ...(legacy !== undefined && {
+        legacy: { until: legacyUntilOf(legacy.until), maxCost: legacy.maxCost },
+      }),
     }),
     order: orders,
     inventory,
