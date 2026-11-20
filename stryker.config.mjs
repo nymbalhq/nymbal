@@ -14,7 +14,9 @@ const concurrency = machineBudget().stryker
 export default {
   ...(concurrency === undefined ? {} : { concurrency }),
   testRunner: 'vitest',
-  vitest: { configFile: 'vitest.stryker.config.ts' },
+  // Each test file in a process, not a worker thread: Node unloads a native addon when a worker exits, and
+  // better-sqlite3's finalizers then jump into the unmapped library and crash the run (seen on macOS).
+  vitest: { configFile: 'vitest.stryker.config.ts', pool: 'forks' },
   plugins: ['@stryker-mutator/vitest-runner'],
   mutate: [
     'packages/platform/src/services/**/*.ts',

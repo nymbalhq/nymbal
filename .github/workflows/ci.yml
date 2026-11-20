@@ -263,9 +263,10 @@ jobs:
     name: Mutation — Stryker (incremental)
     if: inputs.select != 'lighthouse'
     runs-on: ubuntu-24.04
-    # A cold whole-set run (a fresh cache chain, or any platform test change on a miss) measured 1,491 s on this runner
-    # (PR #24) and 1,472 s on dev, against 290 s on 12 local cores; the mutate set grows with each service.
-    timeout-minutes: 45
+    # A warm run mutates only what changed. A cold whole-set run (a fresh cache chain, a Stryker config change, or a
+    # Stryker upgrade that renames the tests the cached report keys on) does the nightly mutation-full run's work, 78 to
+    # 122 min there, so it has that job's allowance.
+    timeout-minutes: 180
     needs: [build]
     steps:
       - uses: actions/checkout@v7
