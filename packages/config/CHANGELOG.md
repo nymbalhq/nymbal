@@ -1,5 +1,40 @@
 # @nymbalhq/config
 
+## 1.9.0
+
+### Minor Changes
+
+- 6822798: Shoppers can reset a forgotten password by email (`/account/forgot-password`) and change it on `/account/profile`, which signs out every other session; one account's failed sign-ins are refused past ten times the login limit until a reset.
+  Breaking: `security.auth.accessTtl` must be 1m to 1h and `refreshTtl` longer than it, or the store refuses to start, naming the field.
+  Per-address rate limits now count an IPv6 client by its /64, where before each full address was its own bucket.
+- b74f305: Discount codes: a `promotions` commerce slot with a native engine, `POST /api/cart/codes` and admin routes under `/api/admin/promotions`.
+  Cart, order and charge now come from one totals function; `POST /api/checkout` accepts `expectedTotalMinor` and refuses any other total.
+- 6ce7da1: Breaking: on a store with an email provider, `POST /api/auth/register` answers 202 "check your email" for every address and signs nobody in until the mailed link (`/account/verify-email`) is followed; `security.auth.verification: 'off'` keeps the old behaviour, and a `native` store is `off` by default.
+  Support can send the link again or mark the email confirmed from the customer's admin page; `nymbal doctor` and the admin dashboard warn when sign-ups are not confirmed or mail may not be arriving.
+  Until an address is confirmed, a later register for it replaces the waiting account's password; its owner can still set their own with Forgot password.
+  A store scaffolded before this release needs the template's `/account/verify-email` page before it adds an email provider, or the mailed link lands on a missing page.
+- f7ad028: `commerce.shipping.rates` sets flat delivery options per country (optional `freeOverMinor`); `POST /api/checkout/quote` (MCP `checkout_quote`) prices the cart with shipping and tax, the checkout element and ACP show it and send `shippingOptionId` and `expectedTotalMinor`, and a checkout charging shipping or tax on top with no `expectedTotalMinor` is refused.
+  Tax rows gain `taxShipping` (default `true`): a store that zero-rates goods through `codes` still taxes delivery at the row's percent unless the row sets `taxShipping: false`.
+  Breaking: the SDK drops `setShippingMethod` and `ShippingMethod`; use `quote()` and `selectShippingOption(id)` (`useCheckout()`: `requestQuote` and `selectShippingOption`), and the state's `quote` and `quoting`.
+- 4ad006f: Checkout charges tax from `commerce.tax.rates` (a row per country or US state, optional per-code rates; `onUnavailable: 'refuse' | 'native'`), and `store.pricesIncludeTax: true` extracts it from prices, shown as "Tax (included)"; a store with no rates is unchanged.
+  Tax added on top of prices is charged only when `POST /api/checkout` sends the taxed total as `expectedTotalMinor`; the checkout element and agent checkouts do not send it yet, so they are refused on such a store.
+  Breaking for a `custom` tax adapter: `calculate` is replaced by `capabilities()` and `quote()` (optional `commit` and `refund`); run `runTaxContract` from `@nymbalhq/contract-tests` against it.
+- 4097e20: `dist/kit.js` puts a cart on a WordPress theme with one script tag and two meta tags, and a set-up that cannot work says why in the console. `POST /api/alerts/subscribe` accepts `linkOrigin`, held to `http.cors.allowedOrigins` and the new `http.cors.kitOrigins` (a site listed there gets CORS on the cart's routes alone), and `createNymbalClient` an `alertLinkOrigin`, so alert links reach the store.
+- 749d08d: `nymbal import --source woocommerce --password-hashes <file>` loads WordPress password hashes (`wp db query "SELECT user_email, user_pass FROM wp_users" --skip-column-names`) for imported customers, who then sign in with their WordPress password once and hold a Nymbal one. Set `security.auth.legacy.until` (a date at most 366 days ahead) first: after it, old hashes are refused and swept. `security.auth.legacy.maxCost: 11 | 12` accepts the costlier bcrypt WordPress writes on PHP 8.4, at the price of slower refused sign-ins until that date.
+
+### Patch Changes
+
+- Updated dependencies [86aed8e]
+- Updated dependencies [6822798]
+- Updated dependencies [b74f305]
+- Updated dependencies [c9bb448]
+- Updated dependencies [d29f7e1]
+- Updated dependencies [6ce7da1]
+- Updated dependencies [f7ad028]
+- Updated dependencies [5a71306]
+- Updated dependencies [4ad006f]
+  - @nymbalhq/types@1.9.0
+
 ## 1.8.0
 
 ### Minor Changes

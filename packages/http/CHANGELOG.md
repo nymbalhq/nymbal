@@ -1,5 +1,35 @@
 # @nymbalhq/http
 
+## 1.9.0
+
+### Minor Changes
+
+- 6822798: Shoppers can reset a forgotten password by email (`/account/forgot-password`) and change it on `/account/profile`, which signs out every other session; one account's failed sign-ins are refused past ten times the login limit until a reset.
+  Breaking: `security.auth.accessTtl` must be 1m to 1h and `refreshTtl` longer than it, or the store refuses to start, naming the field.
+  Per-address rate limits now count an IPv6 client by its /64, where before each full address was its own bucket.
+- 6ce7da1: Breaking: on a store with an email provider, `POST /api/auth/register` answers 202 "check your email" for every address and signs nobody in until the mailed link (`/account/verify-email`) is followed; `security.auth.verification: 'off'` keeps the old behaviour, and a `native` store is `off` by default.
+  Support can send the link again or mark the email confirmed from the customer's admin page; `nymbal doctor` and the admin dashboard warn when sign-ups are not confirmed or mail may not be arriving.
+  Until an address is confirmed, a later register for it replaces the waiting account's password; its owner can still set their own with Forgot password.
+  A store scaffolded before this release needs the template's `/account/verify-email` page before it adds an email provider, or the mailed link lands on a missing page.
+- 4097e20: `dist/kit.js` puts a cart on a WordPress theme with one script tag and two meta tags, and a set-up that cannot work says why in the console. `POST /api/alerts/subscribe` accepts `linkOrigin`, held to `http.cors.allowedOrigins` and the new `http.cors.kitOrigins` (a site listed there gets CORS on the cart's routes alone), and `createNymbalClient` an `alertLinkOrigin`, so alert links reach the store.
+
+### Patch Changes
+
+- d92c29a: With `NYMBAL_ORIGIN_SECRET` set, a peer at an IPv4-compatible address such as `::127.0.0.1` is no longer taken for this machine and needs the secret like any other.
+- Updated dependencies [86aed8e]
+- Updated dependencies [6822798]
+- Updated dependencies [b74f305]
+- Updated dependencies [c9bb448]
+- Updated dependencies [d29f7e1]
+- Updated dependencies [6ce7da1]
+- Updated dependencies [f7ad028]
+- Updated dependencies [5a71306]
+- Updated dependencies [4ad006f]
+- Updated dependencies [4097e20]
+- Updated dependencies [749d08d]
+  - @nymbalhq/types@1.9.0
+  - @nymbalhq/config@1.9.0
+
 ## 1.8.0
 
 ### Patch Changes

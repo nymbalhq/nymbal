@@ -1,5 +1,11 @@
 # @nymbalhq/ai-anthropic
 
+## 1.8.1
+
+### Patch Changes
+
+- a1a4870: A provider error that echoes your API key next to a longer key that begins with it no longer passes the rest of that key on in the error message.
+
 ## 1.8.0
 
 ### Minor Changes

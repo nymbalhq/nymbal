@@ -1,5 +1,32 @@
 # @nymbalhq/contract-tests
 
+## 1.9.0
+
+### Minor Changes
+
+- c9bb448: `runPaymentsContract` now checks `listRefunds`: an adapter that loses a refund's key, lists another payment's refund or moves money while listing fails the suite.
+- b74f305: Discount codes: a `promotions` commerce slot with a native engine, `POST /api/cart/codes` and admin routes under `/api/admin/promotions`.
+  Cart, order and charge now come from one totals function; `POST /api/checkout` accepts `expectedTotalMinor` and refuses any other total.
+- f7ad028: `commerce.shipping.rates` sets flat delivery options per country (optional `freeOverMinor`); `POST /api/checkout/quote` (MCP `checkout_quote`) prices the cart with shipping and tax, the checkout element and ACP show it and send `shippingOptionId` and `expectedTotalMinor`, and a checkout charging shipping or tax on top with no `expectedTotalMinor` is refused.
+  Tax rows gain `taxShipping` (default `true`): a store that zero-rates goods through `codes` still taxes delivery at the row's percent unless the row sets `taxShipping: false`.
+  Breaking: the SDK drops `setShippingMethod` and `ShippingMethod`; use `quote()` and `selectShippingOption(id)` (`useCheckout()`: `requestQuote` and `selectShippingOption`), and the state's `quote` and `quoting`.
+- 4ad006f: Checkout charges tax from `commerce.tax.rates` (a row per country or US state, optional per-code rates; `onUnavailable: 'refuse' | 'native'`), and `store.pricesIncludeTax: true` extracts it from prices, shown as "Tax (included)"; a store with no rates is unchanged.
+  Tax added on top of prices is charged only when `POST /api/checkout` sends the taxed total as `expectedTotalMinor`; the checkout element and agent checkouts do not send it yet, so they are refused on such a store.
+  Breaking for a `custom` tax adapter: `calculate` is replaced by `capabilities()` and `quote()` (optional `commit` and `refund`); run `runTaxContract` from `@nymbalhq/contract-tests` against it.
+
+### Patch Changes
+
+- Updated dependencies [86aed8e]
+- Updated dependencies [6822798]
+- Updated dependencies [b74f305]
+- Updated dependencies [c9bb448]
+- Updated dependencies [d29f7e1]
+- Updated dependencies [6ce7da1]
+- Updated dependencies [f7ad028]
+- Updated dependencies [5a71306]
+- Updated dependencies [4ad006f]
+  - @nymbalhq/types@1.9.0
+
 ## 1.8.0
 
 ### Minor Changes

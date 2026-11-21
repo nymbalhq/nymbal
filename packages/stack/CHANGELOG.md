@@ -1,5 +1,41 @@
 # @nymbalhq/stack
 
+## 1.9.0
+
+### Patch Changes
+
+- Updated dependencies [5118a9c]
+- Updated dependencies [2c34f0d]
+- Updated dependencies [ba1f2b3]
+- Updated dependencies [b4134f0]
+- Updated dependencies [86aed8e]
+- Updated dependencies [875c467]
+- Updated dependencies [d2377f9]
+- Updated dependencies [d92c29a]
+- Updated dependencies [6822798]
+- Updated dependencies [619abd8]
+- Updated dependencies [b74f305]
+- Updated dependencies [c9bb448]
+- Updated dependencies [6339654]
+- Updated dependencies [e78beeb]
+- Updated dependencies [d29f7e1]
+- Updated dependencies [6ce7da1]
+- Updated dependencies [db98ee9]
+- Updated dependencies [f7ad028]
+- Updated dependencies [5a71306]
+- Updated dependencies [2c34f0d]
+- Updated dependencies [4ad006f]
+- Updated dependencies [4097e20]
+- Updated dependencies [749d08d]
+  - @nymbalhq/platform@1.9.0
+  - nymbal@1.9.0
+  - @nymbalhq/types@1.9.0
+  - @nymbalhq/http@1.9.0
+  - @nymbalhq/config@1.9.0
+  - @nymbalhq/sdk@1.9.0
+  - @nymbalhq/web-components@1.9.0
+  - @nymbalhq/react@1.9.0
+
 ## 1.8.0
 
 ### Patch Changes
