@@ -37,6 +37,7 @@ export type StackBlock = {
   walkApi: number
   walkAstro: number
   walkNextjs: number
+  wordpress: number
   postgres: number
   redis: number
   mailpitSmtp: number
@@ -65,6 +66,8 @@ const SLOT0: Record<PortField, number> = {
   walkApi: 3031,
   walkAstro: 4351,
   walkNextjs: 3030,
+  // The WordPress site the migration kit's journeys run on.
+  wordpress: 3051,
   postgres: 54329,
   redis: 63799,
   mailpitSmtp: 11025,
@@ -92,6 +95,7 @@ const COMPOSE_PORTS: Record<string, PortField> = {
   NYMBAL_MAILPIT_SMTP_PORT: 'mailpitSmtp',
   NYMBAL_MAILPIT_UI_PORT: 'mailpitUi',
   NYMBAL_MINIO_PORT: 'minio',
+  NYMBAL_WORDPRESS_PORT: 'wordpress',
 }
 
 /** The compose host-port variables of a block, by the names compose.yaml reads. */

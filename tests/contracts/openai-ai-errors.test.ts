@@ -31,10 +31,10 @@ function stalling(status: number): void {
   })
 }
 
-async function failure(apiKey = KEY): Promise<AdapterError> {
+async function failure(apiKey = KEY, content = 'Say hello.'): Promise<AdapterError> {
   const adapter = createOpenAiAdapter({ apiKey, model: 'gpt-4o-mini', logger })
   try {
-    await adapter.chat([{ role: 'user', content: 'Say hello.' }])
+    await adapter.chat([{ role: 'user', content }])
   } catch (error) {
     return error as AdapterError
   }
@@ -67,6 +67,8 @@ describe('an OpenAI error body', () => {
 
   // Kills: the message passed on as the provider wrote it, the configured key (raw, base64 with or without its
   // padding, base64url) or another sk- key in it; or the message dropped whole, losing what the merchant needs.
+  // The example: the configured key taken out of a longer key it begins, leaving that key's tail ("[redacted]__aaaa").
+  // The glued key: an sk- key straight after the key's base64url form, with no word boundary before it.
   it('property: a message echoing the configured key in any form, or any sk- key, keeps its words and loses the keys', async () => {
     const keyArb = fc.stringMatching(/^[A-Za-z0-9_-]{16,48}$/)
     await fc.assert(
@@ -82,7 +84,7 @@ describe('an OpenAI error body', () => {
         answering(
           401,
           body(
-            `Incorrect API key provided: ${forms[0]} (${forms[1]}, ${forms[2]}, ${forms[3]}); not sk-${other} either`,
+            `Incorrect API key provided: ${forms[0]} (${forms[1]}, ${forms[2]}, ${forms[3]}); not sk-${other} either; nor ${forms[3]}sk-${other}`,
             'invalid_request_error',
             'invalid_api_key',
           ),
@@ -90,12 +92,21 @@ describe('an OpenAI error body', () => {
         const error = await failure(key)
         expect(error.code).toBe('adapter.auth_failed')
         expect(error.message).toBe(
-          'openai answered 401: Incorrect API key provided: [redacted] ([redacted], [redacted], [redacted]); not [redacted] either',
+          'openai answered 401: Incorrect API key provided: [redacted] ([redacted], [redacted], [redacted]); not [redacted] either; nor [redacted]',
         )
         expect(forms.filter((form) => JSON.stringify(error).includes(form))).toEqual([])
       }),
-      { numRuns: 40 },
+      { numRuns: 40, examples: [['__lookupSetter__', 'proj-__lookupSetter____aaaa']] },
     )
+  })
+
+  // Kills: key-shaped tokens taken out before the conversation's texts, so a text holding an sk- key no longer
+  // matches whole and the rest of what the shopper wrote reaches the merchant's error.
+  it('a message echoing a conversation text that holds an sk- key loses the whole text', async () => {
+    const said = 'Please check sk-proj-old_0123456789abcdef for the order to 12 Elm Street.'
+    answering(400, body(`Invalid content: ${said} was refused`, 'invalid_request_error', null))
+    const error = await failure(KEY, said)
+    expect(error.message).toBe('openai answered 400: Invalid content: [redacted] was refused')
   })
 
   // Kills: an uncapped message, so a provider's page-long text fills the merchant's error line.
@@ -114,7 +125,12 @@ describe('an OpenAI error body', () => {
   // as the status ("openai answered 529").
   it('a caller abort or the timeout while a 529 body is still arriving is adapter.cancelled or adapter.timeout', async () => {
     stalling(529)
-    const adapter = createOpenAiAdapter({ apiKey: KEY, model: 'gpt-4o-mini', timeoutMs: 400, logger })
+    const adapter = createOpenAiAdapter({
+      apiKey: KEY,
+      model: 'gpt-4o-mini',
+      timeoutMs: 400,
+      logger,
+    })
     const caller = new AbortController()
     setTimeout(() => caller.abort(), 50)
     const outcomes = await Promise.allSettled([
@@ -123,7 +139,9 @@ describe('an OpenAI error body', () => {
     ])
     expect(
       outcomes.map((o) =>
-        o.status === 'rejected' ? [(o.reason as AdapterError).code, (o.reason as AdapterError).message] : o.status,
+        o.status === 'rejected'
+          ? [(o.reason as AdapterError).code, (o.reason as AdapterError).message]
+          : o.status,
       ),
     ).toEqual([
       ['adapter.cancelled', 'openai request cancelled by the caller'],

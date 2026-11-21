@@ -15,7 +15,12 @@ export function registerAlertRoutes(adapter: HttpAdapter, deps: RegisterAlertRou
 
   adapter.registerRoute('POST', '/api/alerts/subscribe', async (ctx) => {
     try {
-      const body = ctx.body as { email: string; variantId: string; kind: AlertKind }
+      const body = ctx.body as {
+        email: string
+        variantId: string
+        kind: AlertKind
+        linkOrigin?: string
+      }
       const answer = await alerts.subscribe({ ...body, origin: originOf(ctx.headers['origin']) })
       return ok(answer, undefined, 202)
     } catch (err) {

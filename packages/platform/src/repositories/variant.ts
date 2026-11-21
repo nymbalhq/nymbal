@@ -25,6 +25,7 @@ export interface VariantInsert {
   lowStockThreshold?: number
   options: VariantOption[]
   status?: VariantStatus
+  taxCode?: string | null
   createdAt: Date
   updatedAt: Date
 }
@@ -55,6 +56,7 @@ function rowToVariant(store: CommandStore['kind'], row: Record<string, unknown>)
     lowStockThreshold: Number(row.lowStockThreshold ?? 0),
     options: parseJson<VariantOption[]>(store, row.options, []),
     status: row.status as VariantStatus,
+    taxCode: (row.taxCode as string | null) ?? null,
     createdAt: fromTimestamp(row.createdAt),
     updatedAt: fromTimestamp(row.updatedAt),
   }
@@ -142,6 +144,7 @@ export function createVariantRepository(store: CommandStore): VariantRepository 
         stock: v.stock,
         lowStockThreshold: v.lowStockThreshold ?? 0,
         status: v.status ?? 'active',
+        taxCode: v.taxCode ?? null,
       }
       if (tx.kind === 'sqlite') {
         sqliteDb(tx)

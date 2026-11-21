@@ -89,6 +89,21 @@ describe('nymbalConfigSchema', () => {
     expect(cfg.http.cors.allowedOrigins).toEqual(['https://shop.example.com'])
     expect(cfg.http.cors.credentials).toBe(false)
   })
+
+  it('kitOrigins is empty unless set, and is kept apart from allowedOrigins', () => {
+    expect(nymbalConfigSchema.parse(baseConfig()).http.cors.kitOrigins).toEqual([])
+    const input = baseConfig() as unknown as Record<string, unknown>
+    input.http = {
+      ...(input.http as object),
+      cors: {
+        allowedOrigins: ['https://shop.example.com'],
+        kitOrigins: ['https://www.example.com'],
+      },
+    }
+    const { cors } = nymbalConfigSchema.parse(input).http
+    expect(cors.kitOrigins).toEqual(['https://www.example.com'])
+    expect(cors.allowedOrigins).toEqual(['https://shop.example.com'])
+  })
 })
 
 // AC-5: the storefront's public URL, which the order-placed email links from. Optional, so every existing config still

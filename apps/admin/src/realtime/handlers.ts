@@ -1,5 +1,10 @@
 import type { QueryClient, QueryKey } from '@tanstack/react-query'
-import type { NymbalEventMap, NymbalEventType, Order } from '@nymbalhq/types'
+import {
+  PROPOSAL_OUTCOME_UNKNOWN,
+  type NymbalEventMap,
+  type NymbalEventType,
+  type Order,
+} from '@nymbalhq/types'
 import { useNotifications } from '@/hooks/useNotifications'
 
 /** An event as the admin handles it: its type and the payload that type carries. */
@@ -73,6 +78,7 @@ const LIVE_QUERY_PREFIXES: QueryKey[] = [
   ['dashboard'],
   ['inventory', 'list'],
   ['proposals'],
+  ['products'],
 ]
 
 /**
@@ -113,14 +119,25 @@ export function createEventHandlers(queryClient: QueryClient) {
       case 'order.delivered.v1':
       case 'order.cancelled.v1':
       case 'order.refunded.v1':
-      case 'order.partially_refunded.v1': {
+      case 'order.partially_refunded.v1':
+      case 'order.status_changed.v1': {
         void queryClient.invalidateQueries({ queryKey: ORDERS_LIST })
         void queryClient.invalidateQueries({ queryKey: ['orders', 'detail'] })
         void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
         break
       }
 
+      // A snapshot cannot say whether it belongs in a filtered list, so product frames only refetch. Stock shows in
+      // the products list and the product page as well as in inventory.
+      case 'product.created.v1':
+      case 'product.updated.v1':
+      case 'product.deleted.v1':
+      case 'product.published.v1':
+      case 'product.unpublished.v1':
+      case 'product.restocked.v1':
+      case 'product.variant_price_changed.v1':
       case 'inventory.changed.v1': {
+        void queryClient.invalidateQueries({ queryKey: ['products'] })
         void queryClient.invalidateQueries({ queryKey: ['inventory', 'list'] })
         break
       }
@@ -168,9 +185,20 @@ export function createEventHandlers(queryClient: QueryClient) {
 
       case 'proposal.approved.v1':
       case 'proposal.rejected.v1':
-      case 'proposal.applied.v1':
+      case 'proposal.applied.v1': {
+        void queryClient.invalidateQueries({ queryKey: ['proposals'] })
+        break
+      }
+
       case 'proposal.failed.v1': {
         void queryClient.invalidateQueries({ queryKey: ['proposals'] })
+        if (event.payload.outcome.code === PROPOSAL_OUTCOME_UNKNOWN) {
+          push({
+            type: 'error',
+            title: 'Outcome unknown',
+            message: `${event.payload.command} may or may not have gone through. Check it in the inbox before doing it again.`,
+          })
+        }
         break
       }
 

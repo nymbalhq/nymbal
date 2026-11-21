@@ -66,6 +66,27 @@ const ALL_PERSONAL = ['email', 'phone', 'address'] as const
 
 const id = z.string().min(1)
 const cartHandle = { cart: 'nymbal.cart' }
+
+/** Taken unchecked beyond its shape: the route answers a promotion it cannot accept with `promotion.invalid`, naming the rule. */
+const promotionFields = {
+  percentBps: z.unknown().optional(),
+  amountOffMinor: z.unknown().optional(),
+  currency: z.unknown().optional(),
+  minimumSubtotalMinor: z.unknown().optional(),
+  expiresAt: z.unknown().optional(),
+  usageCap: z.unknown().optional(),
+  active: z.unknown().optional(),
+}
+const promotionCreateBody = z.object({
+  code: z.string(),
+  kind: z.string(),
+  ...promotionFields,
+})
+const promotionPatchBody = z.object({
+  code: z.string().optional(),
+  kind: z.string().optional(),
+  ...promotionFields,
+})
 /** A query value as the HTTP layer hands it over: repeated keys arrive as an array. */
 const queryValue = z.union([z.string(), z.array(z.string())]).optional()
 const paging = { limit: queryValue, offset: queryValue }
@@ -76,9 +97,8 @@ function pagingOf(size: number, max: number) {
     offset: queryValue.describe('How many to skip, to page through the list (0 by default).'),
   }
 }
-const orderStatus = z.enum(
-  Object.keys(ORDER_STATUS_TRANSITIONS) as [OrderStatus, ...OrderStatus[]],
-)
+const orderStatus = z.enum(Object.keys(ORDER_STATUS_TRANSITIONS) as [OrderStatus, ...OrderStatus[]])
+const orderPaymentState = z.enum(['unpaid', 'paid', 'partially_refunded', 'refunded'])
 const inventoryStatus = z.enum(['in_stock', 'low_stock', 'out_of_stock'])
 const isoDateTime = z.iso.datetime({ offset: true })
 /** An order date bound: an ISO date (from its UTC midnight) or a date-time with Z or an offset. */
@@ -168,7 +188,8 @@ export const routeSchemas: Record<string, RouteSchema> = {
     name: 'auth.register',
     tool: false,
     command: 'customer.register',
-    description: 'Create a customer account and sign it in.',
+    description:
+      'Create a customer account. Where sign-ups are confirmed by email, answers 202 "check your email" for every address and signs nobody in; otherwise creates the account and signs it in (201).',
     body: z.object({
       email: z.string().min(1),
       password: z.string().min(1),
@@ -198,6 +219,42 @@ export const routeSchemas: Record<string, RouteSchema> = {
     description: 'Revoke the refresh token and clear its cookie.',
     body: optionalRefresh,
   },
+  'POST /api/auth/forgot-password': {
+    name: 'auth.forgotPassword',
+    tool: false,
+    command: 'customer.requestPasswordReset',
+    description: 'Mail a password reset link to the account with this email, if there is one.',
+    body: z.object({ email: z.string().min(1) }),
+  },
+  'POST /api/auth/verify-email': {
+    name: 'auth.verifyEmail',
+    tool: false,
+    command: 'customer.verifyEmail',
+    description: "Confirm a sign-up's email with its mailed link's token and sign the customer in.",
+    body: z.object({ token: z.string().min(1) }),
+  },
+  'POST /api/auth/resend-verification': {
+    name: 'auth.resendVerification',
+    tool: false,
+    command: 'customer.resendVerification',
+    description:
+      'Mail the confirmation link again to a sign-up with this email waiting to confirm, if there is one.',
+    body: z.object({ email: z.string().min(1) }),
+  },
+  'POST /api/auth/reset-password': {
+    name: 'auth.resetPassword',
+    tool: false,
+    command: 'customer.resetPassword',
+    description: "Set a password with a reset link's token and sign the customer in.",
+    body: z.object({ token: z.string().min(1), password: z.string().min(1) }),
+  },
+  'PATCH /api/customers/me/password': {
+    name: 'customers.changePassword',
+    tool: false,
+    command: 'customer.changePassword',
+    description: "Change the signed-in customer's password, ending every other session.",
+    body: z.object({ currentPassword: z.string().min(1), newPassword: z.string().min(1) }),
+  },
 
   // Store
   'GET /api/capabilities': {
@@ -224,6 +281,10 @@ export const routeSchemas: Record<string, RouteSchema> = {
       limit: queryValue.describe('How many to answer: 20 by default, at most 100.'),
       cursor: queryValue.describe('The nextCursor of the previous page.'),
       category: queryValue.describe('A category slug, to search within that category.'),
+      origin: z
+        .enum(['page'])
+        .optional()
+        .describe('Marks the search page’s own request, which a miss counts from; leave it out.'),
     }),
   },
   'GET /api/products': {
@@ -276,6 +337,8 @@ export const routeSchemas: Record<string, RouteSchema> = {
       email: z.string().trim().max(254).email(),
       variantId: id,
       kind: z.enum(['back_in_stock', 'price_drop']),
+      // Any string reaches the allowlist check, which answers `alerts.origin_not_allowed`.
+      linkOrigin: z.string().optional(),
     }),
   },
   'POST /api/alerts/confirm': {
@@ -328,6 +391,20 @@ export const routeSchemas: Record<string, RouteSchema> = {
     command: null,
     description: 'Remove every item from the cart.',
   },
+  'POST /api/cart/codes': {
+    name: 'cart.addCode',
+    command: null,
+    tool: false,
+    description: 'Add a discount code to the cart.',
+    body: z.object({ code: z.string() }),
+  },
+  'DELETE /api/cart/codes/:code': {
+    name: 'cart.removeCode',
+    command: null,
+    tool: false,
+    description: 'Remove a discount code from the cart.',
+    params: z.object({ code: z.string() }),
+  },
 
   // Checkout and orders
   'POST /api/checkout': {
@@ -340,6 +417,20 @@ export const routeSchemas: Record<string, RouteSchema> = {
       billingAddress: address,
       shippingAddress: address,
       notes: z.string().optional(),
+      expectedTotalMinor: z.number().int().nonnegative().optional(),
+      shippingOptionId: z.string().min(1).max(64).optional(),
+    }),
+  },
+  'POST /api/checkout/quote': {
+    name: 'checkout.quote',
+    handles: cartHandle,
+    command: null,
+    description:
+      'Price the cart for a shipping address and a delivery option: the options offered there, the one the totals use, and the totals with discount, shipping and tax. Send its shippingOptionId and totals.totalMinor as expectedTotalMinor to checkout.begin.',
+    body: z.object({
+      shippingAddress: address,
+      shippingOptionId: z.string().min(1).max(64).optional(),
+      email: z.string().min(1).optional(),
     }),
   },
   'GET /api/orders': {
@@ -446,6 +537,17 @@ export const routeSchemas: Record<string, RouteSchema> = {
     personal: ALL_PERSONAL,
     description: "Today's order figures, recent orders and low stock.",
   },
+  'GET /api/admin/reports': {
+    name: 'admin.reports.get',
+    description:
+      'Sales, conversion, top products, zero-result searches and stock runway over store days. Quote the basis with a rate; never divide fields yourself. Money is in minor units of the row’s currency. Ask with grain=day for a series or for today; for a long range or a busy store, narrow the range.',
+    query: z.object({
+      from: z.iso.date().optional().describe('First store day, YYYY-MM-DD; the last 30 closed days by default.'),
+      to: z.iso.date().optional().describe('Last store day, YYYY-MM-DD; today by default.'),
+      grain: z.enum(['day', 'hour']).optional().describe('Asks for a series by day or hour.'),
+      limit: queryValue.describe('How many of each list to answer: 10 by default, at most 50; a large limit on a busy store may be cut.'),
+    }),
+  },
   'GET /api/admin/search': {
     name: 'admin.search',
     personal: ALL_PERSONAL,
@@ -460,13 +562,18 @@ export const routeSchemas: Record<string, RouteSchema> = {
     summary: 'order',
     record: 'order',
     description:
-      'List orders, newest first (50 by default, at most 200; page with offset), with total, the number of orders every filter matches. Each order carries its number, status, email, addresses, totalMinor, capturedMinor and refundedMinor. Revenue is the money kept: capturedMinor less refundedMinor (keptMinor where an order carries it); totalMinor includes orders not yet paid.',
+      'List orders, newest first (50 by default, at most 200; page with offset), with total, the number of orders every filter matches. Each order carries its number, status, email, addresses, totalMinor, capturedMinor and refundedMinor. Revenue is the money kept: capturedMinor less refundedMinor (keptMinor where an order carries it); totalMinor includes orders not yet paid. Filter by status for where the goods are and by payment for the money: a refund changes payment, never status.',
     query: z.object({
       status: orderStatus
         .describe(
-          'One of: pending (awaiting payment), confirmed, processing, shipped, delivered, cancelled, refunded, partially_refunded.',
+          'Where the goods are, one of: pending (awaiting payment), confirmed, processing, shipped, delivered, cancelled. A refunded order keeps its status: use payment to find it.',
         )
         .optional(),
+      payment: orderPaymentState
+        .optional()
+        .describe(
+          'Where the money stands, one of: unpaid, paid, partially_refunded, refunded. Combines with status.',
+        ),
       dateFrom: dateFrom.describe(DATE_BOUND).optional(),
       dateTo: dateTo.describe(DATE_BOUND).optional(),
       customer: queryValue.describe(
@@ -756,6 +863,58 @@ export const routeSchemas: Record<string, RouteSchema> = {
     description: 'Add an internal note to a customer.',
     params: idParams,
     body: noteBody,
+  },
+
+  'POST /api/admin/customers/:id/send-verification': {
+    name: 'admin.customers.sendVerification',
+    command: 'customer.sendVerification',
+    description:
+      'Mail a new confirmation link to a customer whose email is waiting to be confirmed; the older link stops working.',
+    params: idParams,
+  },
+  'POST /api/admin/customers/:id/mark-verified': {
+    name: 'admin.customers.markVerified',
+    personal: ALL_PERSONAL,
+    record: 'customer',
+    command: 'customer.markVerified',
+    description:
+      "Mark a customer's email confirmed, so their password signs in; their confirmation link stops working.",
+    params: idParams,
+  },
+  'GET /api/admin/mail-health': {
+    name: 'admin.mailHealth',
+    description:
+      "The store's sign-up confirmation policy, how many sign-ups in the last 7 days confirmed their email, and a warning when mail may not be arriving.",
+  },
+
+  // Admin: promotions
+  'GET /api/admin/promotions': {
+    name: 'admin.promotions.list',
+    tool: false,
+    description: 'List promotions, newest first, each with how often it has been used.',
+    query: z.object({ limit: queryValue }),
+  },
+  'POST /api/admin/promotions': {
+    name: 'admin.promotions.create',
+    command: 'promotion.create',
+    tool: false,
+    description: 'Create a promotion.',
+    body: promotionCreateBody,
+  },
+  'PATCH /api/admin/promotions/:id': {
+    name: 'admin.promotions.update',
+    command: 'promotion.update',
+    tool: false,
+    description: 'Change a promotion.',
+    params: idParams,
+    body: promotionPatchBody,
+  },
+  'DELETE /api/admin/promotions/:id': {
+    name: 'admin.promotions.delete',
+    command: 'promotion.delete',
+    tool: false,
+    description: 'Delete a promotion no order has used.',
+    params: idParams,
   },
 
   // Admin: reviews

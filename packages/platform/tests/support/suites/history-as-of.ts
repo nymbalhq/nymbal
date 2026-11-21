@@ -1,12 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import fc from 'fast-check'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import {
-  orderMovesFrom,
-  statusBeforePartialRefund,
-  type OrderHistoryEntry,
-  type OrderStatus,
-} from '@nymbalhq/types'
+import { paymentState, type OrderStatus } from '@nymbalhq/types'
 import { adminSession, customerSession, type AdminSession, type Answer } from '../audit-http.js'
 import { serveKernel, type ServedKernel } from '../http.js'
 import { address, checkoutOf, type Kernel, type Seeded } from '../kernel.js'
@@ -129,6 +124,12 @@ const WALK: Kind[] = [
   'deleteAddress',
 ]
 
+const FULFILMENT_ROWS: Partial<Record<OrderStatus, readonly OrderStatus[]>> = {
+  confirmed: ['processing'],
+  processing: ['shipped'],
+  shipped: ['delivered'],
+}
+
 /** A 5xx is a broken fixture; a 4xx is a refused command, noted so the walk can check which ones were. */
 function expectOk(run: Run, res: Answer, what: string): void {
   if (res.status >= 500) throw new Error(`${what}: ${res.status} ${JSON.stringify(res.body)}`)
@@ -249,14 +250,12 @@ export function historyAsOfSuite(
     }
 
     const statusOf = (run: Run, id: string) => run.orderReads.get(id)?.['status'] as string
-    /** Whether the order may move to `to` now: a partially refunded one as the status it was refunded at would. */
+    /** Whether the order may move to `to` now: by the status table, a full refund closing processing and shipping. */
     const mayMove = (run: Run, id: string, to: OrderStatus) => {
       const read = run.orderReads.get(id)
-      const history = (read?.['history'] ?? []) as OrderHistoryEntry[]
-      return orderMovesFrom(
-        read?.['status'] as OrderStatus,
-        statusBeforePartialRefund(history),
-      ).includes(to)
+      const row = FULFILMENT_ROWS[read?.['status'] as OrderStatus] ?? []
+      const refunded = paymentState(paymentOf(run, id)) === 'refunded'
+      return row.includes(to) && !(refunded && to !== 'delivered')
     }
     const paymentOf = (run: Run, id: string) =>
       run.orderReads.get(id)?.['payment'] as { capturedMinor: number; refundedMinor: number }
@@ -518,7 +517,7 @@ export function historyAsOfSuite(
       expect(
         run.orders.map((o) => statusOf(run, o.id)),
         'the walk’s fixture: where its three orders end',
-      ).toEqual(['refunded', 'cancelled', 'refunded'])
+      ).toEqual(['delivered', 'cancelled', 'confirmed'])
       const late = run.orders[1]!
       expect(
         paymentOf(run, late.id),
@@ -547,6 +546,39 @@ export function historyAsOfSuite(
         'refundPartial',
         'shipped',
       ])
+      await verify(run)
+    }, 120_000)
+
+    it(`AC-9: an order refunded at confirmed, processing, shipped and delivered keeps reading its fulfilment status, and each recorded ?at=t equals the admin read taken at t (${dialect})`, async () => {
+      const kinds: Kind[] = [
+        'placePaid',
+        'refundPartial',
+        'process',
+        'refundPartial',
+        'ship',
+        'refundPartial',
+        'deliver',
+        'refundFull',
+      ]
+      const run = await walk(
+        kinds.map((kind, i) => ({ kind, pick: 0, text: `Money${i}`, delta: 1, categories: [] })),
+      )
+      const [order] = run.orders
+      expect(run.refused, 'every command of the walk is answered').toEqual([])
+      const statuses = run.records
+        .filter((r) => r.kind === 'order')
+        .map((r) => [r.after, (r.view as { status?: unknown }).status])
+      expect(statuses).toEqual([
+        ['placePaid', 'confirmed'],
+        ['refundPartial', 'confirmed'],
+        ['process', 'processing'],
+        ['refundPartial', 'processing'],
+        ['ship', 'shipped'],
+        ['refundPartial', 'shipped'],
+        ['deliver', 'delivered'],
+        ['refundFull', 'delivered'],
+      ])
+      expect(paymentOf(run, order!.id).refundedMinor).toBe(paymentOf(run, order!.id).capturedMinor)
       await verify(run)
     }, 120_000)
 

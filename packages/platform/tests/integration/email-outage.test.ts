@@ -6,7 +6,7 @@ import { AdapterError, ConfigError, NymbalError } from '@nymbalhq/types'
 import { createLogger } from '../../src/logger.js'
 import { address, createKernel, type Kernel } from '../support/kernel.js'
 import { eventRows, maxSeq } from '../support/outbox.js'
-import { openRaw, type RawReader } from '../support/raw.js'
+import { openRaw, stockOf, type RawReader } from '../support/raw.js'
 import {
   DOCUMENT_COLLECTIONS,
   documentModelsOf,
@@ -297,14 +297,21 @@ describe('AC-4: an email outage loses no send', () => {
           expect(sorted(mailed('alert-back-in-stock').map((m) => m.to))).toEqual(
             sorted(payloads('alert.sent.v1').map((p) => subscribers.get(p['subscriptionId']!))),
           )
+          // Every restock is delivered after the outage, so it finds the variant as the whole run left it: a tail that
+          // sold it out owes no alert, and the sends the outage refused are no longer owed either.
+          const owedAlerts =
+            (await stockOf(raw, world.products[1]!.variantId)) > 0 ? SUBSCRIBERS : 0
           const key = (m: { template: string; to: string }) => `${m.template} ${m.to}`
-          expect(sorted([...new Set(mail.refused.map(key))])).toEqual(
+          const stillOwed = mail.refused.filter(
+            (m) => m.template !== 'alert-back-in-stock' || owedAlerts > 0,
+          )
+          expect(sorted([...new Set(stillOwed.map(key))])).toEqual(
             sorted([...new Set(since.map(key))]),
           )
           expect(
             mailed('alert-back-in-stock').length,
             'alerts owed to the seeded subscribers',
-          ).toBe(SUBSCRIBERS)
+          ).toBe(owedAlerts)
 
           const live = await documentModelsOf(k.documentStore)
           const liveIndex = await nativeSearchDocuments(k)

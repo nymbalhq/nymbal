@@ -4,9 +4,10 @@ import { securitySchema } from '@nymbalhq/config'
 import type { Logger, RequestContext } from '@nymbalhq/types'
 import { createSecurityGuard, type SecurityGuard } from './security-middleware.js'
 
-// Failed logins for one account from many addresses never refuse its owner; they are the operator's signal instead:
-// one warn per window once the account's failures reach the login rule's count (10 per 15 minutes, built in). A
-// success clears the account's count. Address buckets are not accounts and warn nothing.
+// Failed logins for one account from many addresses do not refuse its owner at the login rule's count; they are the
+// operator's signal instead: one warn per window once the account's failures reach that count (10 per 15 minutes,
+// built in). A success clears the account's count. Address buckets are not accounts and warn nothing. The account is
+// refused only at ten times the rule's count (login-account-ceiling.test.ts), which no run here reaches: k stops at 30.
 
 const LIMIT = 10
 const LOGIN = '/api/auth/login'

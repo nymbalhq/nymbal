@@ -4,7 +4,7 @@ name: CI
 # the shared branches only: a red dev run is a fix-forward task, and a release needs a green dev run first. A release
 # reads the push run at its candidate and dispatches `select=lighthouse` for the one thing a push leaves out: the
 # build and the perf job's Lighthouse suite, every other job and step skipped. `select=all` runs every job, as a push
-# does, and Lighthouse besides.
+# does, and Lighthouse besides. Mutation testing runs in the nightly (nightly.yml), whose red holds the next merge.
 on:
   push:
     branches: [main, dev]
@@ -258,52 +258,6 @@ jobs:
       - name: Platform and importers integration, contracts
         if: matrix.step == 'proof-kit-services'
         run: pnpm vitest run --project platform-integration --project importers-integration --project contracts-native
-
-  mutation:
-    name: Mutation — Stryker (incremental)
-    if: inputs.select != 'lighthouse'
-    runs-on: ubuntu-24.04
-    # A cold whole-set run (a fresh cache chain, or any platform test change on a miss) measured 1,491 s on this runner
-    # (PR #24) and 1,472 s on dev, against 290 s on 12 local cores; the mutate set grows with each service.
-    timeout-minutes: 45
-    needs: [build]
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: .node-version
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - uses: actions/download-artifact@v8
-        with:
-          name: build-output
-      - uses: actions/cache@v6
-        with:
-          # The .commit file names the commit the report was measured at. A failed job saves nothing, so the next run
-          # may restore an older report; the gate then mutates every file changed since that commit, not only since
-          # GATE_BASE.
-          path: |
-            reports/mutation/stryker-incremental.json
-            reports/mutation/stryker-incremental.commit
-          # The nightly's full run (nightly.yml, mutation-full) saves its report and stamp under
-          # stryker-incremental-v3-nightly-<sha>, which the restore prefix matches, seeding the chain; a key of its own
-          # keeps a passing push at the same sha from taking the save. Bumping the prefix drops the statuses carried forward and restores nothing until the next nightly;
-          # a push that mutates the whole set cold before then can outlast the timeout. A
-          # ratchet change keeps the chain: the gate measures afresh only the moved entries the cached report scores
-          # below (belowCachedScore in gate.ts), and the nightly full run stays the ground truth for the rest.
-          key: stryker-incremental-v3-${{ github.sha }}
-          restore-keys: stryker-incremental-v3-
-      - name: Mutation
-        run: pnpm exec tsx scripts/gate.ts --full --only stryker --no-build --base "$GATE_BASE"
-      # Only after a passing Mutation step, as the cache is saved only then: the stamp names the saved report's commit.
-      - name: Stamp the incremental report
-        run: |
-          if [ -f reports/mutation/stryker-incremental.json ]; then
-            git rev-parse HEAD > reports/mutation/stryker-incremental.commit
-          fi
 
   sentinels:
     name: Sentinels and tests-fail-on-base
@@ -639,6 +593,84 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: e2e-traces-astro-custom
+          path: tests/e2e/test-results/
+          if-no-files-found: ignore
+          retention-days: 3
+
+  e2e-wordpress:
+    name: E2E — the cart kit on WordPress
+    if: inputs.select != 'lighthouse'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    needs: [build]
+    # The custom store's email is SMTP into this Mailpit, which its alert journeys read.
+    env:
+      NYMBAL_TEST_MAILPIT_URL: http://localhost:18025
+      NYMBAL_TEST_MAILPIT_SMTP: localhost:11025
+    services:
+      mailpit:
+        image: axllent/mailpit:v1.22.0
+        env:
+          MP_ENABLE_CHAOS: 'true'
+        ports:
+          - '11025:1025'
+          - '18025:8025'
+        options: >-
+          --health-cmd "/mailpit readyz"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          lfs: true
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          name: build-output
+      - name: Playwright version
+        id: playwright
+        run: |
+          version=$(grep -m1 -oE "^  '@playwright/test@[0-9]+\.[0-9]+\.[0-9]+'" pnpm-lock.yaml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright browsers
+        id: browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+      - name: Install Playwright browsers
+        if: steps.browsers.outputs.cache-hit != 'true'
+        run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
+      - name: Install Playwright system libraries
+        if: steps.browsers.outputs.cache-hit == 'true'
+        run: pnpm --filter @nymbalhq/e2e exec playwright install-deps chromium
+      # Every fresh runner pulls these three, and a registry blip here would hold every lane.
+      - name: Pull the WordPress images
+        run: docker compose --profile wordpress --profile wordpress-init pull wordpress-db wordpress wordpress-init || (sleep 15 && docker compose --profile wordpress --profile wordpress-init pull wordpress-db wordpress wordpress-init)
+      - name: WordPress journeys
+        run: pnpm exec tsx scripts/gate.ts --full --only "wordpress up,e2e wordpress" --services external --no-build --base "$GATE_BASE"
+      - name: Upload the Playwright reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-reports-wordpress
+          path: |
+            reports/e2e-*.json
+            !reports/e2e-shutdown.json
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Upload the Playwright traces
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-traces-wordpress
           path: tests/e2e/test-results/
           if-no-files-found: ignore
           retention-days: 3

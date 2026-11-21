@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm'
 import {
   pgTable,
+  bigint,
   bigserial,
   text,
   integer,
@@ -53,6 +54,8 @@ export const products = pgTable(
     seoDescription: text('seo_description').notNull().default(''),
     media: jsonb('media').notNull().default([]),
     metadata: jsonb('metadata').notNull().default({}),
+    /** What a tax engine taxes the product's variants as, unless a variant has its own; null for the standard rate. */
+    taxCode: text('tax_code'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   },
@@ -81,6 +84,7 @@ export const variants = pgTable(
     status: text('status', { enum: ['active', 'inactive'] })
       .notNull()
       .default('active'),
+    taxCode: text('tax_code'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   },
@@ -121,6 +125,8 @@ export const customers = pgTable(
     metadata: jsonb('metadata').notNull().default({}),
     roles: jsonb('roles').notNull().default(['customer']),
     requiresPasswordReset: boolean('requires_password_reset').notNull().default(false),
+    /** `'pending'` or `'verified'`; null for an account never asked to confirm its address. */
+    emailVerification: text('email_verification'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   },
@@ -147,6 +153,38 @@ export const refreshTokens = pgTable(
   }),
 )
 
+/** A password reset link's token: only its SHA-256 is kept, so the mail alone opens it. */
+export const passwordResetTokens = pgTable(
+  'password_reset_tokens',
+  {
+    id: text('id').primaryKey(),
+    customerId: text('customer_id').notNull(),
+    tokenHash: text('token_hash').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    tokenHashIdx: uniqueIndex('password_reset_tokens_token_hash_idx').on(t.tokenHash),
+    customerIdx: index('password_reset_tokens_customer_idx').on(t.customerId),
+  }),
+)
+
+/** A sign-up confirmation link's token: only its SHA-256 is kept, so the mail alone opens it. */
+export const emailVerificationTokens = pgTable(
+  'email_verification_tokens',
+  {
+    id: text('id').primaryKey(),
+    customerId: text('customer_id').notNull(),
+    tokenHash: text('token_hash').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    tokenHashIdx: uniqueIndex('email_verification_tokens_token_hash_idx').on(t.tokenHash),
+    customerIdx: index('email_verification_tokens_customer_idx').on(t.customerId),
+  }),
+)
+
 // --- Orders ----------------------------------------------------------------
 
 /**
@@ -163,16 +201,7 @@ export const orders = pgTable(
     sequence: integer('sequence').notNull(),
     customerId: text('customer_id'),
     status: text('status', {
-      enum: [
-        'pending',
-        'confirmed',
-        'processing',
-        'shipped',
-        'delivered',
-        'cancelled',
-        'refunded',
-        'partially_refunded',
-      ],
+      enum: ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled'],
     })
       .notNull()
       .default('pending'),
@@ -198,6 +227,8 @@ export const orders = pgTable(
     captureMethod: text('capture_method', { enum: ['provider', 'manual', 'import'] }),
     /** `storefront`, `import` or `agent:<name>`: who brought the order. */
     source: byteOrderedText('source').notNull().default('storefront'),
+    /** The order's line prices hold its tax: `tax_total_minor` is part of `total_minor`, not added to it. */
+    pricesIncludeTax: boolean('prices_include_tax').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   },
@@ -359,6 +390,8 @@ export const carts = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
     /** Set by the abandonment sweeper's claim; every cart write clears it, starting a new inactivity period. */
     abandonedNotifiedAt: timestamp('abandoned_notified_at', { withTimezone: true }),
+    /** What the promotions engine last said; null while the cart holds no code. */
+    promotions: jsonb('promotions'),
   },
   (t) => ({
     expiresIdx: index('carts_expires_idx').on(t.expiresAt),
@@ -605,6 +638,126 @@ export const proposals = pgTable(
   }),
 )
 
+// --- Promotions --------------------------------------------------------------
+
+export const promotions = pgTable(
+  'promotions',
+  {
+    id: text('id').primaryKey(),
+    code: text('code').notNull(),
+    kind: text('kind').notNull(),
+    percentBps: integer('percent_bps'),
+    amountOffMinor: integer('amount_off_minor'),
+    currency: text('currency'),
+    minimumSubtotalMinor: integer('minimum_subtotal_minor'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    usageCap: integer('usage_cap'),
+    active: boolean('active').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    codeLowerUnique: uniqueIndex('promotions_code_lower_unique').on(sql`lower(${t.code})`),
+    createdIdx: index('promotions_created_idx').on(t.createdAt),
+  }),
+)
+
+export const promotionRedemptions = pgTable(
+  'promotion_redemptions',
+  {
+    promotionId: text('promotion_id').notNull(),
+    // No foreign key to orders: the row is written before its order exists, in the same transaction.
+    orderId: text('order_id').notNull(),
+    sessionId: text('session_id').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.promotionId, t.orderId] }),
+  }),
+)
+
+// --- Report rollups ---------------------------------------------------------
+
+export const reportSalesHours = pgTable(
+  'report_sales_hours',
+  {
+    hourStart: timestamp('hour_start', { withTimezone: true }).notNull(),
+    localDay: text('local_day').notNull(),
+    timezone: text('timezone').notNull(),
+    currency: text('currency').notNull(),
+    source: text('source').notNull(),
+    capturedMinor: bigint('captured_minor', { mode: 'number' }).notNull().default(0),
+    refundedMinor: bigint('refunded_minor', { mode: 'number' }).notNull().default(0),
+    paidOrders: bigint('paid_orders', { mode: 'number' }).notNull().default(0),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.hourStart, t.currency, t.source] }),
+    localDayIdx: index('report_sales_hours_local_day_idx').on(t.localDay),
+  }),
+)
+
+export const reportFunnelDays = pgTable(
+  'report_funnel_days',
+  {
+    localDay: text('local_day').notNull(),
+    source: text('source').notNull(),
+    timezone: text('timezone').notNull(),
+    viewers: bigint('viewers', { mode: 'number' }).notNull().default(0),
+    cartsWithItems: bigint('carts_with_items', { mode: 'number' }).notNull().default(0),
+    checkoutsStarted: bigint('checkouts_started', { mode: 'number' }).notNull().default(0),
+    paymentsFailed: bigint('payments_failed', { mode: 'number' }).notNull().default(0),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.localDay, t.source] }),
+  }),
+)
+
+export const reportProductDays = pgTable(
+  'report_product_days',
+  {
+    localDay: text('local_day').notNull(),
+    variantId: text('variant_id').notNull(),
+    currency: text('currency').notNull(),
+    source: text('source').notNull(),
+    timezone: text('timezone').notNull(),
+    productId: text('product_id').notNull(),
+    productName: text('product_name').notNull(),
+    variantName: text('variant_name').notNull(),
+    sku: text('sku').notNull(),
+    units: bigint('units', { mode: 'number' }).notNull().default(0),
+    lineSubtotalMinor: bigint('line_subtotal_minor', { mode: 'number' }).notNull().default(0),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.localDay, t.variantId, t.currency, t.source] }),
+  }),
+)
+
+export const reportSearchDays = pgTable(
+  'report_search_days',
+  {
+    localDay: text('local_day').notNull(),
+    term: text('term').notNull(),
+    timezone: text('timezone').notNull(),
+    searches: bigint('searches', { mode: 'number' }).notNull().default(0),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.localDay, t.term] }),
+  }),
+)
+
+export const reportMembers = pgTable(
+  'report_members',
+  {
+    kind: text('kind').notNull(),
+    localDay: text('local_day').notNull(),
+    member: text('member').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.kind, t.localDay, t.member] }),
+  }),
+)
+
 export const schema = {
   categories,
   products,
@@ -612,6 +765,8 @@ export const schema = {
   productCategories,
   customers,
   refreshTokens,
+  passwordResetTokens,
+  emailVerificationTokens,
   orders,
   orderHistory,
   orderSequences,
@@ -628,4 +783,11 @@ export const schema = {
   emailSuppressions,
   orderShipments,
   proposals,
+  promotions,
+  promotionRedemptions,
+  reportSalesHours,
+  reportFunnelDays,
+  reportProductDays,
+  reportSearchDays,
+  reportMembers,
 }

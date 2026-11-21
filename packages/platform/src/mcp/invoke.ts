@@ -19,7 +19,7 @@ import { fail, renderError } from '../routes/envelope.js'
 import { routeSchemas, type RouteSchema } from '../routes/schemas.js'
 import { invalid, parseInput } from '../routes/validated-adapter.js'
 import { scrubDeep } from '../settings/secret-set.js'
-import { ProposalError, type Executed, type Policy } from './proposals.js'
+import { ProposalError, runKeyOf, type Executed, type Policy } from './proposals.js'
 import { PARTS, partShape } from './registry.js'
 import type { RecordedRoute, RouteTable } from './route-table.js'
 import { withholdResult } from './withhold.js'
@@ -352,7 +352,7 @@ export function createInvoker(deps: InvokerDeps): Invoker {
       const args = {
         ...row.args,
         ...row.handles,
-        idempotencyKey: row.idempotencyKey ?? `proposal:${row.id}`,
+        idempotencyKey: runKeyOf(row),
       }
       const envelope = await run(route, contextOf(tool, entry, args, caller, row.correlationId))
       return { result: resultOfEnvelope(envelope, entry), outcome: outcomeOf(envelope) }

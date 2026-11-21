@@ -2,9 +2,11 @@ import { defineConfig } from 'vitest/config'
 
 // Used only by Stryker (stryker.integration.config.mjs): the platform-integration project narrowed to the test families
 // that reach the files that config mutates. Prefix globs take in a new test of a family with no change here; the
-// tests that spawn processes or import from outside the sandbox (adapter-graph, capabilities-route) stay out. The unit
-// tests beside the relay and the publisher are in too: they reach what no store-level test can (the outage probe's
-// bounds, start and stop, the bus wrapper, a correlated publisher).
+// tests that spawn processes or import from outside the sandbox stay out (adapter-graph, capabilities-route, and
+// audit-actors, audit-entries and report-rollups, which reach the proof kit's dist): Stryker's initial run fails on a
+// test file that cannot load. The unit tests beside the relay and the publisher are in too: they reach what no
+// store-level test can (the outage probe's bounds, start and stop, the bus wrapper, a correlated publisher); so is the
+// proposal service's, for a settle that loses.
 export default defineConfig({
   test: {
     name: 'platform-integration',
@@ -27,10 +29,28 @@ export default defineConfig({
       'packages/platform/tests/integration/review*.test.ts',
       'packages/platform/tests/integration/product-ratings*.test.ts',
       'packages/platform/tests/integration/proposals*.test.ts',
+      'packages/platform/tests/integration/stuck-proposals*.test.ts',
       'packages/platform/tests/integration/import-removal-*.test.ts',
       'packages/platform/tests/integration/product-description*.test.ts',
-      'packages/platform/tests/integration/audit-*.test.ts',
+      'packages/platform/tests/integration/audit-headers.test.ts',
+      'packages/platform/tests/integration/audit-idempotency.test.ts',
+      'packages/platform/tests/integration/report-rollups-*.test.ts',
+      'packages/platform/tests/integration/admin-reports*.test.ts',
+      'packages/platform/tests/integration/password-*.test.ts',
+      'packages/platform/tests/integration/login-account-ceiling.test.ts',
       'packages/platform/src/events/*.test.ts',
+      'packages/platform/src/services/proposal-service.test.ts',
+      // The assistant's boundary: what its loop and the tool surface refuse, mask and keep for a person. The golden set's
+      // own runs are left out (27 questions per test, a full run per mutant it reaches).
+      'packages/platform/tests/integration/assistant-safety.test.ts',
+      'packages/platform/tests/integration/assistant-guards.test.ts',
+      'packages/platform/tests/integration/assistant-bulk.test.ts',
+      'packages/platform/tests/integration/assistant-masking.test.ts',
+      'packages/platform/src/assistant/loop*.test.ts',
+      'packages/platform/src/assistant/mask*.test.ts',
+      'packages/platform/src/mcp/invoke*.test.ts',
+      'packages/platform/src/mcp/withhold.test.ts',
+      'packages/platform/src/repositories/email-suppression.test.ts',
     ],
     testTimeout: 30000,
   },

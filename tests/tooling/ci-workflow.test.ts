@@ -262,7 +262,6 @@ const RUNS_TESTS =
 const SPEC_JOBS = [
   'gate-tests',
   'integration',
-  'mutation',
   'sentinels',
   'e2e-astro',
   'e2e-nextjs',
@@ -939,6 +938,7 @@ describe('AC-11: the E2E jobs start no Postgres service, and their gate.ts call 
 const MAILPIT_E2E_JOBS: Record<string, string> = {
   'e2e-astro-custom': 'e2e astro-custom',
   'e2e-nextjs-custom': 'e2e nextjs-custom',
+  'e2e-wordpress': 'e2e wordpress',
 }
 
 describe('AC-13: the custom-store E2E jobs have the Mailpit their journeys read', () => {
@@ -1680,7 +1680,7 @@ describe('the integration job runs its service-backed gate steps side by side', 
 describe('every E2E target runs once on a push, and its job keeps its Playwright JSON report', () => {
   it('on a push to dev, the E2E targets ci.yml runs are each of the gate’s default-store targets once, and each job always uploads reports/e2e-<target>.json for every target it runs', () => {
     const ci = loadWorkflow(WORKFLOW)
-    const targets = plan({ full: true, base: 'HEAD', changed: [], mutated: [] })
+    const targets = plan({ full: true, base: 'HEAD', changed: [], mutated: [], wordpress: true })
       .steps.filter((s) => s.name.startsWith('e2e '))
       .map((s) => s.name.slice('e2e '.length))
       .sort()
@@ -1729,7 +1729,7 @@ describe('every E2E target runs once on a push, and its job keeps its Playwright
         ]),
     )
     const outputOf = new Map(
-      plan({ full: true, base: 'HEAD', changed: [], mutated: [] })
+      plan({ full: true, base: 'HEAD', changed: [], mutated: [], wordpress: true })
         .steps.filter((s) => s.name.startsWith('e2e '))
         .map((s) => {
           const pkg = /pnpm --filter (\S+) exec playwright/.exec(s.command)?.[1] ?? ''
@@ -1782,9 +1782,9 @@ describe('every E2E target runs once on a push, and its job keeps its Playwright
   })
 })
 
-// The command line alone decides whether CI's sentinels and mutation jobs run their step, and whether the ratchet
-// blocks: a gate.ts call naming either step must plan it to run, and the mutation step must block.
-describe('dev CI asks for the sentinels and stryker steps it names, and the mutation job blocks', () => {
+// The command line alone decides whether CI's sentinels job runs its step: a gate.ts call naming sentinels must plan
+// them to run.
+describe('dev CI asks for the sentinels step it names', () => {
   const named = (call: GateCall): string[] =>
     (flag(call.args, '--only') ?? '').split(',').map((n) => n.trim())
 
@@ -1797,20 +1797,14 @@ describe('dev CI asks for the sentinels and stryker steps it names, and the muta
   const naming = (step: string): GateCall[] =>
     gateCalls(loadWorkflow(WORKFLOW), DEV_PUSH).filter((c) => named(c).includes(step))
 
-  it('the calls naming stryker block on the ratchet, and those naming sentinels run them', () => {
-    const stryker = naming('stryker')
+  it('the calls naming sentinels run them', () => {
     const sentinels = naming('sentinels')
-    expect(stryker.length, 'ci.yml runs stryker on a push to dev').toBeGreaterThan(0)
     expect(sentinels.length, 'ci.yml runs the sentinels on a push to dev').toBeGreaterThan(0)
-    expect(stryker.map((c) => [c.job, modesOf(c).stryker])).toEqual(
-      stryker.map((c) => [c.job, 'blocking']),
-    )
     expect(sentinels.filter((c) => modesOf(c).sentinels === 'none').map((c) => c.job)).toEqual([])
   })
 
-  it('every gate.ts call whose --only names sentinels or stryker plans that step to run, the ratchet chained', () => {
-    const calls = [...naming('sentinels'), ...naming('stryker')]
-    for (const call of calls) {
+  it('every gate.ts call whose --only names sentinels plans that step to run', () => {
+    for (const call of naming('sentinels')) {
       const modes = modesOf(call)
       const planned = plan({
         full: true,
@@ -1826,25 +1820,9 @@ describe('dev CI asks for the sentinels and stryker steps it names, and the muta
         sentinels: Array.isArray(modes.sentinels) ? new Set(modes.sentinels) : modes.sentinels,
         stryker: modes.stryker,
       }).steps
-      for (const name of named(call).filter((n) => n === 'sentinels' || n === 'stryker')) {
-        const found = planned.find((s) => s.name === name)
-        expect(found, `${call.job}: ${name} is planned`).toBeDefined()
-        expect(found?.skip, `${call.job}: ${name} runs`).toBeUndefined()
-      }
-    }
-    for (const call of naming('stryker')) {
-      const command =
-        plan({
-          full: true,
-          base: 'HEAD',
-          changed: ['packages/platform/src/services/cart-service.ts'],
-          mutated: ['packages/platform/src/services/cart-service.ts'],
-          only: named(call),
-          stryker: modesOf(call).stryker,
-        }).steps.find((s) => s.name === 'stryker')?.command ?? ''
-      expect(command, `${call.job}: the ratchet blocks`).toMatch(
-        /&& pnpm --silent mutation:ratchet check --report \S+$/,
-      )
+      const found = planned.find((s) => s.name === 'sentinels')
+      expect(found, `${call.job}: sentinels is planned`).toBeDefined()
+      expect(found?.skip, `${call.job}: sentinels runs`).toBeUndefined()
     }
   })
 })
@@ -2121,5 +2099,30 @@ describe('AC-6: each nightly mutation job fails on a file below its own ratchet'
       }
     }
     expect(problems).toEqual([])
+  })
+})
+
+// Mutation testing runs in the nightly alone: it measures the tree a push would, and a red nightly holds the next merge
+// into dev. A Stryker step on a push only doubles the wait; dropping the nightly's jobs as well would leave none.
+const RUNS_STRYKER = /\bstryker\b|\bpnpm\s+(?:run\s+)?mutation(?::integration)?(?=\s|$)/
+describe('mutation runs in the nightly, not in the push run', () => {
+  it('no CI event runs a Stryker step, and every nightly dispatch runs the full and the integration mutation runs', () => {
+    const ci = loadWorkflow(WORKFLOW)
+    const onCi = CI_EVENTS.flatMap(({ label, github }) =>
+      execute(ci, github)
+        .filter((r) => RUNS_STRYKER.test(r.script))
+        .map((r) => `${label}: ${r.job}`),
+    )
+    expect(onCi).toEqual([])
+    const nightly = loadWorkflow(NIGHTLY)
+    const counts = NIGHTLY_EVENTS.map(({ label, github }) => {
+      const executed = execute(nightly, github)
+      return `${label}: ${MUTATION_JOBS.map((spec) => `${spec.job} ${executed.filter((r) => r.job === spec.job && spec.stryker.test(r.script)).length}`).join(', ')}`
+    })
+    expect(counts).toEqual(
+      NIGHTLY_EVENTS.map(
+        ({ label }) => `${label}: ${MUTATION_JOBS.map((spec) => `${spec.job} 1`).join(', ')}`,
+      ),
+    )
   })
 })

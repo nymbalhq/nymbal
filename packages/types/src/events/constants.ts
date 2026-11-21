@@ -26,6 +26,8 @@ export const EVT_ORDER_REFUNDED = 'order.refunded.v1'
 export const EVT_ORDER_PARTIALLY_REFUNDED = 'order.partially_refunded.v1'
 export const EVT_ORDER_STATUS_CHANGED = 'order.status_changed.v1'
 export const EVT_ORDER_CONFIRMATION_RESEND_REQUESTED = 'order.confirmation_resend_requested.v1'
+/** A carrier refused the tracking number and the order gained a note: no body, as its notes are for staff alone. */
+export const EVT_ORDER_NOTE_ADDED = 'order.note_added.v1'
 /** An imported order taken back out of the store, with every row it owned. */
 export const EVT_ORDER_DELETED = 'order.deleted.v1'
 
@@ -40,6 +42,9 @@ export const EVT_INVENTORY_OUT_OF_STOCK = 'inventory.out_of_stock.v1'
 export const EVT_CUSTOMER_CREATED = 'customer.created.v1'
 export const EVT_CUSTOMER_UPDATED = 'customer.updated.v1'
 export const EVT_CUSTOMER_DELETED = 'customer.deleted.v1'
+export const EVT_CUSTOMER_PASSWORD_RESET_REQUESTED = 'customer.password_reset_requested.v1'
+export const EVT_CUSTOMER_VERIFICATION_REQUESTED = 'customer.verification_requested.v1'
+export const EVT_CUSTOMER_REGISTERED_AGAIN = 'customer.registered_again.v1'
 // Legacy alias (kept so Prompt 1 seed code continues to compile).
 export const EVT_CUSTOMER_REGISTERED = EVT_CUSTOMER_CREATED
 
@@ -81,6 +86,9 @@ export const EVT_PROPOSAL_REJECTED = 'proposal.rejected.v1'
 export const EVT_PROPOSAL_APPLIED = 'proposal.applied.v1'
 export const EVT_PROPOSAL_FAILED = 'proposal.failed.v1'
 
+// Search
+export const EVT_SEARCH_ZERO_RESULTS = 'search.zero_results.v1'
+
 // System
 export const EVT_ADAPTER_ERROR = 'adapter.error.v1'
 export const EVT_SETTINGS_CHANGED = 'settings.changed.v1'
@@ -108,6 +116,7 @@ export const STANDARD_EVENT_TYPES = [
   EVT_ORDER_STATUS_CHANGED,
   EVT_ORDER_CONFIRMATION_RESEND_REQUESTED,
   EVT_ORDER_DELETED,
+  EVT_ORDER_NOTE_ADDED,
   EVT_INVENTORY_CHANGED,
   EVT_INVENTORY_RESERVED,
   EVT_INVENTORY_RELEASED,
@@ -116,6 +125,9 @@ export const STANDARD_EVENT_TYPES = [
   EVT_CUSTOMER_CREATED,
   EVT_CUSTOMER_UPDATED,
   EVT_CUSTOMER_DELETED,
+  EVT_CUSTOMER_PASSWORD_RESET_REQUESTED,
+  EVT_CUSTOMER_VERIFICATION_REQUESTED,
+  EVT_CUSTOMER_REGISTERED_AGAIN,
   EVT_VISITOR_MERGED,
   EVT_CART_CREATED,
   EVT_CART_ITEM_ADDED,
@@ -127,6 +139,7 @@ export const STANDARD_EVENT_TYPES = [
   EVT_PAYMENT_CAPTURED,
   EVT_PAYMENT_FAILED,
   EVT_PAYMENT_REFUNDED,
+  EVT_SEARCH_ZERO_RESULTS,
   EVT_ALERT_REQUESTED,
   EVT_ALERT_REPEATED,
   EVT_ALERT_CONFIRMED,

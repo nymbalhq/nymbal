@@ -163,6 +163,74 @@ function seedCmd(pm: PackageManager): [string, string[]] {
   }
 }
 
+/** Where every new store's CI workflow is written. */
+export const WORKFLOW_PATH = '.github/workflows/nymbal.yml'
+
+/** Per package manager: its setup before setup-node, setup-node's cache, the frozen install, and verify. */
+const WORKFLOW_ROWS: Record<
+  PackageManager,
+  { setup: string | null; cache: string | null; install: string; verify: string }
+> = {
+  npm: { setup: null, cache: 'npm', install: 'npm ci', verify: 'npx nymbal verify' },
+  pnpm: {
+    setup: 'uses: pnpm/action-setup@v6',
+    cache: 'pnpm',
+    install: 'pnpm install --frozen-lockfile',
+    verify: 'pnpm exec nymbal verify',
+  },
+  'yarn-classic': {
+    setup: null,
+    cache: 'yarn',
+    install: 'yarn install --frozen-lockfile',
+    verify: 'yarn run nymbal verify',
+  },
+  'yarn-berry': {
+    setup: 'run: npm install --global corepack && corepack enable',
+    cache: 'yarn',
+    install: 'yarn install --immutable',
+    verify: 'yarn exec nymbal verify',
+  },
+  // setup-node's cache takes npm, yarn and pnpm only.
+  bun: {
+    setup: 'uses: oven-sh/setup-bun@v2',
+    cache: null,
+    install: 'bun install --frozen-lockfile',
+    verify: 'bunx nymbal verify',
+  },
+}
+
+/** The store's CI: installs from the lockfile and runs `nymbal verify` on every pull request and push to main. */
+export function renderWorkflow(pm: PackageManager): string {
+  const row = WORKFLOW_ROWS[pm]
+  return [
+    '# Checks this store still builds and takes an order: `nymbal verify` on a throwaway store, no secrets needed.',
+    'name: Nymbal',
+    '',
+    'on:',
+    '  pull_request:',
+    '  push:',
+    '    branches: [main]',
+    '',
+    'permissions:',
+    '  contents: read',
+    '',
+    'jobs:',
+    '  verify:',
+    '    runs-on: ubuntu-24.04',
+    '    timeout-minutes: 20',
+    '    steps:',
+    '      - uses: actions/checkout@v7',
+    ...(row.setup === null ? [] : [`      - ${row.setup}`]),
+    '      - uses: actions/setup-node@v7',
+    '        with:',
+    '          node-version-file: .node-version',
+    ...(row.cache === null ? [] : [`          cache: ${row.cache}`]),
+    `      - run: ${row.install}`,
+    `      - run: ${row.verify}`,
+    '',
+  ].join('\n')
+}
+
 function devCmd(pm: PackageManager): string {
   switch (pm) {
     case 'pnpm':
@@ -287,6 +355,7 @@ export async function main(argv: string[] = process.argv, deps: MainDeps = {}): 
       await mkdir(targetDir, { recursive: true })
     }
     await scaffold(targetDir, answers)
+    await writeWorkflow(targetDir, pm)
     const admin = newAdminCredentials(flags.adminEmail)
     await writeAdminEnv(targetDir, admin)
     process.stdout.write(`Created ${answers.directory}\n`)
@@ -387,6 +456,7 @@ export async function main(argv: string[] = process.argv, deps: MainDeps = {}): 
   note(pc.dim(`Scaffolding into ${targetDir}`), 'Creating project')
 
   await scaffold(targetDir, answers)
+  await writeWorkflow(targetDir, pm)
   const admin = newAdminCredentials(String(adminEmail).trim())
   await writeAdminEnv(targetDir, admin)
 
@@ -457,6 +527,12 @@ export async function scaffold(dir: string, answers: Answers): Promise<void> {
 
   // Patch the copied package.json: set name to the project directory name
   await patchPackageJson(dir, answers.directory)
+}
+
+async function writeWorkflow(dir: string, pm: PackageManager): Promise<void> {
+  const path = resolve(dir, WORKFLOW_PATH)
+  await mkdir(dirname(path), { recursive: true })
+  await writeFile(path, renderWorkflow(pm), 'utf8')
 }
 
 async function patchPackageJson(dir: string, name: string): Promise<void> {
@@ -541,6 +617,7 @@ export default defineConfig({
     analytics: { provider: 'native' },
     shipping: { provider: 'native' },
     tax: { provider: 'native' },
+    promotions: { provider: 'native' },
     ai: { provider: 'none' },
   },
 

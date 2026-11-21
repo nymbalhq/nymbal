@@ -1,11 +1,14 @@
 import { randomUUID } from 'node:crypto'
+import type { Refund } from '@nymbalhq/types'
 
 export interface StubPaymentWebhookOptions {
   paymentIntentId: string
   amountMinor: number
   currency: string
-  kind?: 'payment.captured' | 'payment.failed'
+  kind?: 'payment.captured' | 'payment.failed' | 'payment.refunded'
   eventId?: string
+  /** On a `payment.refunded`: the refund the stub holds on the intent, as one made in the provider's dashboard. */
+  refund?: { id: string; amountMinor: number; status?: Refund['status'] }
 }
 
 export interface StubPaymentWebhookRequest {
@@ -30,6 +33,7 @@ export function stubPaymentWebhook(opts: StubPaymentWebhookOptions): StubPayment
       paymentIntentId: opts.paymentIntentId,
       amountMinor: opts.amountMinor,
       currency: opts.currency,
+      ...(opts.refund !== undefined && { refund: opts.refund }),
     }),
   }
 }

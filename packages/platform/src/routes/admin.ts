@@ -7,12 +7,15 @@ import type { EventPublisher } from '../events/publisher.js'
 import type { DeclaredSlot } from '../settings/load.js'
 import { registerAdminMeRoute } from './admin-me.js'
 import { registerAdminDashboardRoute } from './admin-dashboard.js'
+import { registerAdminReportsRoute } from './admin-reports.js'
 import { registerAdminOrdersRoutes } from './admin-orders.js'
 import { registerAdminProductsRoutes } from './admin-products.js'
 import { registerAdminInventoryRoutes } from './admin-inventory.js'
 import { registerAdminCustomersRoutes } from './admin-customers.js'
+import { registerAdminMailHealthRoute } from './admin-mail-health.js'
 import { registerAdminSearchRoute } from './admin-search.js'
 import { registerAdminReviewsRoutes } from './admin-reviews.js'
+import { registerAdminPromotionsRoutes } from './admin-promotions.js'
 import { registerAdminSettingsRoutes } from './admin-settings.js'
 import { createHistoryReader } from '../history/read.js'
 
@@ -35,6 +38,7 @@ export function registerAdminRoutes(adapter: HttpAdapter, deps: RegisterAdminRou
 
   registerAdminMeRoute(adapter, { config })
   registerAdminDashboardRoute(adapter, { repos, config })
+  registerAdminReportsRoute(adapter, { repos, config })
   registerAdminOrdersRoutes(adapter, {
     order: services.order,
     checkout: services.checkout,
@@ -55,8 +59,15 @@ export function registerAdminRoutes(adapter: HttpAdapter, deps: RegisterAdminRou
   registerAdminCustomersRoutes(adapter, {
     order: services.order,
     customer: services.customer,
+    auth: services.auth,
     repos,
     history,
+  })
+  registerAdminMailHealthRoute(adapter, {
+    config,
+    repos,
+    auth: services.auth,
+    email: adapters.email,
   })
   registerAdminSearchRoute(adapter, {
     order: services.order,
@@ -68,6 +79,7 @@ export function registerAdminRoutes(adapter: HttpAdapter, deps: RegisterAdminRou
     reviewRepo: repos.review,
     productRepo: repos.product,
   })
+  registerAdminPromotionsRoutes(adapter, { promotions: repos.promotion })
   registerAdminSettingsRoutes(adapter, {
     config,
     slots: deps.settingsSlots,

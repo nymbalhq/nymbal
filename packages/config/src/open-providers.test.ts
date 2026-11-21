@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import fc from 'fast-check'
 import { afterAll, describe, expect, it } from 'vitest'
 import { ConfigError } from '@nymbalhq/types'
-import { loadConfig, PROVIDER_NAME } from './index.js'
+import { loadConfig, PROVIDER_NAME, type CommerceSlot } from './index.js'
 
 // AC-1: a commerce slot's provider and `security.adapter` take any name PROVIDER_NAME matches, and keep it; any other
 // name fails naming the slot, the value and the pattern. `package` beside a built-in, `security.adapter 'custom'`, and
@@ -18,6 +18,7 @@ const COMMERCE = [
   'analytics',
   'shipping',
   'tax',
+  'promotions' as CommerceSlot,
   'ai',
 ] as const
 type Commerce = (typeof COMMERCE)[number]
@@ -31,6 +32,7 @@ const BUILT_IN: Record<Commerce, string> = {
   analytics: 'native',
   shipping: 'native',
   tax: 'native',
+  promotions: 'native',
   ai: 'none',
 }
 

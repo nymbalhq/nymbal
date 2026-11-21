@@ -13,14 +13,19 @@ import type { RawReader } from './raw.js'
 export const START_TRACKING_HANDLER = 'shipping:order-shipped'
 
 /** An imported order in `processing`, paid, which the admin's ship action can move to `shipped`. */
-export async function processingOrder(k: Kernel): Promise<{ id: string; email: string }> {
+export async function processingOrder(
+  k: Kernel,
+  opts: { customerId?: string; notes?: string } = {},
+): Promise<{ id: string; email: string; orderNumber: string }> {
   const id = randomUUID()
   const email = `buyer-${randomUUID()}@shipping.test`
+  const orderNumber = `SHIP-${randomUUID().slice(0, 8)}`
   await k.services.order.importOrder({
     orderId: id,
-    orderNumber: `SHIP-${randomUUID().slice(0, 8)}`,
+    orderNumber,
     status: 'processing',
-    customerId: null,
+    customerId: opts.customerId ?? null,
+    ...(opts.notes !== undefined && { notes: opts.notes }),
     email,
     billingAddress: address,
     shippingAddress: address,
@@ -49,7 +54,7 @@ export async function processingOrder(k: Kernel): Promise<{ id: string; email: s
     capturedMinor: 1200,
     captureMethod: 'import',
   })
-  return { id, email }
+  return { id, email, orderNumber }
 }
 
 /** The admin's Mark Shipped: [HTTP status, the order's status as the route answered it]. */

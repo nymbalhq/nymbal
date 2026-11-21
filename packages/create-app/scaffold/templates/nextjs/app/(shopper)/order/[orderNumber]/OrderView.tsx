@@ -2,7 +2,7 @@ import Link from 'next/link'
 import type { ReactNode } from 'react'
 import type { ShopperAddress, ShopperOrder } from '@nymbalhq/types'
 import { OrderSummary, OrderTimeline } from '@/components/client/elements'
-import { isPaid, orderHeading } from '@/lib/order-status'
+import { isPaid, orderHeading, orderStanding, refundLabel } from '@/lib/order-status'
 import styles from '@/styles/pages/confirmation.module.css'
 
 function AddressBlock({ title, address }: { title: string; address: ShopperAddress }) {
@@ -33,6 +33,7 @@ export function summaryAttributes(order: ShopperOrder): Record<string, string> {
     'tax-minor': String(order.taxTotalMinor ?? 0),
     'total-minor': String(order.totalMinor),
     currency: order.currency,
+    ...(order.pricesIncludeTax === true && { 'prices-include-tax': '' }),
   }
 }
 
@@ -61,7 +62,8 @@ export function OrderView({
   summaryHtml?: string
   refresh?: ReactNode
 }) {
-  const paid = isPaid(order.status)
+  const paid = isPaid(order)
+  const refund = refundLabel(order)
   const items = summaryItems(order)
   const timeline = order.timeline ?? []
 
@@ -86,7 +88,7 @@ export function OrderView({
             </div>
           )}
           <h1 className={styles.successTitle} data-testid="order-heading">
-            {orderHeading(order.status)}
+            {orderHeading(order)}
           </h1>
           <p className={styles.successSubtitle}>
             {paid ? 'Thank you for your order. ' : ''}Your order number is{' '}
@@ -98,7 +100,13 @@ export function OrderView({
               {order.status}
             </span>
             .{order.status === 'pending' && ' We will confirm it once the payment arrives.'}
+            {orderStanding(order) === 'refunded' && ' This order is refunded.'}
           </p>
+          {refund !== null && (
+            <p className={styles.successSubtitle} data-testid="order-payment-state">
+              {refund}
+            </p>
+          )}
         </div>
 
         <OrderTimeline
@@ -116,6 +124,7 @@ export function OrderView({
           taxMinor={order.taxTotalMinor ?? 0}
           totalMinor={order.totalMinor}
           currency={order.currency}
+          pricesIncludeTax={order.pricesIncludeTax === true}
           {...(summaryHtml !== undefined && { serverHtml: summaryHtml })}
         />
 

@@ -20,6 +20,7 @@ function useDefine(element: { define(): void }): void {
 
 export interface RegisterFormProps {
   onSignedIn?: (event: CustomEvent<{ customer: unknown }>) => void
+  onVerificationSent?: (event: CustomEvent<{ email: string }>) => void
   className?: string
   style?: React.CSSProperties
   slot?: string
@@ -40,6 +41,14 @@ export const RegisterForm = /* @__PURE__ */ forwardRef<HTMLElement, RegisterForm
     el.addEventListener('nymbal:auth:signed-in', handler)
     return () => el.removeEventListener('nymbal:auth:signed-in', handler)
   }, [props.onSignedIn])
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el || !props.onVerificationSent) return
+    const handler = props.onVerificationSent as EventListener
+    el.addEventListener('nymbal:auth:verification-sent', handler)
+    return () => el.removeEventListener('nymbal:auth:verification-sent', handler)
+  }, [props.onVerificationSent])
 
     useDefine(NymbalRegisterForm)
 

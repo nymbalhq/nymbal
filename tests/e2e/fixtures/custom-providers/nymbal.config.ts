@@ -5,7 +5,8 @@ import { createFixturePaymentsAdapter, createFixtureSearchAdapter } from './adap
 
 // The swap config: the repository root's config with `search` and `payments` set to `custom`, the adapters injected
 // through the `adapters` export (`nymbal dev` passes it to createApp), and the API on 3011 so a custom E2E run never
-// reaches the native store on 3001. Its email is Mailgun with the SMTP relay pointed at Mailpit, so the alert journeys
+// reaches the native store on 3001. Its prices include tax, at 20% to a GB address, so the swap runs show an inclusive
+// order's tax. Its email is Mailgun with the SMTP relay pointed at Mailpit, so the alert journeys
 // read what the store sends, and its webhook signing key is the tests' own, so a journey signs Mailgun's bounces and
 // complaints; tests/e2e/playwright.config.ts passes the stack slot's Mailpit SMTP port as NYMBAL_E2E_SMTP_PORT. Its
 // shipping is EasyPost with the tests' webhook secret, so a journey signs EasyPost's tracker updates.
@@ -26,6 +27,8 @@ export default {
     // The order email links here. One API serves both custom storefronts, so a journey opens the mailed link's path
     // and query on its own storefront: the key belongs to the API, not to an origin.
     url: env('NYMBAL_STOREFRONT_URL', 'http://localhost:4331'),
+    // An inclusive total is the shelf prices' sum, so the other journeys on this store keep their totals.
+    pricesIncludeTax: true,
   },
   template: 'astro',
   infrastructure: {
@@ -44,6 +47,11 @@ export default {
       '/api/checkout': { requests: 1000, window: '1m', action: 'block' },
       '/api/orders/link': { requests: 1000, window: '1m', action: 'block' },
       '/api/alerts/subscribe': { requests: 1000, window: '1m', action: 'block' },
+      '/api/auth/forgot-password': { requests: 1000, window: '1m', action: 'block' },
+      '/api/auth/reset-password': { requests: 1000, window: '1m', action: 'block' },
+      '/api/customers/me/password': { requests: 1000, window: '1m', action: 'block' },
+      '/api/auth/verify-email': { requests: 1000, window: '1m', action: 'block' },
+      '/api/auth/resend-verification': { requests: 1000, window: '1m', action: 'block' },
     },
     botProtection: { mode: 'managed', allowList: [] },
     headers: {
@@ -75,8 +83,16 @@ export default {
     reviews: { provider: 'native' },
     search: { provider: 'custom' },
     analytics: { provider: 'native' },
-    shipping: { provider: 'easypost', config: { webhookSecret: EASYPOST_TEST_WEBHOOK_SECRET } },
-    tax: { provider: 'native' },
+    // Standard first and free, so every other journey on this store keeps its totals; Express is the paid choice.
+    shipping: {
+      provider: 'easypost',
+      config: { webhookSecret: EASYPOST_TEST_WEBHOOK_SECRET },
+      rates: [
+        { id: 'standard', name: 'Standard', amountMinor: 0, estimatedDays: 3 },
+        { id: 'express', name: 'Express', amountMinor: 499, estimatedDays: 1 },
+      ],
+    },
+    tax: { provider: 'native', rates: [{ country: 'GB', percent: 20 }] },
     ai: { provider: 'none' },
   },
   http: {
@@ -88,6 +104,10 @@ export default {
       allowedOrigins: env('NYMBAL_CORS_ORIGINS', 'http://localhost:4331,http://localhost:3010')
         .split(',')
         .map((origin) => origin.trim()),
+      kitOrigins: env('NYMBAL_KIT_ORIGINS', '')
+        .split(',')
+        .map((origin) => origin.trim())
+        .filter((origin) => origin !== ''),
     },
   },
   deployment: {

@@ -139,9 +139,11 @@ const CASES: FormCase[] = [
       .map((f) => ({ ...f, 'register-confirmPassword': f['register-password'] })),
     rig(held) {
       const client = setupMockClient()
+      // AuthStore.register answers how it ended: signed in, or a link sent (the store confirms addresses).
       const call = vi.fn(async () => {
         await held.promise
         auth(client).setState({ customer: CUSTOMER, isAuthenticated: true })
+        return 'signed-in'
       })
       auth(client)['register'] = call
       return { client, call }

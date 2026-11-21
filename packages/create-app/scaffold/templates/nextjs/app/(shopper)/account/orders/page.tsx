@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useNymbalClient } from '@nymbalhq/react'
 import type { Order } from '@nymbalhq/types'
 import { formatPrice, formatDate } from '@/lib/format'
+import { refundLabel } from '@/lib/order-status'
 import styles from '@/styles/pages/account.module.css'
 
 function getStatusClass(status: string): string {
@@ -15,7 +16,6 @@ function getStatusClass(status: string): string {
     shipped: styles.statusShipped,
     delivered: styles.statusDelivered,
     cancelled: styles.statusCancelled,
-    refunded: styles.statusRefunded,
   }
   return map[status.toLowerCase()] ?? styles.statusPending
 }
@@ -99,9 +99,19 @@ export default function OrdersPage() {
               >
                 #{order.orderNumber}
               </Link>
-              <span className={`${styles.orderStatus} ${getStatusClass(order.status)}`}>
-                {order.status}
-              </span>
+              <div>
+                <span className={`${styles.orderStatus} ${getStatusClass(order.status)}`}>
+                  {order.status}
+                </span>
+                {refundLabel(order) !== null && (
+                  <span
+                    className={`${styles.orderStatus} ${styles.statusRefunded}`}
+                    data-testid={`order-payment-state-${order.orderNumber}`}
+                  >
+                    {refundLabel(order)}
+                  </span>
+                )}
+              </div>
             </div>
             <div className={styles.orderMeta}>
               {order.createdAt && (

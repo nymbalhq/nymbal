@@ -1,6 +1,6 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
-import { createTurnMask, type MaskField } from './mask.js'
+import { createTurnMask, type MaskField, type RevealedSpan } from './mask.js'
 
 // The assistant's reversible masking of a customer's details, one turn's table at a time:
 // - AC-1: property, a masked result revealed gives back the value with its token-shaped text neutralised, each value of
@@ -8,6 +8,8 @@ import { createTurnMask, type MaskField } from './mask.js'
 //   masked result holds a value masked by key.
 // - AC-2: the key rules, field by field, under every mask.
 // - AC-3: free text: the email and phone patterns, a table value standing whole, and reveal leaving an unminted token.
+// Then what keeps a value whole: the table replaced longest first, placeholders already in a text left alone, an earlier
+// answer's revealed spans masked again, and a tool call refused while it still holds a placeholder.
 
 const KINDS = ['email', 'phone', 'address', 'postcode', 'name'] as const
 type Kind = (typeof KINDS)[number]
@@ -523,5 +525,125 @@ describe('AC-3: free text', () => {
     expect(mask.reveal('Write to [email-1], not [email-9] or [phone-1].')).toBe(
       'Write to ada@example.com, not [email-9] or [phone-1].',
     )
+  })
+})
+
+describe('replacing the table’s values', () => {
+  it('a value the table holds that contains a shorter one is replaced whole, so no part of a street is left beside a name token, in a result, in text and in known', () => {
+    const mask = createTurnMask(['name', 'address'])
+
+    // The name is met first, so the table holds it before the street that contains it.
+    const { value } = mask.result({
+      firstName: 'Ada',
+      addressLine1: '12 Ada Road',
+      note: 'Deliver to 12 Ada Road for Ada',
+    })
+
+    expect(value['note']).toBe('Deliver to [address-1] for [name-1]')
+    expect(mask.text('Is 12 Ada Road right, Ada?')).toBe('Is [address-1] right, [name-1]?')
+    expect(mask.known('Ship to 12 Ada Road')).toBe('Ship to [address-1]')
+  })
+
+  it('known leaves a placeholder already in the text as it is, even when a value the table holds stands whole inside it', () => {
+    const mask = createTurnMask(['email', 'name'])
+    // A placeholder a store import left in a name field: it stands whole inside `[name-1]`.
+    mask.result({ email: 'ada@example.com', lastName: 'name' })
+
+    expect(mask.known('Asked [email-1] and [name-1] about the name')).toBe(
+      'Asked [email-1] and [name-1] about the [name-1]',
+    )
+  })
+
+  it('an empty value under a key of a listed kind takes no token and no number, so the next value is still [email-1]', () => {
+    const mask = createTurnMask(['email'])
+
+    const { value, masked } = mask.result({ items: [{ email: '' }, { email: 'ada@example.com' }] })
+
+    expect(value).toEqual({ items: [{ email: '' }, { email: '[email-1]' }] })
+    expect(masked).toBe(tokensIn(value).length)
+    expect(mask.reveal('[email-1]')).toBe('ada@example.com')
+  })
+})
+
+describe('an earlier answer’s revealed spans', () => {
+  /** An answer streamed in two deltas, revealed by the turn that minted its tokens. */
+  function revealedAnswer(answer: string) {
+    const earlier = createTurnMask(['name', 'email'])
+    earlier.result({ firstName: 'Ada', lastName: 'Okafor', email: 'ada@example.com' })
+    const revealer = earlier.revealer()
+    const cut = answer.indexOf('[') + 3
+    const parts = [
+      revealer.push(answer.slice(0, cut)),
+      revealer.push(answer.slice(cut)),
+      revealer.flush(),
+    ]
+    let text = ''
+    const revealed: RevealedSpan[] = []
+    for (const part of parts) {
+      revealed.push(
+        ...part.revealed.map((s) => ({
+          ...s,
+          start: s.start + text.length,
+          end: s.end + text.length,
+        })),
+      )
+      text += part.text
+    }
+    return { text, revealed }
+  }
+
+  it('the revealer holds a placeholder cut across deltas and gives the answer with each value’s span; the next turn masks every span again, two side by side included', () => {
+    const shown = revealedAnswer('Order placed by [name-1][name-2] at [email-1].')
+
+    expect(shown).toEqual({
+      text: 'Order placed by AdaOkafor at ada@example.com.',
+      revealed: [
+        { start: 16, end: 19, kind: 'name' },
+        { start: 19, end: 25, kind: 'name' },
+        { start: 29, end: 44, kind: 'email' },
+      ],
+    })
+
+    const next = createTurnMask(['name', 'email'])
+    const masked = next.text(shown.text, shown.revealed)
+    expect(masked).toBe('Order placed by [name-1][name-2] at [email-1].')
+    expect(next.reveal(masked)).toBe(shown.text)
+  })
+
+  it('a span of a kind the mask does not list, one overlapping the span before it and an empty one are each skipped: the text keeps every character once and only listed values become tokens', () => {
+    const mask = createTurnMask(['name'])
+    const text = 'Ada Okafor, 12 Mill Lane'
+
+    const masked = mask.text(text, [
+      { start: 0, end: 10, kind: 'name' },
+      { start: 4, end: 10, kind: 'name' },
+      { start: 10, end: 10, kind: 'name' },
+      { start: 12, end: 24, kind: 'address' },
+    ])
+
+    expect(masked).toBe('[name-1], 12 Mill Lane')
+    expect(mask.reveal(masked)).toBe(text)
+  })
+
+  it('under an empty mask text gives its input back, token-shaped text and spans included', () => {
+    const text = 'Ada wrote [email-1] from ada@example.com'
+
+    expect(createTurnMask([]).text(text, [{ start: 0, end: 3, kind: 'name' }])).toBe(text)
+  })
+})
+
+describe('a tool call that still holds a placeholder', () => {
+  it('stillHolds is true when any string of the revealed arguments, at any depth and after a null or an absent value, is a placeholder the turn never minted, and false once every placeholder was revealed', () => {
+    const mask = createTurnMask(['email'])
+    mask.result({ email: 'ada@example.com' })
+    const holds = (args: Record<string, unknown>) => mask.stillHolds(mask.revealArgs(args))
+
+    expect([
+      holds({ to: '[email-9]' }),
+      holds({ cc: ['ada@example.com', '[email-9]'] }),
+      holds({ note: null, skip: undefined, filter: { email: 'Write to [email-9]' } }),
+      holds({ to: '[email-1]', cc: ['[email-1]'], count: 2, paid: true, note: null }),
+      holds({ to: 'Write to [email 9]' }),
+    ]).toEqual([true, true, true, false, false])
   })
 })

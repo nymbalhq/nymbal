@@ -53,6 +53,31 @@ export function openRaw(dialect: Dialect, target: string): RawReader {
   }
 }
 
+/** One write on a connection of its own, for a state the services will not make. */
+export async function writeRaw(
+  dialect: Dialect,
+  target: string,
+  sql: string,
+  params: unknown[] = [],
+): Promise<void> {
+  if (dialect === 'sqlite') {
+    const db = new Database(target)
+    try {
+      db.prepare(sql).run(...params)
+    } finally {
+      db.close()
+    }
+    return
+  }
+  const client = new pg.Client({ connectionString: target })
+  await client.connect()
+  try {
+    await client.query(positional(sql), params)
+  } finally {
+    await client.end()
+  }
+}
+
 /** The stock column of one variant, as a second connection sees it. */
 export async function stockOf(raw: RawReader, variantId: string): Promise<number> {
   const row = await raw.one<{ stock: number }>('SELECT stock FROM variants WHERE id = ?', [

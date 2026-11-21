@@ -21,6 +21,7 @@ const SLOTS = [
   'analytics',
   'shipping',
   'tax',
+  'promotions' as CommerceSlot,
   'ai',
 ] as const satisfies readonly CommerceSlot[]
 

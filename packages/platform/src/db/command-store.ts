@@ -134,8 +134,9 @@ export function postgresDb(tx: ReadTx): PostgresClient {
 
 /**
  * Runs `send` now, or, inside an open transaction, holds it until the outermost commits; a rollback drops it. The
- * same function held more than once in one transaction runs once. The publisher drains the event relay through here,
- * after the slot or connection is released, so subscribers only see committed writes.
+ * same function held more than once in one transaction runs once. The publisher projects its events and asks the
+ * event relay for a pass through here, after the slot or connection is released, so subscribers only see committed
+ * writes.
  */
 export async function afterCommit(send: () => Promise<void>): Promise<void> {
   const scope = context.getStore()
@@ -373,6 +374,7 @@ export function createCommandStore(
     const raw = options.readOnly
       ? new BetterSqlite3(path, { readonly: true, fileMustExist: true })
       : new BetterSqlite3(path)
+    raw.function('unicode_lower', { deterministic: true }, (text: string) => text.toLowerCase())
     if (!options.readOnly) {
       raw.pragma('journal_mode = WAL')
       raw.pragma('foreign_keys = ON')

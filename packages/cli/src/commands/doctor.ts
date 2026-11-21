@@ -6,8 +6,10 @@ import { errorText, HEALTH_CHECK_TIMEOUT_MS } from '@nymbalhq/types'
 import { loadProject } from '../utils/project.js'
 import { resolveMigrations } from './migrate.js'
 import { formatDoctorReport } from './doctor-report.js'
+import { accessTtlCheck } from './doctor-access-ttl.js'
 import { originLockCheck } from './doctor-origin-lock.js'
 import { trustProxyCheck } from './doctor-trust-proxy.js'
+import { mailDomainCheck, verificationCheck } from './doctor-verification.js'
 
 function timeoutOf(flag: string | undefined): number {
   if (flag === undefined || flag.trim() === '') return HEALTH_CHECK_TIMEOUT_MS
@@ -63,6 +65,9 @@ export const doctorCommand = defineCommand({
       report.checks.push(
         trustProxyCheck(loaded.config, process.env, report.network),
         originLockCheck(loaded.config, process.env, report),
+        accessTtlCheck(loaded.config, process.env),
+        verificationCheck(loaded.config, process.env),
+        await mailDomainCheck(loaded.config, process.env),
       )
     }
     const text = formatDoctorReport(report, {

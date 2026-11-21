@@ -2,7 +2,7 @@ import type { Customer } from '@nymbalhq/types'
 import type { CommerceAdapter } from '../adapter/commerce-adapter.js'
 import { forgetSession, hasSessionHint, isSessionRefusal, renewSession } from '../auth/session.js'
 import type { TokenManager } from '../auth/token-manager.js'
-import type { AuthState, RegisterParams } from '../types.js'
+import type { AuthResult, AuthState, RegisterParams, VerificationSent } from '../types.js'
 import { createStore } from './create-store.js'
 
 const INITIAL_STATE: AuthState = {
@@ -16,7 +16,21 @@ export interface AuthStore {
   getState(): AuthState
   subscribe(listener: () => void): () => void
   login(email: string, password: string): Promise<void>
-  register(params: RegisterParams): Promise<void>
+  /**
+   * `signed-in` as `login`; `verification-sent` on a store that confirms addresses: a link was mailed, and no token is
+   * held until `verifyEmail` follows it.
+   */
+  register(params: RegisterParams): Promise<'signed-in' | 'verification-sent'>
+  /** Confirms the address with a mailed link's token and signs in, as `login` does. */
+  verifyEmail(token: string): Promise<void>
+  /** Asks for the confirmation link again; the store answers alike whatever the address. */
+  resendVerification(email: string): Promise<void>
+  /** Asks for a reset link; the store answers alike whether or not the address has an account. */
+  requestPasswordReset(email: string): Promise<void>
+  /** Sets a password with a reset link's token and signs in, as `login` does. */
+  resetPassword(token: string, password: string): Promise<void>
+  /** Changes the password; the store ends every other session and this one holds the new token, as after `login`. */
+  changePassword(currentPassword: string, newPassword: string): Promise<void>
   logout(): Promise<void>
   refreshToken(): Promise<void>
   updateProfile(updates: Partial<Pick<Customer, 'firstName' | 'lastName' | 'phone'>>): Promise<void>
@@ -36,38 +50,43 @@ export function createAuthStore(
 ): AuthStore {
   const store = createStore<AuthState>(INITIAL_STATE)
 
-  async function login(email: string, password: string): Promise<void> {
-    store.setState({ loading: true, error: null })
+  /**
+   * Holds the session a sign-in answered: its token and its customer. Rethrows a refusal, with its message kept. A
+   * `busy` sign-in marks the store loading meanwhile; a change of password does not, since a page that hides behind
+   * `loading` (an account guard) would take down the signed-in shopper's form mid-change.
+   */
+  async function signIn(
+    answer: () => Promise<AuthResult | VerificationSent>,
+    busy = true,
+  ): Promise<'signed-in' | 'verification-sent'> {
+    if (busy) store.setState({ loading: true, error: null })
     try {
-      const result = await adapter.customers.login(email, password)
+      const result = await answer()
+      if (!('accessToken' in result)) {
+        store.setState({ loading: false, error: null })
+        return 'verification-sent'
+      }
       tokenManager.setTokens(result.accessToken, result.expiresIn)
       store.setState({
         customer: result.customer,
         isAuthenticated: true,
         loading: false,
+        error: null,
       })
+      return 'signed-in'
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
-      store.setState({ loading: false, error: message })
+      store.setState({ ...(busy && { loading: false }), error: message })
       throw err
     }
   }
 
-  async function register(params: RegisterParams): Promise<void> {
-    store.setState({ loading: true, error: null })
-    try {
-      const result = await adapter.customers.register(params)
-      tokenManager.setTokens(result.accessToken, result.expiresIn)
-      store.setState({
-        customer: result.customer,
-        isAuthenticated: true,
-        loading: false,
-      })
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      store.setState({ loading: false, error: message })
-      throw err
-    }
+  async function login(email: string, password: string): Promise<void> {
+    await signIn(() => adapter.customers.login(email, password))
+  }
+
+  function register(params: RegisterParams): Promise<'signed-in' | 'verification-sent'> {
+    return signIn(() => adapter.customers.register(params))
   }
 
   async function logout(): Promise<void> {
@@ -154,6 +173,17 @@ export function createAuthStore(
     subscribe: store.subscribe,
     login,
     register,
+    requestPasswordReset: (email) => adapter.customers.requestPasswordReset(email),
+    resetPassword: async (token, password) => {
+      await signIn(() => adapter.customers.resetPassword(token, password))
+    },
+    verifyEmail: async (token) => {
+      await signIn(() => adapter.customers.verifyEmail(token))
+    },
+    resendVerification: (email) => adapter.customers.resendVerification(email),
+    changePassword: async (currentPassword, newPassword) => {
+      await signIn(() => adapter.customers.changePassword(currentPassword, newPassword), false)
+    },
     logout,
     refreshToken,
     updateProfile,

@@ -9,11 +9,18 @@ import AccountLayout from '../../layouts/AccountLayout.astro'
   <p class="account-page-subtitle">Update your personal information.</p>
 
   <NymbalElement tag="nymbal-profile-form" attributes={{ class: 'account-form' }} />
+
+  <h2 class="account-section-title">Password</h2>
+  <p class="account-page-subtitle">Changing it signs out every other device.</p>
+
+  <NymbalElement tag="nymbal-change-password-form" attributes={{ class: 'account-form' }} />
 </AccountLayout>
 
 <script>
   import '../../lib/client.js'
   import { NymbalProfileForm } from '@nymbalhq/web-components/elements/nymbal-profile-form'
+  import { NymbalChangePasswordForm } from '@nymbalhq/web-components/elements/nymbal-change-password-form'
 
   NymbalProfileForm.define()
+  NymbalChangePasswordForm.define()
 </script>

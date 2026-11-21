@@ -1,7 +1,12 @@
 import { useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Check, Loader2, X } from 'lucide-react'
-import type { ProposalDecider, ProposalStatus, ProposalView } from '@nymbalhq/types'
+import {
+  PROPOSAL_OUTCOME_UNKNOWN,
+  type ProposalDecider,
+  type ProposalStatus,
+  type ProposalView,
+} from '@nymbalhq/types'
 import { Button } from '@/components/ui/button'
 import { useApproveProposal } from '@/hooks/useProposals'
 import { ApiError } from '@/lib/api'
@@ -69,6 +74,7 @@ export function ProposalCard({ proposal, me, onReject }: ProposalCardProps) {
   }
 
   const args = Object.entries(proposal.args)
+  const outcomeUnknown = proposal.status === 'failed' && outcome?.code === PROPOSAL_OUTCOME_UNKNOWN
 
   return (
     <article
@@ -85,11 +91,11 @@ export function ProposalCard({ proposal, me, onReject }: ProposalCardProps) {
         <span
           className={cn(
             'rounded-full px-2 py-0.5 text-[11px] font-medium',
-            STATUS_STYLES[proposal.status],
+            outcomeUnknown ? 'bg-orange-50 text-orange-700' : STATUS_STYLES[proposal.status],
           )}
           data-testid={tid('inbox', 'status', id)}
         >
-          {STATUS_LABELS[proposal.status]}
+          {outcomeUnknown ? 'Outcome unknown' : STATUS_LABELS[proposal.status]}
         </span>
       </div>
 
@@ -131,12 +137,12 @@ export function ProposalCard({ proposal, me, onReject }: ProposalCardProps) {
       {proposal.status === 'failed' && outcome?.message !== undefined && (
         <p className="text-xs break-words text-red-600">{outcome.message}</p>
       )}
-      {proposal.status === 'applied' && (
+      {(proposal.status === 'applied' || outcomeUnknown) && (
         <Link
           to={`/activity?correlation=${encodeURIComponent(proposal.correlationId)}`}
           className="text-xs text-blue-600 hover:underline"
         >
-          See what it changed
+          {outcomeUnknown ? 'See the activity' : 'See what it changed'}
         </Link>
       )}
 

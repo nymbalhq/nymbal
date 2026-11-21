@@ -14,13 +14,12 @@ export const ROUTE = '/api/reviews'
 export const SUBMITTED = 'review.submitted.v1'
 const PASSWORD = 'reviews-correct-horse'
 
-/** The order statuses that make a review verified: the order was paid and not wholly refunded or cancelled. */
+/** The order statuses that may verify a review; a fully refunded order never does, at any of them. */
 export const PAID: readonly OrderStatus[] = [
   'confirmed',
   'processing',
   'shipped',
   'delivered',
-  'partially_refunded',
 ]
 
 export const ALL_STATUSES: readonly OrderStatus[] = [
@@ -30,8 +29,6 @@ export const ALL_STATUSES: readonly OrderStatus[] = [
   'shipped',
   'delivered',
   'cancelled',
-  'refunded',
-  'partially_refunded',
 ]
 
 export interface ReviewRow {
@@ -171,6 +168,9 @@ export interface OrderSpec {
   status: OrderStatus
   productIds: string[]
   createdAt: Date
+  /** What was captured and refunded; nothing when absent. */
+  capturedMinor?: number
+  refundedMinor?: number
 }
 
 /** Writes `orders` in one transaction, in the given order, outside the write audit; returns their ids in that order. */
@@ -204,6 +204,14 @@ export async function writeOrders(
           notes: '',
           metadata: {},
           paymentIntentId: null,
+          ...((spec.capturedMinor ?? 0) > 0 && {
+            capture: {
+              amountMinor: spec.capturedMinor!,
+              method: 'import' as const,
+              at: spec.createdAt,
+              refundedMinor: spec.refundedMinor ?? 0,
+            },
+          }),
           createdAt: spec.createdAt,
           updatedAt: spec.createdAt,
         })

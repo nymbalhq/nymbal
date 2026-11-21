@@ -1,4 +1,4 @@
-// Reads: scripts/mutation-ratchet.ts, stryker.config.mjs, stryker.integration.config.mjs, vitest.config.ts
+// Reads: scripts/mutation-ratchet.ts, stryker.config.mjs, stryker.integration.config.mjs, vitest.config.ts, scripts/machine-budget.ts
 import { execFile, execFileSync } from 'node:child_process'
 import {
   globSync,
@@ -57,19 +57,31 @@ const INTEGRATION_FILES = [
   'packages/platform/src/services/import-removal-service.ts',
   'packages/platform/src/services/description.ts',
   'packages/platform/src/repositories/audit-entry.ts',
+  'packages/platform/src/repositories/report-rollup.ts',
+  'packages/platform/src/repositories/password-reset-token.ts',
+  'packages/platform/src/assistant/loop.ts',
+  'packages/platform/src/assistant/mask.ts',
+  'packages/platform/src/mcp/invoke.ts',
+  'packages/platform/src/mcp/withhold.ts',
 ]
 
 /** The files no unit test reaches: the integration config alone mutates them, the unit config leaves them out. */
 const INTEGRATION_ONLY = [
   'packages/platform/src/repositories/alert-subscription.ts',
   'packages/platform/src/repositories/email-suppression.ts',
+  'packages/platform/src/repositories/password-reset-token.ts',
   'packages/platform/src/repositories/proposal.ts',
+  'packages/platform/src/repositories/report-rollup.ts',
   'packages/platform/src/repositories/review.ts',
   'packages/platform/src/services/alert-service.ts',
   'packages/platform/src/services/description.ts',
   'packages/platform/src/services/import-removal-service.ts',
   'packages/platform/src/services/proposal-service.ts',
   'packages/platform/src/services/recently-viewed-service.ts',
+  'packages/platform/src/assistant/loop.ts',
+  'packages/platform/src/assistant/mask.ts',
+  'packages/platform/src/mcp/invoke.ts',
+  'packages/platform/src/mcp/withhold.ts',
 ]
 
 /** Integration tests that fail in Stryker's sandbox, or import from outside it. */
@@ -245,6 +257,9 @@ function gitScratch(integration: Scores, unit: Scores = UNIT_ENTRIES): string {
   }
   write('stryker.config.mjs', readFileSync(join(REPO, 'stryker.config.mjs'), 'utf8'))
   write(INTEGRATION_CONFIG, readFileSync(join(REPO, INTEGRATION_CONFIG), 'utf8'))
+  // Both configs read their concurrency from the machine budget beside them, an ES module as in the repository.
+  write('scripts/machine-budget.ts', readFileSync(join(REPO, 'scripts/machine-budget.ts'), 'utf8'))
+  write('package.json', '{ "type": "module" }\n')
   ;[...SET, ...UNIT_ONLY].forEach((path, i) => write(path, `export const n${i} = ${i}\n`))
   write(UNIT_RATCHET, ratchetText(unit))
   write(INTEGRATION_RATCHET, ratchetText(integration))
@@ -270,7 +285,7 @@ const writeReport = (dir: string, files: Record<string, Status[]>): string => {
 // ---------------------------------------------------------------------------------------------------------------
 
 describe('AC-1: the integration Stryker config and its test set', () => {
-  it('AC-1: the integration config mutates exactly its sixteen files, each tracked, the unit mutate set holding those a unit test reaches and none of the others, and runs its own Vitest config', async () => {
+  it('AC-1: the integration config mutates exactly its twenty files, each tracked, the unit mutate set holding those a unit test reaches and none of the others, and runs its own Vitest config', async () => {
     expect(SET).toEqual([...INTEGRATION_FILES].sort())
     const tracked = execFileSync('git', ['ls-files', '--', ...SET], { cwd: REPO, encoding: 'utf8' })
       .split('\n')

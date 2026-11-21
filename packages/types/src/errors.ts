@@ -98,6 +98,10 @@ export class PaymentError extends NymbalError {
       | 'refund_rejected'
       // An outcome the shop cannot know (a timeout, a provider fault): money may have moved.
       | 'refund_unknown'
+      // The provider could not list a payment's refunds: nothing is known about them yet.
+      | 'refund_lookup_failed'
+      // A refund arrived for an order whose capture has not been recorded yet.
+      | 'capture_not_recorded'
       | 'cancel_refused'
       | 'webhook_invalid'
       | 'not_configured',
@@ -114,6 +118,7 @@ export class OrderConflictError extends NymbalError {
     code:
       | 'order.unpaid'
       | 'order.paid'
+      | 'order.refunded'
       | 'order.stock_unavailable'
       | 'order.payment_in_progress'
       | 'refund.not_captured'
@@ -135,11 +140,27 @@ export class CheckoutError extends NymbalError {
       | 'variant_missing'
       | 'out_of_stock'
       | 'reservation_failed'
-      | 'finalize_failed',
+      | 'finalize_failed'
+      | 'total_changed'
+      | 'promotions_unavailable'
+      | 'tax_unavailable'
+      | 'no_shipping'
+      | 'shipping_option_unavailable',
     message: string,
     options: { cause?: unknown; context?: ErrorContext } = {},
   ) {
     super(`checkout.${code}`, message, options)
+  }
+}
+
+/** A code the cart refuses before any engine sees it, or a cart its engine could not be reached for. */
+export class CartPromotionError extends NymbalError {
+  constructor(
+    code: 'cart.code_limit' | 'cart.promotions_unavailable',
+    message: string,
+    options: { cause?: unknown; context?: ErrorContext } = {},
+  ) {
+    super(code, message, options)
   }
 }
 

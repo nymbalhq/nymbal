@@ -1,7 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
-import { existsSync } from 'node:fs'
-import { mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
-import { connect } from 'node:net'
+import { mkdtemp, readFile, realpath, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { extname, join, resolve, sep } from 'node:path'
 import { defineCommand } from 'citty'
@@ -18,7 +16,7 @@ import {
   runWithCorrelation,
   type NymbalApp,
 } from '@nymbalhq/platform'
-import { createHttpServer, type HttpServer } from '@nymbalhq/http'
+import { createHttpServer } from '@nymbalhq/http'
 import {
   buildRedirects,
   currencyRefusal,
@@ -44,9 +42,16 @@ import {
   type WooCommerceCredentials,
 } from '@nymbalhq/importers'
 import { loadProject } from '../utils/project.js'
-import { isPortFree } from '../utils/port.js'
 import { planTemplateLaunch, type TemplateLaunch } from '../utils/template-runner.js'
 import { runShutdown } from '../utils/shutdown.js'
+import {
+  freePortFrom,
+  nextFilesOf,
+  STOP_BOUND_MS,
+  storefrontUp,
+  throwawayStopSteps,
+  type Throwaway,
+} from '../utils/throwaway.js'
 import { getCliVersion } from '../utils/version.js'
 import { defaultStorefrontPort, storefrontEnv } from './dev.js'
 import { resolveMigrations } from './migrate.js'
@@ -75,11 +80,7 @@ const ENTITIES = [
 const DEFAULT_ENTITIES: ImportEntity[] = ['categories', 'products', 'customers', 'orders']
 /** Next.js builds beside the project's own `.next`, so a preview never overwrites the build `nymbal dev` serves. */
 const NEXT_DIST_DIR = '.next-preview'
-/** What `next dev` rewrites for its dist dir; put back as they were when the preview stops. */
-const NEXT_REWRITES = ['next-env.d.ts', 'tsconfig.json', 'tsconfig.dist.json']
-/** Long enough for a dev server's process group to exit and the directory to go. */
-const STOP_BOUND_MS = 15_000
-const STOREFRONT_WAIT_MS = 180_000
+const PORT_HINT = ': pass a free one with --port or --storefront-port'
 const MEDIA_PATH = '/preview-media'
 
 const MIME = new Map([
@@ -131,36 +132,6 @@ function portArg(flag: string, raw: string | undefined): number | undefined {
   return port
 }
 
-/** Whether something accepts connections on `host:port`. */
-function answers(port: number, host: string): Promise<boolean> {
-  return new Promise((done) => {
-    const socket = connect({ port, host })
-    const end = (result: boolean) => {
-      socket.destroy()
-      done(result)
-    }
-    socket.setTimeout(500, () => end(false))
-    socket.once('connect', () => end(true))
-    socket.once('error', () => end(false))
-  })
-}
-
-/**
- * The first port from `preferred` up that is free and not `taken`. A bind probe alone can succeed beside a server
- * holding the port on one loopback address (BSD's SO_REUSEADDR), so a port anything answers on is busy too.
- */
-async function freePortFrom(preferred: number, taken: number[] = []): Promise<number> {
-  for (let candidate = preferred; candidate <= Math.min(preferred + 19, 65535); candidate++) {
-    if (taken.includes(candidate)) continue
-    if (!(await isPortFree(candidate))) continue
-    if ((await answers(candidate, '127.0.0.1')) || (await answers(candidate, '::1'))) continue
-    return candidate
-  }
-  throw new PreviewError(
-    `No free port from ${preferred} to ${preferred + 19}: pass a free one with --port or --storefront-port`,
-  )
-}
-
 /** `GET /preview-media/*`: the images the import downloaded into the preview's directory, and nothing outside it. */
 function mediaRoute(root: string) {
   let base: Promise<string> | null = null
@@ -205,37 +176,6 @@ async function servedProducts(apiUrl: string): Promise<Array<ServedProduct & { s
     cursor = page.nextCursor
   } while (cursor !== null)
   return all
-}
-
-/**
- * Answers once the storefront answers anything, or throws when it cannot start, exits or never answers. Called as soon
- * as the child is spawned, so its `error` event (a launcher that cannot be run) has a listener.
- */
-async function storefrontUp(url: string, child: ChildProcess): Promise<void> {
-  const launch: { error?: Error } = {}
-  child.once('error', (err) => {
-    launch.error = err
-  })
-  const deadline = Date.now() + STOREFRONT_WAIT_MS
-  while (Date.now() < deadline) {
-    if (launch.error !== undefined) {
-      throw new PreviewError(`The storefront dev server could not start: ${launch.error.message}`)
-    }
-    if (child.exitCode !== null || child.signalCode !== null) {
-      throw new PreviewError(
-        `The storefront dev server exited (${child.exitCode ?? child.signalCode}) before it answered`,
-      )
-    }
-    try {
-      await fetch(url, { signal: AbortSignal.timeout(30_000) })
-      return
-    } catch {
-      await new Promise((r) => setTimeout(r, 500))
-    }
-  }
-  throw new PreviewError(
-    `The storefront at ${url} did not answer within ${STOREFRONT_WAIT_MS / 1000} s`,
-  )
 }
 
 interface Collected {
@@ -477,36 +417,9 @@ async function checkSource(credentials: WooCommerceCredentials, currency: string
 }
 
 /** What the preview has started, in the order it stops them. */
-interface Running {
-  dir?: string
-  app?: NymbalApp
-  http?: HttpServer
-  storefront?: ChildProcess
-  /** The production build under --lighthouse, while it runs. */
-  build?: ChildProcess
+interface Running extends Throwaway {
   /** The Lighthouse run under way. */
   lighthouse?: ChildProcess | null
-  /** The project files `next dev` rewrites, as they were: null for one that did not exist. */
-  nextFiles?: Map<string, Buffer | null>
-  nextDistDir?: string
-}
-
-async function stopStorefront(child: ChildProcess): Promise<void> {
-  if (child.exitCode !== null || child.signalCode !== null || child.pid === undefined) return
-  const exited = new Promise<void>((done) => child.once('exit', () => done()))
-  // Its own process group: the framework's workers go with it.
-  const signal = (s: NodeJS.Signals) => {
-    try {
-      process.kill(-child.pid!, s)
-    } catch {
-      // the group is gone
-    }
-  }
-  signal('SIGTERM')
-  const timer = setTimeout(() => signal('SIGKILL'), 5000)
-  await exited
-  clearTimeout(timer)
-  signal('SIGKILL')
 }
 
 async function runPreview(args: PreviewArgs): Promise<void> {
@@ -523,46 +436,7 @@ async function runPreview(args: PreviewArgs): Promise<void> {
             if (running.lighthouse) await stopLighthouse(running.lighthouse)
           },
         },
-        {
-          name: 'build.stop',
-          run: async () => {
-            if (running.build !== undefined) await stopStorefront(running.build)
-          },
-        },
-        {
-          name: 'storefront.stop',
-          run: async () => {
-            if (running.storefront !== undefined) await stopStorefront(running.storefront)
-          },
-        },
-        { name: 'http.stop', run: async () => running.http?.stop() },
-        { name: 'app.stop', run: async () => running.app?.stop() },
-        {
-          name: 'storefront.files',
-          run: async () => {
-            if (running.nextFiles === undefined) return
-            for (const [path, bytes] of running.nextFiles) {
-              const now = existsSync(path) ? await readFile(path) : null
-              if (bytes === null) await rm(path, { force: true })
-              else if (now === null || !now.equals(bytes)) await writeFile(path, bytes)
-            }
-          },
-        },
-        {
-          name: 'dir.remove',
-          run: async () => {
-            if (running.nextDistDir !== undefined) {
-              await rm(running.nextDistDir, {
-                recursive: true,
-                force: true,
-                maxRetries: 3,
-              })
-            }
-            if (running.dir !== undefined && !args.keep) {
-              await rm(running.dir, { recursive: true, force: true, maxRetries: 3 })
-            }
-          },
-        },
+        ...throwawayStopSteps(running, { keepDir: args.keep }),
       ],
       { boundMs: STOP_BOUND_MS, logger: quiet, exit: (c) => process.exit(code === 1 ? 1 : c) },
     )
@@ -579,13 +453,13 @@ async function runPreview(args: PreviewArgs): Promise<void> {
       : null
 
     // ── 1. Ports, and 2. the storefront's launch, before anything is read ─────────────────────────────────────────
-    const apiPort = await freePortFrom(portArg('--port', args.port) ?? config.http.port)
+    const apiPort = await freePortFrom(portArg('--port', args.port) ?? config.http.port, [], PORT_HINT)
     let storefrontPort: number | null = null
     let launch: TemplateLaunch | null = null
     if (!args.apiOnly) {
       const preferred =
         portArg('--storefront-port', args.storefrontPort) ?? defaultStorefrontPort(config.template)
-      storefrontPort = await freePortFrom(preferred, [apiPort])
+      storefrontPort = await freePortFrom(preferred, [apiPort], PORT_HINT)
       if (lighthouse === null)
         launch = planTemplateLaunch(projectRoot, config.template, storefrontPort)
     }
@@ -711,12 +585,7 @@ async function runPreview(args: PreviewArgs): Promise<void> {
     if (launch !== null && storefrontPort !== null && storefrontUrl !== null) {
       const env = storefrontEnv(preview, apiUrl, storefrontPort)
       if (config.template === 'nextjs') {
-        const files = new Map<string, Buffer | null>()
-        for (const name of NEXT_REWRITES) {
-          const path = join(projectRoot, name)
-          files.set(path, existsSync(path) ? await readFile(path) : null)
-        }
-        running.nextFiles = files
+        running.nextFiles = await nextFilesOf(projectRoot)
         running.nextDistDir = join(projectRoot, NEXT_DIST_DIR)
         env['NYMBAL_NEXT_DIST_DIR'] = NEXT_DIST_DIR
       }
@@ -739,12 +608,7 @@ async function runPreview(args: PreviewArgs): Promise<void> {
         PORT: String(storefrontPort),
       }
       if (storefront.template === 'nextjs' && storefront.bin !== null) {
-        const files = new Map<string, Buffer | null>()
-        for (const name of NEXT_REWRITES) {
-          const path = join(storefront.cwd, name)
-          files.set(path, existsSync(path) ? await readFile(path) : null)
-        }
-        running.nextFiles = files
+        running.nextFiles = await nextFilesOf(storefront.cwd)
         running.nextDistDir = join(storefront.cwd, NEXT_DIST_DIR)
         env['NYMBAL_NEXT_DIST_DIR'] = NEXT_DIST_DIR
       }

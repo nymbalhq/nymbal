@@ -693,6 +693,18 @@ describe("AC-7: what won't migrate", () => {
     expect(plan.counts.customers.import).toBe(fixtureStore().customers.length)
   })
 
+  it('AC-16: customer passwords keeps its count, and its why names --password-hashes rather than telling the merchant every customer must reset', async () => {
+    const plan = await planOf(
+      withProbes(),
+      planOptions({ entities: ['categories', 'products', 'customers', 'orders'] }),
+    )
+    const passwords = plan.wontMigrate.find((w) => w.item === 'customer passwords')
+
+    expect(passwords?.count).toBe(plan.counts.customers.import)
+    expect(passwords?.why).toMatch(/--password-hashes/)
+    expect(passwords?.why).not.toMatch(/does not export password hashes|reset theirs|must reset/i)
+  })
+
   it('AC-7: a probe answering 401, 404 or a body of the wrong shape counts null and the plan still completes', async () => {
     const opts = planOptions({ entities: ['categories', 'products'] })
     const answered = await planOf(withProbes(), opts)

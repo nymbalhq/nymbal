@@ -19,6 +19,8 @@ import {
   type PaymentIntentParams,
   type PaymentsAdapter,
   type PaymentStatus,
+  type PromotionsAdapter,
+  type TaxQuote,
 } from '@nymbalhq/types'
 import { InMemoryDocumentStore } from '../document-store/in-memory.js'
 import { InProcessEventBus } from '../event-bus/in-process.js'
@@ -32,12 +34,23 @@ import { createInventoryService } from './inventory-service.js'
 import { createOrderService } from './order-service.js'
 import { createCartService } from './cart-service.js'
 import { createCheckoutService } from './checkout-service.js'
+import type { TaxAnswer, TaxQuoter, TaxRequest } from './tax-quote.js'
+import type { ShippingRate } from './shipping-quote.js'
 import { createNativeStubPaymentsAdapter } from '../adapters/payments/native-stub.js'
 import { createLogger } from '../logger.js'
+import { scriptedEngine, type EngineAnswer, type ScriptedEngine } from '../tests/promotions.js'
 import { formatMoney } from '../money.js'
 import { v7 as uuidv7 } from 'uuid'
 
-async function setup() {
+interface SetupOptions {
+  promotions?: PromotionsAdapter
+  onUnavailable?: 'proceed' | 'refuse'
+  tax?: TaxQuoter
+  pricesIncludeTax?: boolean
+  shippingRates?: readonly ShippingRate[]
+}
+
+async function setup(options: SetupOptions = {}) {
   const commandStore = createCommandStore(
     // @ts-expect-error — minimal config
     { infrastructure: { commandStore: 'sqlite' }, store: { name: 'test', currency: 'GBP' } },
@@ -50,10 +63,10 @@ async function setup() {
   const logger = createLogger({ pretty: false, level: 'error' })
   const eventBus = new InProcessEventBus({ logger })
   const repos = buildRepositories(commandStore, documentStore)
-  const publisher = wirePublisher(
+  const { publisher, relay } = wirePublisher(
     { createEventPublisher, createRelay },
     { store: commandStore, eventLog: repos.eventLog, eventBus, logger },
-  ).publisher
+  )
   const payments = createNativeStubPaymentsAdapter({ logger })
   const product = createProductService({
     store: commandStore,
@@ -81,6 +94,7 @@ async function setup() {
     catalogue: {
       sellable: async (_tx: ReadTx, variantIds: readonly string[]) => new Set(variantIds),
     },
+    ...(options.promotions && { promotions: options.promotions }),
   })
   const checkout = createCheckoutService({
     store: commandStore,
@@ -92,6 +106,11 @@ async function setup() {
     inventory,
     payments,
     currency: 'GBP',
+    ...(options.promotions && { promotions: options.promotions }),
+    ...(options.onUnavailable && { promotionsOnUnavailable: options.onUnavailable }),
+    ...(options.tax && { tax: options.tax }),
+    ...(options.pricesIncludeTax !== undefined && { pricesIncludeTax: options.pricesIncludeTax }),
+    ...(options.shippingRates !== undefined && { shippingRates: options.shippingRates }),
   })
   return {
     commandStore,
@@ -104,6 +123,7 @@ async function setup() {
     payments,
     publisher,
     repos,
+    relay,
   }
 }
 
@@ -188,6 +208,7 @@ describe('CheckoutService', () => {
     expect(cleared?.items).toHaveLength(0)
 
     // Order placed + events emitted in order
+    await env.relay.drain()
     expect(events).toContain(EVT_ORDER_PLACED)
     expect(events).toContain(EVT_ORDER_PAID)
     expect(events).toContain(EVT_PAYMENT_CAPTURED)
@@ -2021,6 +2042,153 @@ describe('CheckoutService.beginCheckout: payment outcomes, resubmits, changed ca
     })
     await env.commandStore.close()
   })
+
+  describe('discount codes', () => {
+    const LINE: Line = { priceMinor: 2500, stock: 5, qty: 2 }
+
+    const takes =
+      (amountMinor: number): EngineAnswer =>
+      (session) => ({
+        effects: session.codes.flatMap((code) => [
+          { kind: 'code_accepted' as const, code },
+          { kind: 'order' as const, amountMinor, label: code, code },
+        ]),
+      })
+
+    async function codedCart(engine: ScriptedEngine, options: SetupOptions = {}, codes = ['SAVE']) {
+      const env = await setup({ promotions: engine.adapter, ...options })
+      const { token, variants } = await cartWith(env, [LINE])
+      for (const code of codes) await env.cart.addCode(token, code)
+      return { env, token, variant: variants[0]! }
+    }
+
+    const place = (env: Env, cartToken: string, expectedTotalMinor?: number) =>
+      env.checkout.beginCheckout({
+        cartToken,
+        email: 'shopper+stub-pending@example.com',
+        billingAddress: makeAddr(),
+        shippingAddress: makeAddr(),
+        ...(expectedTotalMinor !== undefined && { expectedTotalMinor }),
+      })
+
+    const orderCount = (env: Env) =>
+      env.commandStore.read(async (tx) => (await env.repos.order.list(tx, { limit: 100 })).length)
+
+    it('the order’s columns, lines, record and intent come from the quote the reservation returned', async () => {
+      const engine = scriptedEngine({ providerName: 'engine-a' })
+      engine.answer(takes(500))
+      const { env, token, variant } = await codedCart(engine)
+      const placed = await place(env, token)
+      const order = await orderOf(env, placed.orderId)
+      expect(order).toMatchObject({
+        subtotalMinor: 5000,
+        discountTotalMinor: 500,
+        taxTotalMinor: 0,
+        shippingTotalMinor: 0,
+        totalMinor: 4500,
+      })
+      expect(order.lineItems).toMatchObject([
+        { variantId: variant.id, sku: variant.sku, lineDiscountMinor: 500 },
+      ])
+      expect((order.metadata as { promotions?: unknown }).promotions).toEqual({
+        provider: 'engine-a',
+        sessionId: token,
+        codes: ['SAVE'],
+        effects: [{ kind: 'order', amountMinor: 500, label: 'SAVE', code: 'SAVE' }],
+      })
+      expect(engine.calls.slice(-2).map((c) => c.opts)).toEqual([
+        { dry: true },
+        { orderId: placed.orderId },
+      ])
+    })
+
+    it('expectedTotalMinor equal to the total places; any other refuses before an order or a reservation exists', async () => {
+      const engine = scriptedEngine()
+      engine.answer(takes(500))
+      const { env, token, variant } = await codedCart(engine)
+      await expect(place(env, token, 4501)).rejects.toMatchObject({
+        code: 'checkout.total_changed',
+        context: { quoted: 4501, due: 4500 },
+      })
+      expect(engine.calls.at(-1)?.opts).toEqual({ dry: true })
+      expect(await orderCount(env)).toBe(0)
+      expect(await stockOf(env, variant.id)).toBe(5)
+      const placed = await place(env, token, 4500)
+      expect((await orderOf(env, placed.orderId)).totalMinor).toBe(4500)
+    })
+
+    it('a total that moves between the dry quote and the reservation refuses and undoes the reservation', async () => {
+      const engine = scriptedEngine()
+      engine.answer(takes(500))
+      const { env, token, variant } = await codedCart(engine)
+      engine.answer((session, opts) =>
+        takes(opts?.orderId === undefined ? 500 : 100)(session, opts),
+      )
+      await expect(place(env, token, 4500)).rejects.toMatchObject({
+        code: 'checkout.total_changed',
+        context: { quoted: 4500, due: 4900 },
+      })
+      expect(await orderCount(env)).toBe(0)
+      expect(await stockOf(env, variant.id)).toBe(5)
+    })
+
+    it('with the same quote the pending order is reused, and at a changed quote it is replaced', async () => {
+      const engine = scriptedEngine()
+      engine.answer(takes(500))
+      const { env, token } = await codedCart(engine)
+      const first = await place(env, token)
+      const again = await place(env, token)
+      expect(again.orderId).toBe(first.orderId)
+      engine.answer(takes(700))
+      await env.cart.updateItemQuantity(token, (await env.cart.get(token))!.items[0]!.variantId, 2)
+      const moved = await place(env, token)
+      expect(moved.orderId).not.toBe(first.orderId)
+      expect((await orderOf(env, moved.orderId)).totalMinor).toBe(4300)
+      expect((await orderOf(env, first.orderId)).status).toBe('cancelled')
+    })
+
+    it('a code that would zero the order is placed at full price with no record of it', async () => {
+      const engine = scriptedEngine()
+      engine.answer(takes(5000))
+      const { env, token } = await codedCart(engine)
+      const placed = await place(env, token)
+      const order = await orderOf(env, placed.orderId)
+      expect(order).toMatchObject({ discountTotalMinor: 0, totalMinor: 5000 })
+      expect(order.metadata).not.toHaveProperty('promotions')
+    })
+
+    it('an engine outage refuses a coded cart: no order, no stock moved', async () => {
+      const engine = scriptedEngine()
+      const { env, token, variant } = await codedCart(engine)
+      engine.fail()
+      await expect(place(env, token)).rejects.toMatchObject({
+        code: 'checkout.promotions_unavailable',
+      })
+      expect(await orderCount(env)).toBe(0)
+      expect(await stockOf(env, variant.id)).toBe(5)
+    })
+
+    const downWithNoCode = async (setting: 'proceed' | 'refuse') => {
+      const engine = scriptedEngine({ capabilities: ['codes', 'automatic'] })
+      const coded = await codedCart(engine, { onUnavailable: setting }, [])
+      engine.fail()
+      return coded
+    }
+
+    it('an outage on a cart with no code places at full price when the store proceeds', async () => {
+      const { env, token } = await downWithNoCode('proceed')
+      const placed = await place(env, token)
+      expect((await orderOf(env, placed.orderId)).totalMinor).toBe(5000)
+    })
+
+    it('an outage on a cart with no code refuses when the store refuses, and no order exists', async () => {
+      const { env, token } = await downWithNoCode('refuse')
+      await expect(place(env, token)).rejects.toMatchObject({
+        code: 'checkout.promotions_unavailable',
+      })
+      expect(await orderCount(env)).toBe(0)
+    })
+  })
 })
 
 function makeAddr() {
@@ -2569,6 +2737,789 @@ describe('CheckoutService: mark-paid, the duplicate-capture backstop and the can
     expect((await historyOf(env, o.started.orderId)).at(-1)!.note).toBe(
       'captured payment not applied: order_not_pending: processing',
     )
+    await env.commandStore.close()
+  })
+})
+
+// The checkout's side of a tax engine, with a quoter scripted here: what it asks for, when it refuses a charge the
+// caller was not shown, when it asks again, and what the order keeps of the answer. The quoter's own outage rules are
+// tax-quote.test.ts's; the HTTP wiring is the integration suites'.
+describe('CheckoutService: tax at checkout', () => {
+  type Env = Awaited<ReturnType<typeof setup>>
+  interface TaxLine {
+    priceMinor: number
+    qty: number
+    variantCode?: string
+    productCode?: string
+  }
+  interface Scripted {
+    /** Tax per line as a percent of its amount, rounded down; may differ per call. */
+    percent: (request: TaxRequest, call: number) => number
+    provider?: string
+    fallback?: boolean
+    inclusive?: boolean
+  }
+
+  /** A quoter answering `script`, recording each request and answer. */
+  function scriptedQuoter(script: Scripted) {
+    const requests: TaxRequest[] = []
+    const answers: TaxAnswer[] = []
+    const quoter: TaxQuoter = {
+      async quote(request) {
+        requests.push(structuredClone(request))
+        const percent = script.percent(request, requests.length)
+        const lines = request.lines.map((line) => ({
+          id: line.id,
+          taxableMinor: line.amountMinor,
+          taxMinor: Math.floor((line.amountMinor * percent) / 100),
+        }))
+        const quote: TaxQuote = {
+          provider: script.provider ?? 'scripted-tax',
+          inclusive: script.inclusive ?? false,
+          lines,
+          shippingTaxMinor: 0,
+          totalTaxMinor: lines.reduce((sum, l) => sum + l.taxMinor, 0),
+        }
+        const answer = { quote, fallback: script.fallback ?? false }
+        answers.push(structuredClone(answer))
+        return answer
+      },
+    }
+    return { quoter, requests, answers }
+  }
+
+  /** A product and variant per line, with the tax codes asked for, and a cart holding them. */
+  async function taxCart(env: Env, lines: TaxLine[]) {
+    const now = new Date()
+    const made = await env.commandStore.transaction(async (tx) => {
+      const out = []
+      for (const [i, line] of lines.entries()) {
+        const tag = uuidv7()
+        const productId = uuidv7()
+        const variantId = uuidv7()
+        await env.repos.product.insert(tx, {
+          id: productId,
+          slug: `tax-${tag}`,
+          name: `Tax ${i}`,
+          status: 'active',
+          taxCode: line.productCode ?? null,
+          createdAt: now,
+          updatedAt: now,
+        })
+        await env.repos.variant.insert(tx, {
+          id: variantId,
+          productId,
+          sku: `TAX-${tag}`,
+          name: `V${i}`,
+          priceMinor: line.priceMinor,
+          stock: 10,
+          options: [],
+          taxCode: line.variantCode ?? null,
+          createdAt: now,
+          updatedAt: now,
+        })
+        out.push({ productId, variantId, sku: `TAX-${tag}` })
+      }
+      return out
+    })
+    const cart = await env.cart.getOrCreate()
+    for (const [i, m] of made.entries()) {
+      await env.cart.addItem(cart.token, {
+        variantId: m.variantId,
+        productId: m.productId,
+        productName: `Tax ${i}`,
+        variantName: `V${i}`,
+        priceMinor: lines[i]!.priceMinor,
+        imageUrl: '',
+        qty: lines[i]!.qty,
+      })
+    }
+    return { token: cart.token, made }
+  }
+
+  const begin = (
+    env: Env,
+    cartToken: string,
+    opts: { expectedTotalMinor?: number; customerId?: string } = {},
+  ) =>
+    env.checkout.beginCheckout({
+      cartToken,
+      email: 'shopper+stub-pending@example.com',
+      billingAddress: makeAddr(),
+      shippingAddress: makeAddr(),
+      ...opts,
+    })
+
+  const orderOf = async (env: Env, orderId: string) =>
+    (await env.commandStore.read((tx) => env.repos.order.findById(tx, orderId)))!
+  const orderCount = (env: Env) =>
+    env.commandStore.read(async (tx) => (await env.repos.order.list(tx, { limit: 100 })).length)
+  const stockOf = async (env: Env, variantId: string) =>
+    (await env.commandStore.read((tx) => env.repos.variant.findById(tx, variantId)))!.stock
+  const notesOf = async (env: Env, orderId: string) =>
+    (await env.commandStore.read((tx) => env.repos.orderHistory.listByOrder(tx, orderId))).map(
+      (h) => h.note ?? '',
+    )
+
+  const LINES: TaxLine[] = [
+    { priceMinor: 2500, qty: 2 },
+    { priceMinor: 999, qty: 1 },
+  ]
+  // 10 % rounded down on each line: 500 + 99.
+  const TAX = 599
+  const SUBTOTAL = 5999
+
+  // Kills: tax added on top of a total the caller never saw; a refusal that still reserves stock or writes an order.
+  it('on an exclusive store, tax refuses a caller that sent no total or the untaxed one, writing nothing; the taxed total places', async () => {
+    const tax = scriptedQuoter({ percent: () => 10 })
+    const env = await setup({ tax: tax.quoter })
+    const { token, made } = await taxCart(env, LINES)
+
+    await expect(begin(env, token)).rejects.toMatchObject({
+      code: 'checkout.total_changed',
+      context: { quoted: null, due: SUBTOTAL + TAX },
+    })
+    await expect(begin(env, token, { expectedTotalMinor: SUBTOTAL })).rejects.toMatchObject({
+      code: 'checkout.total_changed',
+      context: { quoted: SUBTOTAL, due: SUBTOTAL + TAX },
+    })
+    expect(await orderCount(env)).toBe(0)
+    expect(await stockOf(env, made[0]!.variantId)).toBe(10)
+
+    const placed = await begin(env, token, { expectedTotalMinor: SUBTOTAL + TAX })
+
+    const order = await orderOf(env, placed.orderId)
+    expect(order).toMatchObject({ taxTotalMinor: TAX, totalMinor: SUBTOTAL + TAX })
+    expect(placed.totalMinor).toBe(SUBTOTAL + TAX)
+    await env.commandStore.close()
+  })
+
+  // Kills: an inclusive store's tax, or a zero tax, refused as if it had been added on top.
+  it('with no total sent, an inclusive store’s tax and an exclusive store’s zero tax place without refusal', async () => {
+    const within = scriptedQuoter({ percent: () => 10, inclusive: true })
+    const inclusive = await setup({ tax: within.quoter, pricesIncludeTax: true })
+    const a = await taxCart(inclusive, LINES)
+    const placedWithin = await begin(inclusive, a.token)
+    expect(await orderOf(inclusive, placedWithin.orderId)).toMatchObject({
+      taxTotalMinor: TAX,
+      totalMinor: SUBTOTAL,
+      pricesIncludeTax: true,
+    })
+
+    const none = scriptedQuoter({ percent: () => 0 })
+    const exclusive = await setup({ tax: none.quoter })
+    const b = await taxCart(exclusive, LINES)
+    const placedNone = await begin(exclusive, b.token)
+    expect(await orderOf(exclusive, placedNone.orderId)).toMatchObject({
+      taxTotalMinor: 0,
+      totalMinor: SUBTOTAL,
+    })
+    await inclusive.commandStore.close()
+    await exclusive.commandStore.close()
+  })
+
+  // Kills: an order line taxed other than the quote said; a quote reshaped, kept when it says nothing, or lost when it
+  // came from a provider or the fallback.
+  it('each order line’s tax is the quote’s; metadata.tax is kept except for a native zero quote, and a fallback is marked and noted', async () => {
+    const cases: Array<{ percent: number; provider?: string; fallback?: boolean; kept: boolean }> =
+      [
+        { percent: 10, kept: true },
+        { percent: 0, provider: 'native', kept: false },
+        { percent: 0, provider: 'acme-tax', kept: true },
+        { percent: 0, provider: 'native', fallback: true, kept: true },
+        { percent: 10, provider: 'native', fallback: true, kept: true },
+      ]
+    for (const c of cases) {
+      const what = JSON.stringify(c)
+      const tax = scriptedQuoter({ ...c, percent: () => c.percent })
+      const env = await setup({ tax: tax.quoter })
+      const { token } = await taxCart(env, LINES)
+
+      const placed = await begin(env, token, {
+        expectedTotalMinor: SUBTOTAL + (c.percent === 10 ? TAX : 0),
+      })
+
+      const { quote } = tax.answers.at(-1)!
+      const order = await orderOf(env, placed.orderId)
+      const byLine = new Map(quote.lines.map((l) => [l.id, l.taxMinor]))
+      expect(
+        order.lineItems.map((l) => l.lineTaxMinor),
+        what,
+      ).toEqual(order.lineItems.map((l) => byLine.get(l.variantId)))
+      expect(
+        order.lineItems.map((l) => l.lineTaxMinor),
+        what,
+      ).toEqual(c.percent === 10 ? [500, 99] : [0, 0])
+      expect(order.taxTotalMinor, what).toBe(quote.totalTaxMinor)
+      const kept = (order.metadata as { tax?: object }).tax
+      const expected = !c.kept
+        ? undefined
+        : c.fallback === true
+          ? { ...quote, fallback: true }
+          : quote
+      expect(kept, what).toEqual(expected)
+      expect(kept !== undefined && 'fallback' in kept, what).toBe(c.fallback === true)
+      const fallbackNotes = (await notesOf(env, order.id)).filter((n) =>
+        n.startsWith('tax.fallback: the tax engine was unavailable'),
+      )
+      expect(fallbackNotes.length, what).toBe(c.fallback === true ? 1 : 0)
+      await env.commandStore.close()
+    }
+  })
+
+  // Kills: an engine handed the gross amount, another cart's token, a shipping charge it was not given, or the product's
+  // code over the variant's own; and a second quote asked when nothing moved.
+  it('asks once, for each line’s id, sku, amount and quantity with the variant’s tax code, else the product’s, else none, the cart’s currency and token, the shipping address and no shipping', async () => {
+    const tax = scriptedQuoter({ percent: () => 0 })
+    const env = await setup({ tax: tax.quoter })
+    const lines: TaxLine[] = [
+      { priceMinor: 1000, qty: 1, variantCode: 'food', productCode: 'books' },
+      { priceMinor: 1100, qty: 2, productCode: 'books' },
+      { priceMinor: 1200, qty: 3 },
+      { priceMinor: 1300, qty: 1, variantCode: 'clothing' },
+    ]
+    const { token, made } = await taxCart(env, lines)
+
+    await begin(env, token)
+
+    expect(tax.requests).toEqual([
+      {
+        currency: 'GBP',
+        shipTo: makeAddr(),
+        customer: { id: null },
+        lines: [
+          { id: made[0]!.variantId, sku: made[0]!.sku, taxCode: 'food', amountMinor: 1000, qty: 1 },
+          {
+            id: made[1]!.variantId,
+            sku: made[1]!.sku,
+            taxCode: 'books',
+            amountMinor: 2200,
+            qty: 2,
+          },
+          { id: made[2]!.variantId, sku: made[2]!.sku, amountMinor: 3600, qty: 3 },
+          {
+            id: made[3]!.variantId,
+            sku: made[3]!.sku,
+            taxCode: 'clothing',
+            amountMinor: 1300,
+            qty: 1,
+          },
+        ],
+        shipping: null,
+        reference: token,
+      },
+    ])
+    expect(Object.hasOwn(tax.requests[0]!.lines[2]!, 'taxCode')).toBe(false)
+    await env.commandStore.close()
+  })
+
+  // Kills: an exemption passed on from a malformed metadata value, or a customer sent as a guest.
+  it('sends the customer’s id, with an exemption exactly when metadata.taxExemption is { kind: string, certificateId?: string }', async () => {
+    const cases: Array<{ metadata: Record<string, unknown>; exemption?: unknown }> = [
+      {
+        metadata: { taxExemption: { kind: 'resale', certificateId: 'CERT-1' } },
+        exemption: { kind: 'resale', certificateId: 'CERT-1' },
+      },
+      { metadata: { taxExemption: { kind: 'nonprofit' } }, exemption: { kind: 'nonprofit' } },
+      { metadata: {} },
+      { metadata: { taxExemption: 'resale' } },
+      { metadata: { taxExemption: null } },
+      { metadata: { taxExemption: { kind: 5 } } },
+      { metadata: { taxExemption: { certificateId: 'CERT-2' } } },
+      { metadata: { taxExemption: { kind: 'resale', certificateId: 7 } } },
+    ]
+    const tax = scriptedQuoter({ percent: () => 0 })
+    const env = await setup({ tax: tax.quoter })
+    for (const c of cases) {
+      const customerId = uuidv7()
+      const now = new Date()
+      await env.commandStore.transaction((tx) =>
+        env.repos.customer.insert(tx, {
+          id: customerId,
+          email: `${customerId}@example.com`,
+          passwordHash: 'x',
+          metadata: c.metadata,
+          createdAt: now,
+          updatedAt: now,
+        }),
+      )
+      const { token } = await taxCart(env, [{ priceMinor: 1500, qty: 1 }])
+      const from = tax.requests.length
+
+      await begin(env, token, { customerId })
+
+      expect(
+        tax.requests.slice(from).map((r) => r.customer),
+        JSON.stringify(c.metadata),
+      ).toEqual([
+        c.exemption === undefined ? { id: customerId } : { id: customerId, exemption: c.exemption },
+      ])
+    }
+    await env.commandStore.close()
+  })
+
+  // Kills: the dry quote's tax kept after the reservation's evaluation moved the discounted amounts, or a second quote
+  // asked when they did not move.
+  it('asks again at the reservation only when its discount moved the amounts, and the order takes the second answer', async () => {
+    const takes =
+      (amountMinor: number): EngineAnswer =>
+      (session) => ({
+        effects: session.codes.flatMap((code) => [
+          { kind: 'code_accepted' as const, code },
+          { kind: 'order' as const, amountMinor, label: code, code },
+        ]),
+      })
+    for (const moved of [false, true]) {
+      const engine = scriptedEngine()
+      engine.answer(takes(500))
+      // 10 % on the first quote, 20 % on any after, so the order shows which answer it took.
+      const tax = scriptedQuoter({ percent: (_r, call) => (call === 1 ? 10 : 20), inclusive: true })
+      const env = await setup({
+        promotions: engine.adapter,
+        tax: tax.quoter,
+        pricesIncludeTax: true,
+      })
+      const { token, made } = await taxCart(env, [{ priceMinor: 2500, qty: 2 }])
+      await env.cart.addCode(token, 'SAVE')
+      engine.answer((session, opts) =>
+        takes(moved && opts?.orderId !== undefined ? 100 : 500)(session, opts),
+      )
+
+      const placed = await begin(env, token)
+
+      const order = await orderOf(env, placed.orderId)
+      expect(
+        tax.requests.map((r) => r.lines.map((l) => l.amountMinor)),
+        `moved ${moved}`,
+      ).toEqual(moved ? [[4500], [4900]] : [[4500]])
+      expect(
+        order.lineItems.map((l) => l.lineTaxMinor),
+        `moved ${moved}`,
+      ).toEqual([moved ? 980 : 450])
+      expect(order.lineItems[0]!.variantId).toBe(made[0]!.variantId)
+      expect(order.taxTotalMinor).toBe(tax.answers.at(-1)!.quote.totalTaxMinor)
+      await env.commandStore.close()
+    }
+  })
+
+  // Kills: a cart line whose variant is gone sent to the engine with no SKU.
+  it('a cart line whose variant no longer exists refuses with checkout.variant_missing before the engine is asked', async () => {
+    const tax = scriptedQuoter({ percent: () => 0 })
+    const env = await setup({ tax: tax.quoter })
+    const cart = await env.cart.getOrCreate()
+    await env.cart.addItem(cart.token, {
+      variantId: uuidv7(),
+      productId: uuidv7(),
+      productName: 'Gone',
+      variantName: 'Gone',
+      priceMinor: 1000,
+      imageUrl: '',
+      qty: 1,
+    })
+
+    await expect(begin(env, cart.token)).rejects.toMatchObject({
+      code: 'checkout.variant_missing',
+    })
+    expect(tax.requests).toEqual([])
+    expect(await orderCount(env)).toBe(0)
+    await env.commandStore.close()
+  })
+})
+
+// The checkout priced for a delivery: `quote`, the option chosen at place, the shipping charge a caller must have seen,
+// the order's delivery record and the shipping the tax engine is asked about. The integration suites reach these through
+// the routes; Stryker mutates this file against the unit project only.
+describe('CheckoutService: shipping at checkout', () => {
+  type Env = Awaited<ReturnType<typeof setup>>
+
+  const RATES: ShippingRate[] = [
+    {
+      id: 'standard-gb',
+      name: 'Standard',
+      countries: ['GB'],
+      amountMinor: 495,
+      freeOverMinor: 5000,
+      estimatedDays: 3,
+    },
+    { id: 'express-gb', name: 'Express', countries: ['GB'], amountMinor: 995, estimatedDays: 1 },
+    { id: 'world', name: 'International', amountMinor: 1500 },
+  ]
+  // No row for the rest of the world: an address outside GB is not delivered to.
+  const GB_ONLY = RATES.slice(0, 2)
+  const STANDARD = { id: 'standard-gb', name: 'Standard', amountMinor: 495, estimatedDays: 3 }
+  const EXPRESS = { id: 'express-gb', name: 'Express', amountMinor: 995, estimatedDays: 1 }
+
+  interface Discounts {
+    orderMinor: number
+    shippingMinor: number
+  }
+
+  /** An engine taking, for each accepted code, the order and shipping discounts `now` holds at the call. */
+  function discountEngine(now: Discounts) {
+    const engine = scriptedEngine()
+    engine.answer((session) => ({
+      effects: session.codes.flatMap((code) => [
+        { kind: 'code_accepted' as const, code },
+        ...(now.orderMinor > 0
+          ? [{ kind: 'order' as const, amountMinor: now.orderMinor, label: code, code }]
+          : []),
+        ...(now.shippingMinor > 0
+          ? [{ kind: 'shipping' as const, amountMinor: now.shippingMinor, label: code, code }]
+          : []),
+      ]),
+    }))
+    return engine
+  }
+
+  /** Exclusive tax: a tenth of each line and a fifth of the shipping, rounded down; every request and answer kept. */
+  function shippingTaxQuoter() {
+    const requests: TaxRequest[] = []
+    const answers: TaxAnswer[] = []
+    const quoter: TaxQuoter = {
+      async quote(request) {
+        requests.push(structuredClone(request))
+        const lines = request.lines.map((line) => ({
+          id: line.id,
+          taxableMinor: line.amountMinor,
+          taxMinor: Math.floor(line.amountMinor / 10),
+        }))
+        const shippingTaxMinor = Math.floor((request.shipping?.amountMinor ?? 0) / 5)
+        const quote: TaxQuote = {
+          provider: 'scripted-tax',
+          inclusive: false,
+          lines,
+          shippingTaxMinor,
+          totalTaxMinor: lines.reduce((sum, l) => sum + l.taxMinor, shippingTaxMinor),
+        }
+        const answer = { quote, fallback: false }
+        answers.push(structuredClone(answer))
+        return answer
+      },
+    }
+    return { quoter, requests, answers }
+  }
+
+  /** One line of `qty` at `priceMinor` from a variant holding 10, with the codes added. */
+  async function cartOf(
+    env: Env,
+    priceMinor: number,
+    qty: number,
+    opts: { codes?: string[]; customerId?: string } = {},
+  ) {
+    const tag = uuidv7()
+    const product = await env.product.create({
+      slug: `ship-${tag}`,
+      name: 'Parcel',
+      status: 'active',
+      variants: [
+        {
+          sku: `SHIP-${tag}`,
+          name: 'Default',
+          priceMinor,
+          stock: 10,
+          lowStockThreshold: 1,
+          options: [],
+        },
+      ],
+    })
+    const variant = product.variants[0]!
+    const cart = await env.cart.getOrCreate(undefined, opts.customerId ?? null)
+    await env.cart.addItem(cart.token, {
+      variantId: variant.id,
+      productId: product.id,
+      productName: product.name,
+      variantName: variant.name,
+      priceMinor,
+      imageUrl: '',
+      qty,
+    })
+    for (const code of opts.codes ?? []) await env.cart.addCode(cart.token, code)
+    return { token: cart.token, variantId: variant.id }
+  }
+
+  const quoteAt = (env: Env, cartToken: string, optionId?: string, address = makeAddr()) =>
+    env.checkout.quote({
+      cartToken,
+      shippingAddress: address,
+      ...(optionId !== undefined && { shippingOptionId: optionId }),
+    })
+
+  const begin = (
+    env: Env,
+    cartToken: string,
+    opts: {
+      expectedTotalMinor?: number
+      shippingOptionId?: string
+      address?: ReturnType<typeof makeAddr>
+    } = {},
+  ) =>
+    env.checkout.beginCheckout({
+      cartToken,
+      email: 'shopper+stub-pending@example.com',
+      billingAddress: makeAddr(),
+      shippingAddress: opts.address ?? makeAddr(),
+      ...(opts.expectedTotalMinor !== undefined && { expectedTotalMinor: opts.expectedTotalMinor }),
+      ...(opts.shippingOptionId !== undefined && { shippingOptionId: opts.shippingOptionId }),
+    })
+
+  const orderOf = async (env: Env, orderId: string) =>
+    (await env.commandStore.read((tx) => env.repos.order.findById(tx, orderId)))!
+  const orderCount = (env: Env) =>
+    env.commandStore.read(async (tx) => (await env.repos.order.list(tx, { limit: 100 })).length)
+  const stockOf = async (env: Env, variantId: string) =>
+    (await env.commandStore.read((tx) => env.repos.variant.findById(tx, variantId)))!.stock
+
+  // Kills: options priced on the goods before their discount (the free-over threshold met or missed wrongly), a default
+  // other than the first option, the option asked for ignored, shipping left out of the totals, the engine asked about
+  // shipping at its gross or not at all, and a quote that reserves stock or writes an order.
+  it('quote prices the address’s options on the discounted goods, totals the chosen one (else the first) with its tax on shipping less its discount, and writes nothing', async () => {
+    const discounts: Discounts = { orderMinor: 0, shippingMinor: 0 }
+    const tax = shippingTaxQuoter()
+    const env = await setup({
+      promotions: discountEngine(discounts).adapter,
+      tax: tax.quoter,
+      shippingRates: RATES,
+    })
+    await fc.assert(
+      fc.asyncProperty(
+        fc.integer({ min: 1000, max: 3000 }),
+        fc.integer({ min: 1, max: 3 }),
+        fc.integer({ min: 0, max: 600 }),
+        fc.integer({ min: 0, max: 1200 }),
+        fc.constantFrom(undefined, 'standard-gb', 'express-gb'),
+        async (priceMinor, qty, orderMinor, shippingMinor, optionId) => {
+          Object.assign(discounts, { orderMinor, shippingMinor })
+          const { token, variantId } = await cartOf(env, priceMinor, qty, { codes: ['SAVE'] })
+          const asked = tax.requests.length
+          const orders = await orderCount(env)
+
+          const quoted = await quoteAt(env, token, optionId)
+
+          const goods = priceMinor * qty - orderMinor
+          const options = [{ ...STANDARD, amountMinor: goods >= 5000 ? 0 : 495 }, EXPRESS]
+          const chosen = options.find((o) => o.id === (optionId ?? options[0]!.id))!
+          const shippingDiscount = Math.min(shippingMinor, chosen.amountMinor)
+          expect(quoted.options).toEqual(options)
+          expect(quoted.shippingOptionId).toBe(chosen.id)
+          expect(quoted.currency).toBe('GBP')
+          expect(quoted.totals).toMatchObject({
+            subtotalMinor: priceMinor * qty,
+            shippingTotalMinor: chosen.amountMinor,
+            shippingDiscountMinor: shippingDiscount,
+            discountTotalMinor: orderMinor + shippingDiscount,
+          })
+          expect(tax.requests.length).toBe(asked + 1)
+          const request = tax.requests.at(-1)!
+          expect(request.lines.map((l) => l.amountMinor)).toEqual([goods])
+          expect(request.shipping).toEqual({ amountMinor: chosen.amountMinor - shippingDiscount })
+          const { quote: answered } = tax.answers.at(-1)!
+          expect(quoted.totals.taxTotalMinor).toBe(answered.totalTaxMinor)
+          expect(quoted.totals.totalMinor).toBe(
+            goods + chosen.amountMinor - shippingDiscount + answered.totalTaxMinor,
+          )
+          expect(await orderCount(env)).toBe(orders)
+          expect(await stockOf(env, variantId)).toBe(10)
+        },
+      ),
+      {
+        numRuns: 20,
+        // Goods of 5000 after a discount reach the threshold; 4999 do not, though the subtotal does.
+        examples: [
+          [2550, 2, 100, 0, undefined],
+          [2550, 2, 101, 0, undefined],
+          [2550, 2, 101, 300, 'standard-gb'],
+          [1000, 1, 0, 1200, 'express-gb'],
+        ],
+      },
+    )
+    await env.commandStore.close()
+  })
+
+  // Kills: the quote priced for the cart's customer over the one the caller names, or with an email it was not given.
+  it('quote prices for the customer the caller names, else the cart’s, and with the email given, else none', async () => {
+    const engine = discountEngine({ orderMinor: 0, shippingMinor: 0 })
+    const tax = shippingTaxQuoter()
+    const env = await setup({ promotions: engine.adapter, tax: tax.quoter, shippingRates: RATES })
+    const cartCustomer = uuidv7()
+    const named = uuidv7()
+    const { token } = await cartOf(env, 1000, 1, { customerId: cartCustomer, codes: ['SAVE'] })
+
+    await quoteAt(env, token)
+    const unnamed = engine.calls.at(-1)!
+    expect(unnamed.opts).toEqual({ dry: true })
+    expect(unnamed.session.customerId).toBe(cartCustomer)
+    expect(Object.hasOwn(unnamed.session, 'email')).toBe(false)
+    expect(tax.requests.at(-1)!.customer).toEqual({ id: cartCustomer })
+
+    await env.checkout.quote({
+      cartToken: token,
+      shippingAddress: makeAddr(),
+      customerId: named,
+      email: 'quoted@example.com',
+    })
+    expect(engine.calls.at(-1)!.session).toMatchObject({
+      customerId: named,
+      email: 'quoted@example.com',
+      shipTo: makeAddr(),
+    })
+    expect(tax.requests.at(-1)!.customer).toEqual({ id: named })
+    await env.commandStore.close()
+  })
+
+  // Kills: an address the table does not reach priced at no shipping, an unknown option priced at the first one, and a
+  // refusal that asks the tax engine, reserves stock or writes an order.
+  it('an address the table does not reach refuses no_shipping, an option it does not offer refuses shipping_option_unavailable with the offer, in quote and at place, writing nothing', async () => {
+    const tax = shippingTaxQuoter()
+    const env = await setup({ tax: tax.quoter, shippingRates: GB_ONLY })
+    const { token, variantId } = await cartOf(env, 2000, 2)
+    const abroad = { ...makeAddr(), country: 'FR' }
+
+    for (const attempt of [
+      () => quoteAt(env, token, undefined, abroad),
+      () => begin(env, token, { address: abroad, expectedTotalMinor: 4000 }),
+    ]) {
+      await expect(attempt()).rejects.toMatchObject({
+        code: 'checkout.no_shipping',
+        message: 'The store does not deliver to this address',
+      })
+    }
+    for (const attempt of [
+      () => quoteAt(env, token, 'world'),
+      () => begin(env, token, { shippingOptionId: 'world', expectedTotalMinor: 4000 }),
+    ]) {
+      await expect(attempt()).rejects.toMatchObject({
+        code: 'checkout.shipping_option_unavailable',
+        message: 'Shipping option world is not offered for this address',
+        context: { options: [STANDARD, EXPRESS] },
+      })
+    }
+    expect(tax.requests).toEqual([])
+    expect(await orderCount(env)).toBe(0)
+    expect(await stockOf(env, variantId)).toBe(10)
+    await env.commandStore.close()
+  })
+
+  // Kills: the option asked for dropped on either pass (placed at the first option, or the reservation priced at another
+  // and the engine asked again, as it is when the two passes measure the discounted shipping differently), the order not recording the delivery it was placed at, and a resubmit of the same
+  // choice not answering its pending order.
+  it('shippingOptionId, else the first option, places at the quote’s total on both passes, records the delivery in metadata.shipping, and a resubmit answers the same order', async () => {
+    const tax = shippingTaxQuoter()
+    // A shipping discount, so the amount taxed on both passes is the shipping less it.
+    const env = await setup({
+      promotions: discountEngine({ orderMinor: 0, shippingMinor: 200 }).adapter,
+      tax: tax.quoter,
+      shippingRates: RATES,
+    })
+    for (const [optionId, delivery] of [
+      [undefined, STANDARD],
+      ['express-gb', EXPRESS],
+    ] as const) {
+      const what = `option ${optionId}`
+      const { token } = await cartOf(env, 2000, 2, { codes: ['SAVE'] })
+      const quoted = await quoteAt(env, token, optionId)
+      const asked = tax.requests.length
+      const orders = await orderCount(env)
+      const opts = {
+        expectedTotalMinor: quoted.totals.totalMinor,
+        ...(optionId !== undefined && { shippingOptionId: optionId }),
+      }
+
+      const placed = await begin(env, token, opts)
+
+      expect(tax.requests.length, what).toBe(asked + 1)
+      expect(tax.requests.at(-1)!.shipping, what).toEqual({
+        amountMinor: delivery.amountMinor - 200,
+      })
+      expect(placed.totalMinor, what).toBe(quoted.totals.totalMinor)
+      const order = await orderOf(env, placed.orderId)
+      expect(order, what).toMatchObject({
+        shippingTotalMinor: delivery.amountMinor,
+        taxTotalMinor: quoted.totals.taxTotalMinor,
+        totalMinor: quoted.totals.totalMinor,
+      })
+      expect((order.metadata as { shipping?: unknown }).shipping, what).toEqual({
+        provider: 'native',
+        optionId: delivery.id,
+        name: delivery.name,
+        amountMinor: delivery.amountMinor,
+        estimatedDays: delivery.estimatedDays,
+      })
+
+      const again = await begin(env, token, opts)
+      expect(again.orderId, what).toBe(placed.orderId)
+      expect(await orderCount(env), what).toBe(orders + 1)
+    }
+    await env.commandStore.close()
+  })
+
+  // Kills: a shipping charge the caller never saw placed without a total, and shipping discounted to nothing or free over
+  // the threshold refused as if it were charged.
+  it('with no total sent, shipping left to pay refuses total_changed with quoted null, writing nothing; shipping discounted to nothing or free over the threshold places', async () => {
+    const discounts: Discounts = { orderMinor: 0, shippingMinor: 0 }
+    const env = await setup({ promotions: discountEngine(discounts).adapter, shippingRates: RATES })
+    // Shipping left to pay: 495, 494 and 1 of the standard 495.
+    for (const shippingMinor of [0, 1, 494]) {
+      const what = `shipping discount ${shippingMinor}`
+      discounts.shippingMinor = shippingMinor
+      const { token, variantId } = await cartOf(env, 2000, 2, { codes: ['SAVE'] })
+      const orders = await orderCount(env)
+
+      await expect(begin(env, token), what).rejects.toMatchObject({
+        code: 'checkout.total_changed',
+        message: 'The total has changed',
+        context: { quoted: null, due: 4000 + STANDARD.amountMinor - shippingMinor },
+      })
+      expect(await orderCount(env), what).toBe(orders)
+      expect(await stockOf(env, variantId), what).toBe(10)
+    }
+    // Shipping discounted to nothing, exactly and past it.
+    for (const shippingMinor of [495, 600]) {
+      const what = `shipping discount ${shippingMinor}`
+      discounts.shippingMinor = shippingMinor
+      const { token } = await cartOf(env, 2000, 2, { codes: ['SAVE'] })
+
+      const order = await orderOf(env, (await begin(env, token)).orderId)
+
+      expect(order, what).toMatchObject({
+        shippingTotalMinor: STANDARD.amountMinor,
+        discountTotalMinor: STANDARD.amountMinor,
+        totalMinor: 4000,
+      })
+    }
+    discounts.shippingMinor = 0
+    const { token } = await cartOf(env, 2500, 2, { codes: ['SAVE'] })
+    const free = await orderOf(env, (await begin(env, token)).orderId)
+    expect(free).toMatchObject({ shippingTotalMinor: 0, totalMinor: 5000 })
+    await env.commandStore.close()
+  })
+
+  // Kills: a store with no table keeping a delivery record, asking the engine about a shipping amount, or offering
+  // anything but the one free standard option.
+  it('with no shipping table, quote offers one free standard option, the engine is sent no shipping and the order keeps no metadata.shipping', async () => {
+    const tax = shippingTaxQuoter()
+    const env = await setup({ tax: tax.quoter })
+    const { token } = await cartOf(env, 2000, 2)
+
+    const quoted = await quoteAt(env, token)
+
+    expect(quoted.options).toEqual([
+      { id: 'standard', name: 'Standard', amountMinor: 0, estimatedDays: null },
+    ])
+    expect(quoted.shippingOptionId).toBe('standard')
+    expect(quoted.totals.shippingTotalMinor).toBe(0)
+    expect(tax.requests.at(-1)!.shipping).toBeNull()
+    await expect(quoteAt(env, token, 'express-gb')).rejects.toMatchObject({
+      code: 'checkout.shipping_option_unavailable',
+    })
+
+    const placed = await begin(env, token, {
+      shippingOptionId: 'standard',
+      expectedTotalMinor: quoted.totals.totalMinor,
+    })
+
+    const order = await orderOf(env, placed.orderId)
+    expect(order.totalMinor).toBe(quoted.totals.totalMinor)
+    expect(Object.hasOwn(order.metadata, 'shipping')).toBe(false)
     await env.commandStore.close()
   })
 })

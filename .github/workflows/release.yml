@@ -1,12 +1,14 @@
 name: Release
 
 # A merge to main with pending changesets versions the changed packages, publishes them to npm `latest` with
-# provenance, tags them and writes GitHub release notes from the changelogs. Needs two repository secrets:
+# provenance, tags them and writes GitHub release notes from the changelogs. Needs one repository secret:
 #   RELEASE_TOKEN  fine-grained token (or App token) with contents write: the release commit and the tags are made
 #                  with it so their checks run
-#   NPM_TOKEN      npm granular token with publish rights on @nymbalhq/*, nymbal and create-nymbal-app
-# Without a secret the dependent steps are skipped with a notice. Publishing, tags and releases skip what exists, so
-# re-running a run whose publish failed completes the release.
+# Without it the dependent jobs are skipped with a notice. npm takes the publish through trusted publishing, with no
+# npm secret: every published package names this repository and release.yml as a trusted publisher on npmjs.com, and
+# pnpm publish trades the publish job's OIDC token for a short-lived npm token and adds provenance itself. A package
+# must exist on npm with its trusted publisher set before a release can publish it. Publishing, tags and releases
+# skip what exists, so re-running a run whose publish failed completes the release.
 
 on:
   push:
@@ -19,18 +21,16 @@ concurrency:
 
 permissions:
   contents: write
-  id-token: write
 
 jobs:
   detect:
-    name: Detect changesets and tokens
+    name: Detect changesets and the release token
     runs-on: ubuntu-latest
     permissions:
       contents: read
     outputs:
       changesets: ${{ steps.scan.outputs.changesets }}
       release_token: ${{ steps.tokens.outputs.release_token }}
-      npm_token: ${{ steps.tokens.outputs.npm_token }}
     steps:
       - uses: actions/checkout@v7
       - id: scan
@@ -44,28 +44,21 @@ jobs:
             echo "::notice::No pending changesets, nothing to release."
           fi
       - id: tokens
-        name: Check release secrets
+        name: Check the release secret
         env:
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           if [ -n "$RELEASE_TOKEN" ]; then
             echo "release_token=true" >> "$GITHUB_OUTPUT"
           else
             echo "release_token=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::RELEASE_TOKEN is not set: skipping the release commit and tags."
-          fi
-          if [ -n "$NPM_TOKEN" ]; then
-            echo "npm_token=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "npm_token=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::NPM_TOKEN is not set: skipping the npm publish."
+            echo "::notice::RELEASE_TOKEN is not set: skipping the release commit, the publish and the tags."
           fi
 
   version:
     name: Version and commit the release
     needs: detect
-    if: needs.detect.outputs.changesets == 'true' && needs.detect.outputs.release_token == 'true' && needs.detect.outputs.npm_token == 'true'
+    if: needs.detect.outputs.changesets == 'true' && needs.detect.outputs.release_token == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -94,7 +87,7 @@ jobs:
           git commit -m "chore(release): version packages"
           git push origin HEAD:main
 
-  # Runs on every push to main with the tokens, whether or not this push carried changesets: publishing, tagging and
+  # Runs on every push to main with the release token, whether or not this push carried changesets: publishing, tagging and
   # releasing skip whatever already exists, so re-running a failed run (or the next push) completes the release.
   # Not on the release commit's own push: the run that made it publishes from it, and the registry still reads the
   # new versions as unpublished for a while after, so a second publish fails on every one.
@@ -102,8 +95,12 @@ jobs:
     name: Publish, tag and release
     needs: [detect, version]
     # Quoted: the message's ": " would end a plain YAML scalar.
-    if: "${{ !cancelled() && !failure() && needs.detect.outputs.release_token == 'true' && needs.detect.outputs.npm_token == 'true' && !startsWith(github.event.head_commit.message, 'chore(release): version packages') }}"
+    if: "${{ !cancelled() && !failure() && needs.detect.outputs.release_token == 'true' && !startsWith(github.event.head_commit.message, 'chore(release): version packages') }}"
     runs-on: ubuntu-latest
+    # Only this job can mint the OIDC token npm trusts; the version job runs the build without it.
+    permissions:
+      contents: write
+      id-token: write
     steps:
       # The branch tip, not the pushed sha: it holds the release commit, on a re-run too.
       - uses: actions/checkout@v7
@@ -116,7 +113,6 @@ jobs:
         with:
           node-version-file: .node-version
           cache: pnpm
-          registry-url: https://registry.npmjs.org
       - run: pnpm install --frozen-lockfile
       # After versioning: the CLI reads its version from package.json and the scaffold bakes the versions in.
       - run: pnpm build
@@ -130,9 +126,6 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
       - name: Publish to npm
         run: pnpm changeset publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_CONFIG_PROVENANCE: 'true'
       # changeset publish tags only what it published in this run; a version an earlier, failed run published is
       # tagged here instead. The registry can answer 404 for a minute after a publish, so a missing version is asked
       # again before it is taken as unpublished.

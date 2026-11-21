@@ -3,7 +3,6 @@ import userEvent from '@testing-library/user-event'
 import fc from 'fast-check'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import {
-  STATUS_LABEL,
   fakeOrderApi,
   held,
   movedTo,
@@ -152,10 +151,10 @@ describe('the ship dialog', () => {
   // dialog it opened with what was typed and the message.
   it('AC-11: from the select, /ship answered 409 because the order was refunded elsewhere keeps the dialog open with the answer’s message and what was typed once the refetch shows the order refunded', async () => {
     const order = orderIn('processing')
-    const message = 'Order NYM-1001 cannot move from refunded to shipped'
+    const message = 'Order NYM-1001 is refunded: it cannot be shipped'
     const api = fakeOrderApi(order, () => {
-      api.setServer('refunded')
-      return refusal(409, 'order.invalid_transition', message)
+      api.setServer('processing', 2500)
+      return refusal(409, 'order.refunded', message)
     })
     const user = userEvent.setup()
     renderOrderPage(order)
@@ -167,9 +166,7 @@ describe('the ship dialog', () => {
 
     await waitFor(() => expect(api.answered).toBe(1))
     await waitFor(() =>
-      expect(screen.getByTestId('admin-order-status-badge')).toHaveTextContent(
-        STATUS_LABEL.refunded,
-      ),
+      expect(screen.getByTestId('admin-order-payment-state')).toHaveTextContent('Refunded'),
     )
     expect(screen.getByTestId(ERROR)).toHaveTextContent(message)
     expect(within(screen.getByTestId(DIALOG)).getByRole('alert')).toBe(screen.getByTestId(ERROR))

@@ -27,6 +27,7 @@ const KINDS = [
   'analytics',
   'shipping',
   'tax',
+  'promotions',
   'documentStore',
   'eventBus',
   'media',

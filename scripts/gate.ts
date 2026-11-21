@@ -10,11 +10,19 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs'
-import { availableParallelism } from 'node:os'
+import { availableParallelism, loadavg } from 'node:os'
 import { dirname, matchesGlob, relative, resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
+import {
+  backgroundWanted,
+  type Budget,
+  CAP_VARS,
+  e2eGlobalTimeoutMs,
+  machineBudget,
+  type Tool,
+} from './machine-budget'
 import { loadSentinels } from './sentinels'
 import {
   acquireExclusive,
@@ -44,6 +52,17 @@ import { type Manifest, type WorkspaceMember, workspaceMembers } from './workspa
 // The gate: one command to run before finishing (`pnpm gate`) and one before a pull request (`pnpm gate:full`).
 // Every step is a shell command whose exit code decides its status; the verdict is red if and only if a step is
 // red, and every step runs even after a red one (except those that need a step that is not ok).
+//
+// The machine is shared, with other worktrees' gates and with other projects. A step that runs Vitest, Playwright or
+// Stryker runs under the machine budget's cap for it (scripts/machine-budget.ts, which owns the defaults and the
+// per-machine file), set in the step's environment: a Vitest step's cap is divided between the worktrees whose gates
+// hold the CPU at once (never above the cap), and when the one-minute load average at a step's start is above the
+// core count, the step's caps halve (never below one) and the gate says so in one line. An E2E step is handed the
+// whole-run bound for the workers it got (E2E_TIMEOUT_ENV), since fewer workers take longer over the same tests. With
+// NYMBAL_BACKGROUND=1 on macOS the CPU-heavy steps (those taking a shared hold of the quiet lock) run at background
+// priority (`taskpolicy -b`), so the rest of the machine is served first; the timing-bound ones (the exclusive hold)
+// and the E2E steps never do (background QoS keeps them to the efficiency cores, where a run outlasts its bound). It
+// is off by default and under CI, as are the default caps: CI keeps each tool's own sizing.
 
 export type StepStatus = 'ok' | 'red' | 'skipped'
 
@@ -69,10 +88,17 @@ export type RunOptions = {
   env?: NodeJS.ProcessEnv
   /** How a step takes its hold; the quiet lock of `cwd`'s repository when not given. */
   acquire?: (mode: 'shared' | 'exclusive', label: string) => Promise<Hold>
+  /** The one-minute load average at a step's start; the machine's when not given. */
+  loadAverage?: () => number
+  /** The cores the caps are judged against; the machine's when not given. */
+  cpus?: number
+  /** The platform and the `taskpolicy` binary the CPU-heavy steps run under; this machine's when not given. */
+  platform?: NodeJS.Platform
+  taskpolicy?: string
 }
 
 /** The variable `vitest.config.ts` reads into `test.maxWorkers`; nested Vitest runs inherit it with the environment. */
-export const VITEST_WORKERS_ENV = 'NYMBAL_VITEST_MAX_WORKERS'
+export const VITEST_WORKERS_ENV = CAP_VARS.vitest
 
 /**
  * The steps that run Vitest, themselves or nested (sentinels, tests-fail-on-base). Two gates' Vitest runs with a
@@ -87,10 +113,62 @@ const VITEST_STEPS = new Set([
   'tests-fail-on-base',
 ])
 
-/** A Vitest step's workers when `holders` worktrees share `cpus`; none set when it is alone. */
-export function vitestWorkers(cpus: number, holders: number): number | undefined {
-  return holders <= 1 ? undefined : Math.max(1, Math.floor(cpus / holders))
+/**
+ * A Vitest step's workers when `holders` worktrees share `cpus`: its share of the cap, or of the CPUs when there is
+ * none (under CI); none set when there is no cap and it is alone.
+ */
+export function vitestWorkers(
+  cap: number | undefined,
+  cpus: number,
+  holders: number,
+): number | undefined {
+  const total = cap ?? (holders <= 1 ? undefined : cpus)
+  return total === undefined ? undefined : Math.max(1, Math.floor(total / Math.max(1, holders)))
 }
+
+/** The caps a step runs under: its tool's from the budget, a Vitest step's shared between `holders()` worktrees. */
+export function stepCaps(
+  name: string,
+  budget: Budget,
+  cpus: number,
+  holders: () => number,
+): Partial<Record<Tool, number>> {
+  const only = (tool: Tool, cap: number | undefined): Partial<Record<Tool, number>> =>
+    cap === undefined ? {} : { [tool]: cap }
+  if (VITEST_STEPS.has(name)) return only('vitest', vitestWorkers(budget.vitest, cpus, holders()))
+  if (name.startsWith('e2e ')) return only('playwright', budget.playwright)
+  if (name === 'stryker') return only('stryker', budget.stryker)
+  return {}
+}
+
+/** The caps halved (never below one) when the one-minute load average is above the core count; undefined when it is not. */
+export function underLoad(
+  caps: Partial<Record<Tool, number>>,
+  load: number,
+  cpus: number,
+): Partial<Record<Tool, number>> | undefined {
+  if (load <= cpus) return undefined
+  return Object.fromEntries(
+    Object.entries(caps).map(([tool, cap]) => [tool, Math.max(1, Math.floor(cap / 2))]),
+  )
+}
+
+const TOOL_NAMES: Record<Tool, string> = {
+  vitest: 'Vitest workers',
+  playwright: 'Playwright workers',
+  stryker: 'Stryker concurrency',
+}
+
+const describeCaps = (caps: Partial<Record<Tool, number>>): string =>
+  Object.entries(caps)
+    .map(([tool, cap]) => `${TOOL_NAMES[tool as Tool]} ${cap}`)
+    .join(', ')
+
+/** The variable tests/e2e/playwright.config.ts reads as the whole-run bound; set by hand, the gate leaves it. */
+export const E2E_TIMEOUT_ENV = 'NYMBAL_E2E_GLOBAL_TIMEOUT_MS'
+
+/** Where macOS keeps `taskpolicy`, which runs a program and its children at background priority (`-b`). */
+export const TASKPOLICY = '/usr/sbin/taskpolicy'
 
 export type RunResult = { exitCode: number; steps: Step[]; report: string }
 
@@ -280,7 +358,7 @@ export function selectTests(changed: string[]): {
 export function isBuildInput(path: string): boolean {
   if (TEST_FILE.test(path)) return false
   // A package is `packages/<name>` or, by the second workspace glob, `packages/adapters/<slot>/<provider>`.
-  return /^packages\/(?:adapters\/[^/]+\/[^/]+|[^/]+)\/(?:src\/|package\.json$|tsup\.config\.[cm]?[jt]s$|tsconfig[^/]*\.json$)/.test(
+  return /^packages\/(?:adapters\/[^/]+\/[^/]+|[^/]+)\/(?:src\/|package\.json$|tsup(?:\.kit)?\.config\.[cm]?[jt]s$|tsconfig[^/]*\.json$)/.test(
     path,
   )
 }
@@ -460,11 +538,14 @@ function execute(
   command: string,
   cwd: string,
   env: NodeJS.ProcessEnv | undefined,
+  taskpolicy?: string,
 ): Promise<{ code: number; output: string }> {
   return new Promise((resolvePromise) => {
-    const child = spawn(command, {
+    // The shell `shell: true` would start; under taskpolicy every process it starts inherits the policy.
+    const shell = ['/bin/sh', '-c', command]
+    const [file = '', ...args] = taskpolicy === undefined ? shell : [taskpolicy, '-b', ...shell]
+    const child = spawn(file, args, {
       cwd,
-      shell: true,
       env: env ?? process.env,
       stdio: ['ignore', 'pipe', 'pipe'],
     })
@@ -506,6 +587,15 @@ export async function run(steps: StepSpec[], opts: RunOptions): Promise<RunResul
       mode === 'exclusive'
         ? acquireExclusive(opts.cwd, label, { maxWaitMs: QUIET_MAX_WAIT_MS })
         : acquireShared(opts.cwd, label, { maxWaitMs: QUIET_MAX_WAIT_MS }))
+  const baseEnv = opts.env ?? process.env
+  const budget = machineBudget(baseEnv, opts.cwd)
+  const cpus = opts.cpus ?? availableParallelism()
+  const policy = opts.taskpolicy ?? TASKPOLICY
+  const background =
+    (opts.platform ?? process.platform) === 'darwin' &&
+    existsSync(policy) &&
+    backgroundWanted(baseEnv, opts.cwd)
+  let backgroundSaid = false
   for (const spec of steps) {
     const unmet = (spec.needs ?? []).flatMap((need) => {
       const earlier = results.find((s) => s.name === need)
@@ -528,16 +618,46 @@ export async function run(steps: StepSpec[], opts: RunOptions): Promise<RunResul
     const started = performance.now()
     let code: number
     let output: string
-    const workers = VITEST_STEPS.has(spec.name)
-      ? vitestWorkers(availableParallelism(), liveHolders(opts.cwd))
-      : undefined
-    if (workers !== undefined) log(`${spec.name}: ${workers} Vitest workers, the CPU shared\n`)
+    let holders = 1
+    let caps = stepCaps(spec.name, budget, cpus, () => (holders = liveHolders(opts.cwd)))
+    const load =
+      Object.keys(caps).length === 0 ? 0 : (opts.loadAverage ?? (() => loadavg()[0] ?? 0))()
+    const halved = underLoad(caps, load, cpus)
+    if (halved !== undefined) {
+      caps = halved
+      log(
+        `${spec.name}: load ${load.toFixed(1)} over ${cpus} cores at the start: ${describeCaps(caps)}, halved\n`,
+      )
+    } else if (holders > 1) {
+      log(`${spec.name}: ${describeCaps(caps)}, the CPU shared with ${holders - 1} other gate(s)\n`)
+    }
+    const e2e = spec.name.startsWith('e2e ')
+    const bound =
+      e2e && caps.playwright !== undefined && !baseEnv[E2E_TIMEOUT_ENV]
+        ? { [E2E_TIMEOUT_ENV]: String(e2eGlobalTimeoutMs(baseEnv, caps.playwright, cpus)) }
+        : {}
     const env =
-      workers === undefined
+      Object.keys(caps).length === 0
         ? opts.env
-        : { ...(opts.env ?? process.env), [VITEST_WORKERS_ENV]: String(workers) }
+        : {
+            ...baseEnv,
+            ...Object.fromEntries(
+              Object.entries(caps).map(([tool, cap]) => [CAP_VARS[tool as Tool], String(cap)]),
+            ),
+            ...bound,
+          }
+    const yielding = background && mode === 'shared' && !e2e
+    if (yielding && !backgroundSaid) {
+      backgroundSaid = true
+      log(`${spec.name}: CPU-heavy steps run at background priority (NYMBAL_BACKGROUND=1)\n`)
+    }
     try {
-      ;({ code, output } = await execute(spec.command, opts.cwd, env))
+      ;({ code, output } = await execute(
+        spec.command,
+        opts.cwd,
+        env,
+        yielding ? policy : undefined,
+      ))
     } finally {
       await hold?.()
     }
@@ -1015,7 +1135,7 @@ export async function mutateSet(
  * against this list. The platform's unit-test helpers (packages/platform/src/tests) are left to the nightly's
  * `--force` run: Stryker's incremental mode reuses a result whenever the mutated code and the test files that killed
  * or covered it are unchanged, so a helper change re-measures nothing unless the cache is pruned, and pruning the
- * whole platform set would outlast the mutation job.
+ * whole platform set would measure it cold.
  */
 const STRYKER_INPUTS = [
   'stryker.config.mjs',
@@ -1114,8 +1234,8 @@ async function incrementalReport(root: string): Promise<string> {
 }
 
 /**
- * Beside the incremental report: the commit the report's statuses were measured at. CI's mutation job writes it after
- * a passing stryker step, as its cache is saved only then.
+ * Beside the incremental report: the commit the report's statuses were measured at. The nightly full run writes it
+ * beside the report it caches.
  */
 function incrementalStamp(report: string): string {
   return `${report.replace(/\.json$/, '')}.commit`
@@ -1123,9 +1243,8 @@ function incrementalStamp(report: string): string {
 
 /**
  * The changed paths and moved ratchet entries the stryker step selects by. The incremental report holds statuses
- * from the commit its stamp names, and CI saves it only when the job passes, so after a red run that commit is
- * older than `base`: a file changed in between, outside `--mutate`, would be reported with statuses from before
- * its change. So whatever changed since the stamp counts too. A stamp naming no commit here leaves the report's age
+ * from the commit its stamp names, which can be older than `base`: a file changed in between, outside `--mutate`,
+ * would be reported with statuses from before its change. So whatever changed since the stamp counts too. A stamp naming no commit here leaves the report's age
  * unknown, and every tracked file counts as changed.
  */
 export async function strykerChanges(
@@ -1156,7 +1275,7 @@ export async function strykerChanges(
  * mutants of. Only those are measured afresh: a cached score under the entry would fail a file no change touched.
  * A file the report already holds at its entry keeps its statuses, and Stryker re-measures what changed sources and
  * tests reach in it, as in every other file. Dropping every moved entry's statuses measured 3,931 of 4,657 mutants
- * cold after a ratchet raised from a full run, past the mutation job's timeout.
+ * cold after a ratchet raised from a full run.
  */
 export async function belowCachedScore(root: string, moved: string[]): Promise<string[]> {
   if (moved.length === 0) return moved
@@ -1237,6 +1356,8 @@ export type PlanInput = {
   stryker?: 'off' | 'blocking' | undefined
   /** gate:full's perf-bytes step: script bytes per page against the budgets, as dev CI's perf job holds them. */
   perfBytes?: boolean | undefined
+  /** gate:full's WordPress site and journeys, for a diff that reaches them; dev CI runs them regardless. */
+  wordpress?: boolean | undefined
   /**
    * The harness's own Vitest projects (`HARNESS_PROJECTS`): `all` runs them whatever changed (dev CI); `changed`,
    * the default, leaves them out when no harness path changed: all of them in the plain gate, the tooling ones in
@@ -1352,6 +1473,8 @@ const E2E_SERVES: Record<string, string[]> = {
   // The native store with the project-elements fixture (tests/e2e/fixtures/override-elements) as each template's entry.
   'astro-override': [],
   'nextjs-override': [],
+  // The bundle the WordPress journeys route the jsDelivr URL to.
+  wordpress: ['packages/web-components/dist/kit.js'],
 }
 
 /**
@@ -1590,6 +1713,12 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
   const s3 = external
     ? `NYMBAL_TEST_S3_ENDPOINT=${shellWord(input.s3Endpoint ?? minioUrl())}`
     : `NYMBAL_TEST_S3_ENDPOINT=${shellWord(minioUrl(minioPort))} NYMBAL_TEST_S3_ACCESS_KEY_ID=minioadmin NYMBAL_TEST_S3_SECRET_ACCESS_KEY=minioadmin`
+  const slotCompose =
+    block.slot === 0
+      ? 'docker compose'
+      : `${Object.entries(composePorts(block))
+          .map(([name, value]) => `${name}=${shellWord(value)}`)
+          .join(' ')} docker compose -p ${block.project}`
   // Slot 0 is compose.yaml's own project and default ports; another slot names both, so worktrees share no container.
   const compose =
     block.slot === 0
@@ -1739,6 +1868,25 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
       { name: 'e2e astro-override', command: e2e('astro-override'), needs: e2eNeeds },
       { name: 'e2e nextjs-override', command: e2e('nextjs-override'), needs: e2eNeeds },
     )
+    // Off by default: one more image set and target against a full run already over budget. `--only` naming a step
+    // must find it (`select` throws on an absent one), so naming either turns both on.
+    if (
+      input.wordpress === true ||
+      input.only?.includes('wordpress up') === true ||
+      input.only?.includes('e2e wordpress') === true
+    ) {
+      steps.push(
+        {
+          name: 'wordpress up',
+          command: `${slotCompose} --profile wordpress up -d --wait wordpress-db wordpress && ${slotCompose} --profile wordpress --profile wordpress-init run --rm wordpress-init`,
+        },
+        {
+          name: 'e2e wordpress',
+          command: e2e('wordpress'),
+          needs: [...mailpitNeeds, 'wordpress up'],
+        },
+      )
+    }
   }
   // Last: it builds the templates for production and serves them on the slot's ports, which the E2E dev servers use.
   steps.push(
@@ -1965,7 +2113,8 @@ function writeLastRun(root: string, steps: Step[]): void {
 
 /**
  * What the command line asks of the sentinels, stryker and perf-bytes steps. They run here only when asked: dev CI
- * runs every sentinel, the mutation job and the perf job on every push, and the release run passes `--sentinels all`.
+ * runs every sentinel and the perf job on every push, the nightly runs mutation, and the release run passes
+ * `--sentinels all`.
  * `--only` naming a step is asking for it; a Stryker run that is asked for blocks on the ratchet. `--sentinels` takes
  * `all`, `none` or a comma-separated list of ids, which run as given whatever changed.
  */
@@ -2021,6 +2170,7 @@ async function main(argv: string[]): Promise<number> {
       sentinels: { type: 'string' },
       stryker: { type: 'boolean', default: false },
       'perf-bytes': { type: 'boolean', default: false },
+      wordpress: { type: 'boolean', default: false },
       harness: { type: 'string', default: 'changed' },
       check: { type: 'boolean', default: false },
       admin: { type: 'boolean', default: false },
@@ -2120,6 +2270,7 @@ async function main(argv: string[]): Promise<number> {
     perfBytes: values['perf-bytes'],
   })
   if (perfBytes && !values.full) throw new Error('--perf-bytes needs --full')
+  if (values.wordpress && !values.full) throw new Error('--wordpress needs --full')
   const sentinelsDir = resolve(root, 'tests/sentinels')
   if (Array.isArray(sentinelsMode)) {
     const known = existsSync(sentinelsDir) ? loadSentinels(sentinelsDir).map((s) => s.id) : []
@@ -2209,6 +2360,7 @@ async function main(argv: string[]): Promise<number> {
     sentinels,
     stryker: strykerMode,
     perfBytes,
+    wordpress: values.wordpress,
     harness: values.harness,
     inputReaders,
     relatedPaths,

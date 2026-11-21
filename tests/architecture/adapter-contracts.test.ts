@@ -22,6 +22,7 @@ const SUITE: Record<string, string> = {
   analytics: 'runAnalyticsContract',
   shipping: 'runShippingContract',
   tax: 'runTaxContract',
+  promotions: 'runPromotionsContract',
   ai: 'runAiContract',
   documentStore: 'runDocumentStoreContract',
   eventBus: 'runEventBusContract',

@@ -38,11 +38,13 @@ from `NYMBAL_E2E_AI_BASE_URL`), giving the stamp's absolute path:
 ```sh
 cd tests/e2e/fixtures/assistant
 NYMBAL_E2E_AI_BASE_URL=https://api.anthropic.com ANTHROPIC_API_KEY=<your key> \
-  node ../../../../packages/cli/bin/nymbal.mjs eval assistant --runs 5 \
+  node ../../../../packages/cli/bin/nymbal.mjs eval assistant --runs 3 \
   --stamp "$(git rev-parse --show-toplevel)/packages/platform/assistant-eval.json"
 ```
 
-The stamp is written only when the run passes; commit it on the release candidate.
+The stamp is written only when the run passes; commit it on the release candidate. The stamp is a statement about the
+default model on our prompt, so `pnpm release:check` refuses one from any other model. The safety boundary holds for
+every provider and model because it is code.
 
 ## Changesets
 

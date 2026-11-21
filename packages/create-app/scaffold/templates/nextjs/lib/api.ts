@@ -90,6 +90,17 @@ export async function fetchCapabilities(): Promise<StoreCapabilities | null> {
   return envelope.data ?? null
 }
 
+/** The capabilities for a shopper's page, which renders per request: null when the read fails, a fallback never cached. */
+export async function shopperCapabilities(): Promise<StoreCapabilities | null> {
+  try {
+    return await fetchCapabilities()
+  } catch (err) {
+    unstable_rethrow(err)
+    console.error('[api] capabilities read failed', err)
+    return null
+  }
+}
+
 /** The sort a listing URL asks for, among the store's keys; a missing or unknown `?sort=` is the store's default. */
 export function sortFromSearchParams(
   params: { sort?: string | string[] },

@@ -41,10 +41,10 @@ async function setup() {
   const logger = createLogger({ pretty: false, level: 'error' })
   const eventBus = new InProcessEventBus({ logger })
   const repos = buildRepositories(commandStore, documentStore)
-  const publisher = wirePublisher(
+  const { publisher, relay } = wirePublisher(
     { createEventPublisher, createRelay },
     { store: commandStore, eventLog: repos.eventLog, eventBus, logger },
-  ).publisher
+  )
   const service = createProductService({
     store: commandStore,
     repos,
@@ -52,12 +52,12 @@ async function setup() {
     logger,
     currency: 'GBP',
   })
-  return { service, repos, eventBus, commandStore, documentStore, publisher, logger }
+  return { service, repos, eventBus, commandStore, documentStore, publisher, logger, relay }
 }
 
 describe('ProductService', () => {
   it('create emits product.created.v1 with snapshot', async () => {
-    const { service, eventBus, commandStore } = await setup()
+    const { service, eventBus, commandStore, relay } = await setup()
     const received: unknown[] = []
     await eventBus.subscribe(EVT_PRODUCT_CREATED, (event) => {
       received.push(event.payload)
@@ -80,12 +80,13 @@ describe('ProductService', () => {
     expect(snap.slug).toBe('test-product')
     expect(snap.variants).toHaveLength(1)
     expect(snap.variants[0]!.priceMinor).toBe(1500)
+    await relay.drain()
     expect(received).toHaveLength(1)
     await commandStore.close()
   })
 
   it('publish transitions status and emits product.published.v1', async () => {
-    const { service, eventBus, commandStore } = await setup()
+    const { service, eventBus, commandStore, relay } = await setup()
     const received: unknown[] = []
     await eventBus.subscribe(EVT_PRODUCT_PUBLISHED, (event) => {
       received.push(event.payload)
@@ -99,6 +100,7 @@ describe('ProductService', () => {
     await service.publish(created.id)
     const fresh = await service.getById(created.id)
     expect(fresh.status).toBe('active')
+    await relay.drain()
     expect(received).toHaveLength(1)
     await commandStore.close()
   })
@@ -357,7 +359,7 @@ describe('ProductService.update: variant prices', () => {
   }
 
   it('an unknown variant id rejects with 400 product.variant_unknown and writes nothing', async () => {
-    const { service, commandStore, created, one, events, stored } = await priced()
+    const { service, commandStore, created, one, events, stored, relay } = await priced()
     const before = await stored()
     const refusal = await service
       .update(created.id, {
@@ -372,12 +374,13 @@ describe('ProductService.update: variant prices', () => {
     expect(refusal).toMatchObject({ status: 400, code: 'product.variant_unknown' })
     expect(await stored()).toEqual(before)
     expect((await service.getById(created.id)).name).toBe(created.name)
+    await relay.drain()
     expect(events).toEqual([])
     await commandStore.close()
   })
 
   it('a changed price is written and publishes one price event with both prices and the currency, before product.updated', async () => {
-    const { service, commandStore, created, one, two, events, stored } = await priced()
+    const { service, commandStore, created, one, two, events, stored, relay } = await priced()
     const snap = await service.update(created.id, {
       variants: [
         { id: one.id, priceMinor: one.priceMinor - 200 },
@@ -396,6 +399,7 @@ describe('ProductService.update: variant prices', () => {
         compareAtPriceMinor: v.compareAtPriceMinor,
       })),
     ).toEqual(expected)
+    await relay.drain()
     expect(events).toEqual([
       {
         type: EVT_PRODUCT_VARIANT_PRICE_CHANGED,
@@ -415,7 +419,7 @@ describe('ProductService.update: variant prices', () => {
   })
 
   it('unchanged prices publish no price event and leave the stored prices as they were', async () => {
-    const { service, commandStore, created, one, two, events, stored } = await priced()
+    const { service, commandStore, created, one, two, events, stored, relay } = await priced()
     const before = await stored()
     await service.update(created.id, {
       variants: [
@@ -424,12 +428,13 @@ describe('ProductService.update: variant prices', () => {
       ],
     })
     expect(await stored()).toEqual(before)
+    await relay.drain()
     expect(events.map((e) => e.type)).toEqual([EVT_PRODUCT_UPDATED])
     await commandStore.close()
   })
 
   it('an omitted compareAtPriceMinor keeps the stored one, null clears it, and a compare-at change alone publishes', async () => {
-    const { service, commandStore, created, one, two, events, stored } = await priced()
+    const { service, commandStore, created, one, two, events, stored, relay } = await priced()
     await service.update(created.id, {
       variants: [
         { id: one.id, priceMinor: one.priceMinor + 100 },
@@ -440,6 +445,7 @@ describe('ProductService.update: variant prices', () => {
       { id: one.id, priceMinor: one.priceMinor + 100, compareAtPriceMinor: one.compareAtPriceMinor },
       { id: two.id, priceMinor: two.priceMinor, compareAtPriceMinor: null },
     ])
+    await relay.drain()
     const priceEvents = events.filter((e) => e.type === EVT_PRODUCT_VARIANT_PRICE_CHANGED)
     expect(priceEvents.map((e) => e.payload)).toEqual([
       expect.objectContaining({

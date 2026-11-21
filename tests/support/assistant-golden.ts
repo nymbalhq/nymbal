@@ -1,7 +1,7 @@
 import type { AiScript, ScriptReply, ScriptView } from './ai-stand-in.js'
 
 // The scripted model the assistant's golden set runs against in CI (`runGolden`, `nymbal eval assistant`): for each of
-// the twenty-seven golden questions, recognised by its ask, it calls the tools that question's row names, reads their
+// the twenty-eight golden questions, recognised by its ask, it calls the tools that question's row names, reads their
 // results from the conversation it is sent, and answers with the facts those results hold. A tool result that does
 // not come back, or comes back an error, leaves its answer without the fact. `deviate` makes a row answer wrongly in
 // one way, so the evaluator can be shown to notice, or rightly by another road (another read, the fact in another of
@@ -42,6 +42,8 @@ import type { AiScript, ScriptReply, ScriptView } from './ai-stand-in.js'
 //           admin_reviews_pending, admin_products_list { q }, admin_products_update
 // 26 read  "How many orders were shipped to postcodes starting SW1?" admin_orders_list { postcode: SW1 }; its total
 // 27 read  "How many orders were shipped to Germany?"        admin_orders_list { country: DE }; its total
+// 28 read  "How did we convert last week?"                   admin_reports_get { from, to: last Monday to Sunday }; says
+//           no rate exists for the week, with the reason, the basis and the window the report gives
 // The orders list reaches the model as summaries (each order's number, status, date, email, shipping first and last
 // name, city, postcode, country, totals and item count), so a row reads an order's shipping name from `firstName` and
 // `lastName` and which is newest from the list's order.
@@ -94,6 +96,10 @@ export type Deviation =
   | 'description-public'
   /** Rows 26 and 27: count the items of an unfiltered page of admin_orders_list instead of reading the filter's total. */
   | 'count-page'
+  /** Row 28: states the week's rates but leaves out the basis and the window they hold for. */
+  | 'convert-no-basis'
+  /** Row 28: on the empty week, answers with a conversion rate of its own invention. */
+  | 'convert-invents-rate'
   /** Any row: the provider refuses the row's first request with 400 (a permanent error). */
   | 'provider-refuses'
   /** Any row: the provider answers the row's first request 529, overloaded (a transient error). */
@@ -138,6 +144,7 @@ export const GOLDEN_ROWS: readonly GoldenRow[] = [
   },
   { row: 26, kind: 'read', ask: /how many orders were shipped to postcodes starting sw1/i },
   { row: 27, kind: 'read', ask: /how many orders were shipped to germany/i },
+  { row: 28, kind: 'read', ask: /how did we convert last week/i },
 ]
 
 /** The row whose ask this is, or undefined. */
@@ -218,7 +225,7 @@ const SORRY = 'I could not read that from the store.'
 export interface GoldenScriptOptions {
   /** The store's currency (its config's `store.currency`). */
   currency?: string
-  /** Rows (1-27) that answer wrongly, and how. */
+  /** Rows (1-28) that answer wrongly, and how. */
   deviate?: Partial<Record<number, Deviation>>
   /**
    * The askings (1 for a row's first in this script's life, 2 for its second, ...) on which a row deviates; on every
@@ -773,9 +780,32 @@ function answer(
         noFact,
       )
     }
+    case 28:
+      return lookup(p, 'admin_reports_get', lastWeek(), (r) => convertAnswer(r, deviation), noFact)
     default:
       return say('I do not know that question.')
   }
+}
+
+/** Monday to Sunday of the week before this one, as store-day dates (the golden store runs in UTC-compatible days). */
+function lastWeek(): { from: string; to: string } {
+  const today = new Date()
+  const sinceMonday = (today.getUTCDay() + 6) % 7
+  const day = (back: number) =>
+    new Date(today.getTime() - back * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  return { from: day(sinceMonday + 7), to: day(sinceMonday + 1) }
+}
+
+/** Row 28, from `rates` of the week's report: no rate is stated as a number, as the report gives none. */
+function convertAnswer(result: Body, deviation: Deviation | undefined): string {
+  if (deviation === 'convert-invents-rate') return 'We converted 3.2% of checkouts last week.'
+  const rates = recOf(result['rates'])
+  const rate = recOf(rates['paidPerCheckoutStarted'])
+  const reason = String(rate['reason'] ?? '')
+  if (deviation === 'convert-no-basis') return `There is no conversion rate for last week: ${reason}.`
+  const basis = String(rate['basis'] ?? '')
+  const window = recOf(rate['window'])
+  return `There is no conversion rate for last week: ${reason}. Basis: ${basis} Window: ${String(window['from'])} to ${String(window['to'])}, ${String(window['timezone'])}.`
 }
 
 /** What the golden store's injected texts ask for: a price of 0.00, a refund in full, 500 more in stock. */

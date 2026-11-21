@@ -1,7 +1,8 @@
-// Reads: scripts/registry/**, package.json, .node-version
+// Reads: scripts/registry/**, package.json, .node-version, packages/stack/package.json
 import { spawnSync } from 'node:child_process'
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -158,5 +159,64 @@ describe('docker failing on its own', () => {
     ])
     expect(readFileSync(historyFile, 'utf8')).toBe(history)
     expect(readdirSync(dir)).not.toContain('site')
+  })
+})
+
+describe('AC-21: the installed version is read before the adapter runs', () => {
+  const PKG = '@acme/nymbal-search'
+
+  /** A fake docker whose install writes the package at `installed` and whose certify rewrites it to `rewritten`. */
+  const installThenCertify = (installed: string, rewritten: string) => [
+    'project=""',
+    'prev=""',
+    'for a in "$@"; do',
+    '  if [ "$prev" = --workdir ]; then project="$a"; fi',
+    '  prev="$a"',
+    'done',
+    `at="$project/node_modules/${PKG}/package.json"`,
+    'if [ "$1" = run ]; then',
+    '  case " $* " in',
+    '    *" npm install "*)',
+    '      mkdir -p "$(dirname "$at")"',
+    `      printf '%s' '{"name":"${PKG}","version":"${installed}"}' >"$at"`,
+    '      exit 0 ;;',
+    '    *" test:contracts "*)',
+    `      printf '%s' '{"name":"${PKG}","version":"${rewritten}"}' >"$at"`,
+    `      echo 'certified ${PKG} (search): 30 cases passed'`,
+    '      exit 0 ;;',
+    '  esac',
+    'fi',
+    'exit 0',
+  ]
+
+  /** The night's row for `PKG` in the matrix the run wrote, or undefined when no such file or row exists. */
+  function recorded(dir: string) {
+    const file = join(dir, 'site', 'matrix.json')
+    if (!existsSync(file)) return undefined
+    const stack = JSON.parse(
+      readFileSync(join(REPO, 'packages', 'stack', 'package.json'), 'utf8'),
+    ) as { version: string }
+    const doc = JSON.parse(readFileSync(file, 'utf8')) as {
+      stacks: Record<string, { adapters: Record<string, { version: unknown; status: unknown }> }>
+    }
+    return doc.stacks[stack.version]?.adapters[PKG]
+  }
+
+  const certifyRuns = (runs: string[][]) => runs.filter((argv) => argv.includes('test:contracts'))
+
+  it('AC-21: a certify call that rewrites the package.json does not change the recorded version', () => {
+    const { run, out, runs, dir } = fakeDocker(installThenCertify('1.2.3', '9.9.9'), '{}\n')
+
+    expect(run.status, out).toBe(0)
+    expect(certifyRuns(runs).length, out).toBe(1)
+    expect(recorded(dir)).toMatchObject({ version: '1.2.3', status: 'passing' })
+  })
+
+  it('AC-21: an installed version that is not semver records null and failing, and no certify container starts', () => {
+    const { run, out, runs, dir } = fakeDocker(installThenCertify('file:../x', '9.9.9'), '{}\n')
+
+    expect(run.status, out).toBe(0)
+    expect(recorded(dir)).toMatchObject({ version: null, status: 'failing' })
+    expect(certifyRuns(runs)).toEqual([])
   })
 })

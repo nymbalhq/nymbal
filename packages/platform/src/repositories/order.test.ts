@@ -452,7 +452,7 @@ describe('OrderRepository: the admin list filters and count', () => {
       await place(env, { status: 'confirmed', ship: { country: 'DE' } }),
       await place(env, { status: 'cancelled', ship: { country: 'GB' } }),
     ]
-    for (const status of ['confirmed', 'pending', 'cancelled', 'refunded'] as const) {
+    for (const status of ['confirmed', 'pending', 'cancelled'] as const) {
       await expectReference(env, placed, { status })
       await expectReference(env, placed, { status, country: 'GB' })
     }

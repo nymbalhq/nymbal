@@ -63,6 +63,7 @@ export interface ProductService {
   getBySlug(slug: string): Promise<ProductSnapshot>
   list(opts?: {
     status?: ProductStatus
+    q?: string
     limit?: number
     offset?: number
   }): Promise<ProductSnapshot[]>

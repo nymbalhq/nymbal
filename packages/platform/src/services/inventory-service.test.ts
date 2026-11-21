@@ -40,10 +40,10 @@ async function setup() {
   const logger = createLogger({ pretty: false, level: 'error' })
   const eventBus = new InProcessEventBus({ logger })
   const repos = buildRepositories(commandStore, documentStore)
-  const publisher = wirePublisher(
+  const { publisher, relay } = wirePublisher(
     { createEventPublisher, createRelay },
     { store: commandStore, eventLog: repos.eventLog, eventBus, logger },
-  ).publisher
+  )
   const product = createProductService({
     store: commandStore,
     repos,
@@ -52,7 +52,7 @@ async function setup() {
     currency: 'GBP',
   })
   const inventory = createInventoryService({ store: commandStore, repos, publisher, logger })
-  return { commandStore, eventBus, product, inventory, repos }
+  return { commandStore, eventBus, product, inventory, repos, relay }
 }
 
 async function createTestVariant(product: ReturnType<typeof createProductService>, stock = 20) {
@@ -70,7 +70,7 @@ async function createTestVariant(product: ReturnType<typeof createProductService
 
 describe('InventoryService', () => {
   it('adjustStock increases stock and emits inventory.changed', async () => {
-    const { commandStore, eventBus, product, inventory, repos } = await setup()
+    const { commandStore, eventBus, product, inventory, repos, relay } = await setup()
     const variant = await createTestVariant(product, 10)
     const changed: unknown[] = []
     await eventBus.subscribe(EVT_INVENTORY_CHANGED, (e) => {
@@ -80,6 +80,7 @@ describe('InventoryService', () => {
     expect(result.newQty).toBe(15)
     const fresh = await commandStore.read((tx) => repos.variant.findById(tx, variant.id))
     expect(fresh?.stock).toBe(15)
+    await relay.drain()
     expect(changed.length).toBeGreaterThanOrEqual(1)
     await commandStore.close()
   })
@@ -108,33 +109,33 @@ describe('InventoryService', () => {
   })
 
   it('adjustStock emits low_stock when threshold crossed', async () => {
-    const { commandStore, eventBus, product, inventory } = await setup()
+    const { commandStore, eventBus, product, inventory, relay } = await setup()
     const variant = await createTestVariant(product, 5)
     const lowStock: unknown[] = []
     await eventBus.subscribe(EVT_INVENTORY_LOW_STOCK, (e) => {
       lowStock.push(e.payload)
     })
     await inventory.adjustStock(variant.id, -3, 'manual', 'admin')
-    await new Promise((r) => setTimeout(r, 10))
+    await relay.drain()
     expect(lowStock).toHaveLength(1)
     await commandStore.close()
   })
 
   it('adjustStock emits out_of_stock when stock reaches zero', async () => {
-    const { commandStore, eventBus, product, inventory } = await setup()
+    const { commandStore, eventBus, product, inventory, relay } = await setup()
     const variant = await createTestVariant(product, 3)
     const oos: unknown[] = []
     await eventBus.subscribe(EVT_INVENTORY_OUT_OF_STOCK, (e) => {
       oos.push(e.payload)
     })
     await inventory.adjustStock(variant.id, -3, 'manual', 'admin')
-    await new Promise((r) => setTimeout(r, 10))
+    await relay.drain()
     expect(oos).toHaveLength(1)
     await commandStore.close()
   })
 
   it('reserveStock deducts from available stock and emits reserved', async () => {
-    const { commandStore, eventBus, product, inventory, repos } = await setup()
+    const { commandStore, eventBus, product, inventory, repos, relay } = await setup()
     const variant = await createTestVariant(product, 20)
     const reserved: unknown[] = []
     await eventBus.subscribe(EVT_INVENTORY_RESERVED, (e) => {
@@ -145,7 +146,7 @@ describe('InventoryService', () => {
     expect(result.expiresAt).toBeTruthy()
     const fresh = await commandStore.read((tx) => repos.variant.findById(tx, variant.id))
     expect(fresh?.stock).toBe(15)
-    await new Promise((r) => setTimeout(r, 10))
+    await relay.drain()
     expect(reserved).toHaveLength(1)
     await commandStore.close()
   })
@@ -165,7 +166,7 @@ describe('InventoryService', () => {
   })
 
   it('releaseReservation restores stock and emits released', async () => {
-    const { commandStore, eventBus, product, inventory, repos } = await setup()
+    const { commandStore, eventBus, product, inventory, repos, relay } = await setup()
     const variant = await createTestVariant(product, 10)
     const { reservationId } = await inventory.reserveStock(variant.id, 4)
     const released: unknown[] = []
@@ -175,7 +176,7 @@ describe('InventoryService', () => {
     await inventory.releaseReservation(reservationId, 'cancelled')
     const fresh = await commandStore.read((tx) => repos.variant.findById(tx, variant.id))
     expect(fresh?.stock).toBe(10)
-    await new Promise((r) => setTimeout(r, 10))
+    await relay.drain()
     expect(released).toHaveLength(1)
     await commandStore.close()
   })

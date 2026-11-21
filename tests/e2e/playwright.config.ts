@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig, devices } from '@playwright/test'
+import { e2eGlobalTimeoutMs, machineBudget } from '../../scripts/machine-budget'
 import { stack } from '../../scripts/stack'
 import { e2eReporters } from './support/reporters'
 
@@ -24,7 +25,10 @@ const CUSTOM_TARGETS = ['astro-custom', 'nextjs-custom']
 // The mail outage journey (@mail-outage) on the custom store's API alone: Chaos applies to the whole Mailpit, so it is
 // a target of its own, run after the custom ones, and no other project runs it.
 const MAIL_OUTAGE = 'mail-outage'
-const isCustom = target !== undefined && [...CUSTOM_TARGETS, MAIL_OUTAGE].includes(target)
+// The migration kit's journeys: a WordPress site (compose.yaml) beside the custom store, whose email goes to Mailpit.
+const WORDPRESS = 'wordpress'
+const isCustom =
+  target !== undefined && [...CUSTOM_TARGETS, MAIL_OUTAGE, WORDPRESS].includes(target)
 const CUSTOM_API = local(block.customApi)
 const NATIVE_API = local(block.api)
 // The no-search store (tests/e2e/fixtures/no-search, search `custom` with no capability) on an API of its own, with
@@ -57,6 +61,7 @@ process.env.NYMBAL_API_URL = isCustom
 const astroURL = process.env.NYMBAL_STOREFRONT_URL ?? local(block.astro)
 const nextjsURL = process.env.NYMBAL_STOREFRONT_URL ?? local(block.nextjs)
 const astroCustomURL = process.env.NYMBAL_STOREFRONT_URL ?? local(block.astroCustom)
+const wordpressURL = local(block.wordpress)
 const nextjsCustomURL = process.env.NYMBAL_STOREFRONT_URL ?? local(block.nextjsCustom)
 const astroNoSearchURL = process.env.NYMBAL_STOREFRONT_URL ?? local(block.astroNoSearch)
 const nextjsNoSearchURL = process.env.NYMBAL_STOREFRONT_URL ?? local(block.nextjsNoSearch)
@@ -143,6 +148,20 @@ const customApiServer = {
   gracefulShutdown: { signal: 'SIGTERM' as const, timeout: 10000 },
 }
 
+/** The custom store with the WordPress site a kit origin, on each of the hosts the journeys open it on. */
+const wordpressApiServer = {
+  ...customApiServer,
+  env: {
+    ...customApiServer.env,
+    NYMBAL_CORS_ORIGINS: corsOrigins(astroCustomURL),
+    NYMBAL_KIT_ORIGINS: corsOrigins(
+      wordpressURL,
+      `http://127.0.0.1:${block.wordpress}`,
+      `http://www.nymbal-kit.test:${block.wordpress}`,
+    ),
+  },
+}
+
 /** The no-search store: `nymbal dev --api-only` from its fixture directory, as the custom store runs from its own. */
 const noSearchApiServer = {
   command: `node ../../../../scripts/e2e-server.mjs -- node ../../../../packages/cli/bin/nymbal.mjs dev --api-only --port ${block.noSearchApi}`,
@@ -221,6 +240,7 @@ function servers() {
     'admin',
     ...CUSTOM_TARGETS,
     MAIL_OUTAGE,
+    WORDPRESS,
     ...NOSEARCH_TARGETS,
     ...OVERRIDE_TARGETS,
   ]
@@ -234,6 +254,7 @@ function servers() {
     return [customApiServer, nextjsServer(nextjsCustomURL, CUSTOM_API)]
   }
   if (target === MAIL_OUTAGE) return [customApiServer]
+  if (target === WORDPRESS) return [wordpressApiServer, astroServer(astroCustomURL, CUSTOM_API)]
   if (target === 'astro-nosearch') {
     return [noSearchApiServer, astroServer(astroNoSearchURL, NOSEARCH_API)]
   }
@@ -250,20 +271,24 @@ function servers() {
   return [apiServer, astroServer(astroURL, NATIVE_API), nextjsServer(nextjsURL, NATIVE_API)]
 }
 
+// The machine's budget (scripts/machine-budget.ts), not half the cores, unless CI sizes its own; read again by each
+// worker, which takes the same number.
+const workers = machineBudget().playwright
+
 // A whole run is bounded: each target is its own invocation, and one that hangs (the admin project once ran 389 s
 // against a 9.5 s median) is red at the bound instead of holding everything behind it. GitHub's runners get twice
-// the local bound; NYMBAL_E2E_GLOBAL_TIMEOUT_MS overrides either. Unbounded when run by hand without CI.
+// the local bound, and a run under fewer workers than Playwright's own gets the bound grown by the cut;
+// NYMBAL_E2E_GLOBAL_TIMEOUT_MS overrides either. Unbounded when run by hand without CI.
 const globalTimeout = process.env.NYMBAL_E2E_GLOBAL_TIMEOUT_MS
   ? Number(process.env.NYMBAL_E2E_GLOBAL_TIMEOUT_MS)
   : isCI
-    ? process.env.GITHUB_ACTIONS
-      ? 10 * 60_000
-      : 5 * 60_000
+    ? e2eGlobalTimeoutMs(process.env, workers)
     : 0
 
 export default defineConfig({
   testDir: './journeys',
   fullyParallel: true,
+  ...(workers === undefined ? {} : { workers }),
   forbidOnly: isCI,
   retries: isCI ? 2 : 0,
   // With retries a test that passes only on a retry leaves the exit status green; the JSON report per target is
@@ -283,7 +308,7 @@ export default defineConfig({
       name: 'astro',
       // The Next dev server with its API stopped is a journey of the Next template's alone.
       testIgnore: ['**/journeys/admin/**', '**/journeys/next-dev-api-down.spec.ts'],
-      grepInvert: /@nosearch|@override|@mail-outage|@phone-width/,
+      grepInvert: /@nosearch|@override|@mail-outage|@phone-width|@wordpress/,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: astroURL,
@@ -292,7 +317,7 @@ export default defineConfig({
     {
       name: 'nextjs',
       testIgnore: ['**/journeys/admin/**'],
-      grepInvert: /@nosearch|@override|@mail-outage|@phone-width/,
+      grepInvert: /@nosearch|@override|@mail-outage|@phone-width|@wordpress/,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: nextjsURL,
@@ -326,6 +351,21 @@ export default defineConfig({
       use: {
         ...devices['Desktop Chrome'],
         baseURL: astroCustomURL,
+      },
+    },
+    // A WordPress theme page on the kit; no other project runs these. Its second origin is a pair of names that share
+    // a registrable domain, so the journeys can show a cookie crossing subdomains.
+    {
+      name: WORDPRESS,
+      testMatch: ['**/journeys/wordpress-kit.spec.ts'],
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: wordpressURL,
+        launchOptions: {
+          args: [
+            '--host-resolver-rules=MAP www.nymbal-kit.test 127.0.0.1,MAP shop.nymbal-kit.test 127.0.0.1',
+          ],
+        },
       },
     },
     // The no-search store: only the journeys tagged @nosearch, which no other project runs.

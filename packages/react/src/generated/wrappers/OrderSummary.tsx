@@ -6,7 +6,7 @@ import { NymbalOrderSummary } from '@nymbalhq/web-components/elements/nymbal-ord
 declare module 'react' {
   namespace JSX {
     interface IntrinsicElements {
-      'nymbal-order-summary': Omit<React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>, 'items' | 'subtotal-minor' | 'discount-minor' | 'shipping-minor' | 'tax-minor' | 'total-minor' | 'currency'> & { 'items'?: string | undefined; 'subtotal-minor'?: number | undefined; 'discount-minor'?: number | undefined; 'shipping-minor'?: number | undefined; 'tax-minor'?: number | undefined; 'total-minor'?: number | undefined; 'currency'?: string | undefined }
+      'nymbal-order-summary': Omit<React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>, 'items' | 'subtotal-minor' | 'discount-minor' | 'shipping-minor' | 'tax-minor' | 'total-minor' | 'currency' | 'prices-include-tax'> & { 'items'?: string | undefined; 'subtotal-minor'?: number | undefined; 'discount-minor'?: number | undefined; 'shipping-minor'?: number | undefined; 'tax-minor'?: number | undefined; 'total-minor'?: number | undefined; 'currency'?: string | undefined; 'prices-include-tax'?: string | undefined }
     }
   }
 }
@@ -26,6 +26,7 @@ export interface OrderSummaryProps {
   taxMinor?: number
   totalMinor?: number
   currency?: string
+  pricesIncludeTax?: boolean
   className?: string
   style?: React.CSSProperties
   slot?: string
@@ -44,7 +45,7 @@ export const OrderSummary = /* @__PURE__ */ forwardRef<HTMLElement, OrderSummary
     useDefine(NymbalOrderSummary)
 
     return (
-      <nymbal-order-summary ref={ref as React.Ref<HTMLElement>} {...{ 'ITEMS': props.items === undefined ? undefined : JSON.stringify(props.items), 'subtotal-minor': props.subtotalMinor, 'discount-minor': props.discountMinor, 'shipping-minor': props.shippingMinor, 'tax-minor': props.taxMinor, 'total-minor': props.totalMinor, 'CURRENCY': props.currency }} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
+      <nymbal-order-summary ref={ref as React.Ref<HTMLElement>} {...{ 'ITEMS': props.items === undefined ? undefined : JSON.stringify(props.items), 'subtotal-minor': props.subtotalMinor, 'discount-minor': props.discountMinor, 'shipping-minor': props.shippingMinor, 'tax-minor': props.taxMinor, 'total-minor': props.totalMinor, 'CURRENCY': props.currency, 'prices-include-tax': props.pricesIncludeTax ? '' : undefined }} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
         // The server render goes on the tag itself: a full load parses its template into the shadow root, which React
         // does not see, and a soft navigation's innerHTML leaves it for the element to upgrade.
         dangerouslySetInnerHTML={props.serverHtml === undefined ? undefined : { __html: props.serverHtml }}

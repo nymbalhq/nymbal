@@ -610,6 +610,7 @@ describe('AC-2, AC-5 and AC-6: refusals, the move-in and the printed plan, in a 
       'reviews',
       'analytics',
       'tax',
+      'promotions',
       'ai',
       'document-store',
       'event-bus',

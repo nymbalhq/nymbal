@@ -406,7 +406,7 @@ export async function planWooCommerceImport(
     {
       item: 'customer passwords',
       count: counts.customers.import,
-      why: 'WooCommerce does not export password hashes; imported customers reset theirs',
+      why: 'The WooCommerce API has no password hashes: export them with WP-CLI and load them with nymbal import --password-hashes, so customers sign in with their WordPress password until security.auth.legacy.until',
     },
     {
       item: 'WordPress pages and posts',

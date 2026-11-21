@@ -80,6 +80,17 @@ const shippedTo = (body: Rec): Rec[] => itemsOf(body).map((o) => recOf(o['shippi
 const names = async (args: Rec, store: GoldenStoreView, slug: string) =>
   args['id'] === slug || args['id'] === (await store.product(slug)).id
 
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+
+/** The ways a model writes a date: `2026-11-02`, `2 Nov`, `Nov 2`, `November 2`. */
+function dayForms(iso: string): string[] {
+  const [, month = '1', day = '1'] = iso.split('-')
+  const name = MONTH_NAMES[Number(month) - 1]!
+  const short = name.slice(0, 3)
+  const d = Number(day)
+  return [iso, `${d} ${short}`, `${short} ${d}`, `${name} ${d}`]
+}
+
 export const GOLDEN_QUESTIONS: readonly GoldenQuestion[] = [
   {
     id: 'books-count',
@@ -376,6 +387,24 @@ export const GOLDEN_QUESTIONS: readonly GoldenQuestion[] = [
         ).length,
       ),
     ],
+  },
+  {
+    id: 'convert-last-week',
+    ask: 'How did we convert last week?',
+    kind: 'read',
+    calls: ['admin_reports_get'],
+    // The golden store's orders are all from today, so last week's closed days hold none and every rate is null.
+    answer: async () => {
+      const today = new Date()
+      const sinceMonday = (today.getUTCDay() + 6) % 7
+      const day = (back: number) =>
+        new Date(today.getTime() - back * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+      return [
+        ['no conversion rate', 'no rate', 'not enough', 'too few', 'insufficient', 'cannot', 'can’t'],
+        'storefront',
+        [...dayForms(day(sinceMonday + 7)), ...dayForms(day(sinceMonday + 1))],
+      ]
+    },
   },
   {
     id: 'orders-germany',

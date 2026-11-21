@@ -2,10 +2,10 @@ name: Canary
 
 # A merge to dev with pending changesets publishes a snapshot of the changed packages to the npm `canary` tag
 # (`npm exec nymbal@canary`). It never commits, tags or pushes, and never moves `latest`.
-# Needs the NPM_TOKEN repository secret (npm granular token with publish rights on @nymbalhq/*, nymbal and
-# create-nymbal-app); without it the publish is skipped with a notice. A canary also waits until every public package
-# it would publish already exists on npm (scripts/canary-ready.ts), which is true once the first release from main
-# has gone out.
+# Needs no secret: npm takes the publish through trusted publishing (every published package names this repository
+# and canary.yml as a trusted publisher on npmjs.com), and pnpm publish trades the job's OIDC token for a short-lived
+# npm token and adds provenance itself. A canary also waits until every public package it would publish already
+# exists on npm (scripts/canary-ready.ts), which is true once the first release from main has gone out.
 
 on:
   push:
@@ -17,17 +17,15 @@ concurrency:
 
 permissions:
   contents: read
-  id-token: write
 
 jobs:
   detect:
-    name: Detect changesets and token
+    name: Detect changesets
     runs-on: ubuntu-latest
     permissions:
       contents: read
     outputs:
       changesets: ${{ steps.scan.outputs.changesets }}
-      npm_token: ${{ steps.token.outputs.npm_token }}
     steps:
       - uses: actions/checkout@v7
       - id: scan
@@ -40,23 +38,16 @@ jobs:
             echo "changesets=false" >> "$GITHUB_OUTPUT"
             echo "::notice::No pending changesets, no canary to publish."
           fi
-      - id: token
-        name: Check the npm secret
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          if [ -n "$NPM_TOKEN" ]; then
-            echo "npm_token=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "npm_token=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::NPM_TOKEN is not set: skipping the canary publish."
-          fi
 
   canary:
     name: Publish canary
     needs: detect
-    if: needs.detect.outputs.changesets == 'true' && needs.detect.outputs.npm_token == 'true'
+    if: needs.detect.outputs.changesets == 'true'
     runs-on: ubuntu-latest
+    # The OIDC token npm trusts for the publish.
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v7
         with:
@@ -66,7 +57,6 @@ jobs:
         with:
           node-version-file: .node-version
           cache: pnpm
-          registry-url: https://registry.npmjs.org
       - run: pnpm install --frozen-lockfile
       - name: Record the current versions
         run: pnpm -r list --json --depth -1 > "$RUNNER_TEMP/before.json"
@@ -87,6 +77,3 @@ jobs:
       - name: Publish to the canary tag
         if: steps.ready.outputs.ready == 'true'
         run: pnpm changeset publish --tag canary --no-git-tag
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_CONFIG_PROVENANCE: 'true'

@@ -5,6 +5,9 @@ import { api, fetchWithCsrf } from '@/lib/api'
 import { queryClient } from '@/lib/query-client'
 import type { LoginResponse } from '@/types'
 
+const TOO_MANY_SIGN_INS =
+  'Too many sign-in attempts. Reset the password on your store at /account/forgot-password, or try again later.'
+
 export function useAuth() {
   const navigate = useNavigate()
 
@@ -21,6 +24,11 @@ export function useAuth() {
         error?: { code: string; message: string }
       }
 
+      if (response.status === 429) {
+        // Past the store's ceiling every sign-in for the account is refused until its window ends; the admin cannot
+        // link to the storefront, whose origin it does not know, so it names the path.
+        throw new Error(TOO_MANY_SIGN_INS)
+      }
       if (!response.ok || !data.data) {
         throw new Error(data.error?.message ?? 'Login failed')
       }

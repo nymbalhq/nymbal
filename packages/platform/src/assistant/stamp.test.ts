@@ -23,6 +23,7 @@ import {
   assistantEvalHash,
   assistantEvalInput,
   canonicalJson,
+  EVAL_STAMP_MODEL,
   EVAL_STAMP_STORE,
   EVAL_STAMP_TODAY,
 } from './stamp.js'
@@ -128,11 +129,12 @@ function reversedKeys(value: unknown): unknown {
 const listing = (tools: ToolDefinition[]): Pick<ToolSurface, 'list'> => ({ list: () => tools })
 
 describe('the eval stamp', () => {
-  it('what is hashed is what the loop sends: the masked prompt under the default mask, the plain one with masking off, and the tools it offers', async () => {
+  it('what is hashed is what the loop sends and the model it is scored on: the masked prompt under the default mask, the plain one with masking off, the tools it offers and the default model', async () => {
     const input = assistantEvalInput(surface)
     const masked = await sentBy(DEFAULT_CUSTOMER_FIELDS)
     const plain = await sentBy([])
 
+    expect(input.model).toBe(EVAL_STAMP_MODEL)
     expect(input.prompts).toEqual({ masked: masked.system, plain: plain.system })
     expect(input.tools).toEqual(masked.tools)
     expect(input.tools).toEqual(plain.tools)

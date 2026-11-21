@@ -12,6 +12,8 @@ export interface StoreCapabilities {
   catalog: { sortKeys: ProductSortKey[]; defaultSort: ProductSortKey }
   /** Whether the store's email reaches a mailbox: false when its adapter only logs (`native`). */
   email: { delivers: boolean }
+  /** Whether a sign-up must follow a mailed link before it signs in (`required`) or signs in at once (`off`). */
+  auth: { verification: 'required' | 'off' }
   /** What the reviews adapter can do: without `submit` the store takes no review on its own site. */
   reviews: { capabilities: string[] }
   /** What the shipping adapter can do (`rates`, `labels`, `tracking`); none on a store that only ships by hand. */

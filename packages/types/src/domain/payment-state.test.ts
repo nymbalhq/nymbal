@@ -96,8 +96,6 @@ describe('paymentState', () => {
           'shipped',
           'delivered',
           'cancelled',
-          'refunded',
-          'partially_refunded',
         ),
         fc.option(fc.string({ minLength: 1, maxLength: 12 }), { nil: null }),
         ({ captured, refunded, extra }, status, intent) => {

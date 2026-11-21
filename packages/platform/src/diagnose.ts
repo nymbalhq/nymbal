@@ -52,8 +52,10 @@ import { migrationState } from './db/migrate.js'
 import { createLogger } from './logger.js'
 import { buildDocumentStore, buildEventBus, buildMedia, redisUrlOf } from './platform.js'
 import { agentReadiness } from './agents/readiness.js'
-import { createEventLogRepository } from './repositories/event-log.js'
+import { createEventLogRepository, retryFloor } from './repositories/event-log.js'
 import { buildRepositories, type SettingRow } from './repositories/index.js'
+import { createCustomerRepository } from './repositories/customer.js'
+import { daysUntil, legacyUntilOf, legacyWindowOpen } from './services/legacy-passwords.js'
 import { listStoredSettings, settingValues } from './settings/load.js'
 import type { SettingValue } from './settings/resolve.js'
 import { scrub, scrubbingLogger } from './settings/secret-set.js'
@@ -478,7 +480,14 @@ export async function diagnose(
       ? { name: 'events', status: 'down', detail: notChecked('command store') }
       : migrationsCheck.status !== 'ok'
         ? { name: 'events', status: 'down', detail: notChecked('migrations') }
-        : await eventLogCheck(commandStore, timeoutMs)
+        : await eventLogCheck(commandStore, timeoutMs, config.events.retentionDays)
+
+  const legacyCheck: DiagnosisCheck =
+    commandStore === undefined
+      ? { name: 'legacy passwords', status: 'down', detail: notChecked('command store') }
+      : migrationsCheck.status !== 'ok'
+        ? { name: 'legacy passwords', status: 'down', detail: notChecked('migrations') }
+        : await legacyPasswordsCheck(commandStore, timeoutMs, config.security.auth.legacy?.until)
 
   for (const close of closers) {
     const closed = await within(timeoutMs, close)
@@ -496,6 +505,7 @@ export async function diagnose(
     ...slots,
     ...primitives,
     eventsCheck,
+    legacyCheck,
     agentReadiness(config, env),
   ].map((check) => ({
     ...check,
@@ -530,26 +540,72 @@ async function originLockOf(
 const DEAD_SHOWN = 5
 
 /** The event log's dead events, the oldest first, and how many wait for a retry: read only. */
-async function eventLogCheck(store: CommandStore, timeoutMs: number): Promise<DiagnosisCheck> {
+async function eventLogCheck(
+  store: CommandStore,
+  timeoutMs: number,
+  retentionDays: number,
+): Promise<DiagnosisCheck> {
   const eventLog = createEventLogRepository(store)
+  const since = retryFloor(new Date(), retentionDays)
   const read = await within(timeoutMs, () =>
     store.read(async (tx) => ({
       dead: await eventLog.countDead(tx),
+      retryable: await eventLog.countDead(tx, { since }),
       shown: await eventLog.listDead(tx, DEAD_SHOWN),
       waiting: await eventLog.countRetrying(tx),
     })),
   )
   if (!read.ok) return { name: 'events', status: 'down', detail: read.detail }
-  const { dead, shown, waiting } = read.value
+  const { dead, retryable, shown, waiting } = read.value
   if (dead === 0) {
     return { name: 'events', status: 'ok', detail: `none dead, ${waiting} waiting to retry` }
   }
   const named = shown.map((e) => `seq ${e.seq} ${e.event.type} ${e.event.id}`)
   if (dead > shown.length) named.push(`${dead - shown.length} more`)
+  const past = dead - retryable
+  const hint =
+    retryable === 0
+      ? 'all past retention, cannot be retried'
+      : `fix the cause, then nymbal events retry <seq> or --all${past > 0 ? ` (${past} past retention cannot be retried)` : ''}`
   return {
     name: 'events',
     status: 'degraded',
-    detail: `${dead} dead: ${named.join(', ')}; ${waiting} waiting to retry`,
+    detail: `${dead} dead: ${named.join(', ')}; ${waiting} waiting to retry; ${hint}`,
+  }
+}
+
+/** How many imported password hashes the store holds and whether they are honoured: read only. */
+async function legacyPasswordsCheck(
+  store: CommandStore,
+  timeoutMs: number,
+  until: string | undefined,
+): Promise<DiagnosisCheck> {
+  const name = 'legacy passwords'
+  const customers = createCustomerRepository(store)
+  const read = await within(timeoutMs, () => store.read((tx) => customers.countLegacyPasswords(tx)))
+  if (!read.ok) return { name, status: 'down', detail: read.detail }
+  const held = read.value
+  if (held === 0) return { name, status: 'ok', detail: 'none held' }
+  if (until === undefined) {
+    return {
+      name,
+      status: 'degraded',
+      detail: `${held} held and not honoured: set security.auth.legacy.until, or they stay at rest`,
+    }
+  }
+  const now = new Date()
+  const at = legacyUntilOf(until)
+  if (!legacyWindowOpen(at, now)) {
+    return {
+      name,
+      status: 'degraded',
+      detail: `${held} held past security.auth.legacy.until: (re)start the store; its sweep runs at start and hourly`,
+    }
+  }
+  return {
+    name,
+    status: 'ok',
+    detail: `${held} held; honoured until ${until} (${daysUntil(at, now)} days)`,
   }
 }
 

@@ -11,8 +11,8 @@ import {
   StatusTransitionError,
   ValidationError,
   assertOrderTransition,
-  orderMovesFrom,
-  statusBeforePartialRefund,
+  fulfilmentMoves,
+  paymentState,
   type Address,
   type CaptureMethod,
   type CartSource,
@@ -47,6 +47,8 @@ export interface OrderCreateDraftInput {
   cartToken?: string | null
   /** The source of the cart the order is placed from; `storefront` when not given. */
   source?: CartSource
+  /** The line prices hold the tax; false when not given. */
+  pricesIncludeTax?: boolean
 }
 
 /** An imported order's source is always `import`. */
@@ -128,11 +130,11 @@ export function createOrderService(deps: CreateOrderServiceDeps): OrderService {
     note: string,
   ): Promise<Order> {
     assertOrderTransition(order.status, toStatus)
-    if (order.status === 'partially_refunded') {
-      const before = statusBeforePartialRefund(await repos.orderHistory.listByOrder(tx, order.id))
-      if (!orderMovesFrom(order.status, before).includes(toStatus)) {
-        throw new StatusTransitionError('order', order.status, toStatus)
-      }
+    if (!fulfilmentMoves(order.status, paymentState(order)).includes(toStatus)) {
+      throw new OrderConflictError(
+        'order.refunded',
+        `Order ${order.orderNumber} is fully refunded: it takes no further fulfilment work`,
+      )
     }
     const now = new Date()
     await repos.order.setStatus(tx, order.id, toStatus, now)
@@ -176,6 +178,7 @@ export function createOrderService(deps: CreateOrderServiceDeps): OrderService {
           paymentIntentId: input.paymentIntentId ?? null,
           cartToken: input.cartToken ?? null,
           ...(input.source !== undefined && { source: input.source }),
+          pricesIncludeTax: input.pricesIncludeTax ?? false,
           createdAt: now,
           updatedAt: now,
         })
@@ -223,7 +226,8 @@ export function createOrderService(deps: CreateOrderServiceDeps): OrderService {
     async updateStatus(id, toStatus, actor, note = '') {
       return store.transaction(async (tx) => {
         audit.note('order.updateStatus', [{ type: 'order', id }])
-        const order = await requireOrder(tx, id)
+        // Under the row lock a refund settling cannot change the money the move is judged on.
+        const order = await lockOrder(tx, id)
         const fresh = await doTransition(tx, order, toStatus, actor, note)
         await publisher.publish(EVT_ORDER_STATUS_CHANGED, {
           orderId: fresh.id,

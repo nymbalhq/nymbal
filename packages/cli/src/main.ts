@@ -13,10 +13,13 @@ import { addCommand } from './commands/add.js'
 import { doctorCommand } from './commands/doctor.js'
 import { secretsCommand } from './commands/secrets.js'
 import { eventsCommand } from './commands/events.js'
+import { suppressionsCommand } from './commands/suppressions.js'
 import { auditCommand } from './commands/audit.js'
 import { replayCommand } from './commands/replay.js'
 import { mcpCommand } from './commands/mcp.js'
 import { evalCommand } from './commands/eval.js'
+import { upgradeCommand } from './commands/upgrade.js'
+import { verifyCommand } from './commands/verify.js'
 import {
   securityApplyCommand,
   securityDriftCommand,
@@ -50,6 +53,8 @@ export const main = defineCommand({
     preview: previewCommand,
     'config:validate': configValidateCommand,
     add: addCommand,
+    upgrade: upgradeCommand,
+    verify: verifyCommand,
     doctor: doctorCommand,
     'security:plan': securityPlanCommand,
     'security:apply': securityApplyCommand,
@@ -57,6 +62,7 @@ export const main = defineCommand({
     'security:inspect': securityInspectCommand,
     secrets: secretsCommand,
     events: eventsCommand,
+    suppressions: suppressionsCommand,
     audit: auditCommand,
     replay: replayCommand,
     mcp: mcpCommand,

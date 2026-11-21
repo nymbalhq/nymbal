@@ -10,6 +10,7 @@ import {
 import * as sqliteSchema from '../db/schema/sqlite.js'
 import * as postgresSchema from '../db/schema/postgres.js'
 import { normaliseEmail } from '../email-address.js'
+import { fromTimestamp } from './json.js'
 
 export type EmailSuppressionReason = 'hard_bounce' | 'complaint'
 
@@ -26,6 +27,10 @@ export interface EmailSuppressionRepository extends StoreRepository {
   /** True when this call suppressed the address; false when it already was, whose first reason stays. */
   suppress(tx: Tx, input: EmailSuppressionInput): Promise<boolean>
   isSuppressed(tx: ReadTx, email: string): Promise<boolean>
+  /** Why and since when (ISO 8601) the address is suppressed; null when it is not. */
+  find(tx: ReadTx, email: string): Promise<{ reason: string; createdAt: string } | null>
+  /** True when this call removed the address's row. */
+  clear(tx: Tx, email: string): Promise<boolean>
 }
 
 export function createEmailSuppressionRepository(store: CommandStore): EmailSuppressionRepository {
@@ -61,6 +66,22 @@ export function createEmailSuppressionRepository(store: CommandStore): EmailSupp
         .where(eq(p.email, key))
         .limit(1)
       return rows.length > 0
+    },
+    async find(tx, email) {
+      const key = normaliseEmail(email)
+      const row =
+        tx.kind === 'sqlite'
+          ? sqliteDb(tx).select().from(s).where(eq(s.email, key)).get()
+          : (await postgresDb(tx).select().from(p).where(eq(p.email, key)).limit(1))[0]
+      return row ? { reason: row.reason, createdAt: fromTimestamp(row.createdAt) } : null
+    },
+    async clear(tx, email) {
+      const key = normaliseEmail(email)
+      if (tx.kind === 'sqlite') {
+        return sqliteDb(tx).delete(s).where(eq(s.email, key)).run().changes > 0
+      }
+      const result = await postgresDb(tx).delete(p).where(eq(p.email, key))
+      return (result.rowCount ?? 0) > 0
     },
   }
 }

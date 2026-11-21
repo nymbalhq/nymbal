@@ -384,7 +384,7 @@
         "csrf": false,
         "auth": {
           "jwtSecret": "XE7Z6ZdA1BFD1i0b3xZB5eKDxlnKk9UacD9DF8E2",
-          "accessTtl": "30s",
+          "accessTtl": "1m",
           "refreshTtl": "7d"
         }
       },
@@ -404,7 +404,7 @@
         "csrf": false,
         "auth": {
           "jwtSecret": "XE7Z6ZdA1BFD1i0b3xZB5eKDxlnKk9UacD9DF8E2",
-          "accessTtl": "30s",
+          "accessTtl": "1m",
           "refreshTtl": "7d"
         }
       }
@@ -743,7 +743,7 @@
       "input": {
         "adapter": "middleware",
         "auth": {
-          "accessTtl": "30s",
+          "accessTtl": "1m",
           "refreshTtl": "30d"
         }
       },
@@ -763,7 +763,7 @@
         "csrf": true,
         "auth": {
           "jwtSecret": "dev-secret-please-override-me-1234567890",
-          "accessTtl": "30s",
+          "accessTtl": "1m",
           "refreshTtl": "30d"
         }
       }
@@ -791,7 +791,7 @@
         "csrf": false,
         "auth": {
           "jwtSecret": "6O5lLf7r8BNKVz9k91sY38dI4me3ne6OVzZis",
-          "accessTtl": "30s",
+          "accessTtl": "1m",
           "refreshTtl": "12h"
         }
       },
@@ -817,7 +817,7 @@
         "csrf": false,
         "auth": {
           "jwtSecret": "6O5lLf7r8BNKVz9k91sY38dI4me3ne6OVzZis",
-          "accessTtl": "30s",
+          "accessTtl": "1m",
           "refreshTtl": "12h"
         }
       }
@@ -1113,7 +1113,7 @@
         "csrf": false,
         "auth": {
           "jwtSecret": "79aU280iJ3iC36LnTwh4A3IEH5OROK",
-          "accessTtl": "30s",
+          "accessTtl": "1m",
           "refreshTtl": "7d"
         }
       },
@@ -1133,7 +1133,7 @@
         "csrf": false,
         "auth": {
           "jwtSecret": "79aU280iJ3iC36LnTwh4A3IEH5OROK",
-          "accessTtl": "30s",
+          "accessTtl": "1m",
           "refreshTtl": "7d"
         }
       }
@@ -1231,7 +1231,7 @@
         },
         "csrf": true,
         "auth": {
-          "accessTtl": "30s",
+          "accessTtl": "1m",
           "refreshTtl": "30d"
         }
       },
@@ -1251,7 +1251,7 @@
         "csrf": true,
         "auth": {
           "jwtSecret": "dev-secret-please-override-me-1234567890",
-          "accessTtl": "30s",
+          "accessTtl": "1m",
           "refreshTtl": "30d"
         }
       }
@@ -1517,7 +1517,7 @@
         "csrf": true,
         "auth": {
           "jwtSecret": "AD0REeQ6KXZi7UR38f1UdTAIH3xlD2R9sxA95VE",
-          "accessTtl": "30s",
+          "accessTtl": "1m",
           "refreshTtl": "30d"
         }
       },
@@ -1537,7 +1537,7 @@
         "csrf": true,
         "auth": {
           "jwtSecret": "AD0REeQ6KXZi7UR38f1UdTAIH3xlD2R9sxA95VE",
-          "accessTtl": "30s",
+          "accessTtl": "1m",
           "refreshTtl": "30d"
         }
       }
@@ -2034,7 +2034,7 @@
         "csrf": false,
         "auth": {
           "jwtSecret": "QJ2t745xs3rtS5dj",
-          "accessTtl": "30s",
+          "accessTtl": "1m",
           "refreshTtl": "30d"
         }
       },
@@ -2054,7 +2054,7 @@
         "csrf": false,
         "auth": {
           "jwtSecret": "QJ2t745xs3rtS5dj",
-          "accessTtl": "30s",
+          "accessTtl": "1m",
           "refreshTtl": "30d"
         }
       }
@@ -2201,7 +2201,7 @@
         "csrf": true,
         "auth": {
           "jwtSecret": "JF5qb8OTvpL314EuFr8Iie9ZjxrLBQYG",
-          "accessTtl": "30s",
+          "accessTtl": "1m",
           "refreshTtl": "7d"
         }
       },
@@ -2221,7 +2221,7 @@
         "csrf": true,
         "auth": {
           "jwtSecret": "JF5qb8OTvpL314EuFr8Iie9ZjxrLBQYG",
-          "accessTtl": "30s",
+          "accessTtl": "1m",
           "refreshTtl": "7d"
         }
       }
@@ -2262,7 +2262,7 @@
           "xFrameOptions": "sameorigin"
         },
         "auth": {
-          "accessTtl": "30s",
+          "accessTtl": "1m",
           "refreshTtl": "30d"
         }
       },
@@ -2303,7 +2303,7 @@
         "csrf": true,
         "auth": {
           "jwtSecret": "dev-secret-please-override-me-1234567890",
-          "accessTtl": "30s",
+          "accessTtl": "1m",
           "refreshTtl": "30d"
         }
       }
@@ -2628,7 +2628,7 @@
         "csrf": true,
         "auth": {
           "jwtSecret": "V373c16CLHIRCP9wTau6bKg14Q13kQ",
-          "accessTtl": "30s",
+          "accessTtl": "1m",
           "refreshTtl": "30d"
         }
       },
@@ -2664,7 +2664,7 @@
         "csrf": true,
         "auth": {
           "jwtSecret": "V373c16CLHIRCP9wTau6bKg14Q13kQ",
-          "accessTtl": "30s",
+          "accessTtl": "1m",
           "refreshTtl": "30d"
         }
       }
@@ -2692,7 +2692,7 @@
         "csrf": true,
         "auth": {
           "jwtSecret": "8Mc26bebEE3A9DDnn",
-          "accessTtl": "30s"
+          "accessTtl": "1m"
         }
       },
       "output": {
@@ -2722,7 +2722,7 @@
         "csrf": true,
         "auth": {
           "jwtSecret": "8Mc26bebEE3A9DDnn",
-          "accessTtl": "30s",
+          "accessTtl": "1m",
           "refreshTtl": "7d"
         }
       }
@@ -2743,7 +2743,7 @@
         },
         "auth": {
           "jwtSecret": "70E1Flx4J3xFsuf88k1eH5FbAXjaKLU",
-          "accessTtl": "30s",
+          "accessTtl": "1m",
           "refreshTtl": "12h"
         }
       },
@@ -2763,7 +2763,7 @@
         "csrf": true,
         "auth": {
           "jwtSecret": "70E1Flx4J3xFsuf88k1eH5FbAXjaKLU",
-          "accessTtl": "30s",
+          "accessTtl": "1m",
           "refreshTtl": "12h"
         }
       }
@@ -2779,7 +2779,7 @@
         "csrf": true,
         "auth": {
           "jwtSecret": "99raurmLJzkx4xk36e264nJx0y",
-          "accessTtl": "30s",
+          "accessTtl": "1m",
           "refreshTtl": "7d"
         }
       },
@@ -2799,7 +2799,7 @@
         "csrf": true,
         "auth": {
           "jwtSecret": "99raurmLJzkx4xk36e264nJx0y",
-          "accessTtl": "30s",
+          "accessTtl": "1m",
           "refreshTtl": "7d"
         }
       }
@@ -2947,7 +2947,7 @@
         "csrf": true,
         "auth": {
           "jwtSecret": "Pl1vIZhZkMkzH1JF8ZaPi3p0",
-          "accessTtl": "30s",
+          "accessTtl": "1m",
           "refreshTtl": "12h"
         }
       },
@@ -2988,7 +2988,7 @@
         "csrf": true,
         "auth": {
           "jwtSecret": "Pl1vIZhZkMkzH1JF8ZaPi3p0",
-          "accessTtl": "30s",
+          "accessTtl": "1m",
           "refreshTtl": "12h"
         }
       }

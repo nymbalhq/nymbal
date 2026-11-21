@@ -3,7 +3,8 @@ import fc from 'fast-check'
 // `security` blocks of `middleware` stores, as a project may write them at d872ee8: any rate limit the key pattern
 // allows, every optional block present or absent. `middleware-security-d872ee8.json` holds RECORD_RUNS of them, drawn
 // with RECORD_SEED, beside what the d872ee8 schema parsed each one to (the config beside it is BASE_CONFIG). The
-// recording ran once, at d872ee8, before the schema changed; it is not re-run.
+// recording ran once, at d872ee8, before the schema changed; it is not re-run. Once accessTtl came to be bounded at one
+// minute to one hour, its `30s` was changed to `1m` here and in every recorded case, input and output alike.
 
 export const RECORD_SEED = 2404
 export const RECORD_RUNS = 60
@@ -68,7 +69,7 @@ export const middlewareSecurityArb = fc.record(
     auth: fc.record(
       {
         jwtSecret: fc.stringMatching(/^[A-Za-z0-9]{16,40}$/),
-        accessTtl: fc.constantFrom('15m', '1h', '30s'),
+        accessTtl: fc.constantFrom('15m', '1h', '1m'),
         refreshTtl: fc.constantFrom('7d', '30d', '12h'),
       },
       { requiredKeys: [], noNullPrototype: true },

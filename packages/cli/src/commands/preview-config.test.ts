@@ -1,12 +1,16 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
+import type { Address } from '@nymbalhq/types'
 import {
   BUILT_IN,
+  commerceSchema,
   KNOWN_PROVIDERS,
   nymbalConfigSchema,
   type CommerceSlot,
   type NymbalConfig,
 } from '@nymbalhq/config'
+import { createNativeTaxAdapter } from '../../../platform/src/adapters/tax/native-adapter.js'
+import { createLogger } from '../../../platform/src/logger.js'
 import { previewConfig } from './preview-config.js'
 
 // The config a preview boots its throwaway store on, made from whatever the merchant's project configures: every
@@ -57,6 +61,19 @@ const arbInfrastructure = fc
     }
   })
 
+/** The project's tax table: a row per country, some with a reduced rate for a tax code. */
+const arbRates = fc.uniqueArray(
+  fc.record({
+    country: fc.constantFrom('GB', 'DE', 'FR', 'US'),
+    percent: fc.integer({ min: 1, max: 300_000 }).map((n) => n / 10_000),
+    reduced: fc.option(
+      fc.integer({ min: 0, max: 100_000 }).map((n) => n / 10_000),
+      { nil: undefined },
+    ),
+  }),
+  { selector: (row) => row.country, maxLength: 4 },
+)
+
 const arbSecurity = fc.constantFrom<Record<string, unknown>>(
   { adapter: 'middleware' },
   { adapter: 'cloudflare', cloudflare: { zoneId: 'zone-1', apiToken: 'cf-token' } },
@@ -74,6 +91,7 @@ const arbConfig: fc.Arbitrary<NymbalConfig> = fc
     ),
     infrastructure: arbInfrastructure,
     security: arbSecurity,
+    rates: arbRates,
     archive: fc.boolean(),
     currency: fc.constantFrom('GBP', 'JPY', 'EUR', 'KWD'),
     template: fc.constantFrom('astro', 'nextjs'),
@@ -91,7 +109,17 @@ const arbConfig: fc.Arbitrary<NymbalConfig> = fc
       template: c.template,
       infrastructure: c.infrastructure,
       security: c.security,
-      commerce: c.commerce,
+      commerce: {
+        ...c.commerce,
+        tax: {
+          ...c.commerce.tax,
+          rates: c.rates.map(({ country, percent, reduced }) => ({
+            country,
+            percent,
+            ...(reduced !== undefined && { codes: { reduced } }),
+          })),
+        },
+      },
       http: {
         adapter: 'fastify',
         port: 8080,
@@ -114,7 +142,7 @@ const arbOptions = fc.record({
 })
 
 describe('previewConfig', () => {
-  it("AC-3: for generated valid configs, the preview config is valid, every commerce slot is the kernel provider with no package or config (ai kept only with ai: true), security is middleware, infrastructure is sqlite, in-memory, in-process and local-fs, there is no archive, the API listens on 127.0.0.1 at the port given with CORS for the storefront alone, store and template are the project's, and the input is unchanged", () => {
+  it("AC-3: for generated valid configs, the preview config is valid, every commerce slot is the kernel provider with the schema's defaults and no package or config (the tax slot keeps the project's rate table; ai kept only with ai: true), security is middleware, infrastructure is sqlite, in-memory, in-process and local-fs, there is no archive, the API listens on 127.0.0.1 at the port given with CORS for the storefront alone, store and template are the project's, and the input is unchanged", () => {
     fc.assert(
       fc.property(arbConfig, arbOptions, (config, options) => {
         const before = structuredClone(config)
@@ -125,7 +153,12 @@ describe('previewConfig', () => {
         expect(parsed.success ? [] : parsed.error.issues.map((i) => i.message)).toEqual([])
         for (const slot of SLOTS) {
           const expected =
-            slot === 'ai' && options.ai ? before.commerce.ai : { provider: BUILT_IN[slot][0] }
+            slot === 'ai' && options.ai
+              ? before.commerce.ai
+              : commerceSchema.shape[slot].parse({
+                  provider: BUILT_IN[slot][0],
+                  ...(slot === 'tax' && { rates: before.commerce.tax.rates }),
+                })
           expect([slot, out.commerce[slot]]).toEqual([slot, expected])
         }
         expect([out.security.adapter, out.security.package, out.security.config]).toEqual([
@@ -152,6 +185,59 @@ describe('previewConfig', () => {
         expect(config).toEqual(before)
       }),
       { numRuns: 200 },
+    )
+  })
+
+  it("the kernel's tax engine, built from a preview config as the store builds it, quotes a cart as the project's own rate table does", async () => {
+    const logger = createLogger({ pretty: false, level: 'error' })
+    const shipTo = (country: string): Address => ({
+      firstName: 'Ada',
+      lastName: 'Buyer',
+      addressLine1: '1 Main St',
+      city: 'Town',
+      region: '',
+      postalCode: 'AB1 2CD',
+      country,
+    })
+    await fc.assert(
+      fc.asyncProperty(
+        arbConfig.filter((config) => config.commerce.tax.rates.length > 0),
+        arbOptions,
+        fc.nat(),
+        fc.array(
+          fc.record({
+            amountMinor: fc.integer({ min: 100, max: 1_000_000 }),
+            reduced: fc.boolean(),
+          }),
+          { minLength: 1, maxLength: 4 },
+        ),
+        fc.boolean(),
+        async (config, options, pick, lines, pricesIncludeTax) => {
+          const rates = config.commerce.tax.rates
+          const params = {
+            currency: config.store.currency,
+            shipTo: shipTo(rates[pick % rates.length]!.country),
+            customer: { id: null },
+            lines: lines.map((line, i) => ({
+              id: `variant-${i}`,
+              sku: `SKU-${i}`,
+              amountMinor: line.amountMinor,
+              qty: 1,
+              ...(line.reduced && { taxCode: 'reduced' }),
+            })),
+            shipping: null,
+            pricesIncludeTax,
+            reference: 'cart-1',
+          }
+          const project = createNativeTaxAdapter({ logger, rates })
+
+          const out = previewConfig(config, options)
+          const preview = createNativeTaxAdapter({ logger, rates: out.commerce.tax.rates })
+
+          expect(await preview.quote(params)).toEqual(await project.quote(params))
+        },
+      ),
+      { numRuns: 100 },
     )
   })
 })

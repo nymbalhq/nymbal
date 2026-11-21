@@ -8,7 +8,13 @@ import {
   type NymbalEvent,
 } from '@nymbalhq/types'
 import { createKernel, seedVariant, type Kernel } from '../support/kernel.js'
-import { eventRows, failPublishFor, maxSeq, type FailingBus } from '../support/outbox.js'
+import {
+  eventRows,
+  failPublishFor,
+  firstTried,
+  maxSeq,
+  type FailingBus,
+} from '../support/outbox.js'
 import { openRaw, type RawReader } from '../support/raw.js'
 import { unaudited } from '../support/write-audit.js'
 
@@ -51,6 +57,7 @@ describe('AC-6: delivery failure keeps the event and does not fail the command',
     failing = failPublishFor(k.eventBus, [EVT_PRODUCT_CREATED])
 
     const seeded = await seedVariant(k, 3)
+    await firstTried(raw, 'seq > ? AND type = ?', [before, EVT_PRODUCT_CREATED])
 
     expect(await raw.count('products', 'id = ?', [seeded.productId])).toBe(1)
     const [row] = await eventRows(raw, 'seq > ? AND type = ?', [before, EVT_PRODUCT_CREATED])
@@ -96,6 +103,7 @@ describe('AC-6: delivery failure keeps the event and does not fail the command',
         return [failed.id, abandoned.id]
       }),
     )
+    await k.app.relay.drain()
 
     const rows = await eventRows(raw, 'id IN (?, ?)', [failedId, abandonedId])
     expect(rows.map((r) => ({ id: r.id, delivered: r.deliveredAt != null }))).toEqual([
@@ -111,6 +119,7 @@ describe('AC-6: delivery failure keeps the event and does not fail the command',
     const before = await maxSeq(raw)
 
     await k.services.category.create({ slug: `poison-${randomUUID()}`, name: 'Poison' })
+    await firstTried(raw, 'seq > ? AND type = ?', [before, EVT_CATEGORY_CREATED])
 
     const [row] = await eventRows(raw, 'seq > ? AND type = ?', [before, EVT_CATEGORY_CREATED])
     expect(row, 'the category.created.v1 row').toBeDefined()

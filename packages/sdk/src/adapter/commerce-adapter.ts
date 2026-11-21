@@ -1,6 +1,7 @@
 import type {
   AlertKind,
   Cart,
+  CheckoutQuote,
   Customer,
   CustomerAddress,
   PublicReviewsResult,
@@ -15,9 +16,11 @@ import type {
   ProductSearchParams,
   ProductSearchResult,
   CheckoutDetails,
+  CheckoutQuoteDetails,
   CheckoutResult,
   RegisterParams,
   AuthResult,
+  VerificationSent,
   NewAddress,
   OrderPage,
 } from '../types.js'
@@ -55,10 +58,23 @@ export interface CommerceAdapter {
   }
   checkout: {
     create(details: CheckoutDetails): Promise<CheckoutResult>
+    /** The checkout priced for an address and a delivery option, before anything is placed. */
+    quote(details: CheckoutQuoteDetails): Promise<CheckoutQuote>
   }
   customers: {
-    register(params: RegisterParams): Promise<AuthResult>
+    /** Signs the customer in, or, on a store that confirms addresses, mails a link and signs nobody in. */
+    register(params: RegisterParams): Promise<AuthResult | VerificationSent>
     login(email: string, password: string): Promise<AuthResult>
+    /** Asks the store to mail a reset link; it answers alike whether or not the address has an account. */
+    requestPasswordReset(email: string): Promise<void>
+    /** Sets a password with a reset link's token, and signs the customer in. */
+    resetPassword(token: string, password: string): Promise<AuthResult>
+    /** Confirms the address with a mailed link's token, and signs the customer in. */
+    verifyEmail(token: string): Promise<AuthResult>
+    /** Asks the store to mail the confirmation link again; it answers alike whatever the address. */
+    resendVerification(email: string): Promise<void>
+    /** Sets a new password given the current one; every other session ends and this one is renewed. */
+    changePassword(currentPassword: string, newPassword: string): Promise<AuthResult>
     logout(): Promise<void>
     refresh(): Promise<{ accessToken: string; expiresIn: number }>
     getProfile(): Promise<Customer>

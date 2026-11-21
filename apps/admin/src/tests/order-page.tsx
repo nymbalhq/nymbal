@@ -10,16 +10,14 @@ import { renderWithProviders } from '@/tests/render'
 const AT = '2026-10-20T10:00:00.000Z'
 const UNPAID: readonly OrderStatus[] = ['pending', 'cancelled']
 
-export const STATUS_LABEL: Record<OrderStatus, string> = {
+export const STATUS_LABEL = {
   pending: 'Pending',
   confirmed: 'Confirmed',
   processing: 'Processing',
   shipped: 'Shipped',
   delivered: 'Delivered',
   cancelled: 'Cancelled',
-  refunded: 'Refunded',
-  partially_refunded: 'Part. Refunded',
-}
+} as Record<OrderStatus, string>
 
 const ADDRESS = {
   firstName: 'Ada',
@@ -31,14 +29,14 @@ const ADDRESS = {
   country: 'GB',
 }
 
-/** An admin order read in `status`: paid unless pending or cancelled. */
+/** An admin order read in `status`: paid unless pending or cancelled, refunded by `refundedMinor`. */
 export function orderIn(
   status: OrderStatus,
-  overrides: { id?: string; orderNumber?: string } = {},
+  overrides: { id?: string; orderNumber?: string; refundedMinor?: number } = {},
 ) {
   const paid = !UNPAID.includes(status)
   const capturedMinor = paid ? 2500 : 0
-  const refundedMinor = status === 'refunded' ? 2500 : status === 'partially_refunded' ? 1000 : 0
+  const refundedMinor = overrides.refundedMinor ?? 0
   return {
     id: overrides.id ?? 'o-1',
     orderNumber: overrides.orderNumber ?? 'NYM-1001',
@@ -168,8 +166,8 @@ export function fakeOrderApi(
     writes,
     /** The writes sent to one action, in order. */
     writesTo: (action: string) => writes.filter((w) => w.action === action),
-    setServer(status: OrderStatus) {
-      server = orderIn(status, order)
+    setServer(status: OrderStatus, refundedMinor = order.refundedMinor) {
+      server = orderIn(status, { ...order, refundedMinor })
     },
     get detailReads() {
       return detailReads

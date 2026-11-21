@@ -21,15 +21,30 @@ export const EXEMPT_TABLES: Readonly<Record<string, string>> = {
   events: 'the event log itself; its updates are the relay bookkeeping',
   processed_events: "a handler's record of the events it has handled",
   refresh_tokens: 'a credential; no read model is built from it',
+  password_reset_tokens:
+    'a credential the email handler mints in its delivery, consumed by a reset; no read model is built from it',
+  email_verification_tokens:
+    'a credential the email handler mints in its delivery, consumed by a verify; no read model is built from it',
   order_sequences: 'the order-number counter; no read model is built from it',
   audit_entries: 'the audit trail, written beside the command it records',
   order_access_keys: 'a credential checkout mints in its own write after placement settles',
   email_suppressions:
-    'written inside a delivery by the email feedback and alert handlers, not by a command',
+    'written inside a delivery by the email feedback and alert handlers, and cleared by the CLI; no read model is built from it',
   order_refunds:
     'read from its own table, no read model; a refund that moves money changes the order and publishes its events',
+  promotions:
+    'read from its own table by the engine and the admin routes, no read model; an admin edit publishes no event',
   reviews:
     "the native reviews adapter's own store, read from its table, no read model; a submission publishes its event after the adapter's write",
+  report_sales_hours:
+    'a figure the report handler folds from an event it is delivered, in that delivery',
+  report_funnel_days:
+    'a figure the report handler folds from an event it is delivered, in that delivery',
+  report_product_days:
+    'a figure the report handler folds from an event it is delivered, in that delivery',
+  report_search_days:
+    'a figure the report handler folds from an event it is delivered, in that delivery',
+  report_members: 'a digest the report handler writes beside a figure, in that delivery',
 }
 
 /** Kernel event types a transaction may insert with no domain change, each because the event is all there is to write. */
@@ -39,10 +54,17 @@ export const NOTIFICATION_ONLY: Readonly<Record<string, string>> = {
   'visitor.merged.v1': "a sign-in's fold of a visitor's views, recorded as its event alone",
   'order.confirmation_resend_requested.v1':
     'asks the email handler to send the confirmation again; nothing about the order changes',
+  'customer.password_reset_requested.v1':
+    'asks the email handler to mail a reset link, which it mints and stores in its own delivery; nothing about the customer changes',
+  'customer.verification_requested.v1':
+    'asks the email handler to mail a confirmation link, which it mints and stores in its own delivery; a resend or an admin send changes nothing about the customer',
+  'customer.registered_again.v1':
+    'asks the email handler to tell an account holder someone registered their address; nothing about the account changes',
   'payment.failed.v1':
     "a payment provider's report, recorded as it arrives; its handler changes the order in its own delivery",
   'review.submitted.v1':
     'a review the reviews adapter stored in its own write, outside any kernel transaction, recorded as its event alone',
+  'search.zero_results.v1': 'a search that found nothing, recorded as its event alone',
 }
 
 const KERNEL_TYPES: ReadonlySet<string> = new Set(STANDARD_EVENT_TYPES)

@@ -46,6 +46,29 @@ export interface EventLogFilter {
   limit: number
 }
 
+/** Which dead events a retry takes. Every field given must match; none selects all dead events. */
+export interface DeadEventSelection {
+  seq?: number
+  id?: string
+  /** Type globs, as `EventLogFilter`'s. */
+  types?: string[]
+  /** Appended at or after. */
+  since?: Date
+  /** Appended before. */
+  until?: Date
+}
+
+const HOUR_MS = 60 * 60_000
+const DAY_MS = 24 * HOUR_MS
+
+/**
+ * The oldest `created_at` a retry may take. A delivery record is never older than its event, so an event inside the
+ * retention window still has its records; the hour keeps them from being swept while the retried event is delivered.
+ */
+export function retryFloor(now: Date, retentionDays: number): Date {
+  return new Date(now.getTime() - retentionDays * DAY_MS + HOUR_MS)
+}
+
 export interface EventLogRepository extends StoreRepository {
   /** Appends in array order, so `seq` follows publish order. */
   append(tx: Tx, events: NymbalEvent<unknown>[]): Promise<void>
@@ -62,9 +85,17 @@ export interface EventLogRepository extends StoreRepository {
   recordFailure(tx: Tx, id: string, at: Date, maxAttempts: number, retryAt?: Date): Promise<void>
   /** A delivery that failed during an adapter outage: only the earliest next attempt moves, nothing is counted. */
   recordOutage(tx: Tx, id: string, retryAt: Date): Promise<void>
-  countDead(tx: ReadTx): Promise<number>
+  countDead(tx: ReadTx, selection?: DeadEventSelection): Promise<number>
   /** Dead events, oldest first. */
-  listDead(tx: ReadTx, limit: number): Promise<LoggedEvent[]>
+  listDead(tx: ReadTx, limit: number, selection?: DeadEventSelection): Promise<LoggedEvent[]>
+  /** Clears dead_at, attempts and retry_at on the dead rows selected; returns those rows as they now stand, by seq. */
+  retryDead(
+    tx: Tx,
+    selection: DeadEventSelection,
+    bounds: { floor: Date; limit: number },
+  ): Promise<LoggedEvent[]>
+  /** Whether the log holds this event, in any state. */
+  hasEvent(tx: ReadTx, ref: Pick<DeadEventSelection, 'seq' | 'id'>): Promise<boolean>
   /** Neither delivered nor dead, with at least one failed attempt. */
   countRetrying(tx: ReadTx): Promise<number>
   /**
@@ -208,6 +239,24 @@ export function createEventLogRepository(store: CommandStore): EventLogRepositor
     return where
   }
 
+  function sqliteDead(selection: DeadEventSelection): SQL[] {
+    return [
+      isNotNull(s.deadAt),
+      ...(selection.seq === undefined ? [] : [eq(s.seq, selection.seq)]),
+      ...(selection.id === undefined ? [] : [eq(s.id, selection.id)]),
+      ...sqliteWhere(selection),
+    ]
+  }
+
+  function postgresDead(selection: DeadEventSelection): SQL[] {
+    return [
+      isNotNull(p.deadAt),
+      ...(selection.seq === undefined ? [] : [eq(p.seq, selection.seq)]),
+      ...(selection.id === undefined ? [] : [eq(p.id, selection.id)]),
+      ...postgresWhere(selection),
+    ]
+  }
+
   /** Only the columns a LoggedEvent maps: a boot rebuild reads the log on a store not yet migrated past 0007. */
   async function select(
     tx: ReadTx,
@@ -323,23 +372,68 @@ export function createEventLogRepository(store: CommandStore): EventLogRepositor
       }
       await postgresDb(tx).update(p).set({ retryAt }).where(eq(p.id, id))
     },
-    async countDead(tx) {
+    async countDead(tx, selection = {}) {
       if (tx.kind === 'sqlite') {
         const row = sqliteDb(tx)
           .select({ n: sql<number>`count(*)` })
           .from(s)
-          .where(isNotNull(s.deadAt))
+          .where(and(...sqliteDead(selection)))
           .get()
         return Number(row?.n ?? 0)
       }
       const [row] = await postgresDb(tx)
         .select({ n: sql<string>`count(*)` })
         .from(p)
-        .where(isNotNull(p.deadAt))
+        .where(and(...postgresDead(selection)))
       return Number(row?.n ?? 0)
     },
-    listDead(tx, limit) {
-      return select(tx, { sqlite: [isNotNull(s.deadAt)], postgres: [isNotNull(p.deadAt)] }, limit)
+    listDead(tx, limit, selection = {}) {
+      return select(tx, { sqlite: sqliteDead(selection), postgres: postgresDead(selection) }, limit)
+    },
+    // The dead guard is on the UPDATE as well as its subselect: under concurrent retries on Postgres a blocked UPDATE
+    // re-checks its own WHERE on the row the first one committed, so each row moves once.
+    async retryDead(tx, selection, { floor, limit }) {
+      const cleared = { deadAt: null, attempts: 0, retryAt: null }
+      if (tx.kind === 'sqlite') {
+        const db = sqliteDb(tx)
+        const oldest = db
+          .select({ seq: s.seq })
+          .from(s)
+          .where(and(...sqliteDead(selection), gte(s.createdAt, floor.toISOString())))
+          .orderBy(asc(s.seq))
+          .limit(limit)
+        const rows = db
+          .update(s)
+          .set(cleared)
+          .where(and(isNotNull(s.deadAt), inArray(s.seq, oldest)))
+          .returning(sqliteLogged)
+          .all()
+        return rows.map(rowToLogged).sort((a, b) => a.seq - b.seq)
+      }
+      const db = postgresDb(tx)
+      const oldest = db
+        .select({ seq: p.seq })
+        .from(p)
+        .where(and(...postgresDead(selection), gte(p.createdAt, floor)))
+        .orderBy(asc(p.seq))
+        .limit(limit)
+      const rows = await db
+        .update(p)
+        .set(cleared)
+        .where(and(isNotNull(p.deadAt), inArray(p.seq, oldest)))
+        .returning(postgresLogged)
+      return rows.map(rowToLogged).sort((a, b) => a.seq - b.seq)
+    },
+    async hasEvent(tx, ref) {
+      const found = await select(
+        tx,
+        {
+          sqlite: ref.seq === undefined ? [eq(s.id, ref.id!)] : [eq(s.seq, ref.seq)],
+          postgres: ref.seq === undefined ? [eq(p.id, ref.id!)] : [eq(p.seq, ref.seq)],
+        },
+        1,
+      )
+      return found.length > 0
     },
     async countRetrying(tx) {
       if (tx.kind === 'sqlite') {

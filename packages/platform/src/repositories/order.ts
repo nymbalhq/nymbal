@@ -6,7 +6,9 @@ import type {
   OrderLineItem,
   OrderSource,
   OrderStatus,
+  PaymentState,
 } from '@nymbalhq/types'
+import { paymentState } from '@nymbalhq/types'
 import {
   postgresDb,
   sqliteDb,
@@ -52,6 +54,8 @@ const AGENT_TO = 'agent;'
 /** The admin order list's filters, each run in the query. */
 export interface OrderListFilter {
   status?: OrderStatus
+  /** Where the money stands, as `paymentState` reads the stored amounts. */
+  payment?: PaymentState
   /**
    * ISO instants in any form the route admits (a date, seconds without milliseconds, an offset), compared as instants:
    * createdAt >= from, createdAt <= to.
@@ -72,6 +76,22 @@ export interface OrderListFilter {
 }
 
 type OrdersTable = typeof sqliteSchema.orders | typeof postgresSchema.orders
+
+/** `paymentState` in SQL: the orders whose stored amounts read as `state`. */
+function paymentCondition(t: OrdersTable, state: PaymentState): SQL {
+  const captured = sql`${t.capturedMinor}`
+  const refunded = sql`${t.refundedMinor}`
+  switch (state) {
+    case 'unpaid':
+      return sql`${captured} <= 0`
+    case 'paid':
+      return sql`${captured} > 0 AND ${refunded} <= 0`
+    case 'partially_refunded':
+      return sql`${refunded} > 0 AND ${refunded} < ${captured}`
+    case 'refunded':
+      return sql`${captured} > 0 AND ${refunded} >= ${captured}`
+  }
+}
 
 /** The `where` of an order list and of its count, on one dialect. */
 function listWhere(
@@ -94,6 +114,7 @@ function listWhere(
   const email = sql`${t.email}`
   const conditions: Array<SQL | undefined> = [
     f.status === undefined ? undefined : eq(t.status, f.status),
+    f.payment === undefined ? undefined : paymentCondition(t, f.payment),
     f.from === undefined ? undefined : gte(t.createdAt, at(f.from)),
     f.to === undefined ? undefined : lte(t.createdAt, at(f.to)),
     f.customer === undefined
@@ -141,6 +162,8 @@ export interface OrderInsert {
   capture?: OrderCapture & { refundedMinor: number }
   /** Who brought the order; `storefront` when not given. */
   source?: OrderSource
+  /** The line prices hold the tax; false when not given. */
+  pricesIncludeTax?: boolean
   createdAt: Date
   updatedAt: Date
 }
@@ -176,6 +199,7 @@ function rowToOrder(store: CommandStore['kind'], row: Record<string, unknown>): 
     refundedMinor: Number(row.refundedMinor ?? 0),
     captureMethod: (row.captureMethod as CaptureMethod | null) ?? null,
     source: String(row.source) as OrderSource,
+    pricesIncludeTax: Boolean(row.pricesIncludeTax),
     createdAt: fromTimestamp(row.createdAt),
     updatedAt: fromTimestamp(row.updatedAt),
   }
@@ -413,7 +437,11 @@ export function createOrderRepository(store: CommandStore): OrderRepository {
       let after: { createdAt: string; id: string } | undefined
       for (;;) {
         const page = await customerOrdersPage(tx, customerId, statuses, after)
-        const holding = page.find((o) => o.lineItems.some((line) => line.productId === productId))
+        const holding = page.find(
+          (o) =>
+            paymentState(o) !== 'refunded' &&
+            o.lineItems.some((line) => line.productId === productId),
+        )
         if (holding !== undefined) return holding
         const last = page[page.length - 1]
         if (page.length < HOLDING_PAGE || last === undefined) return null
@@ -581,6 +609,7 @@ export function createOrderRepository(store: CommandStore): OrderRepository {
         refundedMinor: o.capture?.refundedMinor ?? 0,
         captureMethod: o.capture?.method ?? null,
         source: o.source ?? 'storefront',
+        pricesIncludeTax: o.pricesIncludeTax ?? false,
       }
       if (tx.kind === 'sqlite') {
         sqliteDb(tx)

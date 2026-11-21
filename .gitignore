@@ -5,6 +5,8 @@ build/
 .next/
 # The ISR suite's Next build (tests/e2e/playwright.isr.config.ts, NYMBAL_NEXT_DIST_DIR).
 .next-isr/
+# A Next build into a dist dir of its own (NYMBAL_NEXT_DIST_DIR), beside a running dev server's .next.
+.next-custom/
 .turbo/
 coverage/
 *.log
@@ -32,6 +34,7 @@ test-results/
 
 # Generated reports (mutation, census) and Stryker sandbox
 reports/
+!packages/platform/src/reports/
 .stryker-tmp/
 
 # Next 16 writes an AGENTS.md into the app on `next dev`/`next build`; it is not ours to ship.
@@ -41,3 +44,6 @@ packages/create-app/scaffold/templates/nextjs/AGENTS.md
 # `next dev` and `next build` write different next-env.d.ts files; Next regenerates it, so it is not tracked.
 templates/nextjs/next-env.d.ts
 packages/create-app/scaffold/templates/nextjs/next-env.d.ts
+
+# The machine budget's per-machine settings (scripts/machine-budget.ts).
+/.nymbal-machine.env

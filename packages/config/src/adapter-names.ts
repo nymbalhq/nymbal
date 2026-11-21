@@ -43,6 +43,7 @@ export const ADAPTER_CATALOGUE: Readonly<Record<Slot, Readonly<Record<string, Ca
   analytics: { native: builtIn },
   shipping: { native: builtIn, aftership: {}, easypost: {} },
   tax: { native: builtIn },
+  promotions: { native: builtIn },
   ai: { none: builtIn, anthropic: { sdk: '@anthropic-ai/sdk' }, openai: {} },
   documentStore: {
     'in-memory': builtIn,
@@ -74,6 +75,7 @@ export const COMMERCE_SLOTS = [
   'analytics',
   'shipping',
   'tax',
+  'promotions',
   'ai',
 ] as const satisfies readonly CommerceSlot[]
 

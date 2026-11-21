@@ -174,7 +174,7 @@ export function registerAllRoutes(deps: RegisterAllRoutesDeps): void {
     mergeCartOnSignIn(services.cart, secure),
   ]
   registerAuthRoutes(adapter, services.auth, config.security.auth.refreshTtl, afterSignIn, secure)
-  registerCapabilitiesRoute(adapter, adapters)
+  registerCapabilitiesRoute(adapter, adapters, services.auth.verification)
   registerCategoryRoutes(adapter, documentStore, config.store.name)
   registerProductRoutes(
     adapter,
@@ -191,6 +191,7 @@ export function registerAllRoutes(deps: RegisterAllRoutesDeps): void {
     productRepo: repos.product,
     variantRepo: repos.variant,
     secureCookies: secure,
+    pricesIncludeTax: config.store.pricesIncludeTax,
   })
   registerRecentlyViewedRoutes(adapter, {
     recentlyViewed: services.recentlyViewed,
@@ -238,6 +239,7 @@ export function registerAllRoutes(deps: RegisterAllRoutesDeps): void {
   registerInboundWebhookRoute(adapter, {
     adapters,
     checkout: services.checkout,
+    refund: services.refund,
     publisher,
     store: repos.processedEvent.store,
     processedEvents: repos.processedEvent,

@@ -64,6 +64,14 @@
   max-width: 32rem;
 }
 
+.account-section-title {
+  font-size: 1.125rem;
+  font-weight: var(--nymbal-font-weight-bold, 700);
+  color: var(--nymbal-color-primary, #18181b);
+  margin-top: var(--nymbal-spacing-xl, 2rem);
+  margin-bottom: var(--nymbal-spacing-xs, 0.25rem);
+}
+
 /* ---- Order list ---- */
 
 .order-list {
@@ -173,7 +181,7 @@
   text-decoration: underline;
 }
 
-/* ---- Auth pages (login/register) ---- */
+/* ---- Auth pages (sign-in, register, forgot and reset password) ---- */
 
 .auth-page {
   display: flex;
@@ -221,6 +229,21 @@
 }
 
 .auth-footer a:hover {
+  text-decoration: underline;
+}
+
+.auth-forgot {
+  text-align: right;
+  font-size: var(--nymbal-font-size-sm, 0.875rem);
+  margin-top: var(--nymbal-spacing-sm, 0.5rem);
+}
+
+.auth-forgot a {
+  color: var(--nymbal-color-accent, #2563eb);
+  text-decoration: none;
+}
+
+.auth-forgot a:hover {
   text-decoration: underline;
 }
 

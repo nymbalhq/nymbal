@@ -170,6 +170,7 @@ const CONTRACT_RUNNERS: Readonly<Record<string, string>> = {
   analytics: 'runAnalyticsContract',
   shipping: 'runShippingContract',
   tax: 'runTaxContract',
+  promotions: 'runPromotionsContract',
   documentStore: 'runDocumentStoreContract',
   eventBus: 'runEventBusContract',
   media: 'runMediaStorageContract',

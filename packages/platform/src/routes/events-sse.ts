@@ -13,6 +13,20 @@ const TICKET_TTL_SECONDS = 60
 const NONCE_TTL_SECONDS = 120
 const NONCE_COLLECTION = 'sse-ticket-nonces'
 
+/**
+ * The product events an admin write raises, named one by one: `product.*` would also carry `product.viewed.v1`, one
+ * frame per storefront page view with the viewer's id.
+ */
+const ADMIN_PRODUCT_EVENTS = [
+  'product.created.v1',
+  'product.updated.v1',
+  'product.deleted.v1',
+  'product.published.v1',
+  'product.unpublished.v1',
+  'product.restocked.v1',
+  'product.variant_price_changed.v1',
+]
+
 interface NonceRecord {
   used: boolean
 }
@@ -131,7 +145,7 @@ export function registerEventsSseRoute(adapter: HttpAdapter, deps: RegisterEvent
     // Unnamed: every open tab, on every instance, receives every event. A shared name would make the tabs consumers
     // of one group on a shared bus, each event reaching one of them.
     const subscription = await eventBus.subscribe(
-      ['order.*', 'payment.*', 'inventory.*', 'adapter.*', 'proposal.*'],
+      ['order.*', 'payment.*', 'inventory.*', 'adapter.*', 'proposal.*', ...ADMIN_PRODUCT_EVENTS],
       (event) => {
         stream.send({
           id: event.id,

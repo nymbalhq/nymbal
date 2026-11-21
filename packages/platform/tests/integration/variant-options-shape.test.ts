@@ -138,7 +138,7 @@ describe('one option shape in the read model', () => {
         const oldSku = (i: number) => `P212-${tag}-old-${i}`
         const product = await create(`variants-new-${tag}`, newSku)
         const older = await create(`variants-old-${tag}`, oldSku)
-        await new Promise((r) => setImmediate(r))
+        await env.relay.drain()
 
         // The older product as an older row holds it: every variant's options a JSON string.
         const variants = await env.commandStore.read((tx) =>

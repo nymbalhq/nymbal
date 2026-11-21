@@ -161,6 +161,7 @@ describe('GET /api/products/search: the category facet', () => {
             total: 13,
             nextCursor: null,
           }),
+          recordZeroResult: async () => {},
         },
         () => true,
         async (field) => ({ field, label: field, values: counts }),

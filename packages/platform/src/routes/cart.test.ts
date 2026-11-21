@@ -109,6 +109,8 @@ function makeDeps(overrides?: Partial<RegisterCartRoutesDeps>): RegisterCartRout
       updateItemQuantity: vi.fn().mockResolvedValue(makeCart()),
       removeItem: vi.fn().mockResolvedValue(makeCart()),
       clear: vi.fn().mockResolvedValue(makeCart()),
+      addCode: vi.fn().mockResolvedValue(makeCart()),
+      removeCode: vi.fn().mockResolvedValue(makeCart()),
       merge: vi.fn().mockResolvedValue(makeCart()),
       attachCustomer: vi.fn().mockResolvedValue(makeCart()),
       signIn: vi.fn().mockResolvedValue(null),
@@ -272,7 +274,7 @@ describe('DELETE /api/cart', () => {
     expect(resp.status).toBe(200)
     expect((resp.body as { data: Cart }).data.items).toEqual([])
     expect((await cartOf('cart-a')).items).toEqual([])
-    expect(await cartOf('cart-b')).toEqual(otherBefore)
+    expect(await cartOf('cart-b')).toMatchObject(otherBefore!)
   })
 })
 

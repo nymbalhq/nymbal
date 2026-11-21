@@ -74,6 +74,7 @@ const EXCLUDED_BASENAMES = new Set([
   '.astro',
   '.next',
   '.next-isr',
+  '.next-custom',
   'tests',
 ])
 

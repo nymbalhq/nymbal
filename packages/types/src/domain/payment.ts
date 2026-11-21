@@ -57,6 +57,11 @@ export interface Refund {
   status: 'pending' | 'succeeded' | 'failed'
 }
 
+/** A refund as the provider lists it: the idempotency key it was made under, or `null` for one made without a key. */
+export interface ProviderRefund extends Refund {
+  idempotencyKey: string | null
+}
+
 export interface WebhookResult {
   verified: boolean
   eventId: string

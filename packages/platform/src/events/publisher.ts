@@ -1,8 +1,10 @@
 import type { EventBusAdapter, NymbalEvent, NymbalEventMap, NymbalEventType } from '@nymbalhq/types'
+import { outsideActor } from '../audit/actor.js'
+import { outsideCommand } from '../audit/audit.js'
 import { afterCommit, type CommandStore } from '../db/command-store.js'
 import type { EventLogRepository } from '../repositories/event-log.js'
 import { createEventBuilder, type EventBuilderContext, type MakeEventOptions } from './builder.js'
-import { currentCorrelationId } from './correlation.js'
+import { currentCorrelationId, outsideCorrelation } from './correlation.js'
 import type { Relay } from './relay.js'
 
 export interface PublishOptions extends MakeEventOptions {}
@@ -26,7 +28,7 @@ export interface EventPublisher {
   ): Promise<void>
   /**
    * Events of types the kernel does not declare (an adapter's own, already checked by the caller), with the same
-   * append and drain as `publish`.
+   * append and delivery as `publish`.
    */
   publishUntyped(
     events: ReadonlyArray<{ type: string; payload: unknown }>,
@@ -47,18 +49,28 @@ export interface CreatePublisherOptions {
 
 export function createEventPublisher(opts: CreatePublisherOptions): EventPublisher {
   const makeEvent = createEventBuilder(opts.builderContext)
-  const { store, eventLog, relay } = opts
+  const { eventBus, store, eventLog, relay } = opts
+
+  /** Not awaited: the pass hands the events to every subscription, mail included, after the answer. */
+  const requestPass = async (): Promise<void> => {
+    void relay.drain()
+  }
 
   /**
-   * Appends in the open transaction (same COMMIT, gone on rollback) or in one of its own, and drains the relay once
-   * the outermost transaction has committed; `afterCommit` holds one drain however many publishes the transaction
-   * made.
+   * Appends in the open transaction (same COMMIT, gone on rollback) or in one of its own. Once the outermost
+   * transaction has committed, these events reach the derived subscriptions (a read straight after the command sees
+   * its projections), outside the caller's correlation, actor and command as a pass runs them, and then a relay pass
+   * is asked for. Each append holds its own replay, so a savepoint that rolls back drops it with the rows; the pass
+   * is held once however many publishes the transaction made.
    */
   async function append(events: NymbalEvent<unknown>[]): Promise<void> {
     if (events.length === 0) return
     await store.transaction(async (tx) => {
       await eventLog.append(tx, events)
-      await afterCommit(relay.drain)
+      await afterCommit(() =>
+        outsideCorrelation(() => outsideActor(() => outsideCommand(() => eventBus.replay(events)))),
+      )
+      await afterCommit(requestPass)
     })
   }
 

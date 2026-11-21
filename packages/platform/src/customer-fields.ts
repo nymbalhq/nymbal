@@ -15,6 +15,13 @@ export function kindOfKey(key: string): CustomerField | undefined {
   return undefined
 }
 
+/** The field a history change `{ path, from, to }` is about: its path's last dotted segment. */
+export function changedField(value: Record<string, unknown>): string | undefined {
+  const path = value['path']
+  if (typeof path !== 'string' || !('from' in value || 'to' in value)) return undefined
+  return path.split('.').at(-1)
+}
+
 /** An email in prose: no local-part character just before it, and a last label of two or more letters. */
 export const FREE_TEXT_EMAIL =
   /(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}(?![A-Za-z0-9-])/g

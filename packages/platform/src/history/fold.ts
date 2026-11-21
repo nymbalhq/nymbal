@@ -1,5 +1,4 @@
 import {
-  canTransitionOrder,
   paymentState,
   type CustomerSnapshot,
   type HistoryKind,
@@ -81,15 +80,12 @@ function applyProduct(view: Folded, row: LoggedEvent): Folded {
   }
 }
 
-/**
- * A settled refund moves the status as settling does: only where the transition table allows it, and a partial refund
- * only when nothing was refunded before it.
- */
-function refundedStatus(order: OrderAsOf, target: OrderStatus): OrderStatus {
-  const moves = target === 'refunded' || order.refundedMinor === 0
-  return moves && order.status !== target && canTransitionOrder(order.status, target)
-    ? target
-    : order.status
+/** The status an import could once store for a refund, in the `order.placed` it published. */
+const STORED_MONEY_STATUSES: ReadonlySet<string> = new Set(['refunded', 'partially_refunded'])
+
+/** The placed order as the view reads it: a refund is money, so a stored money status reads as paid and unshipped. */
+function placedOrder(order: Order): Order {
+  return STORED_MONEY_STATUSES.has(order.status) ? { ...order, status: 'confirmed' } : order
 }
 
 /**
@@ -104,7 +100,7 @@ interface FoldContext {
 function applyOrder(view: Folded, row: LoggedEvent, context: FoldContext): Folded {
   const name = eventName(row.event.type)
   const payload = payloadOf(row)
-  if (isBaseEvent('order', row)) return orderViewOf(payload['order'] as Order)
+  if (isBaseEvent('order', row)) return orderViewOf(placedOrder(payload['order'] as Order))
   if (view === null || isDeleted(view)) return view
   const order = view as OrderAsOf
   let next: OrderAsOf
@@ -147,10 +143,6 @@ function applyOrder(view: Folded, row: LoggedEvent, context: FoldContext): Folde
       next = {
         ...order,
         refundedMinor: order.refundedMinor + (payload['amountMinor'] as number),
-        status: refundedStatus(
-          order,
-          name === 'order.refunded' ? 'refunded' : 'partially_refunded',
-        ),
       }
       break
     default:

@@ -195,10 +195,12 @@ describe('AC-7: the quiet lock across worktrees', () => {
     const held = await first.next('held')
     const second = hold(two, 'shared', 'integration-stores')
     const alsoHeld = await second.next('held')
-    // The second was granted while the first was still held.
+    // The second was granted while the first was still held: the first starts releasing only when told to, after this.
+    // Event times are whole milliseconds, so two events less than one apart can share one.
     expect(first.seen('releasing')).toBeUndefined()
-    const released = await first.release()
-    expect(alsoHeld.at).toBeLessThan(released.at)
+    await first.release()
+    const releasing = first.seen('releasing')!
+    expect(alsoHeld.at).toBeLessThanOrEqual(releasing.at)
     expect(alsoHeld.at).toBeGreaterThanOrEqual(held.at)
     await second.release()
   })

@@ -12,7 +12,15 @@ export default defineConfig({
         { label: 'Start', items: ['index', 'quickstart', 'configuration'] },
         {
           label: 'Guides',
-          items: ['adapters', 'agents', 'assistant-data', 'deploying', 'importing', 'upgrading'],
+          items: [
+            'adapters',
+            'agents',
+            'assistant-data',
+            'deploying',
+            'importing',
+            'upgrading',
+            'wordpress',
+          ],
         },
         { label: 'Reference', items: ['reference/cli'] },
         { label: 'Help', items: ['help'] },

@@ -1,0 +1,28 @@
+---
+import '../../styles/pages/account.css'
+import NymbalElement from '@nymbalhq/web-components/astro'
+import BaseLayout from '../../layouts/BaseLayout.astro'
+---
+
+<BaseLayout title="Confirm Your Email | Nymbal" description="Confirm the email address of your new account.">
+  <div class="auth-page">
+    <div class="auth-card">
+      <h1 class="auth-card-title">Confirm Your Email</h1>
+      <p class="auth-card-subtitle">Follow the link we emailed you, or ask for a new one.</p>
+
+      <NymbalElement tag="nymbal-verify-email" />
+
+      <p class="auth-footer">
+        <a href="/account/login">Back to sign in</a>
+      </p>
+    </div>
+  </div>
+</BaseLayout>
+
+<script>
+  import '../../lib/client.js'
+  import { NymbalVerifyEmail } from '@nymbalhq/web-components/elements/nymbal-verify-email'
+  import '../../scripts/signed-in-redirect.js'
+
+  NymbalVerifyEmail.define()
+</script>

@@ -190,16 +190,46 @@ function saidOf(text: string, secrets: readonly string[]): Said {
   const kinds = [error['type'], error['code']].filter(
     (k): k is string => typeof k === 'string' && ERROR_TYPE.test(k),
   )
-  let message = typeof error['message'] === 'string' ? error['message'] : ''
-  // Longest first, so a secret inside a longer one cannot leave the rest of the longer one behind.
-  for (const secret of [...secrets].filter((s) => s !== '').sort((a, b) => b.length - a.length)) {
-    message = message.split(secret).join(REDACTED)
+  const message = typeof error['message'] === 'string' ? error['message'] : ''
+  return {
+    kinds,
+    message: redacted(message, secrets)
+      .replace(/[\p{Cc}\s]+/gu, ' ')
+      .trim(),
   }
-  message = message
-    .replace(KEY_SHAPED, REDACTED)
-    .replace(/[\p{Cc}\s]+/gu, ' ')
-    .trim()
-  return { kinds, message }
+}
+
+/**
+ * `text` with every stretch a secret or a key-shaped token covers taken out. Each is found in the text as given, so
+ * where two overlap (a configured key that begins a longer key, a conversation text holding a key) neither leaves part
+ * of the other behind.
+ */
+function redacted(text: string, secrets: readonly string[]): string {
+  const covered = new Array<boolean>(text.length).fill(false)
+  for (const secret of secrets) {
+    if (secret === '') continue
+    for (let at = text.indexOf(secret); at !== -1; at = text.indexOf(secret, at + 1)) {
+      covered.fill(true, at, at + secret.length)
+    }
+  }
+  for (const key of text.matchAll(KEY_SHAPED)) {
+    covered.fill(true, key.index, key.index + key[0].length)
+  }
+  // A key glued to the end of a secret has no word boundary before it, so a covered character also starts one. Masking
+  // the covered stretches instead would also mask the secret where it begins the glued key, leaving only its tail.
+  const glued = /sk-[A-Za-z0-9_-]{8,}/y
+  for (let at = text.indexOf('sk-', 1); at !== -1; at = text.indexOf('sk-', at + 1)) {
+    if (!covered[at - 1]) continue
+    glued.lastIndex = at
+    const key = glued.exec(text)
+    if (key !== null) covered.fill(true, at, at + key[0].length)
+  }
+  let out = ''
+  for (let i = 0; i < text.length; i++) {
+    if (!covered[i]) out += text[i]
+    else if (i === 0 || !covered[i - 1]) out += REDACTED
+  }
+  return out
 }
 
 function codeOf(status: number, said: Said): string {

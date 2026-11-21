@@ -10,6 +10,7 @@ import {
   type CommerceSlot,
   type HealthReport,
   type PaymentsAdapter,
+  type TaxAdapter,
   type ResolvedNetwork,
 } from '@nymbalhq/types'
 import { createPlatform, resolvePrimitives, type Platform } from './platform.js'
@@ -31,6 +32,7 @@ import { loadBootSettings } from './settings/load.js'
 import { addSecret, scrubbingLogger } from './settings/secret-set.js'
 import { isLoopbackHost, JWT_SECRET_ENV, resolveAuthSecret } from './auth-secret.js'
 import { buildServices, type ServiceRegistry } from './services/index.js'
+import { legacyUntilOf } from './services/legacy-passwords.js'
 import { createEventPublisher, type EventPublisher } from './events/publisher.js'
 import { createRelay, deliveringBus, type CreateRelayOptions, type Relay } from './events/relay.js'
 import { createOutageProbe, type OutageSubject } from './events/outage.js'
@@ -40,7 +42,11 @@ import {
   startInventoryReservationSweeper,
   startCartAbandonmentSweeper,
   startEventRetentionSweeper,
+  startLegacyPasswordSweeper,
   startRefreshTokenSweeper,
+  startRefundReconcileSweeper,
+  startStuckProposalSweeper,
+  startUnconfirmedAccountSweeper,
   type EventArchiveWriter,
   type SweeperHandle,
 } from './sweepers/index.js'
@@ -105,10 +111,30 @@ export interface CreateAppOptions extends ResolvePrimitivesOptions {
   relay?: Pick<CreateRelayOptions, 'maxAttempts' | 'retryDelayMs' | 'intervalMs' | 'now'>
   /** How often expired and used refresh tokens are deleted; tests shorten it. */
   refreshTokenSweep?: { intervalMs?: number }
+  /** How often imported password hashes past `security.auth.legacy.until` are swept (hourly); tests shorten it. */
+  legacyPasswordSweep?: { intervalMs?: number }
+  /** How often pending refunds are reconciled with the provider; tests shorten it. */
+  refundReconcileSweep?: { intervalMs?: number }
+  /** How often approved proposals that never settled are swept, and after how long they count; tests shorten both. */
+  proposalSweep?: { intervalMs?: number; stuckAfterMs?: number }
+  /** How often accounts never confirmed are looked for; tests shorten it. The 30 days they are kept is fixed. */
+  unconfirmedAccountSweep?: { intervalMs?: number }
 }
 
 /** Who an ACP agent's keyed requests are recorded as: the agent's own name is a label anyone holding the key can set. */
 const ACP_ACTOR: Actor = { kind: 'system', id: 'acp' }
+
+/** Prices that hold their tax need an engine that extracts it: one that only adds tax would tax them twice. */
+function refuseTaxOnTopOfInclusivePrices(config: NymbalConfig, tax: TaxAdapter): void {
+  if (!config.store.pricesIncludeTax || tax.capabilities().includes('inclusive')) return
+  const provider = config.commerce.tax.provider
+  throw new ConfigError(
+    `store.pricesIncludeTax is true, but the tax provider "${provider}" (${tax.providerName}) does not declare ` +
+      "'inclusive', so it would add tax on top of prices that already hold it; set pricesIncludeTax to false or use " +
+      'a provider that extracts tax from prices.',
+    { code: 'config.tax_not_inclusive', context: { provider } },
+  )
+}
 
 /**
  * A production process must not run on the stub payments adapter (its unsigned webhook confirms any order) or sign
@@ -307,6 +333,7 @@ export async function createApp(
       settings: settings.values,
       ...(options.adapters !== undefined && { injected: options.adapters }),
     })
+    refuseTaxOnTopOfInclusivePrices(config, adapters.tax)
     const relay = createRelay({
       store: platform.commandStore,
       eventLog: repos.eventLog,
@@ -345,6 +372,8 @@ export async function createApp(
       searchAdapter: adapters.search,
       email: adapters.email,
       reviews: adapters.reviews,
+      promotions: adapters.promotions,
+      tax: adapters.tax,
       jwtSecret: jwt.secret,
       executeProposal: (row, auth) => {
         if (mcp === undefined)
@@ -361,6 +390,7 @@ export async function createApp(
       adapters,
       alerts: services.alert,
       orders: services.order,
+      publisher,
       logger,
     })
 
@@ -384,6 +414,21 @@ export async function createApp(
     await relay.drain()
     relay.start()
 
+    // Past its sunset date a store sweeps the imported password hashes at start, without holding its boot for the
+    // sweep: sign-in refuses them by the date alone.
+    const legacyPasswordSweeper = startLegacyPasswordSweeper({
+      store: platform.commandStore,
+      customers: repos.customer,
+      publisher,
+      logger,
+      ...(config.security.auth.legacy !== undefined && {
+        until: legacyUntilOf(config.security.auth.legacy.until),
+      }),
+      ...(options.legacyPasswordSweep?.intervalMs !== undefined && {
+        intervalMs: options.legacyPasswordSweep.intervalMs,
+      }),
+    })
+
     const sweepers: SweeperHandle[] = [
       startInventoryReservationSweeper({
         inventoryService: services.inventory,
@@ -400,6 +445,7 @@ export async function createApp(
         store: platform.commandStore,
         eventLog: repos.eventLog,
         processedEvents: repos.processedEvent,
+        reportRollup: repos.reportRollup,
         logger,
         retentionDays: config.events.retentionDays,
         ...(archive !== undefined && { archive }),
@@ -410,6 +456,33 @@ export async function createApp(
         logger,
         ...(options.refreshTokenSweep?.intervalMs !== undefined && {
           intervalMs: options.refreshTokenSweep.intervalMs,
+        }),
+      }),
+      legacyPasswordSweeper,
+      startRefundReconcileSweeper({
+        store: platform.commandStore,
+        refunds: repos.orderRefund,
+        service: services.refund,
+        logger,
+        ...(options.refundReconcileSweep?.intervalMs !== undefined && {
+          intervalMs: options.refundReconcileSweep.intervalMs,
+        }),
+      }),
+      startStuckProposalSweeper({
+        store: platform.commandStore,
+        proposals: repos.proposal,
+        publisher,
+        logger,
+        ...options.proposalSweep,
+      }),
+      startUnconfirmedAccountSweeper({
+        store: platform.commandStore,
+        repos,
+        publisher,
+        logger,
+        verification: services.auth.verification,
+        ...(options.unconfirmedAccountSweep?.intervalMs !== undefined && {
+          intervalMs: options.unconfirmedAccountSweep.intervalMs,
         }),
       }),
     ]
@@ -504,6 +577,7 @@ export async function createApp(
               },
               sessions: platform.documentStore,
               checkout: services.checkout,
+              shippingRates: config.commerce.shipping.rates,
               idempotent: (command, { key, hash }, run) =>
                 runAsActor(ACP_ACTOR, () =>
                   idempotentCommand(

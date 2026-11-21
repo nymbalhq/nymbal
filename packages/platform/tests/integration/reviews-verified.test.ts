@@ -18,8 +18,7 @@ import {
 
 // Invariant: a review's orderId is null or the reviewer's own paid purchase of the product. Over HTTP on a served
 // SQLite kernel, with orders written straight to the command store at chosen creation times, the review a customer
-// submits names their newest order holding the product in confirmed, processing, shipped, delivered or
-// partially_refunded, else null; never another customer's order, and never only among their latest page of orders.
+// submits names their newest order holding the product in confirmed, processing, shipped or delivered, else null; never another customer's order, and never only among their latest page of orders.
 
 let k: Kernel
 let served: ServedKernel
@@ -69,7 +68,7 @@ async function submitted(who: Reviewer, productId: string): Promise<string | nul
 }
 
 describe('a review names the reviewer’s own paid purchase, or nothing', () => {
-  // Kills: a pending, cancelled or refunded order counting; another customer's order matching; the oldest rather than
+  // Kills: a pending or cancelled order counting; another customer's order matching; the oldest rather than
   // the newest match.
   it('AC-5: property: over generated orders of two customers (statuses across every order status, lines over three products, creation times shuffled), each customer’s review names their newest order holding the product in a paid status, else null, and the stored row says the same', async () => {
     const customers = [await reviewer(served.baseUrl), await reviewer(served.baseUrl)] as const
@@ -118,15 +117,15 @@ describe('a review names the reviewer’s own paid purchase, or nothing', () => 
 
   // Kills: only the customer's first page of orders read (`listByCustomer`'s 50), so a long-standing customer's
   // purchase reads as unverified.
-  it('AC-5: a customer whose only paid order holding the product is older than their 60 newest orders gets that order; their newer orders hold the product only as pending, cancelled or refunded, or hold other products', async () => {
+  it('AC-5: a customer whose only paid order holding the product is older than their 60 newest orders gets that order; their newer orders hold the product only as pending or cancelled, or hold other products', async () => {
     const who = await reviewer(served.baseUrl)
     const productId = await productIn(k, 'active')
     const other = await productIn(k, 'active')
     const now = Date.now()
-    const unpaid: OrderStatus[] = ['pending', 'cancelled', 'refunded']
+    const unpaid: OrderStatus[] = ['pending', 'cancelled']
     const newer: OrderSpec[] = Array.from({ length: 60 }, (_, i) => ({
       customerId: who.id,
-      status: i % 2 === 0 ? unpaid[i % 3]! : PAID[i % PAID.length]!,
+      status: i % 2 === 0 ? unpaid[i % 2]! : PAID[i % PAID.length]!,
       productIds: i % 2 === 0 ? [productId, other] : [other],
       createdAt: new Date(now - (i + 1) * MINUTE),
     }))

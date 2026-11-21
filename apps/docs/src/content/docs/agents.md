@@ -30,9 +30,11 @@ The [quickstart](../quickstart/#3-connect-an-agent) shows a host's config. A req
 
 A tool whose route answers a list answers `{ items }` with the route's paging beside them: `admin_orders_list`
 answers `total`, the number of orders every filter matches, and `admin_activity_list` and `orders_list` answer
-`nextCursor`. `admin_orders_list` filters by `postcode`, the start of the shipping postcode with case and spaces
-ignored (`SW1` matches `SW1A 1AA` and `SW10 9AB`), and by `country`, the shipping country's two-letter ISO code (`UK`
-is read as `GB`); a store whose orders hold country names instead of codes, as an import may leave them, matches none.
+`nextCursor`. `admin_orders_list` filters by `status`, where the goods are, by `payment` (`unpaid`, `paid`,
+`partially_refunded` or `refunded`), which a refund changes and `status` never does, by `postcode`, the start of the
+shipping postcode with case and spaces ignored (`SW1` matches `SW1A 1AA` and `SW10 9AB`), and by `country`, the
+shipping country's two-letter ISO code (`UK` is read as `GB`); a store whose orders hold country names instead of
+codes, as an import may leave them, matches none.
 
 ### Customer details agents are not sent
 
@@ -77,8 +79,10 @@ their source, and the admin's Agents tile counts them.
 
 The admin's own assistant (**Ask**) proposes its writes the same way. A write it asks for after reading any tool
 result, or in a follow-up message, always waits in the Inbox, whatever `autoApprove` lists, so text a shopper wrote (a
-review, an order note) cannot make it change the store. [The assistant and customer data](../assistant-data/) says
-what it sends to your AI provider.
+review, an order note) cannot make it change the store. The exception is your own first message: a command listed in
+`autoApprove` that Ask requests in its first reply applies at once, with no person involved, so a customer's detail you
+pasted into that message can reach a public field such as a product description. [The assistant and customer
+data](../assistant-data/) says what it sends to your AI provider.
 
 In one message Ask makes at most three deletions, archives, cancellations or refunds, does not carry out such a change
 to many records at once, and is not offered the store's settings.
@@ -114,6 +118,12 @@ agents: {
 
 The key is `NYMBAL_ACP_API_KEY` (or `agents.acp.apiKey`), at least 32 characters (`openssl rand -base64 32`); the
 store refuses to start without it, or on a payments provider that cannot charge a delegated token (Stripe can).
+
+## Reports
+
+`GET /api/admin/reports` serves the store's daily figures to the admin assistant and MCP (`admin_reports_get`):
+sales by day and hour, the funnel, top products, what shoppers searched for and did not find, and stock runway. Viewers
+are counted as aggregates; no visitor or customer id is stored in a report.
 
 ## Crawlers
 

@@ -23,6 +23,7 @@ import {
   checkoutInUse,
   FULL_GATE_HARNESS_PROJECTS,
   HARNESS_PROJECTS,
+  isBuildInput,
   markInUse,
   plan,
   releaseInUse,
@@ -280,6 +281,63 @@ describe('AC-4: the perf-bytes step of gate:full', () => {
     })
     expect(r.status, `${r.stdout}${r.stderr}`).toBe(1)
     expect(r.stderr).toMatch(/--perf-bytes/)
+    expect(r.stderr).toMatch(/--full/)
+    expect(r.stdout, 'no step ran').not.toContain('"steps"')
+  })
+})
+
+describe('AC-15: the WordPress steps of the full run', () => {
+  const STEPS = ['wordpress up', 'e2e wordpress']
+  const wordpressSteps = (steps: StepSpec[]): string[] =>
+    steps.map((s) => s.name).filter((name) => STEPS.includes(name))
+
+  it('AC-15: the kit’s build config is a build input, so changing it rebuilds what the journeys serve', () => {
+    expect(isBuildInput('packages/web-components/tsup.kit.config.ts')).toBe(true)
+  })
+
+  it('AC-15: the default plan has neither step; wordpress: true has both, in order, and each is present and not skipped', () => {
+    expect(wordpressSteps(fullPlan())).toEqual([])
+    expect(wordpressSteps(fullPlan({ wordpress: false }))).toEqual([])
+    const on = fullPlan({ wordpress: true })
+    expect(wordpressSteps(on)).toEqual(STEPS)
+    expect(on.filter((s) => STEPS.includes(s.name) && s.skip !== undefined)).toEqual([])
+  })
+
+  it('AC-15: property: plan() has exactly the WordPress steps asked for: both for wordpress: true with no only, and those only names, whatever else it names; none otherwise', () => {
+    fc.assert(
+      fc.property(
+        fc.option(fc.boolean(), { nil: undefined }),
+        fc.option(fc.subarray(['build', 'lint', ...STEPS]), { nil: undefined }),
+        (wordpress, only) => {
+          const extra: Partial<PlanInput> = {
+            ...(wordpress === undefined ? {} : { wordpress }),
+            ...(only === undefined ? {} : { only }),
+          }
+          const expected =
+            only !== undefined
+              ? STEPS.filter((name) => only.includes(name))
+              : wordpress === true
+                ? STEPS
+                : []
+          expect(wordpressSteps(fullPlan(extra))).toEqual(expected)
+        },
+      ),
+      { numRuns: 200 },
+    )
+  })
+
+  it('AC-15: --wordpress without --full exits 1, naming --full, before any step runs', () => {
+    const dir = scratch()
+    const env = { ...process.env }
+    for (const key of Object.keys(env)) if (key.startsWith('GIT_')) delete env[key]
+    const r = spawnSync(TSX, [GATE, '--wordpress', '--base', 'HEAD', '--json'], {
+      cwd: dir,
+      encoding: 'utf8',
+      env,
+      timeout: 60_000,
+    })
+    expect(r.status, `${r.stdout}${r.stderr}`).toBe(1)
+    expect(r.stderr).toMatch(/--wordpress/)
     expect(r.stderr).toMatch(/--full/)
     expect(r.stdout, 'no step ran').not.toContain('"steps"')
   })

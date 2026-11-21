@@ -10,10 +10,11 @@ import {
   type PaymentDriver,
 } from '@nymbalhq/sdk'
 import type { Address } from '@nymbalhq/types'
+import { formatPrice } from '../format.js'
 import { setupMockClient } from '../testing/index.js'
 
-// AC-2, AC-3 and AC-4: `nymbal-checkout` runs the checkout. The SDK under it is the real checkout store over a fake
-// adapter, so `submitPayment()` answers as it does in a store: a result, or null with `error` (and
+// `nymbal-checkout` runs the checkout. The SDK under it is the real checkout store over a fake adapter, so `quote()`
+// and `submitPayment()` answer as they do in a store: a quote or a result, or null with `error` (and
 // `placedOrderNumber` on a 409 that names an order). Every call the element makes on it, the payment driver double's
 // `confirm`, and each `nymbal:checkout:placed` the document hears go into one log, in order.
 //
@@ -28,13 +29,15 @@ const PAYMENT = 'nymbal-payment-element'
 type Step =
   | 'setEmail'
   | 'setShippingAddress'
-  | 'setShippingMethod'
+  | 'quote'
+  | 'selectShippingOption'
   | 'setBillingAddress'
   | 'submitPayment'
 const STEP_CALLS: Step[] = [
   'setEmail',
   'setShippingAddress',
-  'setShippingMethod',
+  'quote',
+  'selectShippingOption',
   'setBillingAddress',
   'submitPayment',
 ]
@@ -46,13 +49,62 @@ interface Entry {
 
 type Confirmation = PaymentConfirmation
 type CreateAnswer = () => Promise<unknown>
+/** What the fake adapter's `checkout.quote` was asked: the shipping address and the option, if any. */
+interface QuoteAsk {
+  shippingAddress: Address
+  shippingOptionId?: string
+  email?: string
+}
+type QuoteAnswer = (ask: QuoteAsk) => Promise<unknown>
 
-/** The shipping method the checkout fixes, in the cart's currency. */
-const FIXED_METHOD = {
-  carrier: 'Standard',
-  service: 'Standard Shipping',
-  amountMinor: 0,
-  estimatedDays: 5,
+interface Option {
+  id: string
+  name: string
+  amountMinor: number
+  estimatedDays: number | null
+}
+
+const OPTIONS: Option[] = [
+  { id: 'standard', name: 'Standard', amountMinor: 0, estimatedDays: 3 },
+  { id: 'express', name: 'Express', amountMinor: 499, estimatedDays: 1 },
+  { id: 'collect', name: 'Click and collect', amountMinor: 0, estimatedDays: null },
+]
+
+interface Priced {
+  subtotalMinor?: number
+  discountMinor?: number
+  taxMinor?: number
+  inclusive?: boolean
+  currency?: string
+  options?: Option[]
+}
+
+/** The quote for `optionId`: its totals add up as the server's do. */
+function quoteOf(optionId: string, p: Priced = {}) {
+  const options = p.options ?? OPTIONS
+  const option = options.find((o) => o.id === optionId) ?? options[0]!
+  const subtotal = p.subtotalMinor ?? 1800
+  const discount = p.discountMinor ?? 0
+  const tax = p.taxMinor ?? 0
+  const inclusive = p.inclusive ?? false
+  const currency = p.currency ?? 'GBP'
+  return {
+    currency,
+    options,
+    shippingOptionId: option.id,
+    totals: {
+      currency,
+      subtotalMinor: subtotal,
+      discountTotalMinor: discount,
+      shippingTotalMinor: option.amountMinor,
+      shippingDiscountMinor: 0,
+      taxTotalMinor: tax,
+      totalMinor: subtotal - discount + option.amountMinor + (inclusive ? 0 : tax),
+      pricesIncludeTax: inclusive,
+      lines: [],
+      applied: [],
+    },
+  }
 }
 
 interface Rig {
@@ -61,13 +113,21 @@ interface Rig {
   log: Entry[]
   /** How many times the fake adapter was asked to create a checkout. */
   creates(): number
+  /** What each `checkout.create` was sent, in order. */
+  created: Array<Record<string, unknown>>
   /** The next `checkout.create` answers with this. */
   answerCreate(answer: CreateAnswer): void
+  /** What each `checkout.quote` was asked, in order. */
+  quotes: QuoteAsk[]
+  /** Every `checkout.quote` from now on answers with this; by default, `quoteOf` the option asked for. */
+  answerQuote(answer: QuoteAnswer): void
   /** The driver's `confirm` answers with this from now on. */
   answerConfirm(answer: Confirmation): void
   mounts: HTMLElement[]
   store: CheckoutStore
   currency: string
+  /** The mock client the element reads, its cart store included. */
+  client: Record<string, unknown>
 }
 
 let seq = 0
@@ -139,12 +199,21 @@ async function rig(
   const client = setupMockClient() as unknown as Record<string, unknown>
   const currency = (client['cart'] as { getState(): { currency: string } }).getState().currency
   let creates = 0
+  const created: Array<Record<string, unknown>> = []
   let nextCreate: CreateAnswer = () => Promise.resolve(result('NYM-P216-DEFAULT', 'succeeded'))
+  const quotes: QuoteAsk[] = []
+  let quoteAnswer: QuoteAnswer = (ask) =>
+    Promise.resolve(quoteOf(ask.shippingOptionId ?? 'standard'))
   const adapter = {
     checkout: {
-      create: () => {
+      create: (details: Record<string, unknown>) => {
         creates += 1
+        created.push(structuredClone(details))
         return nextCreate()
+      },
+      quote: (ask: QuoteAsk) => {
+        quotes.push(structuredClone(ask))
+        return quoteAnswer(ask)
       },
     },
   }
@@ -153,13 +222,16 @@ async function rig(
     <K extends Step | 'markConfirmed' | 'reset'>(name: K) =>
     (...args: unknown[]) => {
       log.push({ name, args })
-      return (store[name] as (...a: unknown[]) => unknown)(...args)
+      // `quote` and `selectShippingOption` are the store's from this change on.
+      const method = (store as unknown as Record<string, (...a: unknown[]) => unknown>)[name]!
+      return method(...args)
     }
   client['checkout'] = {
     ...store,
     setEmail: logged('setEmail'),
     setShippingAddress: logged('setShippingAddress'),
-    setShippingMethod: logged('setShippingMethod'),
+    quote: logged('quote'),
+    selectShippingOption: logged('selectShippingOption'),
     setBillingAddress: logged('setBillingAddress'),
     submitPayment: logged('submitPayment'),
     markConfirmed: logged('markConfirmed'),
@@ -188,13 +260,19 @@ async function rig(
     pay,
     log,
     creates: () => creates,
+    created,
     answerCreate: (answer) => {
       nextCreate = answer
+    },
+    quotes,
+    answerQuote: (answer) => {
+      quoteAnswer = answer
     },
     answerConfirm: driver.answer,
     mounts: driver.mounts,
     store,
     currency,
+    client,
   }
 }
 
@@ -243,6 +321,18 @@ async function settle(el: HTMLElement): Promise<void> {
 const nextFrame = (): Promise<void> =>
   new Promise((resolve) => requestAnimationFrame(() => resolve()))
 
+/**
+ * Settles until `step` is the one shown, bounded: the shipping step moves on only once its quote answers, a promise
+ * the fake adapter settles in microtasks. Uses no timer, so it holds under fake timers.
+ */
+async function untilStep(el: HTMLElement, step: 'contact' | 'shipping' | 'payment'): Promise<void> {
+  for (let turn = 0; turn < 50 && byTestId(el, `checkout-${step}`).hidden; turn += 1) {
+    await Promise.resolve()
+    await settle(el)
+  }
+  expect(byTestId(el, `checkout-${step}`).hidden, `the ${step} step is shown`).toBe(false)
+}
+
 /** Settles the render of a step change, then lets one frame pass, as a shopper's next action would. */
 async function afterFrame(el: HTMLElement): Promise<void> {
   await settle(el)
@@ -284,13 +374,6 @@ function rapid(el: HTMLElement, testId: string, k: number): void {
   const form = formOf(button)
   click(button, 1)
   for (let i = 1; i < k; i += 1) form.requestSubmit()
-}
-
-/** In the frame of a step change: the double click's second click, and a second submit, on the next step's button. */
-function stray(el: HTMLElement, testId: string): void {
-  const button = byTestId(el, testId)
-  click(button, 2)
-  formOf(button).requestSubmit()
 }
 
 function setBillingSame(el: HTMLElement, same: boolean): void {
@@ -380,7 +463,7 @@ async function walkToPayment(r: Rig, s: Shopper): Promise<void> {
   await afterFrame(r.el)
   fillAddress(r.el, 'shipping', s.shipping)
   rapid(r.el, 'shipping-continue', 1)
-  await settle(r.el)
+  await untilStep(r.el, 'payment')
   setBillingSame(r.el, s.billingSame)
   await settle(r.el)
   if (!s.billingSame) fillAddress(r.el, 'billing', s.billing)
@@ -390,57 +473,6 @@ async function walkToPayment(r: Rig, s: Shopper): Promise<void> {
 // ─── AC-2 ───────────────────────────────────────────────────────────────────
 
 describe('AC-2: the flow calls the SDK once per step, in order', () => {
-  it('AC-2: property: over generated contacts, addresses and k = 1-5 rapid submits per step (with a double click and a second submit landing on each next step), one setEmail, one setShippingAddress + setShippingMethod, one setBillingAddress + submitPayment, in that order; billing is the shipping address passed with billing-same, else the billing form’s values', async () => {
-    await fc.assert(
-      fc.asyncProperty(shopper, k, k, k, async (s, kContact, kShipping, kPlace) => {
-        document.body.innerHTML = ''
-        const r = await rig()
-        r.answerCreate(() => Promise.resolve(result('NYM-P216-AC2', 'succeeded')))
-
-        // Contact.
-        await afterFrame(r.el)
-        type(byTestId<HTMLInputElement>(r.el, 'contact-email'), s.email)
-        rapid(r.el, 'contact-continue', kContact)
-        await settle(r.el)
-        // The shipping step has rendered under the cursor, in the same frame: filled, then hit again.
-        fillAddress(r.el, 'shipping', s.shipping)
-        stray(r.el, 'shipping-continue')
-        await settle(r.el)
-        expect(names(stepCalls(r.log)), 'after the contact step').toEqual(['setEmail'])
-
-        // Shipping, a frame later.
-        await nextFrame()
-        rapid(r.el, 'shipping-continue', kShipping)
-        await settle(r.el)
-        setBillingSame(r.el, s.billingSame)
-        await settle(r.el)
-        if (!s.billingSame) fillAddress(r.el, 'billing', s.billing)
-        stray(r.el, 'place-order')
-        await settle(r.el)
-        expect(names(stepCalls(r.log)), 'after the shipping step').toEqual([
-          'setEmail',
-          'setShippingAddress',
-          'setShippingMethod',
-        ])
-
-        // Place order, a frame later.
-        await nextFrame()
-        rapid(r.el, 'place-order', kPlace)
-        await vi.waitFor(() => expect(names(r.log)).toContain('placed'))
-
-        const steps = stepCalls(r.log)
-        expect(names(steps)).toEqual(STEP_CALLS)
-        expect(r.creates(), 'orders created').toBe(1)
-        const [contact, shipping, method, billing] = steps
-        expect(contact!.args).toEqual([s.email])
-        expect(shipping!.args).toEqual([s.shipping])
-        expect(method!.args).toEqual([{ ...FIXED_METHOD, currency: r.currency }])
-        expect(billing!.args).toEqual([s.billingSame ? shipping!.args[0] : s.billing])
-      }),
-      { numRuns: 30 },
-    )
-  }, 60_000)
-
   it('AC-2: multi-click: a frame after the contact submit a click {detail: 2} on shipping-continue makes no setShippingAddress; a frame after the shipping submit a click {detail: 2} on place-order makes no setBillingAddress or submitPayment; the click {detail: 1} that follows places exactly one order', async () => {
     const r = await rig()
     r.answerCreate(() => Promise.resolve(result('NYM-P216-MULTI', 'succeeded')))
@@ -455,6 +487,7 @@ describe('AC-2: the flow calls the SDK once per step, in order', () => {
     expect(names(stepCalls(r.log)), 'a detail-2 click on shipping-continue').toEqual(['setEmail'])
 
     click(byTestId(r.el, 'shipping-continue'), 1)
+    await untilStep(r.el, 'payment')
     await afterFrame(r.el)
     // The first click advanced to payment; the second lands on Place Order, rendered where Continue was.
     click(byTestId(r.el, 'place-order'), 2)
@@ -462,7 +495,7 @@ describe('AC-2: the flow calls the SDK once per step, in order', () => {
     expect(names(stepCalls(r.log)), 'a detail-2 click on place-order').toEqual([
       'setEmail',
       'setShippingAddress',
-      'setShippingMethod',
+      'quote',
     ])
     expect(r.creates()).toBe(0)
     expect(calls(r.log, 'placed')).toEqual([])
@@ -729,6 +762,7 @@ describe('AC-4: the payment element mounts once', () => {
     await afterFrame(r.el)
     fillAddress(r.el, 'shipping', SHOPPER.shipping)
     click(byTestId(r.el, 'shipping-continue'), 1)
+    await untilStep(r.el, 'payment')
     await afterFrame(r.el)
     sameNode('payment')
     expect(calls(r.log, 'setShippingAddress')).toHaveLength(1)
@@ -765,9 +799,16 @@ describe('a step change never moves what is under the cursor', () => {
   // Kills: the shorter payment step rendered at its own height in the frame of the shipping submit, so the page
   // shortens and a double click's second click lands on a footer link that rose under the cursor; and a hold never
   // released, which leaves the payment step a blank gap the height of the shipping step above the summary.
-  it("B1, W1: shipping → payment: the main column is no shorter than the shipping step it replaced until 600 ms after the step change (a double click is at most 500 ms), then it is the payment step's own height", async () => {
+  it("B1, W1: shipping → payment: the main column is no shorter than the shipping step it replaced until 600 ms after the step change, which follows the quote's answer (a double click is at most 500 ms), then it is the payment step's own height", async () => {
     const r = await rig()
     const main = laidOut(r.el)
+    let answer: () => void = () => undefined
+    r.answerQuote(
+      (ask) =>
+        new Promise((resolve) => {
+          answer = () => resolve(quoteOf(ask.shippingOptionId ?? 'standard'))
+        }),
+    )
 
     await afterFrame(r.el)
     type(byTestId<HTMLInputElement>(r.el, 'contact-email'), SHOPPER.email)
@@ -781,7 +822,14 @@ describe('a step change never moves what is under the cursor', () => {
     try {
       click(byTestId(r.el, 'shipping-continue'), 1)
       await settle(r.el)
-      expect(byTestId(r.el, 'checkout-payment').hidden, 'the payment step is shown').toBe(false)
+      expect(
+        byTestId(r.el, 'checkout-shipping').hidden,
+        'the shipping step stays until the quote answers',
+      ).toBe(false)
+      // The quote takes 300 ms: the step change, and the hold's 600 ms, start at its answer.
+      vi.advanceTimersByTime(300)
+      answer()
+      await untilStep(r.el, 'payment')
       expect(main.offsetHeight, 'in the step-change frame').toBeGreaterThanOrEqual(before)
 
       vi.advanceTimersByTime(500)
@@ -812,6 +860,7 @@ describe('a step change never moves what is under the cursor', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     try {
       click(byTestId(r.el, 'shipping-continue'), 1)
+      await untilStep(r.el, 'payment')
       await afterFrame(r.el)
       vi.advanceTimersByTime(400)
       const back = byTestId(r.el, 'checkout-payment').querySelector<HTMLElement>("[part~='back']")
@@ -820,6 +869,7 @@ describe('a step change never moves what is under the cursor', () => {
       await afterFrame(r.el)
       expect(byTestId(r.el, 'checkout-shipping').hidden, 'back on the shipping step').toBe(false)
       click(byTestId(r.el, 'shipping-continue'), 1)
+      await untilStep(r.el, 'payment')
       await afterFrame(r.el)
       expect(byTestId(r.el, 'checkout-payment').hidden, 'the payment step is shown again').toBe(
         false,
@@ -1054,5 +1104,622 @@ describe('AC-11: requires_action with nothing on the page to take the payment', 
     expect(calls(r.log, 'placed').map((e) => e.args[0])).toEqual(['NYM-P420-3'])
     expect(calls(r.log, 'markConfirmed')).toEqual([])
     expect(errorText(r.el)).toBe('')
+  })
+})
+
+// ─── The quote on the page ──────────────────────────────────────────────────
+
+const NO_SHIPPING =
+  "We don't deliver to this address. Enter the country as its two-letter code, such as GB."
+const TOTAL_UNAVAILABLE = "We couldn't work out your total just now. Please try again."
+const TOTAL_CHANGED = 'The total has changed. Please check it and place your order again.'
+const EXPIRED = 'Your session has expired. Sign in again to place your order.'
+
+/** A quote answer the test releases when it chooses. */
+function heldQuote(
+  answer: (ask: QuoteAsk) => unknown = (ask) => quoteOf(ask.shippingOptionId ?? 'standard'),
+) {
+  let release: () => void = () => undefined
+  const respond: QuoteAnswer = (ask) =>
+    new Promise((resolve) => {
+      release = () => resolve(answer(ask))
+    })
+  return { respond, release: () => release() }
+}
+
+/** A cart of one line at `subtotalMinor`, as the cart store holds it. */
+function cartOf(r: Rig, subtotalMinor: number, currency = 'GBP'): void {
+  const cart = r.client['cart'] as { setState(partial: Record<string, unknown>): void }
+  cart.setState({
+    currency,
+    subtotalMinor,
+    itemCount: 1,
+    items: [
+      {
+        variantId: 'v-1',
+        productId: 'p-1',
+        productName: 'Lamp',
+        variantName: '',
+        priceMinor: subtotalMinor,
+        imageUrl: '',
+        qty: 1,
+      },
+    ],
+  })
+}
+
+/** Every node in the order summary carrying this test id. */
+const inSummary = (el: HTMLElement, id: string): Element[] =>
+  deepAll(byTestId(el, 'checkout-summary'), `[data-testid="${id}"]`)
+
+/** The text of each summary row a test id sits in: its label and its amount. */
+const rowsOf = (el: HTMLElement, id: string): string[] =>
+  inSummary(el, id).map((node) => {
+    const row = node.closest("[part~='summary-row']") ?? node.parentElement ?? node
+    return row.textContent?.replace(/\s+/g, ' ').trim() ?? ''
+  })
+
+/** The one summary row a test id sits in. */
+function rowText(el: HTMLElement, id: string): string {
+  const rows = rowsOf(el, id)
+  expect(rows, `${id} in the summary`).toHaveLength(1)
+  return rows[0]!
+}
+
+function totalText(el: HTMLElement): string {
+  const part = deepAll(byTestId(el, 'checkout-summary'), "[part~='total']")[0]
+  expect(part, "the summary's total part").toBeDefined()
+  return part!.textContent?.replace(/\s+/g, ' ').trim() ?? ''
+}
+
+interface ShownOption {
+  id: string
+  input: HTMLInputElement
+  label: string
+}
+
+/** The delivery choice's radios: the option id each is for, the radio, and the text it is labelled with. */
+function radios(el: HTMLElement): ShownOption[] {
+  const prefix = 'checkout-shipping-option-'
+  return deepAll(rootOf(el), `[data-testid^="${prefix}"]`).map((node) => {
+    const input = (
+      node instanceof HTMLInputElement ? node : node.querySelector('input[type="radio"]')
+    ) as HTMLInputElement
+    const labelled =
+      node instanceof HTMLInputElement ? (node.closest('label') ?? node.parentElement) : node
+    return {
+      id: node.getAttribute('data-testid')!.slice(prefix.length),
+      input,
+      label: labelled?.textContent?.replace(/\s+/g, ' ').trim() ?? '',
+    }
+  })
+}
+
+const checkedIds = (el: HTMLElement): string[] =>
+  radios(el)
+    .filter((o) => o.input?.checked)
+    .map((o) => o.id)
+
+/** Contact, then the shipping address submitted once, a frame after each step shows; no wait for the quote. */
+async function submitShipping(r: Rig, s: Shopper = SHOPPER): Promise<void> {
+  await afterFrame(r.el)
+  type(byTestId<HTMLInputElement>(r.el, 'contact-email'), s.email)
+  rapid(r.el, 'contact-continue', 1)
+  await afterFrame(r.el)
+  fillAddress(r.el, 'shipping', s.shipping)
+  rapid(r.el, 'shipping-continue', 1)
+  await settle(r.el)
+}
+
+/** Chooses the option `id` on the payment step. */
+async function choose(r: Rig, id: string): Promise<void> {
+  const option = radios(r.el).find((o) => o.id === id)
+  expect(option, `a radio for ${id}`).toBeDefined()
+  option!.input.click()
+  await settle(r.el)
+}
+
+const amountLabel = (amountMinor: number, currency: string): string =>
+  amountMinor === 0 ? 'Free' : formatPrice(amountMinor, currency)
+
+const arbPriced = fc.record({
+  subtotalMinor: fc.integer({ min: 100, max: 500_000 }),
+  discountShare: fc.oneof(fc.constant(0), fc.integer({ min: 1, max: 50 })),
+  taxMinor: fc.oneof(fc.constant(0), fc.integer({ min: 1, max: 90_000 })),
+  inclusive: fc.boolean(),
+  currency: fc.constantFrom('GBP', 'EUR', 'USD'),
+})
+
+const pricedOf = (p: {
+  subtotalMinor: number
+  discountShare: number
+  taxMinor: number
+  inclusive: boolean
+  currency: string
+}): Priced => ({
+  subtotalMinor: p.subtotalMinor,
+  discountMinor: Math.floor((p.subtotalMinor * p.discountShare) / 100),
+  taxMinor: p.taxMinor,
+  inclusive: p.inclusive,
+  currency: p.currency,
+})
+
+describe('AC-15: the payment step shows the quote', () => {
+  // Kills: a summary that prints "Standard, free" and the subtotal as the total before anything is known, or a step
+  // that moves to payment before the quote answers (or without asking for one).
+  it('AC-15: before a quote the summary says shipping is calculated at the next step, with the subtotal as the total; a shipping submit makes one quote request for the address typed and moves to payment when it answers', async () => {
+    const r = await rig()
+    cartOf(r, 2_350)
+    const held = heldQuote((ask) =>
+      quoteOf(ask.shippingOptionId ?? 'express', { subtotalMinor: 2_350 }),
+    )
+    r.answerQuote(held.respond)
+
+    await afterFrame(r.el)
+    type(byTestId<HTMLInputElement>(r.el, 'contact-email'), SHOPPER.email)
+    rapid(r.el, 'contact-continue', 1)
+    await afterFrame(r.el)
+    expect(byTestId(r.el, 'checkout-summary').textContent).toContain('calculated at the next step')
+    expect(totalText(r.el)).toContain(formatPrice(2_350, 'GBP'))
+    fillAddress(r.el, 'shipping', SHOPPER.shipping)
+    rapid(r.el, 'shipping-continue', 1)
+    await settle(r.el)
+
+    expect(r.quotes.map((q) => q.shippingAddress)).toEqual([SHOPPER.shipping])
+    expect(byTestId(r.el, 'checkout-payment').hidden, 'payment waits for the quote').toBe(true)
+
+    held.release()
+    await untilStep(r.el, 'payment')
+    expect(r.quotes).toHaveLength(1)
+    expect(totalText(r.el)).toContain(formatPrice(2_350 + 499, 'GBP'))
+  })
+
+  // Kills: a delivery choice that is not the quote's (a missing option, a price shown as 0 that is charged, the
+  // wrong one checked), or a summary row the order will not carry (a tax row at 0, tax labelled as added on top when
+  // it is included), or amounts in the store's currency rather than the quote's.
+  it('AC-15: property: for generated quotes, one radio per option labelled with its name and price ("Free" at 0) with the quote’s option checked, and the summary’s subtotal, discount (only above 0), shipping, tax (only above 0, "Tax (included)" by the flag) and total are the quote’s, in its currency', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        arbPriced,
+        fc.constantFrom(...OPTIONS.map((o) => o.id)),
+        async (p, chosen) => {
+          document.body.innerHTML = ''
+          const r = await rig()
+          const priced = pricedOf(p)
+          const q = quoteOf(chosen, priced)
+          r.answerQuote(() => Promise.resolve(q))
+          await walkToPayment(r, SHOPPER)
+
+          const shown = radios(r.el)
+          expect(shown.map((o) => o.id)).toEqual(OPTIONS.map((o) => o.id))
+          for (const option of OPTIONS) {
+            const label = shown.find((o) => o.id === option.id)!.label
+            expect(label, option.id).toContain(option.name)
+            expect(label, option.id).toContain(amountLabel(option.amountMinor, q.currency))
+          }
+          expect(checkedIds(r.el)).toEqual([chosen])
+
+          const t = q.totals
+          const option = OPTIONS.find((o) => o.id === chosen)!
+          expect(rowText(r.el, 'cart-subtotal')).toContain(formatPrice(t.subtotalMinor, q.currency))
+          const discount = formatPrice(t.discountTotalMinor, q.currency)
+          expect(
+            rowsOf(r.el, 'checkout-summary-discount').map((row) => row.includes(discount)),
+          ).toEqual(t.discountTotalMinor > 0 ? [true] : [])
+          const shipping = rowText(r.el, 'checkout-summary-shipping')
+          expect(shipping).toContain(option.name)
+          expect(shipping).toContain(amountLabel(option.amountMinor, q.currency))
+          const taxRows = rowsOf(r.el, 'checkout-summary-tax')
+          const tax = formatPrice(t.taxTotalMinor, q.currency)
+          expect(taxRows.map((row) => row.includes(tax))).toEqual(t.taxTotalMinor > 0 ? [true] : [])
+          expect(
+            taxRows.map((row) => /\bTax\b/.test(row) && row.includes('Tax (included)')),
+          ).toEqual(t.taxTotalMinor > 0 ? [t.pricesIncludeTax] : [])
+          expect(totalText(r.el)).toContain(formatPrice(t.totalMinor, q.currency))
+        },
+      ),
+      { numRuns: 15 },
+    )
+  }, 90_000)
+})
+
+describe('AC-16: what is shown is what is sent', () => {
+  /** Option changes from the first quote's option, never the same one twice running. */
+  const arbChanges = fc
+    .array(fc.constantFrom(...OPTIONS.map((o) => o.id)), { minLength: 1, maxLength: 4 })
+    .map((ids) =>
+      ids.reduce<string[]>(
+        (out, id) => (id === (out.at(-1) ?? 'standard') ? out : [...out, id]),
+        [],
+      ),
+    )
+    .filter((changes) => changes.length > 0)
+
+  // Kills: a summary that shows one option's total while Place Order acknowledges another (a late answer kept, the
+  // radio's value sent with the old total), or a press while the total is still moving.
+  it('AC-16: property: after each option change settles the total part reads the checked option’s quote total, Place Order is disabled while a change is in flight, and one press submits that option and that total as expectedTotalMinor', async () => {
+    await fc.assert(
+      fc.asyncProperty(arbPriced, arbChanges, async (p, changes) => {
+        document.body.innerHTML = ''
+        const r = await rig()
+        const priced = pricedOf(p)
+        await walkToPayment(r, SHOPPER)
+        await vi.waitFor(() => expect(r.pay.status).toBe('ready'))
+        r.answerQuote((ask) => Promise.resolve(quoteOf(ask.shippingOptionId ?? 'standard', priced)))
+        const placeOrder = () => byTestId<HTMLButtonElement>(r.el, 'place-order')
+
+        for (const [i, id] of changes.entries()) {
+          const want = quoteOf(id, priced)
+          const held = heldQuote(() => want)
+          r.answerQuote(held.respond)
+          await choose(r, id)
+          expect(placeOrder().disabled, `change ${i} in flight`).toBe(true)
+          held.release()
+          await vi.waitFor(() =>
+            expect(totalText(r.el), `change ${i} to ${id}`).toContain(
+              formatPrice(want.totals.totalMinor, want.currency),
+            ),
+          )
+          expect(checkedIds(r.el)).toEqual([id])
+        }
+
+        const last = quoteOf(changes.at(-1)!, priced)
+        await afterFrame(r.el)
+        expect(placeOrder().disabled).toBe(false)
+        click(placeOrder(), 1)
+        await vi.waitFor(() => expect(r.creates()).toBe(1))
+        expect([r.created[0]!['shippingOptionId'], r.created[0]!['expectedTotalMinor']]).toEqual([
+          last.shippingOptionId,
+          last.totals.totalMinor,
+        ])
+      }),
+      { numRuns: 12 },
+    )
+  }, 90_000)
+
+  // Kills: a summary left on a quote for a cart the shopper has since changed (a cart drawer on the payment step), so
+  // Place Order sends a total the server refuses; or a later mount on the same client showing a quote it never asked for.
+  it('AC-16: when the cart changes on the payment step the summary and the total sent are the new cart’s quote, and a later checkout on the same client shows shipping as calculated at the next step until it quotes', async () => {
+    const r = await rig()
+    cartOf(r, 1_800)
+    await walkToPayment(r, SHOPPER)
+    expect(totalText(r.el)).toContain(formatPrice(1_800, 'GBP'))
+    r.answerQuote((ask) =>
+      Promise.resolve(quoteOf(ask.shippingOptionId ?? 'standard', { subtotalMinor: 3_600 })),
+    )
+
+    const cart = r.client['cart'] as { getState(): { items: unknown[] }; setState(p: object): void }
+    const [line] = cart.getState().items as Array<Record<string, unknown>>
+    cart.setState({ subtotalMinor: 3_600, itemCount: 2, items: [{ ...line, qty: 2 }] })
+    await vi.waitFor(() => expect(totalText(r.el)).toContain(formatPrice(3_600, 'GBP')))
+
+    expect(r.quotes).toHaveLength(2)
+    expect(rowText(r.el, 'cart-subtotal')).toContain(formatPrice(3_600, 'GBP'))
+    expect(r.store.getState().quote?.totals.totalMinor).toBe(3_600)
+    await afterFrame(r.el)
+    expect(byTestId<HTMLButtonElement>(r.el, 'place-order').disabled).toBe(false)
+
+    r.el.remove()
+    const again = document.createElement(CHECKOUT)
+    document.body.append(again)
+    await settle(again)
+    expect(r.store.getState().quote, 'the store still holds the last mount’s quote').not.toBeNull()
+    expect(byTestId(again, 'checkout-summary').textContent).toContain('calculated at the next step')
+    expect(inSummary(again, 'checkout-summary-shipping')).toEqual([])
+    expect(totalText(again)).toContain(formatPrice(3_600, 'GBP'))
+    expect(radios(again)).toEqual([])
+  })
+})
+
+describe('AC-17: every quote refusal has one answer', () => {
+  const STAYS: Array<[string, () => Error, string]> = [
+    [
+      '422 checkout.no_shipping',
+      () => new NymbalApiError('checkout.no_shipping', 'No option ships there', 422),
+      NO_SHIPPING,
+    ],
+    [
+      '503 checkout.tax_unavailable',
+      () => new NymbalApiError('checkout.tax_unavailable', 'The tax engine is down', 503),
+      TOTAL_UNAVAILABLE,
+    ],
+    [
+      '503 checkout.promotions_unavailable',
+      () => new NymbalApiError('checkout.promotions_unavailable', 'The engine is down', 503),
+      TOTAL_UNAVAILABLE,
+    ],
+    [
+      'a 429',
+      () => new NymbalApiError('rate_limit.exceeded', 'Too many requests', 429),
+      TOTAL_UNAVAILABLE,
+    ],
+    ['a 503', () => new NymbalApiError('internal', 'Service unavailable', 503), TOTAL_UNAVAILABLE],
+    [
+      'any other refusal',
+      () => new NymbalApiError('checkout.variant_missing', 'Variant missing: v-1', 422),
+      TOTAL_UNAVAILABLE,
+    ],
+    ['a rejected fetch', () => new TypeError('Failed to fetch'), TOTAL_UNAVAILABLE],
+  ]
+
+  // Kills: a shopper who cannot be delivered to reaching payment, an outage shown as the server's raw message, or a
+  // shipping step that never asks again.
+  it.each(STAYS)(
+    'AC-17: %s shows its message in checkout-error, stays on the shipping step, and the next submit quotes again',
+    async (_what, refusal, message) => {
+      const r = await rig()
+      r.answerQuote(() => Promise.reject(refusal()))
+
+      await submitShipping(r)
+      await vi.waitFor(() => expect(errorText(r.el)).toBe(message))
+
+      expect(byTestId(r.el, 'checkout-shipping').hidden).toBe(false)
+      expect(byTestId(r.el, 'checkout-payment').hidden).toBe(true)
+      expect(r.quotes).toHaveLength(1)
+
+      r.answerQuote((ask) => Promise.resolve(quoteOf(ask.shippingOptionId ?? 'standard')))
+      await nextFrame()
+      click(byTestId(r.el, 'shipping-continue'), 1)
+      await untilStep(r.el, 'payment')
+      expect(r.quotes).toHaveLength(2)
+      expect(errorText(r.el)).toBe('')
+    },
+  )
+
+  it('AC-17: auth.token_invalid on the quote shows the session-expired message and the checkout-sign-in link, and stays on the shipping step', async () => {
+    const r = await rig()
+    r.answerQuote(() =>
+      Promise.reject(
+        new NymbalApiError('auth.token_invalid', 'the access token is not valid', 401),
+      ),
+    )
+
+    await submitShipping(r)
+    await vi.waitFor(() => expect(errorText(r.el)).toBe(EXPIRED))
+
+    expect(
+      deepAll(rootOf(r.el), '[data-testid="checkout-sign-in"]').map((a) => a.getAttribute('href')),
+    ).toEqual(['/account/login?redirect=%2Fcheckout'])
+    expect(byTestId(r.el, 'checkout-shipping').hidden).toBe(false)
+    expect(byTestId(r.el, 'checkout-payment').hidden).toBe(true)
+  })
+
+  // Kills: a shopper whose earlier choice is no longer offered stranded on the shipping step.
+  it('AC-17: checkout.shipping_option_unavailable quotes once more with no option and moves on with that answer', async () => {
+    const r = await rig()
+    await walkToPayment(r, SHOPPER)
+    await choose(r, 'express')
+    await vi.waitFor(() => expect(checkedIds(r.el)).toEqual(['express']))
+    const back = byTestId(r.el, 'checkout-payment').querySelector<HTMLElement>("[part~='back']")
+    expect(back, "the payment step's back button").not.toBeNull()
+    await nextFrame()
+    click(back!, 1)
+    await untilStep(r.el, 'shipping')
+    let asked = 0
+    r.answerQuote((ask) => {
+      asked += 1
+      return asked === 1
+        ? Promise.reject(
+            new NymbalApiError('checkout.shipping_option_unavailable', 'Not offered', 409, {
+              options: [OPTIONS[0], OPTIONS[2]],
+            }),
+          )
+        : Promise.resolve(
+            quoteOf(ask.shippingOptionId ?? 'standard', { options: [OPTIONS[0]!, OPTIONS[2]!] }),
+          )
+    })
+    const before = r.quotes.length
+
+    await nextFrame()
+    click(byTestId(r.el, 'shipping-continue'), 1)
+    await untilStep(r.el, 'payment')
+
+    expect(r.quotes.slice(before).map((q) => q.shippingOptionId)).toEqual(['express', undefined])
+    expect(checkedIds(r.el)).toEqual(['standard'])
+    expect(radios(r.el).map((o) => o.id)).toEqual(['standard', 'collect'])
+  })
+
+  // Kills: a changed total that leaves the old summary on screen, or is taken for an order.
+  it('AC-17: a Place Order refused checkout.total_changed shows the new quote’s summary and the total-changed message, fires no nymbal:checkout:placed, and enables Place Order', async () => {
+    const r = await rig()
+    await walkToPayment(r, SHOPPER)
+    await vi.waitFor(() => expect(r.pay.status).toBe('ready'))
+    expect(totalText(r.el)).toContain(formatPrice(1_800, 'GBP'))
+    r.answerCreate(() =>
+      Promise.reject(
+        new NymbalApiError('checkout.total_changed', 'The total has changed', 409, {
+          quoted: 1_800,
+          due: 2_299,
+        }),
+      ),
+    )
+    r.answerQuote((ask) =>
+      Promise.resolve(quoteOf(ask.shippingOptionId ?? 'standard', { subtotalMinor: 2_299 })),
+    )
+
+    await nextFrame()
+    click(byTestId<HTMLButtonElement>(r.el, 'place-order'), 1)
+    await vi.waitFor(() => expect(errorText(r.el)).toBe(TOTAL_CHANGED))
+    await afterFrame(r.el)
+
+    expect(totalText(r.el)).toContain(formatPrice(2_299, 'GBP'))
+    expect(totalText(r.el)).not.toContain(formatPrice(1_800, 'GBP'))
+    expect(calls(r.log, 'placed')).toEqual([])
+    expect(byTestId<HTMLButtonElement>(r.el, 'place-order').disabled).toBe(false)
+  })
+
+  // Kills: an option change whose quote fails leaving no delivery choice, no total and no message, so Place Order
+  // refuses for a reason the shopper cannot see.
+  it.each([
+    ['a rejected fetch', () => new TypeError('Failed to fetch')],
+    ['a 429', () => new NymbalApiError('rate_limit.exceeded', 'Too many requests', 429)],
+    [
+      '503 checkout.tax_unavailable',
+      () => new NymbalApiError('checkout.tax_unavailable', 'The tax engine is down', 503),
+    ],
+  ])(
+    'AC-17: %s on an option change shows its message in checkout-error and keeps the last quote, its option checked, and Place Order sends that option and total',
+    async (_what, refusal) => {
+      const r = await rig()
+      await walkToPayment(r, SHOPPER)
+      await vi.waitFor(() => expect(r.pay.status).toBe('ready'))
+      const kept = quoteOf('standard')
+      r.answerQuote(() => Promise.reject(refusal()))
+
+      await choose(r, 'express')
+      await vi.waitFor(() => expect(errorText(r.el)).toBe(TOTAL_UNAVAILABLE))
+      await afterFrame(r.el)
+
+      expect(radios(r.el).map((o) => o.id)).toEqual(OPTIONS.map((o) => o.id))
+      expect(checkedIds(r.el)).toEqual(['standard'])
+      expect(rowText(r.el, 'checkout-summary-shipping')).toContain('Standard')
+      expect(totalText(r.el)).toContain(formatPrice(kept.totals.totalMinor, 'GBP'))
+      click(byTestId<HTMLButtonElement>(r.el, 'place-order'), 1)
+      await vi.waitFor(() => expect(r.creates()).toBe(1))
+      expect([r.created[0]!['shippingOptionId'], r.created[0]!['expectedTotalMinor']]).toEqual([
+        'standard',
+        kept.totals.totalMinor,
+      ])
+    },
+  )
+})
+
+describe('AC-18: double submits', () => {
+  // Kills: a double click that quotes twice (and lets the late answer win), or that places two checkouts.
+  it('AC-18: property: k rapid shipping submits make one quote request, and k rapid Place Order presses make one submitPayment', async () => {
+    await fc.assert(
+      fc.asyncProperty(k, k, async (kShipping, kPlace) => {
+        document.body.innerHTML = ''
+        const r = await rig()
+        r.answerCreate(() => Promise.resolve(result('NYM-AC18', 'succeeded')))
+        const held = heldQuote()
+        r.answerQuote(held.respond)
+
+        await afterFrame(r.el)
+        type(byTestId<HTMLInputElement>(r.el, 'contact-email'), SHOPPER.email)
+        rapid(r.el, 'contact-continue', 1)
+        await afterFrame(r.el)
+        fillAddress(r.el, 'shipping', SHOPPER.shipping)
+        rapid(r.el, 'shipping-continue', kShipping)
+        await settle(r.el)
+        expect(r.quotes, `${kShipping} shipping submits`).toHaveLength(1)
+        held.release()
+        await untilStep(r.el, 'payment')
+        expect(r.quotes).toHaveLength(1)
+
+        await vi.waitFor(() => expect(r.pay.status).toBe('ready'))
+        await nextFrame()
+        rapid(r.el, 'place-order', kPlace)
+        await vi.waitFor(() => expect(calls(r.log, 'placed')).toHaveLength(1))
+        expect(calls(r.log, 'submitPayment'), `${kPlace} presses`).toHaveLength(1)
+        expect(r.creates()).toBe(1)
+      }),
+      { numRuns: 12 },
+    )
+  }, 90_000)
+
+  it('AC-18: property: after a total_changed refusal, k rapid presses make one more submitPayment', async () => {
+    await fc.assert(
+      fc.asyncProperty(k, async (kPlace) => {
+        document.body.innerHTML = ''
+        const r = await rig()
+        await walkToPayment(r, SHOPPER)
+        await vi.waitFor(() => expect(r.pay.status).toBe('ready'))
+        r.answerCreate(() =>
+          Promise.reject(
+            new NymbalApiError('checkout.total_changed', 'The total has changed', 409, {
+              quoted: 1_800,
+              due: 1_900,
+            }),
+          ),
+        )
+        r.answerQuote(() => Promise.resolve(quoteOf('standard', { subtotalMinor: 1_900 })))
+        await nextFrame()
+        click(byTestId(r.el, 'place-order'), 1)
+        await vi.waitFor(() => expect(errorText(r.el)).toBe(TOTAL_CHANGED))
+        const submitted = calls(r.log, 'submitPayment').length
+
+        r.answerCreate(() => Promise.resolve(result('NYM-AC18-2', 'succeeded')))
+        await afterFrame(r.el)
+        rapid(r.el, 'place-order', kPlace)
+        await vi.waitFor(() => expect(calls(r.log, 'placed')).toHaveLength(1))
+        expect(calls(r.log, 'submitPayment').length - submitted, `${kPlace} presses`).toBe(1)
+        expect(r.created.at(-1)!['expectedTotalMinor']).toBe(1_900)
+      }),
+      { numRuns: 8 },
+    )
+  }, 90_000)
+})
+
+describe('AC-26: Back after an order', () => {
+  // Kills: the shipping step stranding the shopper on a refusal it never asks the server to resolve, so Back then
+  // Place Order no longer lands on the order the cart became.
+  it('AC-26: a placed guest checkout, then Back and contact and shipping again: the quote is refused cart_empty naming the order, the step moves to payment with no quote, and one Place Order posts one checkout with no total whose keyed refusal fires nymbal:checkout:placed with the order and its key', async () => {
+    const details: unknown[] = []
+    const onPlaced = (event: Event) => details.push((event as CustomEvent).detail)
+    document.addEventListener('nymbal:checkout:placed', onPlaced)
+    listeners.push(() => document.removeEventListener('nymbal:checkout:placed', onPlaced))
+    const orderNumber = 'NYM-2601'
+    const firstKey = 'A'.repeat(43)
+    const laterKey = 'B'.repeat(43)
+
+    const r = await rig()
+    r.answerCreate(() =>
+      Promise.resolve({ ...result(orderNumber, 'succeeded'), orderKey: firstKey }),
+    )
+    await walkToPayment(r, SHOPPER)
+    await vi.waitFor(() => expect(r.pay.status).toBe('ready'))
+    await nextFrame()
+    click(byTestId(r.el, 'place-order'), 1)
+    await vi.waitFor(() => expect(details).toHaveLength(1))
+
+    // Back: the checkout page again, over the same SDK, with the cart now the order on the server.
+    r.answerQuote(() =>
+      Promise.reject(
+        new NymbalApiError(
+          'checkout.cart_empty',
+          `This cart is already order ${orderNumber}`,
+          409,
+          {
+            orderNumber,
+          },
+        ),
+      ),
+    )
+    r.answerCreate(() =>
+      Promise.reject(
+        new NymbalApiError(
+          'checkout.cart_empty',
+          `This cart is already order ${orderNumber}`,
+          409,
+          {
+            orderNumber,
+            orderKey: laterKey,
+          },
+        ),
+      ),
+    )
+    r.el.remove()
+    const again = document.createElement(CHECKOUT)
+    again.append(r.pay)
+    document.body.append(again)
+    await settle(again)
+    const back: Rig = { ...r, el: again }
+    const quotesBefore = r.quotes.length
+    const createdBefore = r.created.length
+
+    await walkToPayment(back, SHOPPER)
+
+    expect(r.quotes.length - quotesBefore).toBe(1)
+    expect(byTestId(again, 'checkout-summary').textContent).toContain('calculated at the next step')
+    const placeOrder = byTestId<HTMLButtonElement>(again, 'place-order')
+    expect(placeOrder.disabled).toBe(false)
+    await vi.waitFor(() => expect(r.pay.status).toBe('ready'))
+    await nextFrame()
+    click(placeOrder, 1)
+    await vi.waitFor(() => expect(details).toHaveLength(2))
+
+    expect(r.created.slice(createdBefore).map((c) => c['expectedTotalMinor'])).toEqual([undefined])
+    expect(details[1]).toStrictEqual({ orderNumber, orderKey: laterKey })
   })
 })

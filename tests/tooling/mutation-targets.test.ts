@@ -1,4 +1,4 @@
-// Reads: scripts/mutation-ratchet.ts, mutation-targets.json, stryker.config.mjs, stryker.integration.config.mjs
+// Reads: scripts/mutation-ratchet.ts, mutation-targets.json, stryker.config.mjs, stryker.integration.config.mjs, scripts/machine-budget.ts
 import { execFile, execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -52,7 +52,10 @@ const TARGETS: Targets = {
   groups: [
     { name: 'services', glob: 'packages/platform/src/services/**/*.ts', floor: 60 },
     { name: 'repositories', glob: 'packages/platform/src/repositories/**/*.ts', floor: 50 },
+    { name: 'promotions', glob: 'packages/platform/src/adapters/promotions/**/*.ts', floor: 60 },
     { name: 'mappers', glob: 'packages/importers/src/woocommerce/mappers/**/*.ts', floor: 80 },
+    { name: 'assistant', glob: 'packages/platform/src/assistant/**/*.ts', floor: 75 },
+    { name: 'assistant-tools', glob: 'packages/platform/src/mcp/**/*.ts', floor: 65 },
   ],
   exceptions: { [EXCEPTED]: 'an interface' },
 }
@@ -76,6 +79,9 @@ function scratch(
     writeFileSync(join(dir, path), text)
   }
   for (const [path, text] of Object.entries(configs)) write(path, text)
+  // The real configs read their concurrency from the machine budget beside them, an ES module as in the repository.
+  write('scripts/machine-budget.ts', readFileSync(join(REPO, 'scripts/machine-budget.ts'), 'utf8'))
+  write('package.json', '{ "type": "module" }\n')
   FILES.forEach((path, i) => write(path, `export const n${i} = ${i}\n`))
   write('mutation-ratchet.json', ratchet(unit))
   write('mutation-ratchet.integration.json', ratchet(integration))
@@ -197,7 +203,7 @@ describe('AC-1: mutation:ratchet target against fixture ratchets and floors', ()
             groups: [
               { ...TARGETS.groups[0]!, floor: serviceFloor / 100 },
               { ...TARGETS.groups[1]!, floor: repoFloor / 100 },
-              TARGETS.groups[2]!,
+              TARGETS.groups[3]!,
             ],
             exceptions: Object.fromEntries(excepted.map((f) => [f, 'why'])),
           }
@@ -229,7 +235,7 @@ describe('AC-1: mutation:ratchet target against fixture ratchets and floors', ()
 // Whether the committed ratchets meet these floors is release:check's mutation item, not this test's: the floor holds
 // the release, never the gate.
 describe('AC-2: the committed floors', () => {
-  it('AC-2: mutation-targets.json holds services 60, repositories 50, mappers 80 with the one exception', () => {
+  it('AC-2: mutation-targets.json holds services 60, repositories 50, promotions 60, mappers 80, assistant 75, assistant-tools 65 with the one exception', () => {
     const committed = JSON.parse(
       readFileSync(join(REPO, 'mutation-targets.json'), 'utf8'),
     ) as Targets

@@ -27,6 +27,7 @@ export {
   type MigrateOptions,
   type MigrationState,
 } from './db/migrate.js'
+export { withoutQueryParams } from './db/query-error.js'
 // Legacy thin repositories (kept for seed + existing consumers).
 export {
   createProductRepository as createLegacyProductRepository,
@@ -38,6 +39,7 @@ export {
   type CategoryInsert as LegacyCategoryInsert,
   type CategoryRow as LegacyCategoryRow,
 } from './db/repositories/categories.js'
+export { normaliseEmail } from './email-address.js'
 // Full repositories.
 export * from './repositories/index.js'
 export {
@@ -125,10 +127,12 @@ export {
   startCartAbandonmentSweeper,
   startEventRetentionSweeper,
   startRefreshTokenSweeper,
+  startStuckProposalSweeper,
   type SweeperHandle,
   type EventArchiveWriter,
   type EventRetentionSweeperDeps,
   type RefreshTokenSweeperDeps,
+  type StuckProposalSweeperDeps,
 } from './sweepers/index.js'
 export * from './services/index.js'
 export * from './adapters/index.js'

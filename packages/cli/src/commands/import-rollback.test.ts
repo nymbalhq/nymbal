@@ -179,6 +179,13 @@ interface AuditRow {
 const auditOf = (dbPath: string) =>
   readRows<AuditRow>(dbPath, 'SELECT * FROM audit_entries ORDER BY at, id')
 
+/** Events the relay has not handed over, as `<seq> <type>`: what the next process to open the store would deliver. */
+const undeliveredOf = (dbPath: string): string[] =>
+  readRows<{ seq: number; type: string }>(
+    dbPath,
+    'SELECT seq, type FROM events WHERE delivered_at IS NULL ORDER BY seq',
+  ).map((r) => `${r.seq} ${r.type}`)
+
 describe('an import taken back out with --rollback --yes', () => {
   const p = {} as Project
   let seeded: CliRun
@@ -189,11 +196,13 @@ describe('an import taken back out with --rollback --yes', () => {
   let mediaUrls: number
   let eventsAfterImport: EventRow[]
   let auditAfterImport: AuditRow[]
+  let undeliveredAfterImport: string[]
   let unconfirmed: CliRun
   let afterUnconfirmed: TableSnapshot
   let rolledBack: CliRun
   let afterRollback: TableSnapshot
   let everyAfterRollback: TableSnapshot
+  let undeliveredAfterRollback: string[]
   let again: CliRun
 
   beforeAll(async () => {
@@ -209,6 +218,7 @@ describe('an import taken back out with --rollback --yes', () => {
     afterImport = coveredTables(p.dbPath)
     eventsAfterImport = eventsOf(p.dbPath)
     auditAfterImport = auditOf(p.dbPath)
+    undeliveredAfterImport = undeliveredOf(p.dbPath)
 
     unconfirmed = await nymbal(p, ['import', '--rollback'])
     afterUnconfirmed = coveredTables(p.dbPath)
@@ -216,6 +226,7 @@ describe('an import taken back out with --rollback --yes', () => {
     rolledBack = await nymbal(p, ['import', '--rollback', '--yes'])
     afterRollback = coveredTables(p.dbPath)
     everyAfterRollback = everyTable(p.dbPath)
+    undeliveredAfterRollback = undeliveredOf(p.dbPath)
 
     again = await nymbal(p, ['import', '--rollback', '--yes'])
   }, 600_000)
@@ -275,6 +286,21 @@ describe('an import taken back out with --rollback --yes', () => {
     const removed = ENTITIES.flatMap((e) => state.importedIds[e])
     expect(removed.filter((id) => !named.has(id))).toEqual([])
     expect(removed.length).toBeGreaterThan(ENTITIES.length)
+  })
+
+  // Defect: the command stops the app with the backlog of a pass it never awaited, which the next boot delivers before
+  // serving and `nymbal events` shows after a complete import.
+  it('AC-11: once nymbal import has returned no events row is undelivered, and none once import --rollback --yes has returned', () => {
+    expect(eventsAfterImport.length, 'events in the log after the import').toBeGreaterThan(
+      ENTITIES.length,
+    )
+    expect(eventsOf(p.dbPath).length, 'events once the rollback added its own').toBeGreaterThan(
+      eventsAfterImport.length,
+    )
+    expect({ import: undeliveredAfterImport, rollback: undeliveredAfterRollback }).toEqual({
+      import: [],
+      rollback: [],
+    })
   })
 
   it('AC-13: without a TTY, --rollback without --yes exits 1, prints the plan’s count for each entity and removes nothing', () => {

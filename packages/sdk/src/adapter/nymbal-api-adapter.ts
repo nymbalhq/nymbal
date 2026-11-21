@@ -3,6 +3,7 @@ import {
   ORDER_KEY_HEADER,
   type AlertKind,
   type Cart,
+  type CheckoutQuote,
   type Customer,
   type CustomerAddress,
   type Order,
@@ -20,9 +21,11 @@ import type {
   ProductSearchParams,
   ProductSearchResult,
   CheckoutDetails,
+  CheckoutQuoteDetails,
   CheckoutResult,
   RegisterParams,
   AuthResult,
+  VerificationSent,
   NewAddress,
   OrderPage,
 } from '../types.js'
@@ -96,6 +99,7 @@ export function createNymbalApiAdapter(fetchClient: FetchClient): CommerceAdapte
         if (params?.limit !== undefined) search.set('limit', String(params.limit))
         if (params?.cursor !== undefined) search.set('cursor', params.cursor)
         if (params?.category !== undefined) search.set('category', params.category)
+        if (params?.origin !== undefined) search.set('origin', params.origin)
         return fetchClient.request<ProductSearchResult>(
           'GET',
           `/api/products/search?${search.toString()}`,
@@ -110,14 +114,47 @@ export function createNymbalApiAdapter(fetchClient: FetchClient): CommerceAdapte
           keepIdentity: true,
         })
       },
+      quote(details: CheckoutQuoteDetails) {
+        // Priced as the signed-in customer (their exemption) or refused, as the checkout it leads to is.
+        return fetchClient.request<CheckoutQuote>('POST', '/api/checkout/quote', details, {
+          keepIdentity: true,
+        })
+      },
     },
 
     customers: {
       register(params: RegisterParams) {
-        return fetchClient.request<AuthResult>('POST', '/api/auth/register', params)
+        return fetchClient.request<AuthResult | VerificationSent>(
+          'POST',
+          '/api/auth/register',
+          params,
+        )
       },
       login(email: string, password: string) {
         return fetchClient.request<AuthResult>('POST', '/api/auth/login', { email, password })
+      },
+      async requestPasswordReset(email: string) {
+        await fetchClient.request<{ sent: string }>('POST', '/api/auth/forgot-password', { email })
+      },
+      resetPassword(token: string, password: string) {
+        return fetchClient.request<AuthResult>('POST', '/api/auth/reset-password', {
+          token,
+          password,
+        })
+      },
+      verifyEmail(token: string) {
+        return fetchClient.request<AuthResult>('POST', '/api/auth/verify-email', { token })
+      },
+      async resendVerification(email: string) {
+        await fetchClient.request<{ sent: string }>('POST', '/api/auth/resend-verification', {
+          email,
+        })
+      },
+      changePassword(currentPassword: string, newPassword: string) {
+        return fetchClient.request<AuthResult>('PATCH', '/api/customers/me/password', {
+          currentPassword,
+          newPassword,
+        })
       },
       async logout() {
         await fetchClient.request<{ ok: boolean }>('POST', '/api/auth/logout')

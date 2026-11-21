@@ -10,6 +10,8 @@ import { REPO_ROOT, trackedFiles } from './workspace-manifests'
 
 const THE_ONE = 'packages/platform/src/routes/admin-static.ts'
 const REGISTER = 'packages/platform/src/routes/register.ts'
+// The guard is about serving the admin; `nymbal verify` fetches the admin page as a client of the one server.
+const CLIENTS = new Set(['packages/cli/src/verify/journey.ts'])
 const TEST_FILE = /(?:^|\/)(?:__tests__|tests?)\/|\.(?:test|spec)\.[cm]?[jt]sx?$/
 const SOURCE_FILE = /\.[cm]?[jt]sx?$/
 
@@ -26,7 +28,7 @@ describe('AC-17: one admin server', () => {
     expect(sources).toContain(THE_ONE)
     expect(sources.length, 'the scan sees more than the one file').toBeGreaterThan(1)
     const offenders = sources
-      .filter((f) => f !== THE_ONE)
+      .filter((f) => f !== THE_ONE && !CLIENTS.has(f))
       .flatMap((f) =>
         readFileSync(join(REPO_ROOT, f), 'utf8')
           .split('\n')

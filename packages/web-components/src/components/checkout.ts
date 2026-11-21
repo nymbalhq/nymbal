@@ -2,7 +2,7 @@ import '@nymbalhq/sdk/ns/cart'
 import '@nymbalhq/sdk/ns/checkout'
 import { css, html, nothing } from 'lit'
 import type { PaymentConfirmation, PaymentConfirmContext } from '@nymbalhq/sdk'
-import type { Address, CartItem } from '@nymbalhq/types'
+import type { Address, CartItem, CheckoutQuote } from '@nymbalhq/types'
 import { baseStyles, NymbalElement, propertiesOf, type ElementSchema } from '../base-element.js'
 import { renderField } from '../form-element.js'
 import { formatPrice } from '../format.js'
@@ -47,6 +47,8 @@ const SCHEMA: ElementSchema = {
     'billing-same',
     'billing',
     'billing-title',
+    'shipping-options',
+    'shipping-option',
     'payment',
     'actions',
     'back',
@@ -91,6 +93,12 @@ const SESSION_EXPIRED = 'Your session has expired. Sign in again to place your o
 const SIGN_IN_HREF = '/account/login?redirect=%2Fcheckout'
 /** The refusals of a customer's order request whose token is gone: sent again, it would place a guest order. */
 const SESSION_ENDED = new Set(['auth.token_invalid', 'auth.token_expired'])
+const NO_SHIPPING =
+  "We don't deliver to this address. Enter the country as its two-letter code, such as GB."
+const TOTAL_UNAVAILABLE = "We couldn't work out your total just now. Please try again."
+const TOTAL_CHANGED = 'The total has changed. Please check it and place your order again.'
+/** Refusals at Place Order after which the store has quoted again: the summary shows the new total. */
+const TOTAL_MOVED = new Set(['checkout.total_changed', 'checkout.shipping_option_unavailable'])
 
 /**
  * No payment element, or one never upgraded: nothing on the page can take a payment that needs it. A payments adapter
@@ -100,6 +108,9 @@ const NO_PAYMENT_ELEMENT: PaymentConfirmation = {
   ok: false,
   error: 'Payment could not be taken on this page. Please reload and try again.',
 }
+
+const priceOrFree = (amountMinor: number, currency: string): string =>
+  amountMinor === 0 ? 'Free' : formatPrice(amountMinor, currency)
 
 /**
  * The checkout: contact, shipping, then payment with billing, beside the order summary. It drives the SDK's checkout
@@ -219,6 +230,34 @@ export class NymbalCheckout extends NymbalElement {
       [part~='payment'] {
         margin-top: var(--nymbal-spacing-md, 1rem);
       }
+      [part~='shipping-options'] {
+        display: flex;
+        flex-direction: column;
+        gap: var(--nymbal-spacing-sm, 0.5rem);
+        margin: var(--nymbal-spacing-md, 1rem) 0 0;
+        padding: 0;
+        border: none;
+      }
+      [part~='shipping-options'] legend {
+        margin-bottom: var(--nymbal-spacing-sm, 0.5rem);
+        padding: 0;
+        font-size: var(--nymbal-font-size-base, 1rem);
+        font-weight: var(--nymbal-font-weight-bold, 700);
+      }
+      [part~='shipping-option'] {
+        display: flex;
+        align-items: center;
+        gap: var(--nymbal-spacing-sm, 0.5rem);
+        padding: var(--nymbal-spacing-sm, 0.5rem) var(--nymbal-spacing-md, 1rem);
+        border: 1px solid var(--nymbal-color-border, #e4e4e7);
+        border-radius: var(--nymbal-radius-md, 0.5rem);
+        font-size: var(--nymbal-font-size-sm, 0.875rem);
+        cursor: pointer;
+      }
+      [part~='shipping-option'] span:last-child {
+        margin-left: auto;
+        font-weight: var(--nymbal-font-weight-medium, 500);
+      }
       [part~='actions'] {
         display: flex;
         justify-content: space-between;
@@ -312,6 +351,17 @@ export class NymbalCheckout extends NymbalElement {
   private billingSame = true
   private placing = false
   private placed = false
+  /** The shipping step's quote is in flight: one per submit. */
+  private quotingAddress = false
+  /** The option the shopper last picked: checked while its quote is in flight, whatever an earlier answer says. */
+  private picked: string | null = null
+  /**
+   * The cart this mount last quoted for (`cartKey`); null before this mount's shipping submit. The checkout store
+   * outlives the element (a client-side router keeps the client), so a quote is shown only when this mount asked for it.
+   */
+  private quotedCart: string | null = null
+  /** Numbers each payment-step requote, so only the latest refusal is shown. */
+  private requoteTurn = 0
   /** The shopper's session ended at Place Order: no order can be placed as them from this page any more. */
   private sessionEnded = false
   /** True from a step change until the next animation frame, so a second click of a double click is ignored. */
@@ -323,11 +373,45 @@ export class NymbalCheckout extends NymbalElement {
   declare signInHref: string | undefined
 
   protected override stores() {
-    return [this.client.cart]
+    return [this.client.cart, this.client.checkout]
   }
 
-  protected override storeSettled(): void {
+  protected override storeSettled(store: object): void {
+    if (store !== this.client.cart) return
     this.cart = undefined
+    this.cartMoved()
+  }
+
+  /** The lines and sums of the cart store: a quote priced another cart no longer holds. */
+  private cartKey(): string {
+    const { items, subtotalMinor, currency } = this.client.cart.getState()
+    return JSON.stringify([
+      currency,
+      subtotalMinor,
+      items.map((i) => [i.variantId, i.qty, i.priceMinor]),
+    ])
+  }
+
+  /**
+   * The cart changed after this mount quoted (a cart drawer on the page): the payment step prices it again, so Place
+   * Order sends a total for the cart it orders; an earlier step hides the quote until the next shipping submit.
+   */
+  private cartMoved(): void {
+    if (this.quotedCart === null || this.placing || this.placed) return
+    const key = this.cartKey()
+    if (key === this.quotedCart) return
+    if (this.step !== 'payment' && !this.quotingAddress) {
+      this.quotedCart = null
+      return
+    }
+    this.quotedCart = key
+    void this.requote(() => this.client.checkout.quote())
+  }
+
+  private shownQuote(): CheckoutQuote | null {
+    return this.readsStores && this.quotedCart !== null
+      ? this.client.checkout.getState().quote
+      : null
   }
 
   override connectedCallback(): void {
@@ -426,18 +510,63 @@ export class NymbalCheckout extends NymbalElement {
   }
 
   private readonly onShipping = (event: Event): void => {
-    if (!this.accepts(event, 'shipping')) return
+    if (!this.accepts(event, 'shipping') || this.quotingAddress) return
     const form = this.addressForm('shipping')
     if (form === null || !form.reportValidity()) return
     this.client.checkout.setShippingAddress(form.value)
-    this.client.checkout.setShippingMethod({
-      carrier: 'Standard',
-      service: 'Standard Shipping',
-      amountMinor: 0,
-      currency: this.client.cart.getState().currency || 'GBP',
-      estimatedDays: 5,
-    })
-    this.go('payment')
+    this.quotedCart = this.cartKey()
+    this.quotingAddress = true
+    this.error = null
+    this.requestUpdate()
+    void this.quoteAddress()
+  }
+
+  /**
+   * The quote for the address, then the payment step. A cart that already became an order goes on with no quote: Place
+   * Order then reaches the server, whose refusal names the order. Any other refusal keeps the shopper here.
+   */
+  private async quoteAddress(): Promise<void> {
+    const checkout = this.client.checkout
+    let quote = await checkout.quote()
+    // The option chosen earlier is not offered at this address; the store has let it go.
+    if (
+      quote === null &&
+      checkout.getState().errorCode === 'checkout.shipping_option_unavailable'
+    ) {
+      quote = await checkout.quote()
+    }
+    this.quotingAddress = false
+    const { errorCode } = checkout.getState()
+    if (quote !== null || errorCode === 'checkout.cart_empty') return this.go('payment')
+    this.refused(errorCode)
+  }
+
+  private refused(errorCode: string | null): void {
+    if (errorCode !== null && SESSION_ENDED.has(errorCode)) {
+      this.sessionEnded = true
+      return this.showError(SESSION_EXPIRED)
+    }
+    this.showError(errorCode === 'checkout.no_shipping' ? NO_SHIPPING : TOTAL_UNAVAILABLE)
+  }
+
+  /**
+   * Prices the payment step again. A refusal says so here; a cart that already became an order says nothing, as at the
+   * shipping step: Place Order reaches the server, whose refusal names the order.
+   */
+  private async requote(ask: () => Promise<CheckoutQuote | null>): Promise<void> {
+    const turn = ++this.requoteTurn
+    if (!this.sessionEnded) this.error = null
+    this.requestUpdate()
+    const quote = await ask()
+    if (quote !== null || turn !== this.requoteTurn) return
+    const { errorCode } = this.client.checkout.getState()
+    if (errorCode !== 'checkout.cart_empty') this.refused(errorCode)
+  }
+
+  private readonly onShippingOption = (event: Event): void => {
+    const id = (event.target as HTMLInputElement).value
+    this.picked = id
+    void this.requote(() => this.client.checkout.selectShippingOption(id))
   }
 
   private billingAddress(): Address | null {
@@ -472,6 +601,7 @@ export class NymbalCheckout extends NymbalElement {
           this.sessionEnded = true
           return this.stay(SESSION_EXPIRED)
         }
+        if (errorCode !== null && TOTAL_MOVED.has(errorCode)) return this.stay(TOTAL_CHANGED)
         return this.stay(error ?? PAYMENT_FAILED)
       }
       if (result.payment.status === 'failed') {
@@ -625,8 +755,37 @@ export class NymbalCheckout extends NymbalElement {
     `
   }
 
+  private renderShippingOptions(quote: CheckoutQuote | null, quoting: boolean) {
+    if (quote === null) return nothing
+    const checked = quoting && this.picked !== null ? this.picked : quote.shippingOptionId
+    return html`
+      <fieldset part="shipping-options" data-testid="checkout-shipping-options">
+        <legend>Delivery</legend>
+        ${quote.options.map(
+          (option) => html`
+            <label part="shipping-option">
+              <input
+                type="radio"
+                name="shipping-option"
+                value=${option.id}
+                data-testid="checkout-shipping-option-${option.id}"
+                .checked=${option.id === checked}
+                ?disabled=${this.placing || this.placed}
+                @change=${this.onShippingOption}
+              />
+              <span>${option.name}</span>
+              <span>${priceOrFree(option.amountMinor, quote.currency)}</span>
+            </label>
+          `,
+        )}
+      </fieldset>
+    `
+  }
+
   private renderPayment() {
     const busy = this.placing || this.placed
+    const quote = this.shownQuote()
+    const quoting = this.readsStores && this.client.checkout.getState().quoting
     return html`
       <section part="section" data-testid="checkout-payment" ?hidden=${this.step !== 'payment'}>
         <form part="form" novalidate @submit=${this.onPlace}>
@@ -645,6 +804,7 @@ export class NymbalCheckout extends NymbalElement {
             <h3 part="billing-title">Billing Address</h3>
             <nymbal-address-form id-prefix="billing"></nymbal-address-form>
           </div>
+          ${this.renderShippingOptions(quote, quoting)}
           <div part="payment"><slot name="payment"></slot></div>
           <div part="actions">
             <button
@@ -661,7 +821,7 @@ export class NymbalCheckout extends NymbalElement {
               part="submit"
               class="btn btn-primary"
               data-testid="place-order"
-              ?disabled=${busy || this.sessionEnded || this.paymentBlocked()}
+              ?disabled=${busy || quoting || this.sessionEnded || this.paymentBlocked()}
               @click=${this.onSubmitClick}
             >
               ${this.placing
@@ -688,10 +848,42 @@ export class NymbalCheckout extends NymbalElement {
     `
   }
 
+  /** The quote's rows: discount and tax only when there are any, tax marked when the prices hold it. */
+  private renderQuoted(quote: CheckoutQuote) {
+    const { totals, currency } = quote
+    const option = quote.options.find((o) => o.id === quote.shippingOptionId)
+    return html`
+      ${totals.discountTotalMinor > 0
+        ? html`<div part="summary-row">
+            <dt>Discount</dt>
+            <dd data-testid="checkout-summary-discount">
+              −${formatPrice(totals.discountTotalMinor, currency)}
+            </dd>
+          </div>`
+        : nothing}
+      <div part="summary-row">
+        <dt>Shipping${option === undefined ? '' : ` (${option.name})`}</dt>
+        <dd data-testid="checkout-summary-shipping">
+          ${priceOrFree(totals.shippingTotalMinor, currency)}
+        </dd>
+      </div>
+      ${totals.taxTotalMinor > 0
+        ? html`<div part="summary-row">
+            <dt>${totals.pricesIncludeTax ? 'Tax (included)' : 'Tax'}</dt>
+            <dd data-testid="checkout-summary-tax">
+              ${formatPrice(totals.taxTotalMinor, currency)}
+            </dd>
+          </div>`
+        : nothing}
+    `
+  }
+
   private renderSummary() {
     const cart = shownCart(this, this.cart, this.readsStores ? this.client : null)
-    const currency = cart.currency || 'GBP'
-    const subtotal = formatPrice(cart.subtotalMinor, currency)
+    const quote = this.shownQuote()
+    const currency = quote?.currency || cart.currency || 'GBP'
+    const subtotalMinor = quote?.totals.subtotalMinor ?? cart.subtotalMinor
+    const totalMinor = quote?.totals.totalMinor ?? cart.subtotalMinor
     return html`
       <aside part="summary" data-testid="checkout-summary">
         <h2 part="summary-title"><slot name="summary-title">Order Summary</slot></h2>
@@ -703,16 +895,18 @@ export class NymbalCheckout extends NymbalElement {
         <dl>
           <div part="summary-row subtotal">
             <dt>Subtotal</dt>
-            <dd data-testid="cart-subtotal">${subtotal}</dd>
+            <dd data-testid="cart-subtotal">${formatPrice(subtotalMinor, currency)}</dd>
           </div>
-          <div part="summary-row">
-            <dt>Shipping</dt>
-            <dd>Standard, free</dd>
-          </div>
+          ${quote === null
+            ? html`<div part="summary-row">
+                <dt>Shipping</dt>
+                <dd>calculated at the next step</dd>
+              </div>`
+            : this.renderQuoted(quote)}
         </dl>
         <div part="total">
           <span>Total</span>
-          <span>${subtotal}</span>
+          <span>${formatPrice(totalMinor, currency)}</span>
         </div>
       </aside>
     `

@@ -48,6 +48,7 @@ describe('AC-12: the reservation sweeper', () => {
     })
     try {
       await sweeper.tick()
+      await k.app.relay.drain()
 
       expect(await stockOf(raw, seeded.variantId)).toBe(seeded.initialStock)
       expect(await raw.count('inventory_reservations', 'reservation_id = ?', [reservationId])).toBe(
@@ -60,6 +61,7 @@ describe('AC-12: the reservation sweeper', () => {
       expect(adjustmentsAfterFirst).toBe(1)
 
       await sweeper.tick()
+      await k.app.relay.drain()
 
       expect(await stockOf(raw, seeded.variantId)).toBe(seeded.initialStock)
       expect(forThis()).toHaveLength(1)

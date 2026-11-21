@@ -3,7 +3,13 @@ import { EVT_CART_ABANDONED, type NymbalEvent } from '@nymbalhq/types'
 import { createCartService } from '../../src/services/cart-service.js'
 import { startCartAbandonmentSweeper } from '../../src/sweepers/index.js'
 import { createKernel, seedVariant, type Kernel } from '../support/kernel.js'
-import { eventRows, failPublishFor, type EventRow, type FailingBus } from '../support/outbox.js'
+import {
+  eventRows,
+  failPublishFor,
+  firstTried,
+  type EventRow,
+  type FailingBus,
+} from '../support/outbox.js'
 import { openRaw, type RawReader } from '../support/raw.js'
 import { lineFor } from '../support/replica.js'
 
@@ -77,6 +83,7 @@ describe('AC-9: publish outside a transaction is durable too', () => {
     } finally {
       sweep.stop()
     }
+    await k.app.relay.drain()
 
     const rows = await abandonedRows(token)
     expect(rows.map((r) => r.deliveredAt != null)).toEqual([true])
@@ -92,6 +99,7 @@ describe('AC-9: publish outside a transaction is durable too', () => {
     } finally {
       sweep.stop()
     }
+    await firstTried(raw, 'type = ?', [EVT_CART_ABANDONED])
 
     const [row, ...extra] = await abandonedRows(token)
     expect(extra).toEqual([])

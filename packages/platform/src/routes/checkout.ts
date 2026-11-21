@@ -10,6 +10,14 @@ interface BeginBody {
   billingAddress?: Address
   shippingAddress?: Address
   notes?: string
+  expectedTotalMinor?: number
+  shippingOptionId?: string
+}
+
+interface QuoteBody {
+  shippingAddress?: Address
+  shippingOptionId?: string
+  email?: string
 }
 
 export function registerCheckoutRoutes(adapter: HttpAdapter, checkout: CheckoutService): void {
@@ -31,6 +39,10 @@ export function registerCheckoutRoutes(adapter: HttpAdapter, checkout: CheckoutS
         billingAddress: body.billingAddress,
         shippingAddress: body.shippingAddress,
         ...(body.notes !== undefined && { notes: body.notes }),
+        ...(body.expectedTotalMinor !== undefined && {
+          expectedTotalMinor: body.expectedTotalMinor,
+        }),
+        ...(body.shippingOptionId !== undefined && { shippingOptionId: body.shippingOptionId }),
       })
       return ok({
         orderId: result.orderId,
@@ -42,6 +54,30 @@ export function registerCheckoutRoutes(adapter: HttpAdapter, checkout: CheckoutS
         payment: result.payment,
         ...(result.orderKey !== undefined && { orderKey: result.orderKey }),
       })
+    } catch (err) {
+      return renderError(err, ctx.logger)
+    }
+  })
+
+  adapter.registerRoute('POST', '/api/checkout/quote', async (ctx) => {
+    const refused = refuseLapsedBearer(ctx)
+    if (refused) return refused
+    try {
+      const body = ctx.body as QuoteBody | undefined
+      const cartToken = ctx.cookies[CART_COOKIE]
+      if (!cartToken) return fail('checkout.no_cart', 'No active cart', 400)
+      if (!body?.shippingAddress) {
+        return fail('checkout.invalid', 'shippingAddress is required', 400)
+      }
+      return ok(
+        await checkout.quote({
+          cartToken,
+          ...(ctx.auth?.userId !== undefined && { customerId: ctx.auth.userId }),
+          shippingAddress: body.shippingAddress,
+          ...(body.shippingOptionId !== undefined && { shippingOptionId: body.shippingOptionId }),
+          ...(body.email !== undefined && { email: body.email }),
+        }),
+      )
     } catch (err) {
       return renderError(err, ctx.logger)
     }

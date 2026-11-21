@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'node:url'
 import { configDefaults, defineConfig } from 'vitest/config'
+import { machineBudget } from './scripts/machine-budget'
 
 // Each spawns nested vitest runs (a certify run per case, the breakers' own suite run) and takes 10 to 15 s of CPU, so
 // they run in integration-stores (its own CI job, and gate:full) rather than beside the CLI-spawning tests of `pnpm test`.
@@ -128,12 +129,9 @@ const nightly = process.env['NYMBAL_NIGHTLY']
     ]
   : []
 
-// Set by the gate when other worktrees' gates run Vitest at once (scripts/gate.ts): each run then takes a share of the
-// CPUs, since a worker per core in each starves the main processes.
-const sharedWorkers = process.env['NYMBAL_VITEST_MAX_WORKERS']
-if (sharedWorkers !== undefined && !/^[1-9]\d*$/.test(sharedWorkers)) {
-  throw new Error(`NYMBAL_VITEST_MAX_WORKERS must be a positive integer; got "${sharedWorkers}"`)
-}
+// The machine's budget (scripts/machine-budget.ts): a few workers, not one per core, unless CI sizes its own. The gate
+// sets it lower for a step when other worktrees' gates or a loaded machine share the CPUs (scripts/gate.ts).
+const maxWorkers = machineBudget().vitest
 
 // Set by the sentinel runs (scripts/sentinels.ts), which run nearly the whole suite at once under load: each
 // project's own timeouts, or Vitest's defaults where it sets none, are multiplied. A CLI --testTimeout would replace
@@ -176,7 +174,7 @@ export default defineConfig({
   test: {
     // Every run is one-off; watching many worktrees fills the disk. `pnpm test:watch` asks for it explicitly.
     watch: false,
-    ...(sharedWorkers === undefined ? {} : { maxWorkers: Number(sharedWorkers) }),
+    ...(maxWorkers === undefined ? {} : { maxWorkers }),
     // The scaffold's files one at a time (a root option, not a project one): the preview's file walks the project and
     // runs its own store beside dev, while others rewrite the config (clean-machine) or add a product (mcp-agent).
     ...(process.env['NYMBAL_SCAFFOLD_DIR'] ? { fileParallelism: false } : {}),

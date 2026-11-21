@@ -1,4 +1,4 @@
-// Reads: scripts/stack.ts
+// Reads: scripts/stack.ts, scripts/machine-budget.ts
 import { type ChildProcessWithoutNullStreams, execFileSync, spawn } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import { availableParallelism, tmpdir } from 'node:os'
@@ -6,11 +6,18 @@ import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { run, VITEST_WORKERS_ENV, vitestWorkers } from '../../scripts/gate'
+import {
+  BACKGROUND_VAR,
+  CAP_VARS,
+  LOCAL_DEFAULTS,
+  MACHINE_ENV_FILE_VAR,
+} from '../../scripts/machine-budget'
 import { liveHolders } from '../../scripts/stack'
 
-// Two worktrees' gates running Vitest at once would each start a worker per core and starve Vitest's main process,
-// so a Vitest step takes a share of the CPUs by the number of worktrees with a live shared hold. Each other holder is
-// a child process in a linked worktree of a throwaway repository.
+// Two worktrees' gates running Vitest at once would each start their workers and starve Vitest's main process, so a
+// Vitest step takes a share of the machine budget's cap (of the CPUs under CI, which has no cap) by the number of
+// worktrees with a live shared hold. Each other holder is a child process in a linked worktree of a throwaway
+// repository.
 
 const REPO = fileURLToPath(new URL('../../', import.meta.url))
 const TSX = join(REPO, 'node_modules/.bin/tsx')
@@ -27,7 +34,10 @@ function cleanEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env }
   for (const name of Object.keys(env)) if (name.startsWith('GIT_')) delete env[name]
   delete env.NYMBAL_STACK_SLOT
-  delete env[VITEST_WORKERS_ENV]
+  for (const name of [...Object.values(CAP_VARS), BACKGROUND_VAR, 'CI', 'GITHUB_ACTIONS'])
+    delete env[name]
+  // No machine file: the defaults, whatever this machine sets.
+  env[MACHINE_ENV_FILE_VAR] = join(tmpdir(), 'nymbal-no-machine-file.env')
   return env
 }
 
@@ -104,7 +114,11 @@ const sharedHolds = (root: string): string[] =>
   readdirSync(join(root, 'main/.git/nymbal-stacks/heavy')).filter((n) => n.startsWith('shared-'))
 
 /** What `NYMBAL_VITEST_MAX_WORKERS` a gate step named `name` saw, run in `cwd` under a shared hold. */
-async function workersSeenBy(cwd: string, name: string): Promise<string> {
+async function workersSeenBy(
+  cwd: string,
+  name: string,
+  extra: NodeJS.ProcessEnv = {},
+): Promise<string> {
   const out = join(cwd, `${name}.workers`)
   const result = await run(
     [
@@ -114,7 +128,8 @@ async function workersSeenBy(cwd: string, name: string): Promise<string> {
         hold: 'shared',
       },
     ],
-    { cwd, budgetMs: 60_000, env: cleanEnv() },
+    // An idle machine: the scale-down under load is gate-machine-budget.test.ts's.
+    { cwd, budgetMs: 60_000, env: { ...cleanEnv(), ...extra }, loadAverage: () => 0 },
   )
   expect(result.exitCode).toBe(0)
   return readFileSync(out, 'utf8')
@@ -138,25 +153,40 @@ describe('Vitest steps share the CPUs between worktrees', () => {
     expect(liveHolders(one)).toBe(1)
   })
 
-  it('a Vitest step gets half the CPUs while another worktree holds, and no setting alone', async () => {
+  it('a Vitest step gets the cap alone and half of it while another worktree holds; lint gets none', async () => {
     const { one, two } = twoWorktrees()
-    expect(await workersSeenBy(one, 'tests')).toBe('unset')
+    const cap = LOCAL_DEFAULTS.vitest
+    expect(await workersSeenBy(one, 'tests')).toBe(String(cap))
     await holder(two)
-    const half = String(Math.max(1, Math.floor(availableParallelism() / 2)))
+    const half = String(Math.max(1, Math.floor(cap / 2)))
     expect(await workersSeenBy(one, 'tests')).toBe(half)
     expect(await workersSeenBy(one, 'sentinels')).toBe(half)
     // A step that runs no Vitest is left alone in the same state.
     expect(await workersSeenBy(one, 'lint')).toBe('unset')
   })
 
-  it('vitestWorkers is the floor of the share, never below one, and unset alone', () => {
+  it('under CI, with no cap, a Vitest step is unset alone and gets half the CPUs while shared', async () => {
+    const { one, two } = twoWorktrees()
+    expect(await workersSeenBy(one, 'tests', { CI: '1' })).toBe('unset')
+    await holder(two)
+    const half = String(Math.max(1, Math.floor(availableParallelism() / 2)))
+    expect(await workersSeenBy(one, 'tests', { CI: '1' })).toBe(half)
+  })
+
+  it('vitestWorkers is the floor of the share of the cap, never above it nor below one', () => {
     for (const cpus of [1, 2, 3, 8, 10, 16]) {
-      expect(vitestWorkers(cpus, 1)).toBeUndefined()
-      for (const holders of [2, 3, 4, 9]) {
-        const workers = vitestWorkers(cpus, holders) ?? 0
+      expect(vitestWorkers(undefined, cpus, 1)).toBeUndefined()
+      const shares = [undefined, 1, 2, 4, 7].flatMap((cap) =>
+        [1, 2, 3, 4, 9]
+          .filter((holders) => cap !== undefined || holders > 1)
+          .map((holders) => ({ cap, holders })),
+      )
+      for (const { cap, holders } of shares) {
+        const total = cap ?? cpus
+        const workers = vitestWorkers(cap, cpus, holders) ?? 0
         expect(workers).toBeGreaterThanOrEqual(1)
-        expect(workers).toBeLessThanOrEqual(Math.max(1, cpus / holders))
-        expect(workers).toBe(Math.max(1, Math.floor(cpus / holders)))
+        expect(workers).toBeLessThanOrEqual(Math.max(1, total / holders))
+        expect(workers).toBe(Math.max(1, Math.floor(total / holders)))
       }
     }
   })

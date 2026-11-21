@@ -29,3 +29,47 @@ never change in an upgrade: it is a version bump and an install.
 
 Each release's notes list its migrations and anything you must change. Adapters (`@nymbalhq/payments-stripe` and the
 rest) have versions of their own: update them as any other dependency.
+
+## Check a store in CI
+
+`nymbal verify` checks that this checkout still works as a store. It builds your storefront for production, then runs
+a throwaway store beside the project with its own SQLite database, the built-in providers and the demo catalogue. Against
+that store it loads the home and product pages and every script they name, places an order (cart, checkout, the order
+confirmed and one unit of stock taken), and signs in to the admin to find the order. It needs no `.env`, no database
+and no provider keys, never touches your own `nymbal.db`, and exits 1 at the first step that fails.
+
+```sh
+npx nymbal verify
+```
+
+Stores made with `create-nymbal-app` include a workflow, `nymbal.yml` in `.github/workflows`, which installs from your
+lockfile and runs `nymbal verify` on every pull request and every push to `main`. An older store can add it there by
+hand:
+
+```yaml
+name: Nymbal
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - run: npx nymbal verify
+```
+
+The workflow reads the Node version from `.node-version`: add that file (for example `22`) if your project has none.
+`nymbal verify` loads your `nymbal.config.ts`, so an `env('X')` there with no default needs `X` set as a CI variable.

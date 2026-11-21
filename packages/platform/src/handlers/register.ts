@@ -1,5 +1,6 @@
 import type { DocumentStoreAdapter, EventBusAdapter, Logger } from '@nymbalhq/types'
 import type { NymbalConfig } from '@nymbalhq/config'
+import type { EventPublisher } from '../events/publisher.js'
 import type { Repositories } from '../repositories/index.js'
 import type { AdapterRegistry } from '../adapters/registry.js'
 import type { AlertService } from '../services/alert-service.js'
@@ -11,6 +12,7 @@ import { registerOrderProjection } from './projections/order-projection.js'
 import { registerCustomerProjection } from './projections/customer-projection.js'
 import { registerInventoryProjection } from './projections/inventory-projection.js'
 import { registerRecentlyViewedProjection } from './projections/recently-viewed-projection.js'
+import { registerReportRollupProjection } from './projections/report-rollup-projection.js'
 import { registerEmailHandler } from './side-effects/email-handler.js'
 import { registerSearchHandler } from './side-effects/search-handler.js'
 import { registerReviewsHandler } from './side-effects/reviews-handler.js'
@@ -29,11 +31,14 @@ export interface RegisterHandlersDeps {
   alerts: AlertService
   /** Moves an order a tracking update reports delivered. */
   orders: OrderService
+  /** Publishes the note a carrier's refusal leaves on an order. */
+  publisher: EventPublisher
   logger: Logger
 }
 
 export async function registerHandlers(deps: RegisterHandlersDeps): Promise<void> {
-  const { config, eventBus, documentStore, repos, adapters, alerts, orders, logger } = deps
+  const { config, eventBus, documentStore, repos, adapters, alerts, orders, publisher, logger } =
+    deps
   const handlerLogger = logger.child({ component: 'handlers' })
 
   await registerCategoryProjection({
@@ -78,6 +83,12 @@ export async function registerHandlers(deps: RegisterHandlersDeps): Promise<void
     documentStore,
     logger: handlerLogger.child({ projection: 'recently-viewed' }),
   })
+  await registerReportRollupProjection({
+    eventBus,
+    repos,
+    timeZone: config.store.timezone,
+    logger: handlerLogger.child({ projection: 'report-rollups' }),
+  })
 
   await registerEmailHandler({
     eventBus,
@@ -86,6 +97,9 @@ export async function registerHandlers(deps: RegisterHandlersDeps): Promise<void
     processedEventRepo: repos.processedEvent,
     orderRepo: repos.order,
     orderAccessKeyRepo: repos.orderAccessKey,
+    customerRepo: repos.customer,
+    passwordResetTokenRepo: repos.passwordResetToken,
+    emailVerificationTokenRepo: repos.emailVerificationToken,
     storeName: config.store.name,
     ...(config.store.url !== undefined && { storeUrl: config.store.url }),
     keyLifetimeMs: parseDurationToMs(config.commerce.orders.keyLifetime.email),
@@ -115,6 +129,8 @@ export async function registerHandlers(deps: RegisterHandlersDeps): Promise<void
     eventBus,
     shipping: adapters.shipping,
     processedEventRepo: repos.processedEvent,
+    repos,
+    publisher,
     logger: handlerLogger.child({ handler: 'shipping-start-tracking' }),
   })
   await registerSearchHandler({

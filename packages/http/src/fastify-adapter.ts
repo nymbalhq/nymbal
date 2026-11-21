@@ -8,7 +8,7 @@ import Fastify, {
   type FastifyRequest,
 } from 'fastify'
 import { createHash, timingSafeEqual } from 'node:crypto'
-import { isIP } from 'node:net'
+import { BlockList, isIP } from 'node:net'
 import fastifyCookie from '@fastify/cookie'
 import fastifyCors from '@fastify/cors'
 import proxyAddr from '@fastify/proxy-addr'
@@ -40,7 +40,15 @@ import { createShopperAttestation, type ShopperAttestation } from './shopper-att
 
 export interface CorsOptions {
   allowedOrigins: string[]
+  /** Origins answered, with credentials, on `KIT_ROUTES` alone; `allowedOrigins` wins for an origin on both. */
+  kitOrigins?: string[]
   credentials: boolean
+}
+
+const KIT_ROUTES = /^\/api\/(?:csrf|capabilities|alerts\/subscribe|cart(?:\/.*)?)$/
+
+function isKitRoute(url: string): boolean {
+  return KIT_ROUTES.test(url.split('?', 1)[0] ?? '')
 }
 
 export interface FastifyAdapterOptions {
@@ -83,7 +91,17 @@ const STREAM_END_BOUND_MS = 500
 
 /** The platform's health checks reach the API directly, never through the CDN. */
 const UNLOCKED_ROUTES = new Set(['/health', '/ready'])
-const isLoopback = proxyAddr.compile('loopback')
+
+// Not proxy-addr's 'loopback': its parser reads an IPv4-compatible `::127.x.y.z` (another machine) as IPv4-mapped.
+const LOOPBACK = new BlockList()
+LOOPBACK.addSubnet('127.0.0.0', 8, 'ipv4')
+LOOPBACK.addAddress('::1', 'ipv6')
+LOOPBACK.addSubnet('::ffff:127.0.0.0', 104, 'ipv6')
+
+const isLoopback = (peer: string): boolean => {
+  const family = isIP(peer)
+  return family !== 0 && LOOPBACK.check(peer, family === 4 ? 'ipv4' : 'ipv6')
+}
 
 /** A fixed-length digest, so comparing it takes the same time whatever the length or content of the value sent. */
 const digest = (value: string): Buffer => createHash('sha256').update(value).digest()
@@ -211,17 +229,36 @@ export class FastifyHttpAdapter implements HttpAdapter {
       for (const endStream of this.#openStreams) endStream()
     })
     void this.#app.register(fastifyCookie)
-    if (options.cors && options.cors.allowedOrigins.length > 0) {
-      void this.#app.register(fastifyCors, {
-        origin: options.cors.allowedOrigins,
-        credentials: options.cors.credentials,
-        methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
-        // A browser client on an allowed origin reads the request's id and whether a keyed write was a replay.
-        exposedHeaders: [CORRELATION_ID_HEADER, IDEMPOTENT_REPLAYED_HEADER],
-      })
-    }
+    if (options.cors) this.#registerCors(options.cors)
     // The token a client on another origin of the same site echoes in `x-csrf-token`: it cannot read this cookie.
     this.registerRoute('GET', '/api/csrf', (ctx) => this.#guard.issueToken(ctx))
+  }
+
+  #registerCors({ allowedOrigins, kitOrigins = [], credentials }: CorsOptions): void {
+    if (allowedOrigins.length === 0 && kitOrigins.length === 0) return
+    const shared = {
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
+      // A browser client on an allowed origin reads the request's id and whether a keyed write was a replay.
+      exposedHeaders: [CORRELATION_ID_HEADER, IDEMPOTENT_REPLAYED_HEADER],
+    }
+    const standard = {
+      ...shared,
+      credentials,
+      origin: allowedOrigins.length > 0 ? allowedOrigins : false,
+    }
+    const kit = { ...shared, credentials: true, origin: kitOrigins }
+    // `origin: false` rather than a list without it: the plugin sends Allow-Credentials to any origin a list refuses.
+    const refused = { ...shared, credentials: false, origin: false }
+    void this.#app.register(fastifyCors, {
+      delegator: (req, callback) => {
+        const origin = req.headers.origin ?? ''
+        if (!kitOrigins.includes(origin) || allowedOrigins.includes(origin)) {
+          callback(null, standard)
+        } else {
+          callback(null, isKitRoute(req.url) ? kit : refused)
+        }
+      },
+    })
   }
 
   get boundPort(): number {
@@ -496,7 +533,7 @@ export class FastifyHttpAdapter implements HttpAdapter {
   #refusesUnlocked(req: FastifyRequest): boolean {
     if (this.#lockHeader === undefined) return false
     const peer = req.raw.socket.remoteAddress
-    if (peer !== undefined && isLoopback(peer, 0)) return false
+    if (peer !== undefined && isLoopback(peer)) return false
     return req.is404 || !UNLOCKED_ROUTES.has(req.routeOptions.url ?? '')
   }
 

@@ -10,6 +10,7 @@ import {
   type PaymentIntentParams,
   type PaymentStatus,
   type PaymentsAdapter,
+  type ProviderRefund,
   type Refund,
   type WebhookResult,
 } from '@nymbalhq/types'
@@ -72,6 +73,20 @@ function refundStatus(status: string | null): Refund['status'] {
   if (status === 'succeeded') return 'succeeded'
   if (status === 'failed' || status === 'canceled') return 'failed'
   return 'pending'
+}
+
+/** Where a refund's idempotency key is kept on Stripe's record: Stripe's list cannot return the key itself. */
+const REFUND_KEY_METADATA = 'nymbal_refund_key'
+
+function toRefund(refund: Stripe.Refund, paymentId: string): Refund {
+  return {
+    refundId: refund.id,
+    paymentId,
+    amountMinor: refund.amount,
+    currency: toIsoCurrency(refund.currency),
+    reason: refund.reason ?? null,
+    status: refundStatus(refund.status),
+  }
 }
 
 /**
@@ -191,29 +206,41 @@ export function createStripePaymentsAdapter(deps: {
       }
     },
     async refund(paymentId, amountMinor, reason, opts): Promise<Refund> {
+      const key = opts?.idempotencyKey
       const params: Stripe.RefundCreateParams = {
         payment_intent: paymentId,
         ...(amountMinor !== undefined && { amount: amountMinor }),
         ...(reason !== undefined && { reason: reason as Stripe.RefundCreateParams.Reason }),
+        ...(key !== undefined && { metadata: { [REFUND_KEY_METADATA]: key } }),
       }
       try {
         const refund =
-          opts?.idempotencyKey === undefined
+          key === undefined
             ? await stripeClient.refunds.create(params)
-            : await stripeClient.refunds.create(params, { idempotencyKey: opts.idempotencyKey })
-        return {
-          refundId: refund.id,
-          paymentId,
-          amountMinor: refund.amount,
-          currency: toIsoCurrency(refund.currency),
-          reason: refund.reason ?? null,
-          status: refundStatus(refund.status),
-        }
+            : await stripeClient.refunds.create(params, { idempotencyKey: key })
+        return toRefund(refund, paymentId)
       } catch (err) {
         if (isDefiniteRefusal(err)) {
           throw new PaymentError('refund_rejected', 'Stripe refused the refund', { cause: err })
         }
         throw new PaymentError('refund_unknown', 'Stripe refund outcome unknown', { cause: err })
+      }
+    },
+    async listRefunds(paymentId): Promise<ProviderRefund[]> {
+      try {
+        const newestFirst: ProviderRefund[] = []
+        for await (const refund of stripeClient.refunds.list({
+          payment_intent: paymentId,
+          limit: 100,
+        })) {
+          newestFirst.push({
+            ...toRefund(refund, paymentId),
+            idempotencyKey: refund.metadata?.[REFUND_KEY_METADATA] ?? null,
+          })
+        }
+        return newestFirst.reverse()
+      } catch (err) {
+        throw new PaymentError('refund_lookup_failed', 'Stripe listRefunds failed', { cause: err })
       }
     },
     async getPaymentStatus(intentId): Promise<PaymentStatus> {

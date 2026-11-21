@@ -32,6 +32,8 @@ export interface Variant {
   lowStockThreshold: number
   options: VariantOption[]
   status: VariantStatus
+  /** What a tax engine taxes the variant as, over its product's; null or absent for the product's. */
+  taxCode?: string | null
   createdAt: string
   updatedAt: string
 }
@@ -48,6 +50,8 @@ export interface Product {
   seoDescription: string
   media: ProductMedia[]
   metadata: Record<string, unknown>
+  /** What a tax engine taxes the product's variants as; null or absent for the standard rate. */
+  taxCode?: string | null
   createdAt: string
   updatedAt: string
 }

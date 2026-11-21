@@ -78,6 +78,7 @@ describe('AC-10: warm-up writes only derived read models', () => {
     expect(await searchIds(productName)).toContain(seeded.productId)
 
     await k.services.product.update(seeded.productId, { name: `${productName} ${randomUUID()}` })
+    await k.app.relay.drain()
 
     expect(
       sideEffect

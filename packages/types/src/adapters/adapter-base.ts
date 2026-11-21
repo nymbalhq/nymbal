@@ -127,6 +127,7 @@ export type CommerceSlot =
   | 'analytics'
   | 'shipping'
   | 'tax'
+  | 'promotions'
   | 'ai'
 
 /**

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { MoreHorizontal, Search, Filter, Package, Trash2, CheckCheck } from 'lucide-react'
+import { MoreHorizontal, Search, Package, Trash2, CheckCheck } from 'lucide-react'
 import {
   Table,
   TableBody,
@@ -10,6 +10,13 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -20,14 +27,18 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
+import { OrderBulkDialog } from '@/components/orders/OrderBulkDialog'
 import { OrderStatusBadge } from '@/components/orders/OrderStatusBadge'
 import { EmptyState } from '@/components/common/EmptyState'
 import { useOrders } from '@/hooks/useOrders'
+import type { OrderBulkOutcome } from '@/hooks/useOrderBulkAction'
 import { formatMoney } from '@/lib/money'
 import { formatRelative } from '@/lib/dates'
+import { planOrderBulk, type OrderBulkAction } from '@/lib/order-bulk'
 import { tid } from '@/lib/testid'
 import { cn } from '@/lib/utils'
 import { paymentState, type OrderStatus, type PaymentState } from '@nymbalhq/types'
+import type { AdminOrder } from '@/types'
 
 const STATUS_FILTERS: { label: string; value: OrderStatus | 'all' }[] = [
   { label: 'All', value: 'all' },
@@ -37,8 +48,6 @@ const STATUS_FILTERS: { label: string; value: OrderStatus | 'all' }[] = [
   { label: 'Shipped', value: 'shipped' },
   { label: 'Delivered', value: 'delivered' },
   { label: 'Cancelled', value: 'cancelled' },
-  { label: 'Refunded', value: 'refunded' },
-  { label: 'Partially refunded', value: 'partially_refunded' },
 ]
 
 const PAYMENT_LABELS: Record<PaymentState, string> = {
@@ -48,14 +57,19 @@ const PAYMENT_LABELS: Record<PaymentState, string> = {
   refunded: 'Refunded',
 }
 
+const PAYMENT_FILTERS: PaymentState[] = ['unpaid', 'paid', 'partially_refunded', 'refunded']
+
 export function OrdersListPage() {
   const navigate = useNavigate()
   const [statusFilter, setStatusFilter] = useState<OrderStatus | 'all'>('all')
+  const [paymentFilter, setPaymentFilter] = useState<PaymentState | 'all'>('all')
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [bulk, setBulk] = useState<{ action: OrderBulkAction; orders: AdminOrder[] } | null>(null)
 
   const { data: orders, isLoading } = useOrders({
     status: statusFilter === 'all' ? undefined : statusFilter,
+    payment: paymentFilter === 'all' ? undefined : paymentFilter,
     q: search || undefined,
     sort: 'createdAt:desc',
     limit: 100,
@@ -70,16 +84,31 @@ export function OrdersListPage() {
     })
   }
 
+  // A selected row a filter hides stays in `selected` but is out of every count and action until it is shown again.
+  const selectedShown = (orders ?? []).filter((o) => selected.has(o.id))
+  const allSelected = orders ? selectedShown.length === orders.length && orders.length > 0 : false
+
   const toggleAll = () => {
     if (!orders) return
-    if (selected.size === orders.length) {
-      setSelected(new Set())
-    } else {
-      setSelected(new Set(orders.map((o) => o.id)))
-    }
+    setSelected((prev) => {
+      const next = new Set(prev)
+      for (const order of orders) {
+        if (allSelected) next.delete(order.id)
+        else next.add(order.id)
+      }
+      return next
+    })
   }
 
-  const allSelected = orders ? selected.size === orders.length && orders.length > 0 : false
+  const closeBulk = (outcome: OrderBulkOutcome | null) => {
+    setBulk(null)
+    if (outcome === null) return
+    setSelected((prev) => {
+      const next = new Set(prev)
+      for (const id of outcome.succeeded) next.delete(id)
+      return next
+    })
+  }
 
   return (
     <div className="space-y-4">
@@ -113,6 +142,27 @@ export function OrdersListPage() {
           ))}
         </div>
 
+        <Select
+          value={paymentFilter}
+          onValueChange={(value) => setPaymentFilter(value as PaymentState | 'all')}
+        >
+          <SelectTrigger
+            className="h-8 w-44 text-xs"
+            aria-label="Payment"
+            data-testid={tid('orders', 'payment-filter')}
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All payments</SelectItem>
+            {PAYMENT_FILTERS.map((state) => (
+              <SelectItem key={state} value={state}>
+                {PAYMENT_LABELS[state]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
         <div className="flex flex-1 items-center gap-2 sm:justify-end">
           <div className="relative flex-1 sm:max-w-xs">
             <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
@@ -123,33 +173,41 @@ export function OrdersListPage() {
               className="pl-9 h-8 text-sm"
             />
           </div>
-          <Button variant="outline" size="sm" className="gap-1.5">
-            <Filter className="h-3.5 w-3.5" />
-            Filter
-          </Button>
         </div>
       </div>
 
       {/* Bulk action bar */}
-      {selected.size > 0 && (
-        <div className="flex items-center gap-3 rounded-md border border-blue-200 bg-blue-50 px-4 py-2.5">
-          <span className="text-sm font-medium text-blue-700">{selected.size} selected</span>
+      {selectedShown.length > 0 && (
+        <div
+          className="flex flex-wrap items-center gap-3 rounded-md border border-blue-200 bg-blue-50 px-4 py-2.5"
+          data-testid={tid('orders', 'bulk', 'bar')}
+        >
+          <span
+            className="text-sm font-medium text-blue-700"
+            data-testid={tid('orders', 'bulk', 'count')}
+          >
+            {selectedShown.length} selected
+          </span>
           <div className="flex items-center gap-2 ml-auto">
             <Button
               size="sm"
               variant="outline"
               className="h-7 gap-1.5 text-xs border-blue-200 text-blue-700 hover:bg-blue-100"
+              onClick={() => setBulk({ action: 'process', orders: selectedShown })}
+              data-testid={tid('orders', 'bulk', 'process')}
             >
               <CheckCheck className="h-3.5 w-3.5" />
-              Confirm All
+              Mark processing
             </Button>
             <Button
               size="sm"
               variant="outline"
               className="h-7 gap-1.5 text-xs border-red-200 text-red-600 hover:bg-red-50"
+              onClick={() => setBulk({ action: 'cancel', orders: selectedShown })}
+              data-testid={tid('orders', 'bulk', 'cancel')}
             >
               <Trash2 className="h-3.5 w-3.5" />
-              Cancel All
+              Cancel orders
             </Button>
           </div>
         </div>
@@ -168,7 +226,7 @@ export function OrdersListPage() {
             icon={<Package className="h-5 w-5" />}
             title="No orders found"
             description={
-              search || statusFilter !== 'all'
+              search || statusFilter !== 'all' || paymentFilter !== 'all'
                 ? 'Try adjusting your filters.'
                 : 'Orders will appear here as they come in.'
             }
@@ -269,7 +327,14 @@ export function OrdersListPage() {
                           View details
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem className="text-red-600">Cancel order</DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="text-red-600"
+                          disabled={planOrderBulk('cancel', [order]).eligible.length === 0}
+                          onSelect={() => setBulk({ action: 'cancel', orders: [order] })}
+                          data-testid={tid('orders', 'row-cancel', order.orderNumber)}
+                        >
+                          Cancel order
+                        </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>
@@ -279,6 +344,12 @@ export function OrdersListPage() {
           </Table>
         )}
       </div>
+
+      <OrderBulkDialog
+        action={bulk?.action ?? null}
+        orders={bulk?.orders ?? []}
+        onClose={closeBulk}
+      />
     </div>
   )
 }

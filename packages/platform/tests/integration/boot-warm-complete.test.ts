@@ -18,8 +18,6 @@ const STATUSES: OrderStatus[] = [
   'shipped',
   'delivered',
   'cancelled',
-  'refunded',
-  'partially_refunded',
 ]
 const WORDS = ['aurora', 'basalt', 'cinder'] as const
 
@@ -132,11 +130,6 @@ async function buildStore(k: Kernel): Promise<void> {
       await s.order.markShipped(order.orderId, `TRK-${tag}`, 'royal-mail', 'replay')
     }
     if (status === 'delivered') await s.order.markDelivered(order.orderId, 'replay')
-    if (status === 'refunded' || status === 'partially_refunded') {
-      const amountMinor =
-        status === 'refunded' ? order.totalMinor : Math.floor(order.totalMinor / 2)
-      await s.refund.refund({ orderId: order.orderId, amountMinor, actor: 'replay' })
-    }
     expect((await s.order.getById(order.orderId)).status, `the ${status} order`).toBe(status)
   }
   await k.app.relay.drain()

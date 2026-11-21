@@ -61,11 +61,21 @@ export function ProductEditPage() {
   // One save is one intent: a double click on Save sends one key, the next save another.
   const [saveKey, renewSaveKey] = useIntentKey()
 
+  // The router keeps this page across products (`products/new` and `products/:slug` share it, Cmd-K moves in place),
+  // so an unsaved edit is dropped when the slug changes rather than carried to another product.
   useEffect(() => {
-    if (existingProduct) {
+    setForm(DEFAULT_PRODUCT)
+    setIsDirty(false)
+    setSlugManual(false)
+  }, [slug])
+
+  // A new copy (a stream frame refetches the detail) never replaces an unsaved edit; once a save makes the form
+  // clean, it takes the current copy again.
+  useEffect(() => {
+    if (existingProduct && !isDirty) {
       setForm(existingProduct)
     }
-  }, [existingProduct])
+  }, [existingProduct, isDirty])
 
   const update = <K extends keyof ProductSnapshot>(field: K, value: ProductSnapshot[K]) => {
     setIsDirty(true)
@@ -84,6 +94,7 @@ export function ProductEditPage() {
     renewSaveKey()
     if (isNew) {
       const created = await createProduct.mutateAsync({ product: form, idempotencyKey })
+      setIsDirty(false)
       navigate(`/products/${created.slug}`)
     } else if (existingProduct) {
       // The update keeps each own variant's prices and nothing else of it.
@@ -92,6 +103,8 @@ export function ProductEditPage() {
         .filter((v) => own.has(v.id))
         .map(({ id, priceMinor, compareAtPriceMinor }) => ({ id, priceMinor, compareAtPriceMinor }))
       const data = { ...form, variants }
+      // The update writes its answer into the detail query before it resolves, so the clean form takes the saved
+      // copy, never the one it held off while the merchant typed.
       await updateProduct.mutateAsync({ id: existingProduct.id, data, idempotencyKey })
       setIsDirty(false)
     }

@@ -213,6 +213,7 @@ describe('AC-4: the admin sends one Idempotency-Key per intent', () => {
         currentStatus="confirmed"
         orderNumber="NYM-1"
         capturedMinor={1000}
+        paymentState="unpaid"
       />,
     )
 
@@ -225,6 +226,7 @@ describe('AC-4: the admin sends one Idempotency-Key per intent', () => {
         currentStatus="processing"
         orderNumber="NYM-1"
         capturedMinor={1000}
+        paymentState="unpaid"
       />,
     )
     await user.click(screen.getByTestId('admin-order-status-select'))

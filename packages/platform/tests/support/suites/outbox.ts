@@ -65,14 +65,16 @@ export function outboxSuite(
           throw boom
         }),
       ).rejects.toBe(boom)
+      await k.app.relay.drain()
 
       expect(ids).toHaveLength(2)
       expect(await raw.count('events', `id IN (${placeholders(2)})`, ids)).toBe(0)
       expect(delivered.filter((e) => ids.includes(e.id)).map((e) => e.id)).toEqual([])
     })
 
-    it('AC-4: a committed transaction leaves both rows in publish order (seq ascending), both delivered, in that order', async () => {
+    it('AC-4: a committed transaction leaves both rows in publish order (seq ascending), both delivered by the next drain, in that order', async () => {
       const ids = await unaudited(() => k.store.transaction(publishTwo(randomUUID())))
+      await k.app.relay.drain()
 
       const rows = await eventRows(raw, `id IN (${placeholders(2)})`, ids)
       expect(rows.map((r) => r.id)).toEqual(ids)
@@ -91,12 +93,15 @@ export function outboxSuite(
           fc.array(fc.integer({ min: 1, max: 4 }), { minLength: 50, maxLength: 50 }),
           async (initial, qtys) => {
             const seeded = await seedVariant(k, initial)
+            // The seed answered before its delivery; only the reservations' events are counted.
+            await k.app.relay.drain()
             const before = await maxSeq(raw)
             const from = delivered.length
 
             const settled = await Promise.allSettled(
               qtys.map((qty) => k.services.inventory.reserveStock(seeded.variantId, qty)),
             )
+            await k.app.relay.drain()
 
             const successes = settled.filter((r) => r.status === 'fulfilled').length
             const rows = await eventRows(raw, 'seq > ?', [before])

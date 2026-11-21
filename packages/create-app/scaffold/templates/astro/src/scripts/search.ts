@@ -14,7 +14,7 @@ const initialQuery = urlParams.get('q')
 
 if (initialQuery) {
   if (searchInput) searchInput.value = initialQuery
-  client.search.search(initialQuery, { category: urlParams.get('category') })
+  client.search.search(initialQuery, { category: urlParams.get('category'), origin: 'page' })
 }
 
 // The category filter has narrowed the search; the URL follows, beside ?q.

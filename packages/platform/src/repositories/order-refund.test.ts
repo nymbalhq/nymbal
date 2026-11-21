@@ -1,12 +1,13 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import fc from 'fast-check'
+import pg from 'pg'
 import { v7 as uuidv7 } from 'uuid'
 import type { OrderRefundStatus } from '@nymbalhq/types'
 import { InMemoryDocumentStore } from '../document-store/in-memory.js'
 import { createCommandStore } from '../db/command-store.js'
 import { runMigrations } from '../db/migrate.js'
 import { buildRepositories } from './index.js'
-import type { OrderRefundInsert } from './order-refund.js'
+import { createOrderRefundRepository, type OrderRefundInsert } from './order-refund.js'
 
 // Each refund is a row, settled once from `pending`, found by its request key per order (a double click sends one
 // key), listed oldest first.
@@ -258,5 +259,94 @@ describe('OrderRefundRepository', () => {
       { numRuns: 20 },
     )
     await env.store.close()
+  })
+
+  // Defect: the sweep asks about settled refunds, or about one still inside its own request (the bound is inclusive),
+  // or an order with two pending rows is asked about twice, so the tick's limit goes on duplicates.
+  it('pendingOrderIds answers each order holding a pending refund made before the time, once, and no other', async () => {
+    const env = await setup()
+    const at = (s: number) => new Date(Date.UTC(2026, 9, 1, 10, 0, s))
+    const before = at(5)
+    const [once, twice, settled, atBound, after] = [
+      await order(env),
+      await order(env),
+      await order(env),
+      await order(env),
+      await order(env),
+    ]
+    await insert(env, row(once, { createdAt: at(2) }))
+    await insert(env, row(twice, { createdAt: at(3) }))
+    await insert(env, row(twice, { createdAt: at(4) }))
+    await insert(env, row(settled, { status: 'succeeded', createdAt: at(0) }))
+    await insert(env, row(settled, { status: 'failed', createdAt: at(0) }))
+    await insert(env, row(atBound, { createdAt: at(5) }))
+    await insert(env, row(after, { createdAt: at(6) }))
+
+    const got = await env.store.read((tx) => env.repo.pendingOrderIds(tx, before, 10))
+
+    expect(got).toEqual([once, twice])
+    expect(new Set(got).size).toBe(got.length)
+    await env.store.close()
+  })
+
+  // Defect: the order is by id or by a later row of the order, so the longest wait goes last and a limit starves it.
+  it('pendingOrderIds is by the oldest pending refund of each order, then by order id, and limit keeps the head', async () => {
+    const env = await setup()
+    const at = (s: number) => new Date(Date.UTC(2026, 9, 1, 10, 0, s))
+    const [newestFirst, longestWait, tiedA, tiedB] = [
+      await order(env),
+      await order(env),
+      await order(env),
+      await order(env),
+    ]
+    await insert(env, row(newestFirst, { createdAt: at(4) }))
+    await insert(env, row(longestWait, { createdAt: at(1) }))
+    // A later row of the same order: the order waits since its oldest one, not this.
+    await insert(env, row(longestWait, { createdAt: at(9) }))
+    await insert(env, row(tiedB, { createdAt: at(2) }))
+    await insert(env, row(tiedA, { createdAt: at(2) }))
+    const tied = [tiedA, tiedB].sort()
+
+    const pending = (limit: number) =>
+      env.store.read((tx) => env.repo.pendingOrderIds(tx, at(30), limit))
+    const all = await pending(10)
+
+    expect(all).toEqual([longestWait, ...tied, newestFirst])
+    expect(await pending(2)).toEqual(all.slice(0, 2))
+    expect(await pending(1)).toEqual([longestWait])
+    await env.store.close()
+  })
+
+  // Defect: the Postgres half of the query drops the pending filter or answers rows instead of ids. The sweep runs on
+  // SQLite in every suite, so drizzle's real Postgres driver stands here against a connection that records and answers.
+  it('pendingOrderIds on Postgres asks only for pending refunds before the time, and answers the order ids returned', async () => {
+    const sent: unknown[][] = []
+    const connection = {
+      query: async (_statement: unknown, values: unknown[]) => {
+        sent.push(values)
+        return { rows: [['order-a'], ['order-b']] }
+      },
+      release: () => undefined,
+    }
+    const connect = vi
+      .spyOn(pg.Pool.prototype, 'connect')
+      .mockImplementation(async () => connection as never)
+    const store = createCommandStore(
+      // @ts-expect-error minimal config
+      { infrastructure: { commandStore: 'postgres' }, store: { name: 'test', currency: 'GBP' } },
+      { postgresUrl: 'postgres://unused/none' },
+    )
+    const before = new Date('2026-10-01T10:00:05.000Z')
+    try {
+      const got = await store.read((tx) =>
+        createOrderRefundRepository(store).pendingOrderIds(tx, before, 7),
+      )
+
+      expect(got).toEqual(['order-a', 'order-b'])
+      expect(sent).toEqual([['pending', before.toISOString(), 7]])
+    } finally {
+      connect.mockRestore()
+      await store.close()
+    }
   })
 })

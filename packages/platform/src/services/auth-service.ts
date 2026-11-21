@@ -6,6 +6,11 @@ import { createHash } from 'node:crypto'
 import {
   AuthError,
   EVT_CUSTOMER_CREATED,
+  EVT_CUSTOMER_PASSWORD_RESET_REQUESTED,
+  EVT_CUSTOMER_REGISTERED_AGAIN,
+  EVT_CUSTOMER_UPDATED,
+  EVT_CUSTOMER_VERIFICATION_REQUESTED,
+  HttpError,
   ValidationError,
   type Customer,
   type CustomerAddress,
@@ -13,10 +18,34 @@ import {
   type Role,
 } from '@nymbalhq/types'
 import { audit } from '../audit/audit.js'
+import type { Tx } from '../db/command-store.js'
+import { withoutQueryParams } from '../db/query-error.js'
 import type { Repositories } from '../repositories/index.js'
 import type { CustomerWithHash } from '../repositories/customer.js'
 import type { EventPublisher } from '../events/publisher.js'
 import { toCustomerSnapshot } from '../history/views.js'
+import {
+  acceptLegacyHash,
+  bcryptCandidate,
+  bcryptUnits,
+  checkLegacyPassword,
+  DUMMY_PASSWORD_HASH_11,
+  DUMMY_PASSWORD_HASH_12,
+  DUMMY_PHPASS_SETTING,
+  IMPORTED_NO_PASSWORD,
+  isLegacyPasswordHash,
+  LEGACY_PASSWORD_MAX_BYTES,
+  legacyInput,
+  legacyWindowOpen,
+  NO_LEGACY_WORK,
+  phpass,
+  PHPASS_MAX_BYTES,
+  wordpressHmac,
+  type LegacyInput,
+  type LegacyMaxCost,
+  type LegacyRecipe,
+  type LegacyWork,
+} from './legacy-passwords.js'
 
 export interface AuthTokens {
   accessToken: string
@@ -49,14 +78,59 @@ export interface ImportCustomerInput {
   metadata?: Record<string, unknown>
 }
 
+export type VerificationPolicy = 'required' | 'off'
+
 export interface AuthService {
+  /** The sign-up policy the store runs: `required` asks a new address to follow a mailed link before it signs in. */
+  readonly verification: VerificationPolicy
+  /** The `off` policy's sign-up: a new address signs in at once; a taken one is refused. */
   register(input: RegisterInput): Promise<{ customer: Customer; tokens: AuthTokens }>
+  /**
+   * The `required` policy's sign-up, alike for every address: a new one gets a pending account and a confirmation
+   * link, a pending one takes this register's password and names, and any other account's owner is told by mail.
+   */
+  signUp(input: RegisterInput): Promise<void>
+  /** Confirms the address with a mailed link's token, once, and signs the customer in. */
+  verifyEmail(token: string): Promise<{ customer: Customer; tokens: AuthTokens }>
+  /** Mails a pending account's link again; any other address gets the same silence. */
+  resendVerification(email: string): Promise<void>
+  /** Support's send: a new link for a pending customer, whatever the age of the live one. */
+  sendVerification(customerId: string): Promise<void>
+  /** Support's confirm: a pending customer becomes verified; any other is answered as it is. */
+  markVerified(customerId: string): Promise<Customer>
   login(email: string, password: string): Promise<{ customer: Customer; tokens: AuthTokens }>
   refresh(refreshToken: string): Promise<AuthTokens>
   logout(refreshToken: string): Promise<void>
   verifyAccessToken(token: string): Promise<CustomerJwtPayload>
   importCustomer(input: ImportCustomerInput): Promise<Customer>
+  /** Mails a reset link to a customer with this address; an address with none gets the same silence. */
+  requestPasswordReset(email: string): Promise<void>
+  /** Sets the password with a mailed link's token, once, ends every earlier session and signs the customer in. */
+  resetPassword(
+    token: string,
+    password: string,
+  ): Promise<{ customer: Customer; tokens: AuthTokens }>
+  /** Sets a new password given the current one, ends every earlier session and starts a fresh one. */
+  changePassword(
+    customerId: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<{ customer: Customer; tokens: AuthTokens }>
+  /**
+   * Attaches a password hash from the old platform to the customer with this email when they have no password of
+   * their own yet (none, or an earlier imported hash); `dryRun` answers the same and writes nothing.
+   */
+  importLegacyPassword(input: ImportLegacyPasswordInput): Promise<ImportLegacyPasswordAnswer>
 }
+
+export interface ImportLegacyPasswordInput {
+  email: string
+  recipe: LegacyRecipe
+  hash: string
+  dryRun?: boolean
+}
+
+export type ImportLegacyPasswordAnswer = 'stored' | 'has-password' | 'unmatched' | 'unsupported'
 
 export interface CreateAuthServiceDeps {
   repos: Repositories
@@ -66,6 +140,10 @@ export interface CreateAuthServiceDeps {
   accessTtl: string
   refreshTtl: string
   issuer?: string
+  /** `off` when absent. */
+  verification?: VerificationPolicy
+  /** Imported password hashes are honoured while `now < until`; none are without an `until`. */
+  legacy?: { until?: Date; maxCost: LegacyMaxCost }
 }
 
 export function parseDurationToMs(s: string): number {
@@ -89,6 +167,31 @@ export function parseDurationToMs(s: string): number {
   }
 }
 
+export const PASSWORD_MIN_LENGTH = 8
+export const PASSWORD_HASH_ROUNDS = 10
+
+/**
+ * A sign-in for an address with no password to check (no customer, or an imported one) compares against this hash, so
+ * every sign-in spends one bcrypt round at the store's cost. It is public, so a compare against it never signs in.
+ */
+export const DUMMY_PASSWORD = 'nymbal-no-account-dummy-password'
+export const DUMMY_PASSWORD_HASH = '$2a$10$shMtNq7SQZ.7xjfzjruJBOiZMT6DSloRzH9UxejqCKdO0C6Pl.VkW'
+
+/** A refusal's padding compares, costliest first. */
+const DUMMY_HASHES = [DUMMY_PASSWORD_HASH_12, DUMMY_PASSWORD_HASH_11, DUMMY_PASSWORD_HASH]
+
+/** How long a mailed reset link sets a password. */
+export const PASSWORD_RESET_TTL_MS = 15 * 60_000
+
+/** How long a mailed confirmation link confirms the address. */
+export const EMAIL_VERIFICATION_TTL_MS = 24 * 60 * 60_000
+
+/** A shopper's register or resend mails a pending account's link again only once the live one is this old. */
+export const VERIFICATION_REISSUE_MS = 15 * 60_000
+
+/** The window an account's owner is told at most once in that someone registered their address. */
+export const ACCOUNT_EXISTS_WINDOW_MS = 24 * 60 * 60_000
+
 /**
  * How long after its first rotation a refresh token may be rotated again: two tabs restored together present one cookie
  * at once. The window is anchored at that first rotation and never slides.
@@ -99,6 +202,58 @@ function hashRefresh(token: string): string {
   return createHash('sha256').update(token).digest('hex')
 }
 
+export function hashResetToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex')
+}
+
+function checkPasswordLength(password: string): void {
+  if (password.length < PASSWORD_MIN_LENGTH) {
+    throw new ValidationError(`password must be ≥ ${PASSWORD_MIN_LENGTH} characters`)
+  }
+}
+
+/** A 400, not a 401: the SDK answers a 401 with a refresh and a resend. One answer for unknown, used and expired. */
+function resetLinkInvalid(): HttpError {
+  return new HttpError(400, 'This reset link is no longer valid. Ask for a new one.', {
+    code: 'auth.reset_link_invalid',
+  })
+}
+
+function verifyLinkInvalid(): HttpError {
+  return new HttpError(400, 'This confirmation link is no longer valid. Ask for a new one.', {
+    code: 'auth.verify_link_invalid',
+  })
+}
+
+function customerNotFound(customerId: string): HttpError {
+  return new HttpError(404, `Customer not found: ${customerId}`, { code: 'customers.not_found' })
+}
+
+/** The refusals a register makes before it looks the address up, so they never depend on the account. */
+function checkRegisterInput(input: RegisterInput): void {
+  if (!input.email.includes('@')) throw new ValidationError('invalid email')
+  checkPasswordLength(input.password)
+}
+
+function currentPasswordInvalid(): HttpError {
+  return new HttpError(400, 'The current password is not correct.', {
+    code: 'auth.current_password_invalid',
+  })
+}
+
+/** Whether the customer holds a native password a sign-in can be checked against. */
+function hasPassword(customer: CustomerWithHash | null): customer is CustomerWithHash {
+  return (
+    customer !== null &&
+    customer.passwordHash !== IMPORTED_NO_PASSWORD &&
+    !isLegacyPasswordHash(customer.passwordHash)
+  )
+}
+
+function invalidCredentials(): AuthError {
+  return new AuthError('invalid_credentials', 'Invalid email or password')
+}
+
 function stripPassword(c: Customer & { passwordHash: string }): Customer {
   const { passwordHash: _pw, ...rest } = c
   return rest
@@ -106,12 +261,16 @@ function stripPassword(c: Customer & { passwordHash: string }): Customer {
 
 export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
   const { repos, publisher, logger, jwtSecret, accessTtl, refreshTtl } = deps
+  const verification = deps.verification ?? 'off'
+  const legacyUntil = deps.legacy?.until
+  const maxCost = deps.legacy?.maxCost ?? 10
   const { store } = repos.customer
   const issuer = deps.issuer ?? 'nymbal'
   const secretKey = new TextEncoder().encode(jwtSecret)
   const accessTtlMs = parseDurationToMs(accessTtl)
   const refreshTtlMs = parseDurationToMs(refreshTtl)
 
+  /** Its own jti: the other claims are whole seconds, so two minted in one second for one customer would be one. */
   async function mintAccess(customer: CustomerWithHash): Promise<string> {
     return new SignJWT({
       sub: customer.id,
@@ -121,6 +280,7 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
     } satisfies CustomerJwtPayload)
       .setProtectedHeader({ alg: 'HS256' })
       .setIssuedAt()
+      .setJti(uuidv7())
       .setIssuer(issuer)
       .setExpirationTime(new Date(Date.now() + accessTtlMs))
       .sign(secretKey)
@@ -162,18 +322,157 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
     }
   }
 
+  /**
+   * Sets the password, takes away every reset link and ends every session, in the caller's transaction; tokens are
+   * issued only after it commits, so the revoke cannot reach them.
+   */
+  async function setPassword(
+    tx: Tx,
+    customerId: string,
+    passwordHash: string,
+  ): Promise<CustomerWithHash> {
+    const current = await repos.customer.findById(tx, customerId)
+    // Removing a customer deletes their reset links in its transaction, so only a change racing a removal gets here.
+    /* c8 ignore next */
+    if (current === null) throw new AuthError('unauthorized', 'customer missing')
+    // A reset link proves the mailbox as a confirmation link does.
+    const confirms = current.emailVerification === 'pending'
+    await repos.customer.update(tx, customerId, {
+      passwordHash,
+      requiresPasswordReset: false,
+      ...(confirms && { emailVerification: 'verified' as const }),
+      updatedAt: new Date(),
+    })
+    if (confirms) await repos.emailVerificationToken.deleteByCustomer(tx, customerId)
+    const fresh = (await repos.customer.findById(tx, customerId))!
+    await repos.passwordResetToken.deleteByCustomer(tx, customerId)
+    await repos.refreshToken.revokeAllForCustomer(tx, customerId)
+    await publisher.publish(EVT_CUSTOMER_UPDATED, {
+      customerId,
+      customer: toCustomerSnapshot(fresh),
+    })
+    return fresh
+  }
+
+  /** Confirms a pending customer's address and takes away their links, in the caller's transaction. */
+  async function confirm(tx: Tx, customerId: string): Promise<CustomerWithHash> {
+    await repos.customer.update(tx, customerId, {
+      emailVerification: 'verified',
+      updatedAt: new Date(),
+    })
+    await repos.emailVerificationToken.deleteByCustomer(tx, customerId)
+    const fresh = (await repos.customer.findById(tx, customerId))!
+    await publisher.publish(EVT_CUSTOMER_UPDATED, {
+      customerId,
+      customer: toCustomerSnapshot(fresh),
+    })
+    return fresh
+  }
+
+  async function existingCustomer(tx: Tx, customerId: string): Promise<CustomerWithHash> {
+    const customer = await repos.customer.findById(tx, customerId)
+    if (customer === null) throw customerNotFound(customerId)
+    return customer
+  }
+
+  async function signedIn(
+    customer: CustomerWithHash,
+  ): Promise<{ customer: Customer; tokens: AuthTokens }> {
+    const tokens = await issueTokens(customer)
+    logger.info({ customerId: customer.id }, 'customer login')
+    return { customer: stripPassword(customer), tokens }
+  }
+
+  /** The row's own check while imported hashes are honoured: native bcrypt, a legacy recipe, or none to run. */
+  async function checkOwn(
+    customer: CustomerWithHash | null,
+    password: string,
+    input: LegacyInput,
+  ): Promise<{ ok: boolean; work: LegacyWork }> {
+    if (customer === null || customer.passwordHash === IMPORTED_NO_PASSWORD) {
+      return { ok: false, work: NO_LEGACY_WORK }
+    }
+    if (isLegacyPasswordHash(customer.passwordHash)) {
+      return checkLegacyPassword(customer.passwordHash, input, maxCost)
+    }
+    const ok = await bcryptCompare(bcryptCandidate(password), customer.passwordHash)
+    const units = bcryptUnits(customer.passwordHash)
+    return { ok, work: { ...NO_LEGACY_WORK, units, candidateSent: true } }
+  }
+
+  /**
+   * Spends what the refusal's own check did not, so every refusal while imported hashes are honoured costs the same
+   * whatever the row holds: bcrypt to 2^(maxCost - 10) cost-10 units, one phpass and one HMAC. Only the first compare
+   * is handed the typed password, cut as every compare's is; padding beyond it compares the published dummy.
+   */
+  async function padRefusal(work: LegacyWork, password: string, input: LegacyInput): Promise<void> {
+    const budget = 2 ** (maxCost - 10)
+    let units = work.units
+    let candidate = !work.candidateSent
+    for (const dummy of DUMMY_HASHES) {
+      const cost = bcryptUnits(dummy)
+      while (units + cost <= budget) {
+        await bcryptCompare(candidate ? bcryptCandidate(password) : DUMMY_PASSWORD, dummy)
+        candidate = false
+        units += cost
+      }
+    }
+    if (!work.phpass) phpass(DUMMY_PHPASS_SETTING, input.bytes.subarray(0, PHPASS_MAX_BYTES))
+    if (!work.hmac) wordpressHmac(input.bytes.subarray(0, LEGACY_PASSWORD_MAX_BYTES))
+  }
+
+  /**
+   * A right legacy password becomes a native hash of the password as typed. The write takes only where the row still
+   * holds the value that was checked, so a reset, a sweep or another import since the read wins over it.
+   */
+  async function upgrade(
+    customer: CustomerWithHash,
+    password: string,
+  ): Promise<{ customer: Customer; tokens: AuthTokens }> {
+    const passwordHash = await bcryptHash(password, PASSWORD_HASH_ROUNDS)
+    // The conditional write binds the imported hash it replaces, so a failed statement's error leaves without it.
+    const upgraded = await store
+      .transaction(async (tx) => {
+        const wrote = await repos.customer.replacePasswordHash(tx, customer.id, {
+          from: customer.passwordHash,
+          passwordHash,
+          requiresPasswordReset: false,
+        })
+        if (!wrote) return null
+        audit.note('customer.upgradePassword', [{ type: 'customer', id: customer.id }])
+        const fresh = (await repos.customer.findById(tx, customer.id))!
+        await publisher.publish(EVT_CUSTOMER_UPDATED, {
+          customerId: customer.id,
+          customer: toCustomerSnapshot(fresh),
+        })
+        return fresh
+      })
+      .catch((err: unknown) => {
+        throw withoutQueryParams(err)
+      })
+    if (upgraded !== null) return signedIn(upgraded)
+    // Another write took the row first. A native hash there is checked as any sign-in is (a concurrent upgrade of the
+    // same password passes); anything else is refused without a second legacy check.
+    const now = await store.read((tx) => repos.customer.findById(tx, customer.id))
+    if (hasPassword(now) && (await bcryptCompare(bcryptCandidate(password), now.passwordHash))) {
+      return signedIn(now)
+    }
+    throw invalidCredentials()
+  }
+
   return {
+    verification,
+
     async register(input) {
       audit.note('customer.register')
-      if (!input.email.includes('@')) throw new ValidationError('invalid email')
-      if (input.password.length < 8) throw new ValidationError('password must be ≥ 8 characters')
+      checkRegisterInput(input)
       const email = input.email.toLowerCase()
       const existing = await store.read((tx) => repos.customer.findByEmail(tx, email))
       if (existing) {
         throw new AuthError('invalid_credentials', 'An account with this email already exists')
       }
       const id = uuidv7()
-      const passwordHash = await bcryptHash(input.password, 10)
+      const passwordHash = await bcryptHash(input.password, PASSWORD_HASH_ROUNDS)
       const now = new Date()
       const customer = await store.transaction(async (tx) => {
         audit.note('customer.register', [{ type: 'customer', id }])
@@ -202,14 +501,147 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
       return { customer: stripPassword(customer), tokens }
     },
 
+    async signUp(input) {
+      audit.note('customer.register')
+      checkRegisterInput(input)
+      const email = input.email.toLowerCase()
+      // Before the lookup and on every path, so the answer's time does not say whether the address has an account.
+      const passwordHash = await bcryptHash(input.password, PASSWORD_HASH_ROUNDS)
+      const profile = {
+        firstName: input.firstName ?? '',
+        lastName: input.lastName ?? '',
+        phone: input.phone ?? '',
+      }
+      await store.transaction(async (tx) => {
+        const existing = await repos.customer.findByEmail(tx, email)
+        if (existing === null) {
+          const id = uuidv7()
+          audit.note('customer.register', [{ type: 'customer', id }])
+          const now = new Date()
+          await repos.customer.insert(tx, {
+            id,
+            email,
+            passwordHash,
+            ...profile,
+            emailVerification: 'pending',
+            createdAt: now,
+            updatedAt: now,
+          })
+          const inserted = (await repos.customer.findById(tx, id))!
+          await publisher.publish(EVT_CUSTOMER_CREATED, {
+            customerId: id,
+            email,
+            customer: toCustomerSnapshot(inserted),
+            verification: 'pending',
+          })
+          await publisher.publish(EVT_CUSTOMER_VERIFICATION_REQUESTED, {
+            customerId: id,
+            reissue: 'if-stale',
+          })
+          return
+        }
+        audit.note('customer.register', [{ type: 'customer', id: existing.id }])
+        if (existing.emailVerification !== 'pending') {
+          // A confirmed, never-asked or imported account is never written: its owner is told instead.
+          await publisher.publish(EVT_CUSTOMER_REGISTERED_AGAIN, { customerId: existing.id })
+          return
+        }
+        // Nobody has proved this mailbox yet, so whoever follows the link holds the password typed last.
+        await repos.customer.update(tx, existing.id, {
+          passwordHash,
+          ...profile,
+          updatedAt: new Date(),
+        })
+        const fresh = (await repos.customer.findById(tx, existing.id))!
+        await publisher.publish(EVT_CUSTOMER_UPDATED, {
+          customerId: existing.id,
+          customer: toCustomerSnapshot(fresh),
+        })
+        await publisher.publish(EVT_CUSTOMER_VERIFICATION_REQUESTED, {
+          customerId: existing.id,
+          reissue: 'if-stale',
+        })
+      })
+    },
+
+    async verifyEmail(token) {
+      const tokenHash = hashResetToken(token)
+      const live = await store.read((tx) =>
+        repos.emailVerificationToken.findLive(tx, tokenHash, new Date()),
+      )
+      if (live === null) throw verifyLinkInvalid()
+      const customer = await store.transaction(async (tx) => {
+        // The conditional delete is the one use: of two presses that both read the row, only one deletes it.
+        const customerId = await repos.emailVerificationToken.consume(tx, tokenHash, new Date())
+        if (customerId === null) throw verifyLinkInvalid()
+        audit.note('customer.verifyEmail', [{ type: 'customer', id: customerId }])
+        return confirm(tx, customerId)
+      })
+      const tokens = await issueTokens(customer)
+      logger.info({ customerId: customer.id }, 'customer email verified')
+      return { customer: stripPassword(customer), tokens }
+    },
+
+    async resendVerification(email) {
+      const customer = await store.read((tx) => repos.customer.findByEmail(tx, email.toLowerCase()))
+      if (customer?.emailVerification !== 'pending') return
+      await store.transaction(async () => {
+        audit.note('customer.resendVerification', [{ type: 'customer', id: customer.id }])
+        await publisher.publish(EVT_CUSTOMER_VERIFICATION_REQUESTED, {
+          customerId: customer.id,
+          reissue: 'if-stale',
+        })
+      })
+    },
+
+    async sendVerification(customerId) {
+      await store.transaction(async (tx) => {
+        if ((await existingCustomer(tx, customerId)).emailVerification !== 'pending') {
+          throw new HttpError(409, 'This customer has no email waiting to be confirmed.', {
+            code: 'customers.not_pending',
+          })
+        }
+        audit.note('customer.sendVerification', [{ type: 'customer', id: customerId }])
+        await publisher.publish(EVT_CUSTOMER_VERIFICATION_REQUESTED, {
+          customerId,
+          reissue: 'always',
+        })
+      })
+    },
+
+    async markVerified(customerId) {
+      const customer = await store.transaction(async (tx) => {
+        const current = await existingCustomer(tx, customerId)
+        // Anything but a pending account is answered as it is: a second press changes nothing.
+        if (current.emailVerification !== 'pending') return current
+        audit.note('customer.markVerified', [{ type: 'customer', id: customerId }])
+        return confirm(tx, customerId)
+      })
+      return stripPassword(customer)
+    },
+
     async login(email, password) {
       const customer = await store.read((tx) => repos.customer.findByEmail(tx, email.toLowerCase()))
-      if (!customer) throw new AuthError('invalid_credentials', 'Invalid email or password')
-      const ok = await bcryptCompare(password, customer.passwordHash)
-      if (!ok) throw new AuthError('invalid_credentials', 'Invalid email or password')
-      const tokens = await issueTokens(customer)
-      logger.info({ customerId: customer.id }, 'customer login')
-      return { customer: stripPassword(customer), tokens }
+      // After the check and with the same refusal, so an unconfirmed account reads as a wrong password.
+      const unconfirmed = verification === 'required' && customer?.emailVerification === 'pending'
+      if (!legacyWindowOpen(legacyUntil, new Date())) {
+        // One compare on every path, so the answer's time does not say whether the address has a password.
+        const real = hasPassword(customer)
+        const ok = await bcryptCompare(
+          bcryptCandidate(password),
+          real ? customer.passwordHash : DUMMY_PASSWORD_HASH,
+        )
+        if (!real || !ok || unconfirmed) throw invalidCredentials()
+        return signedIn(customer)
+      }
+      const input = legacyInput(password)
+      const own = await checkOwn(customer, password, input)
+      if (customer === null || !own.ok || unconfirmed) {
+        await padRefusal(own.work, password, input)
+        throw invalidCredentials()
+      }
+      if (isLegacyPasswordHash(customer.passwordHash)) return upgrade(customer, password)
+      return signedIn(customer)
     },
 
     async refresh(refreshToken) {
@@ -251,7 +683,7 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
       if (!customer) throw new AuthError('token_invalid', 'customer missing')
       const nextJti = uuidv7()
       const nextRefresh = await mintRefresh(customer, nextJti)
-      await store.transaction((tx) =>
+      const rotated = await store.transaction((tx) =>
         repos.refreshToken.rotate(tx, jti, {
           id: nextJti,
           customerId: customer.id,
@@ -260,6 +692,8 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
           createdAt: new Date(),
         }),
       )
+      // A sign-out committed after the read above. Losing to one is not theft, so nothing else is revoked.
+      if (!rotated) throw new AuthError('token_invalid', 'refresh token revoked')
       const accessToken = await mintAccess(customer)
       return {
         accessToken,
@@ -269,13 +703,21 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
     },
 
     async logout(refreshToken) {
+      let payload: CustomerJwtPayload
       try {
         const verified = await jwtVerify(refreshToken, secretKey, { issuer })
-        const payload = verified.payload as CustomerJwtPayload
-        const { jti } = payload
-        if (jti) await store.transaction((tx) => repos.refreshToken.revoke(tx, jti))
+        payload = verified.payload as CustomerJwtPayload
       } catch {
-        // ignore — already invalid
+        return // already invalid
+      }
+      const { jti } = payload
+      if (jti) {
+        await store.transaction(async (tx) => {
+          if (await repos.refreshToken.revoke(tx, jti)) return
+          // Already rotated: the pointer names only the last fork, so only ending every session leaves none live.
+          const row = await repos.refreshToken.findById(tx, jti)
+          if (row?.replacedByJti) await repos.refreshToken.revokeAllForCustomer(tx, row.customerId)
+        })
       }
     },
 
@@ -303,7 +745,7 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
         await repos.customer.insert(tx, {
           id,
           email,
-          passwordHash: 'IMPORTED_NO_PASSWORD',
+          passwordHash: IMPORTED_NO_PASSWORD,
           requiresPasswordReset: true,
           ...(input.firstName !== undefined && { firstName: input.firstName }),
           ...(input.lastName !== undefined && { lastName: input.lastName }),
@@ -327,6 +769,88 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
         return inserted
       })
       return stripPassword(customer)
+    },
+
+    async importLegacyPassword(input) {
+      const accepted = acceptLegacyHash(input.recipe, input.hash, maxCost)
+      if (!accepted.ok) return 'unsupported'
+      const email = input.email.toLowerCase()
+      // A password set on Nymbal, a pending sign-up's included, is never replaced from a file.
+      const holder = (customer: CustomerWithHash | null) =>
+        customer === null
+          ? ('unmatched' as const)
+          : customer.passwordHash === IMPORTED_NO_PASSWORD ||
+              isLegacyPasswordHash(customer.passwordHash)
+            ? customer
+            : ('has-password' as const)
+      if (input.dryRun === true) {
+        const found = holder(await store.read((tx) => repos.customer.findByEmail(tx, email)))
+        return typeof found === 'string' ? found : 'stored'
+      }
+      return store.transaction(async (tx) => {
+        const found = holder(await repos.customer.findByEmail(tx, email))
+        if (typeof found === 'string') return found
+        const wrote = await repos.customer.replacePasswordHash(tx, found.id, {
+          from: found.passwordHash,
+          passwordHash: accepted.stored,
+          requiresPasswordReset: true,
+        })
+        // Only on Postgres can a write since the read take the row (SQLite holds it for the transaction); the line then
+        // stores nothing, as for a password set since.
+        if (!wrote) return 'has-password'
+        audit.note('customer.importLegacyPassword', [{ type: 'customer', id: found.id }])
+        const fresh = (await repos.customer.findById(tx, found.id))!
+        await publisher.publish(EVT_CUSTOMER_UPDATED, {
+          customerId: found.id,
+          customer: toCustomerSnapshot(fresh),
+        })
+        return 'stored'
+      })
+    },
+
+    async requestPasswordReset(email) {
+      const customer = await store.read((tx) => repos.customer.findByEmail(tx, email.toLowerCase()))
+      if (customer === null) return
+      await store.transaction(async () => {
+        audit.note('customer.requestPasswordReset', [{ type: 'customer', id: customer.id }])
+        await publisher.publish(EVT_CUSTOMER_PASSWORD_RESET_REQUESTED, { customerId: customer.id })
+      })
+    },
+
+    async resetPassword(token, password) {
+      const tokenHash = hashResetToken(token)
+      const live = await store.read((tx) =>
+        repos.passwordResetToken.findLive(tx, tokenHash, new Date()),
+      )
+      if (live === null) throw resetLinkInvalid()
+      // Before the link is consumed, so a typo does not burn it.
+      checkPasswordLength(password)
+      const passwordHash = await bcryptHash(password, PASSWORD_HASH_ROUNDS)
+      const customer = await store.transaction(async (tx) => {
+        // The conditional delete is the one use: of two resets that both read the row, only one deletes it.
+        const customerId = await repos.passwordResetToken.consume(tx, tokenHash, new Date())
+        if (customerId === null) throw resetLinkInvalid()
+        audit.note('customer.resetPassword', [{ type: 'customer', id: customerId }])
+        return setPassword(tx, customerId, passwordHash)
+      })
+      const tokens = await issueTokens(customer)
+      logger.info({ customerId: customer.id }, 'customer password reset')
+      return { customer: stripPassword(customer), tokens }
+    },
+
+    async changePassword(customerId, currentPassword, newPassword) {
+      checkPasswordLength(newPassword)
+      const current = await store.read((tx) => repos.customer.findById(tx, customerId))
+      const ok = current !== null && (await bcryptCompare(currentPassword, current.passwordHash))
+      if (!ok) throw currentPasswordInvalid()
+      const passwordHash = await bcryptHash(newPassword, PASSWORD_HASH_ROUNDS)
+      const customer = await store.transaction(async (tx) => {
+        audit.note('customer.changePassword', [{ type: 'customer', id: customerId }])
+        return setPassword(tx, customerId, passwordHash)
+      })
+      const tokens = await issueTokens(customer)
+      logger.info({ customerId }, 'customer password changed')
+      return { customer: stripPassword(customer), tokens }
     },
   }
 }

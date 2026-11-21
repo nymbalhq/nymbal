@@ -37,7 +37,10 @@ export const TEST_BUILDER_CONTEXT: EventBuilderContext = {
 
 export interface WiredPublisher<Relay, Publisher> {
   publisher: Publisher
-  /** Not started: tests drain it explicitly, or rely on the drain every publish awaits. */
+  /**
+   * Not started, and not awaited by a publish: a commit waits only for its events' derived subscriptions, so a test
+   * that reads any other subscriber, or `delivered_at`, drains it first.
+   */
   relay: Relay
 }
 

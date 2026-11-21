@@ -14,7 +14,18 @@ import {
 
 export interface PaymentsFlaws {
   ignoreIdempotencyKey?: boolean
+  /** Its refund list loses the idempotency key each refund was made under. */
+  loseRefundKey?: boolean
+  /** Its refund list answers every intent's refunds for any intent. */
+  listOtherIntents?: boolean
+  /** Its refund list refunds what is left of the intent while it reads. */
+  lookupRefunds?: boolean
 }
+
+interface HeldRefund extends Refund {
+  idempotencyKey: string | null
+}
+
 
 interface Held {
   id: string
@@ -27,6 +38,7 @@ interface Held {
 export function memoryPayments(flaws: PaymentsFlaws = {}): PaymentsAdapter {
   const intents = new Map<string, Held>()
   const answered = new Map<string, Refund>()
+  const held: HeldRefund[] = []
   const toIntent = (i: Held): PaymentIntent => ({
     id: i.id,
     clientSecret: `${i.id}_secret`,
@@ -91,7 +103,20 @@ export function memoryPayments(flaws: PaymentsFlaws = {}): PaymentsAdapter {
         status: 'succeeded',
       }
       if (key !== undefined) answered.set(key, refund)
+      held.push({ ...refund, idempotencyKey: opts?.idempotencyKey ?? null })
       return refund
+    },
+
+    async listRefunds(paymentId: string): Promise<HeldRefund[]> {
+      if (flaws.lookupRefunds === true) {
+        const intent = intents.get(paymentId)
+        if (intent !== undefined) intent.refundedMinor = intent.amountMinor
+      }
+      const own =
+        flaws.listOtherIntents === true ? held : held.filter((r) => r.paymentId === paymentId)
+      return own.map((r) =>
+        flaws.loseRefundKey === true ? { ...r, idempotencyKey: null } : { ...r },
+      )
     },
 
     async getPaymentStatus(intentId) {

@@ -16,6 +16,7 @@ const SLOTS = [
   'analytics',
   'shipping',
   'tax',
+  'promotions' as CommerceSlot,
   'ai',
 ] as const satisfies readonly CommerceSlot[]
 type Slot = (typeof SLOTS)[number]
@@ -33,6 +34,7 @@ const SPEC_PROVIDERS: Record<Slot, readonly string[]> = {
   analytics: ['native'],
   shipping: ['native', 'easypost'],
   tax: ['native'],
+  promotions: ['native'],
 }
 
 const dirs: string[] = []

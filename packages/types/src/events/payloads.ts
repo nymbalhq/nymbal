@@ -1,6 +1,6 @@
 import type { Category } from '../domain/category.js'
 import type { CustomerAddress } from '../domain/customer.js'
-import type { Order, OrderStatus } from '../domain/order.js'
+import type { Order, OrderLineItem, OrderSource, OrderStatus } from '../domain/order.js'
 import type { Product, Variant } from '../domain/product.js'
 import type { StockAdjustmentReason } from '../domain/inventory.js'
 import type { AlertKind } from '../alerts.js'
@@ -123,6 +123,16 @@ export interface OrderDeletedV1Payload {
   orderNumber: string
   customerId: string | null
   createdAt: string
+  source: OrderSource
+  currency: string
+  capturedMinor: number
+  refundedMinor: number
+  lineItems: OrderLineItem[]
+}
+export interface OrderNoteAddedV1Payload {
+  orderId: string
+  orderNumber: string
+  actor: string
 }
 
 export interface InventoryChangedV1Payload {
@@ -170,12 +180,30 @@ export interface CustomerCreatedV1Payload {
   customer?: CustomerSnapshot
   /** `'import'` for a customer an import brought over, who is not welcomed; absent for one who registered. */
   origin?: 'import'
+  /** `'pending'` for a sign-up asked to confirm its address: its first mail is the confirmation link, not a welcome. */
+  verification?: 'pending'
 }
 export interface CustomerUpdatedV1Payload {
   customerId: string
   customer?: CustomerSnapshot
 }
 export interface CustomerDeletedV1Payload {
+  customerId: string
+}
+/** A shopper asked for a password reset link; the email handler mints the link's token when it sends, so none is here. */
+export interface CustomerPasswordResetRequestedV1Payload {
+  customerId: string
+}
+/**
+ * A pending account's confirmation link is to be mailed; the email handler mints its token, so none is here. `if-stale`
+ * sends nothing while a live link is under 15 minutes old; `always` (support's send) replaces it whatever its age.
+ */
+export interface CustomerVerificationRequestedV1Payload {
+  customerId: string
+  reissue: 'if-stale' | 'always'
+}
+/** Someone registered an address that already has an account; the owner is told, at most once a day. */
+export interface CustomerRegisteredAgainV1Payload {
   customerId: string
 }
 
@@ -228,6 +256,10 @@ export interface PaymentFailedV1Payload {
   orderId: string
   reason: string
 }
+export interface SearchZeroResultsV1Payload {
+  term: string
+}
+
 export interface PaymentRefundedV1Payload {
   paymentId: string
   orderId: string

@@ -12,6 +12,7 @@ import {
   trustedProxyMessage,
   trustedProxyProblem,
 } from './trusted-proxies.js'
+import { US_STATES } from './us-states.js'
 
 const rateLimitRuleSchema = z.object({
   requests: z.number().int().positive(),
@@ -64,8 +65,10 @@ export const storeSchema = z.object({
     .url()
     .transform((url) => url.replace(/\/+$/, ''))
     .optional(),
-  /** Where parcels are sent from, for shipping rates. */
+  /** Where parcels are sent from, for shipping rates and tax. */
   shipFrom: shipFromSchema.optional(),
+  /** Prices hold their tax: tax is extracted from them, not added on top. */
+  pricesIncludeTax: z.boolean().default(false),
 })
 
 const quotedList = (values: readonly string[]): string => values.map((v) => `'${v}'`).join(', ')
@@ -328,6 +331,67 @@ const OWNED_HEADERS = [
   'x-real-ip',
 ]
 
+const DURATION_UNIT_MS = { ms: 1, s: 1_000, m: 60_000, h: 3_600_000, d: 86_400_000 } as const
+const DURATION = /^(\d+)(ms|s|m|h|d)$/
+
+/** A duration such as `15m` in ms, or undefined when it is not one. */
+export function durationMs(text: string): number | undefined {
+  const match = DURATION.exec(text)
+  if (match === null) return undefined
+  return Number(match[1]) * DURATION_UNIT_MS[match[2] as keyof typeof DURATION_UNIT_MS]
+}
+
+/**
+ * An access token outlives a sign-out and a changed password until it expires, so it is bounded; a refresh token that
+ * died first would end every session at each access token's expiry.
+ */
+const ACCESS_TTL_MIN_MS = 60_000
+const ACCESS_TTL_MAX_MS = 3_600_000
+
+const LEGACY_UNTIL = 'security.auth.legacy.until'
+/** Imported password hashes are weaker than the store's own, so one setting keeps them honoured for a year at most. */
+const LEGACY_UNTIL_MAX_DAYS = 366
+
+/** A `YYYY-MM-DD` that names a real day, as ms at 00:00 UTC; undefined for anything else. */
+function calendarDateMs(text: string): number | undefined {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return undefined
+  const at = Date.parse(`${text}T00:00:00.000Z`)
+  return !Number.isNaN(at) && new Date(at).toISOString().startsWith(text) ? at : undefined
+}
+
+/** When imported WordPress password hashes stop being honoured, and the costliest bcrypt among them the store accepts. */
+const legacyPasswordsSchema = z.object({
+  until: z
+    .string({ error: `${LEGACY_UNTIL} must be a date written YYYY-MM-DD` })
+    .superRefine((until, ctx) => {
+      const at = calendarDateMs(until)
+      if (at === undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `${LEGACY_UNTIL} must be a calendar date written YYYY-MM-DD; it is "${until}"`,
+        })
+        return
+      }
+      const now = new Date()
+      const bound = Date.UTC(
+        now.getUTCFullYear(),
+        now.getUTCMonth(),
+        now.getUTCDate() + LEGACY_UNTIL_MAX_DAYS,
+      )
+      if (at > bound) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `${LEGACY_UNTIL} must be at most ${LEGACY_UNTIL_MAX_DAYS} days from today; it is ${until}`,
+        })
+      }
+    }),
+  maxCost: z
+    .union([z.literal(10), z.literal(11), z.literal(12)], {
+      error: 'security.auth.legacy.maxCost must be 10, 11 or 12',
+    })
+    .default(10),
+})
+
 const originLockHeaderSchema = z.string().superRefine((header, ctx) => {
   const lower = header.toLowerCase()
   const problem = !HEADER_TOKEN.test(header)
@@ -390,6 +454,31 @@ const securityFields = z.object({
         .string()
         .regex(/^\d+(ms|s|m|h|d)$/, 'TTL must look like "7d"')
         .default('7d'),
+      /**
+       * Whether a sign-up must follow a mailed link before it signs in. Absent: `required` exactly when the email
+       * adapter delivers (anything but `native`), else `off`.
+       */
+      verification: z.enum(['required', 'off']).optional(),
+      legacy: legacyPasswordsSchema.optional(),
+    })
+    .superRefine((auth, ctx) => {
+      const access = durationMs(auth.accessTtl)
+      const refresh = durationMs(auth.refreshTtl)
+      if (access === undefined || refresh === undefined) return
+      if (access < ACCESS_TTL_MIN_MS || access > ACCESS_TTL_MAX_MS) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['accessTtl'],
+          message: `security.auth.accessTtl must be between 1m and 1h; it is ${auth.accessTtl}`,
+        })
+      }
+      if (refresh <= access) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['refreshTtl'],
+          message: `security.auth.refreshTtl must be longer than the access token's ${auth.accessTtl}; it is ${auth.refreshTtl}`,
+        })
+      }
     })
     .prefault({}),
   cloudflare: cloudflareSchema.optional(),
@@ -456,14 +545,138 @@ function adapterBlock(slot: CommerceSlot) {
     .superRefine((block, ctx) => packageBesideBuiltIn(slot, block, ctx))
 }
 
+/** The promotions slot's block: every other slot's fields, and what a cart with no code does when the engine is down. */
+function promotionsBlock() {
+  return z
+    .object({
+      provider: providerNameSchema('promotions.provider'),
+      config: z.record(z.string(), z.unknown()).optional(),
+      package: packageNameSchema.optional(),
+      onUnavailable: z.enum(['proceed', 'refuse']).default('proceed'),
+    })
+    .superRefine((block, ctx) => packageBesideBuiltIn('promotions', block, ctx))
+}
+
+/** A percent from 0 to 100 written with at most four decimals, so it is a whole number of parts per million. */
+const taxPercentSchema = z
+  .number()
+  .min(0)
+  .max(100)
+  .refine(
+    (percent) => Math.abs(percent * 10_000 - Math.round(percent * 10_000)) < 1e-6,
+    'a tax percent has at most four decimals, such as 8.875',
+  )
+
+/** A jurisdiction the store collects tax in: a country, or one of its regions (a US state by its postal code). */
+const taxRateSchema = z
+  .object({
+    country: z.string().regex(/^[A-Z]{2}$/, 'country must be two upper-case letters, such as "GB"'),
+    region: z.string().min(1).optional(),
+    percent: taxPercentSchema,
+    /** The rate for a tax code in this jurisdiction, over `percent`. */
+    codes: z.record(z.string(), taxPercentSchema).optional(),
+    /** Delivery is taxed at `percent` unless this is false; `codes` do not reach it. */
+    taxShipping: z.boolean().default(true),
+  })
+  .superRefine((row, ctx) => {
+    if (row.country === 'US' && row.region !== undefined && !Object.hasOwn(US_STATES, row.region)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['region'],
+        message: `a US region is a state's two-letter code or DC, such as "CA"; '${row.region}' is not one`,
+      })
+    }
+  })
+
+/** The tax slot's block: every other slot's fields, the native rate table, and what checkout does when the engine is down. */
+function taxBlock() {
+  return z
+    .object({
+      provider: providerNameSchema('tax.provider'),
+      config: z.record(z.string(), z.unknown()).optional(),
+      package: packageNameSchema.optional(),
+      onUnavailable: z.enum(['refuse', 'native']).default('refuse'),
+      rates: z.array(taxRateSchema).default([]),
+    })
+    .superRefine((block, ctx) => {
+      packageBesideBuiltIn('tax', block, ctx)
+      const seen = new Set<string>()
+      block.rates.forEach((row, i) => {
+        const key = `${row.country}/${row.region?.trim().toUpperCase() ?? ''}`
+        if (seen.has(key)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['rates', i],
+            message: `two rows for ${row.region === undefined ? row.country : `${row.country} ${row.region}`}; a jurisdiction has one row`,
+          })
+        }
+        seen.add(key)
+      })
+      if (block.onUnavailable === 'native' && block.rates.length === 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['rates'],
+          message: "onUnavailable 'native' falls back to the rate table, which is empty",
+        })
+      }
+    })
+}
+
+/** A flat delivery option, priced in `store.currency`'s minor units. */
+const shippingRateSchema = z.object({
+  id: z
+    .string()
+    .regex(
+      /^[a-z0-9_-]{1,64}$/,
+      'a shipping option id is 1 to 64 of a-z, 0-9, _ and -, such as "express"',
+    ),
+  name: z.string().min(1).max(64),
+  /** Absent: every country no other row names. */
+  countries: z
+    .array(z.string().regex(/^[A-Z]{2}$/, 'country must be two upper-case letters, such as "GB"'))
+    .min(1)
+    .optional(),
+  amountMinor: z.number().int().nonnegative(),
+  /** Free when the goods, after their discount, come to at least this. */
+  freeOverMinor: z.number().int().positive().optional(),
+  estimatedDays: z.number().int().nonnegative().optional(),
+})
+
+/** The shipping slot's block: every other slot's fields and the native rate table the checkout prices from. */
+function shippingBlock() {
+  return z
+    .object({
+      provider: providerNameSchema('shipping.provider'),
+      config: z.record(z.string(), z.unknown()).optional(),
+      package: packageNameSchema.optional(),
+      rates: z.array(shippingRateSchema).default([]),
+    })
+    .superRefine((block, ctx) => {
+      packageBesideBuiltIn('shipping', block, ctx)
+      const seen = new Set<string>()
+      block.rates.forEach((row, i) => {
+        if (seen.has(row.id)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['rates', i, 'id'],
+            message: `two shipping options with the id '${row.id}'; a caller chooses an option by its id`,
+          })
+        }
+        seen.add(row.id)
+      })
+    })
+}
+
 export const commerceSchema = z.object({
   payments: adapterBlock('payments'),
   email: adapterBlock('email'),
   reviews: adapterBlock('reviews'),
   search: adapterBlock('search'),
   analytics: adapterBlock('analytics'),
-  shipping: adapterBlock('shipping'),
-  tax: adapterBlock('tax'),
+  shipping: shippingBlock(),
+  tax: taxBlock(),
+  // Absent is the kernel's own engine, so a config written before the slot existed keeps working.
+  promotions: promotionsBlock().default({ provider: 'native', onUnavailable: 'proceed' }),
   ai: adapterBlock('ai'),
   orders: z
     .object({
@@ -530,6 +743,8 @@ export const httpSchema = z.object({
       allowedOrigins: z
         .array(z.string())
         .default(['http://localhost:3000', 'http://localhost:4321']),
+      // Sites running the cart kit: credentialed CORS on the cart's routes alone, so their scripts never reach a token.
+      kitOrigins: z.array(z.string()).default([]),
       credentials: z.boolean().default(true),
     })
     .prefault({}),

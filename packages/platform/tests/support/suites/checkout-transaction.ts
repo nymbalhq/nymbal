@@ -73,6 +73,7 @@ export function checkoutTransactionSuite(
       expect(order.status).toBe('pending')
       expect(await raw.count('stock_adjustments', 'variant_id = ?', [seeded.variantId])).toBe(0)
       expect(await stockOf(raw, seeded.variantId)).toBe(seeded.initialStock - qty)
+      await k.app.relay.drain()
       expect(paid).toEqual([])
     })
 
@@ -121,6 +122,7 @@ export function checkoutTransactionSuite(
       ).rejects.toBeInstanceOf(CheckoutError)
 
       expect(reservations).toBe(2)
+      await k.app.relay.drain()
       expect(events).toEqual([])
       expect(await stockOf(raw, first.variantId)).toBe(first.initialStock)
       expect(await stockOf(raw, second.variantId)).toBe(second.initialStock)

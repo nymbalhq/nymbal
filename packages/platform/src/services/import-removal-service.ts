@@ -59,6 +59,11 @@ export function createImportRemovalService(deps: ImportRemovalServiceDeps): Impo
           orderNumber: order.orderNumber,
           customerId: order.customerId,
           createdAt: order.createdAt,
+          source: order.source,
+          currency: order.currency,
+          capturedMinor: order.capturedMinor,
+          refundedMinor: order.refundedMinor,
+          lineItems: order.lineItems,
         })
         logger.debug({ orderId: id }, 'imported order removed')
         return 'removed'
@@ -71,6 +76,8 @@ export function createImportRemovalService(deps: ImportRemovalServiceDeps): Impo
         if (customer === null) return 'absent'
         audit.note('customer.remove', [{ type: 'customer', id }])
         await repos.refreshToken.deleteByCustomer(tx, id)
+        await repos.passwordResetToken.deleteByCustomer(tx, id)
+        await repos.emailVerificationToken.deleteByCustomer(tx, id)
         await repos.customer.delete(tx, id)
         await publisher.publish(EVT_CUSTOMER_DELETED, { customerId: id })
         logger.debug({ customerId: id }, 'imported customer removed')

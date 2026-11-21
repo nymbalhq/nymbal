@@ -1,5 +1,12 @@
 import type { AssistantMaskField } from '@nymbalhq/config'
-import { freeTextSpans, kindOfKey, replaceIn, wholeSpans, type Piece } from '../customer-fields.js'
+import {
+  changedField,
+  freeTextSpans,
+  kindOfKey,
+  replaceIn,
+  wholeSpans,
+  type Piece,
+} from '../customer-fields.js'
 
 export { FREE_TEXT_EMAIL, FREE_TEXT_PHONE } from '../customer-fields.js'
 
@@ -43,6 +50,7 @@ export interface TurnMask {
   stillHolds(args: Record<string, unknown>): boolean
 }
 
+/** Each string with its nearest key; a history change's `from` and `to` take the field its path names. */
 function mapStrings(
   value: unknown,
   f: (text: string, key: string | undefined) => string,
@@ -51,7 +59,13 @@ function mapStrings(
   if (typeof value === 'string') return f(value, key)
   if (Array.isArray(value)) return value.map((item) => mapStrings(item, f, key))
   if (typeof value === 'object' && value !== null) {
-    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, mapStrings(v, f, k)]))
+    const field = changedField(value as Record<string, unknown>)
+    return Object.fromEntries(
+      Object.entries(value).map(([k, v]) => [
+        k,
+        mapStrings(v, f, field !== undefined && (k === 'from' || k === 'to') ? field : k),
+      ]),
+    )
   }
   return value
 }

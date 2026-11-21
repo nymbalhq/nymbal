@@ -102,10 +102,12 @@ async function storeWith(dead: number, waiting: number): Promise<string> {
     for (let i = 0; i < dead; i += 1) {
       await kernel.services.category.create({ slug: `dead-${randomUUID()}`, name: `Dead ${i}` })
     }
-    for (let drain = 1; drain < MAX_ATTEMPTS; drain += 1) await kernel.app.relay.drain()
+    // The creates answer before their delivery: each drain is at least one pass after the last of them.
+    for (let drain = 1; drain <= MAX_ATTEMPTS; drain += 1) await kernel.app.relay.drain()
     refusing.restore()
     const once = failPublishFor(kernel.eventBus, EVT_PRODUCT_CREATED)
     for (let i = 0; i < waiting; i += 1) await seedVariant(kernel, 1)
+    await kernel.app.relay.drain()
     once.restore()
   } finally {
     await kernel.close()

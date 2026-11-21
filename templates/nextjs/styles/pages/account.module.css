@@ -103,6 +103,16 @@
   padding: var(--nymbal-spacing-lg);
 }
 
+.formCardSpaced {
+  margin-top: var(--nymbal-spacing-lg);
+}
+
+.formCardNote {
+  font-size: var(--nymbal-font-size-sm);
+  color: var(--nymbal-color-text-muted);
+  margin-bottom: var(--nymbal-spacing-md);
+}
+
 .formCardTitle {
   font-size: var(--nymbal-font-size-base);
   font-weight: var(--nymbal-font-weight-bold);
@@ -287,6 +297,21 @@
   color: var(--nymbal-color-text-muted);
   text-align: center;
   margin-bottom: var(--nymbal-spacing-lg);
+}
+
+.authForgot {
+  text-align: right;
+  margin-top: var(--nymbal-spacing-sm);
+  font-size: var(--nymbal-font-size-sm);
+}
+
+.authForgot a {
+  color: var(--nymbal-color-accent);
+  text-decoration: none;
+}
+
+.authForgot a:hover {
+  text-decoration: underline;
 }
 
 .authFooter {

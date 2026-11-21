@@ -19,6 +19,7 @@ import { join } from 'node:path'
 import { getCliVersion } from '../utils/version.js'
 import { runImportPlan } from './import-plan.js'
 import { runImportRollback } from './import-rollback.js'
+import { runPasswordHashImport } from './import-password-hashes.js'
 
 const IMPORT_ENTITIES = ['categories', 'products', 'customers', 'orders', 'reviews'] as const satisfies readonly ImportEntity[]
 
@@ -106,13 +107,42 @@ export const importCommand = defineCommand({
       description:
         'Bring over what changed in WooCommerce since the last finished import (last), a date (2026-10-01, UTC) or a date-time with a zone',
     },
+    'password-hashes': {
+      type: 'string',
+      description:
+        'Attach WordPress password hashes (email<TAB>hash per line, from WP-CLI) to imported customers with no password; needs security.auth.legacy.until and no source credentials',
+    },
   },
   async run({ args, rawArgs }) {
+    const sinceGiven = rawArgs.some((a) => a === '--since' || a.startsWith('--since='))
+    const hashFile = args['password-hashes']
+    if (hashFile !== undefined) {
+      const conflicts = [
+        ...(args.rollback ? ['--rollback'] : []),
+        ...(sinceGiven ? ['--since'] : []),
+        ...(args.fresh ? ['--fresh'] : []),
+      ]
+      if (conflicts.length > 0) {
+        console.error(`--password-hashes cannot be combined with ${conflicts.join(', ')}`)
+        process.exit(1)
+      }
+      if (args.source !== 'woocommerce') {
+        console.error('--password-hashes needs --source woocommerce')
+        process.exit(1)
+      }
+      const { config } = await loadProject()
+      await runPasswordHashImport({
+        config,
+        file: hashFile,
+        statePath: join(process.cwd(), '.nymbal-migration.json'),
+        dryRun: args['dry-run'],
+      })
+      return
+    }
     if (args.rollback) {
-      const since = rawArgs.some((a) => a === '--since' || a.startsWith('--since='))
       const conflicts = [
         ...(args['dry-run'] ? ['--dry-run'] : []),
-        ...(since ? ['--since'] : []),
+        ...(sinceGiven ? ['--since'] : []),
         ...(args.fresh ? ['--fresh'] : []),
       ]
       if (conflicts.length > 0) {
@@ -312,6 +342,8 @@ export const importCommand = defineCommand({
         ].join('\n'),
       )
     } finally {
+      // A command answers before its mail and other effects; deliver them before the app stops.
+      await app.relay.drain()
       await app.stop()
     }
   },

@@ -192,6 +192,7 @@ describe('AC-2: a core client builds what it is asked for', () => {
             client.checkout.setEmail('buyer@sdk.test')
             client.checkout.setShippingAddress(address)
             client.checkout.setBillingAddress(address)
+            await client.checkout.quote()
             await client.checkout.submitPayment()
             expect(client.checkout.getState().paymentStatus).toBe('succeeded')
             expect(client.cart.getState().itemCount).toBe(itemCount(data.cartItems))

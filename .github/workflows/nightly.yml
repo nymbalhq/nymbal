@@ -66,8 +66,8 @@ jobs:
     name: Mutation — full Stryker run
     runs-on: ubuntu-24.04
     needs: [build]
-    # 5,782 mutants: 82 min on one runner, past 120 on a slower one at 99%.
-    timeout-minutes: 180
+    # 5,782 mutants: 82 min on one runner, past 120 on a slower one at 99%. A fork per test run outlasted 180 min.
+    timeout-minutes: 350
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -81,12 +81,12 @@ jobs:
           name: build-output
       - name: Stryker over every mutate target, ignoring the incremental file
         run: pnpm mutation --force
-      # The push mutation job (ci.yml) restores the newest report under its key prefix and mutates only what changed
-      # since the commit stamped beside it. A cold whole-set run there outlasts its timeout, so this full measurement
-      # seeds that chain; both steps sit before the ratchet check, so a ratchet failure still seeds it.
+      # The full run's incremental report, stamped with the commit it was measured at, is cached for an incremental
+      # run to restore and mutate only what changed since that commit. Both steps sit before the ratchet check, so a
+      # ratchet failure still saves it.
       - name: Stamp the incremental report
         run: git rev-parse HEAD > reports/mutation/stryker-incremental.commit
-      - name: Seed the push mutation job's cache
+      - name: Cache the incremental report
         uses: actions/cache/save@v6
         with:
           path: |
@@ -108,8 +108,10 @@ jobs:
     name: Mutation — integration-tested files
     runs-on: ubuntu-24.04
     needs: [build]
-    # Nine files ran 555 mutants in 34 min here (2026-11-04); sixteen run about 1200, so about 75 min.
-    timeout-minutes: 100
+    # Nine files ran 555 mutants in 34 min here (2026-11-04); sixteen run about 1200, so about 75 min. The assistant's
+    # four add 1679: about 50 min at the rate measured on local Linux, about 103 at this runner's. The limit only bounds
+    # a hang, and stays this wide until a run here has measured the job; 350 as the full run's, under GitHub's 360.
+    timeout-minutes: 350
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6

@@ -6,30 +6,48 @@ import {
   EVT_ORDER_PARTIALLY_REFUNDED,
   EVT_ORDER_REFUNDED,
   EVT_ORDER_SHIPPED,
-  orderMovesFrom,
+  paymentState,
   type OrderStatus,
+  type PaymentState,
 } from '@nymbalhq/types'
 import { REFUND_NOTE_PREFIX } from '../../../src/order-history-notes.js'
 import { serveKernel, type ServedKernel } from '../http.js'
-import { checkoutOf, createKernel, seedVariant, type Kernel } from '../kernel.js'
-import { adminClient, adminOrder, storedMoney, type AdminClient } from '../money.js'
+import { address, checkoutOf, createKernel, seedVariant, type Kernel } from '../kernel.js'
+import {
+  adminClient,
+  adminOrder,
+  storedMoney,
+  storedRefunds,
+  type AdminClient,
+} from '../money.js'
 import { eventRows } from '../outbox.js'
 import { openRaw, type RawReader } from '../raw.js'
 import type { ShopResponse } from '../shopper.js'
 
-// A paid order refunded in part, then moved on through the admin's routes on one dialect: what each move answers,
-// what it writes (status, history, shipment rows, events) and that the money columns keep saying what was refunded.
-// Rows and events are read through a second connection.
+// A paid order refunded in part or in full and moved on through the admin's routes on one dialect: a refund changes the
+// money and never the status, each move answers from the fulfilment table and a full refund alone closes further work.
+// Rows and events are read through a second connection; which moves are open comes from the table pinned below, not
+// from the kernel's helper.
 
 const INVALID_TRANSITION = 'status.invalid_transition'
 const FULFILMENT: readonly OrderStatus[] = ['processing', 'shipped', 'delivered']
 
-type Move = 'process' | 'ship' | 'mark-delivered'
-const MOVE_TO: Record<Move, OrderStatus> = {
-  process: 'processing',
-  ship: 'shipped',
-  'mark-delivered': 'delivered',
+const TABLE: Record<string, readonly OrderStatus[]> = {
+  pending: ['confirmed', 'cancelled'],
+  confirmed: ['processing', 'cancelled'],
+  processing: ['shipped', 'cancelled'],
+  shipped: ['delivered'],
+  delivered: [],
+  cancelled: [],
 }
+
+/** The fulfilment moves open to an order: the table's row, less processing and shipped once refunded in full. */
+const openMoves = (status: OrderStatus, payment: PaymentState): OrderStatus[] =>
+  TABLE[status]!.filter(
+    (m) => FULFILMENT.includes(m) && !(payment === 'refunded' && m !== 'delivered'),
+  )
+
+type Move = 'process' | 'ship' | 'mark-delivered'
 const MOVE_OF: Partial<Record<OrderStatus, Move>> = {
   processing: 'process',
   shipped: 'ship',
@@ -58,7 +76,7 @@ export function partialRefundFulfilmentSuite(
   fresh: () => Promise<{ target: string; drop(): Promise<void> }>,
   opts: { runs: number },
 ): void {
-  describe(`a partially refunded order ships and is delivered (${dialect})`, () => {
+  describe(`refunds leave the order's status alone (${dialect})`, () => {
     let db: { target: string; drop(): Promise<void> }
     let served: ServedKernel
     let k: Kernel
@@ -159,7 +177,99 @@ export function partialRefundFulfilmentSuite(
 
     // ─── AC-3 ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-    it(`AC-3: property: a paid order refunded a (1 ≤ a < captured) at confirmed reads partially_refunded, then process, ship and mark-delivered each answer 200 and move it to processing, shipped and delivered, with one shipment row, one order.shipped and one order.delivered, and payment.state partially_refunded with refundedMinor = a after every step (${dialect})`, async () => {
+    /** A partial refund of a share of what is left, a refund of all of it, or a move picked among those open then. */
+    type Op =
+      | { kind: 'partial'; percent: number }
+      | { kind: 'final' }
+      | { kind: 'move'; pick: number }
+    const partialOp = fc
+      .integer({ min: 1, max: 40 })
+      .map((percent): Op => ({ kind: 'partial', percent }))
+    const finalOp = fc.constant<Op>({ kind: 'final' })
+    const moveOp = fc.nat({ max: 5 }).map((pick): Op => ({ kind: 'move', pick }))
+    const anyOp = fc.oneof(
+      { weight: 4, arbitrary: partialOp },
+      { weight: 1, arbitrary: finalOp },
+      { weight: 4, arbitrary: moveOp },
+    )
+
+    it(`AC-3: property: over partial and final refunds interleaved with the moves open at each step, the status is exactly what the moves made it and a refund never changes it; each refund adds one history row from = to = the status with the refund note and one money event; payment.state is paymentState(amounts) after every step and refundedMinor = Σ refunds ≤ captured (${dialect})`, async () => {
+      const sequence = fc.record({
+        priceMinor: fc.integer({ min: 400, max: 20_000 }),
+        ops: fc.array(anyOp, { minLength: 2, maxLength: 9 }),
+        first: partialOp,
+      })
+      await fc.assert(
+        fc.asyncProperty(sequence, async ({ priceMinor, ops, first }) => {
+          const order = await paidOrder(priceMinor, 1)
+          let status: OrderStatus = 'confirmed'
+          let sum = 0
+          const trail: string[] = []
+          const statuses: string[] = []
+          const walked: string[] = []
+
+          for (const op of [first, ...ops]) {
+            const amounts = { capturedMinor: order.captured, refundedMinor: sum }
+            if (op.kind === 'move') {
+              const open = openMoves(status, paymentState(amounts))
+              if (open.length === 0) continue
+              const to = open[op.pick % open.length]!
+              trail.push(to)
+              await moved(order.id, MOVE_OF[to]!)
+              status = to
+              const now = await storedMoney(raw, order.id)
+              statuses.push(now.status)
+              walked.push(to)
+              expect([now.status, now.refundedMinor], trail.join(' → ')).toEqual([to, sum])
+              continue
+            }
+            const left = order.captured - sum
+            if (left === 0) continue
+            const amount =
+              op.kind === 'final'
+                ? left
+                : Math.min(left - 1, Math.max(1, Math.floor((left * op.percent) / 100)))
+            if (amount < 1) continue
+            trail.push(`refund ${amount}`)
+            const rowsBefore = await historyOf(order.id)
+            const evtType =
+              amount === left ? EVT_ORDER_REFUNDED : EVT_ORDER_PARTIALLY_REFUNDED
+            const eventsBefore = await eventsOf(order.id, evtType)
+            await refunded(order.id, amount)
+            sum += amount
+
+            const context = trail.join(' → ')
+            const stored = await storedMoney(raw, order.id)
+            statuses.push(stored.status)
+            walked.push(status)
+            expect([stored.status, stored.refundedMinor, stored.capturedMinor], context).toEqual([
+              status,
+              sum,
+              order.captured,
+            ])
+            expect(stored.refundedMinor, context).toBeLessThanOrEqual(stored.capturedMinor)
+            const rows = await historyOf(order.id)
+            expect(rows.slice(0, rowsBefore.length), context).toEqual(rowsBefore)
+            expect(rows.length, context).toBe(rowsBefore.length + 1)
+            expect([rows.at(-1)!.from_status, rows.at(-1)!.to_status], context).toEqual([
+              status,
+              status,
+            ])
+            expect(rows.at(-1)!.note.startsWith(REFUND_NOTE_PREFIX), context).toBe(true)
+            expect((await eventsOf(order.id, evtType)).length, context).toBe(eventsBefore.length + 1)
+            expect((await adminOrder(admin, order.orderNumber)).payment!.state, context).toBe(
+              paymentState({ capturedMinor: order.captured, refundedMinor: sum }),
+            )
+          }
+          expect(statuses, `the moves alone made the status: ${trail.join(' → ')}`).toEqual(walked)
+        }),
+        { numRuns: opts.runs },
+      )
+    }, 300_000)
+
+    // ─── AC-4 ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+    it(`AC-4: property: a paid order refunded a (1 ≤ a < captured) at confirmed reads confirmed and partially_refunded; process, ship and mark-delivered each answer 200; one shipment row, one order.shipped and one order.delivered; payment.state and refundedMinor unchanged after every step (${dialect})`, async () => {
       const capture = fc.record({
         priceMinor: fc.integer({ min: 2, max: 20_000 }),
         qty: fc.integer({ min: 1, max: 3 }),
@@ -185,7 +295,7 @@ export function partialRefundFulfilmentSuite(
           }
 
           expect(seen.map(([status]) => status)).toEqual([
-            'partially_refunded',
+            'confirmed',
             'processing',
             'shipped',
             'delivered',
@@ -202,7 +312,7 @@ export function partialRefundFulfilmentSuite(
           expect((await eventsOf(order.id, EVT_ORDER_SHIPPED)).length).toBe(1)
           expect((await eventsOf(order.id, EVT_ORDER_DELIVERED)).length).toBe(1)
           expect((await historyOf(order.id)).map((r) => r.to_status).slice(-4)).toEqual([
-            'partially_refunded',
+            'confirmed',
             'processing',
             'shipped',
             'delivered',
@@ -212,171 +322,146 @@ export function partialRefundFulfilmentSuite(
       )
     }, 180_000)
 
-    // ─── AC-4 ─────────────────────────────────────────────────────────────────────────────────────────────────
-
-    /** A partial refund of a share of what is left, or a fulfilment move picked among the ones allowed then. */
-    type Op = { kind: 'refund'; percent: number } | { kind: 'move'; pick: number }
-    const refundOp = fc
-      .integer({ min: 1, max: 40 })
-      .map((percent): Op => ({ kind: 'refund', percent }))
-    const moveOp = fc.nat({ max: 5 }).map((pick): Op => ({ kind: 'move', pick }))
-
-    it(`AC-4: property: over partial refunds interleaved with the fulfilment moves orderMovesFrom allows, the first refund moves the order to partially_refunded and every later one keeps its status (never partially_refunded again once it moved on), each refund adds one history row with the refund note and one order.partially_refunded, refundedMinor = Σ refunds < captured, and a refund of the rest moves it to refunded (${dialect})`, async () => {
-      const sequence = fc.record({
-        priceMinor: fc.integer({ min: 400, max: 20_000 }),
-        before: fc.array(moveOp, { maxLength: 3 }),
-        after: fc.array(fc.oneof(refundOp, moveOp), { minLength: 1, maxLength: 7 }),
-        first: refundOp,
-      })
-      await fc.assert(
-        fc.asyncProperty(sequence, async ({ priceMinor, before, after, first }) => {
-          const order = await paidOrder(priceMinor, 1)
-          let status: OrderStatus = 'confirmed'
-          let refundedAt: OrderStatus | null = null
-          let sum = 0
-          const trail: string[] = []
-
-          for (const op of [...before, first, ...after]) {
-            if (op.kind === 'move') {
-              const allowed: OrderStatus[] = orderMovesFrom(status, refundedAt).filter(
-                (s: OrderStatus) => FULFILMENT.includes(s),
-              )
-              if (allowed.length === 0) continue
-              const to = allowed[op.pick % allowed.length]!
-              trail.push(to)
-              await moved(order.id, MOVE_OF[to]!)
-              const now = await storedMoney(raw, order.id)
-              expect([now.status, now.refundedMinor], trail.join(' → ')).toEqual([to, sum])
-              status = to
-              continue
-            }
-            const left = order.captured - sum
-            const amount = Math.min(left - 1, Math.max(1, Math.floor((left * op.percent) / 100)))
-            if (amount < 1) continue
-            trail.push(`refund ${amount}`)
-            const rowsBefore = await historyOf(order.id)
-            const eventsBefore = await eventsOf(order.id, EVT_ORDER_PARTIALLY_REFUNDED)
-            await refunded(order.id, amount)
-            sum += amount
-            const expected: OrderStatus = refundedAt === null ? 'partially_refunded' : status
-            if (refundedAt === null) refundedAt = status
-            status = expected
-
-            const money = await storedMoney(raw, order.id)
-            const rows = await historyOf(order.id)
-            const context = trail.join(' → ')
-            expect([money.status, money.refundedMinor, money.capturedMinor], context).toEqual([
-              expected,
-              sum,
-              order.captured,
-            ])
-            expect(money.refundedMinor, context).toBeLessThan(money.capturedMinor)
-            expect(rows.slice(0, rowsBefore.length), context).toEqual(rowsBefore)
-            expect(rows.length, context).toBe(rowsBefore.length + 1)
-            expect(rows.at(-1)!.to_status, context).toBe(expected)
-            expect(rows.at(-1)!.note.startsWith(REFUND_NOTE_PREFIX), context).toBe(true)
-            expect((await eventsOf(order.id, EVT_ORDER_PARTIALLY_REFUNDED)).length, context).toBe(
-              eventsBefore.length + 1,
-            )
-            expect((await adminOrder(admin, order.orderNumber)).payment!.state, context).toBe(
-              'partially_refunded',
-            )
-          }
-
-          const history = (await historyOf(order.id)).map((r) => r.to_status)
-          const firstIn = history.indexOf('partially_refunded')
-          const movedOn = history.findIndex((s, i) => i > firstIn && s !== 'partially_refunded')
-          if (movedOn >= 0) {
-            expect(history.slice(movedOn), `never back: ${trail.join(' → ')}`).not.toContain(
-              'partially_refunded',
-            )
-          }
-
-          const heldBefore = status
-          await refunded(order.id, order.captured - sum)
-          const money = await storedMoney(raw, order.id)
-          expect([money.status, money.refundedMinor], `refund the rest at ${heldBefore}`).toEqual([
-            'refunded',
-            order.captured,
-          ])
-          expect((await eventsOf(order.id, EVT_ORDER_REFUNDED)).length).toBe(1)
-          expect((await historyOf(order.id)).at(-1)).toMatchObject({
-            from_status: heldBefore,
-            to_status: 'refunded',
-          })
-        }),
-        { numRuns: opts.runs },
-      )
-    }, 300_000)
-
     // ─── AC-5 ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-    /** Each status an order is refunded at: the move it may make next, the moves it may not. */
-    const CELLS: Array<{ at: OrderStatus; reach: Move[]; allowed: Move | null; refused: Move[] }> =
-      [
-        { at: 'confirmed', reach: [], allowed: 'process', refused: ['ship', 'mark-delivered'] },
-        {
-          at: 'processing',
-          reach: ['process'],
-          allowed: 'ship',
-          refused: ['process', 'mark-delivered'],
-        },
-        {
-          at: 'shipped',
-          reach: ['process', 'ship'],
-          allowed: 'mark-delivered',
-          refused: ['ship', 'process'],
-        },
-        {
-          at: 'delivered',
-          reach: ['process', 'ship', 'mark-delivered'],
-          allowed: null,
-          refused: ['process', 'ship', 'mark-delivered'],
-        },
-      ]
+    const FORBIDDEN: Array<{ at: OrderStatus; reach: Move[]; refused: Move[] }> = [
+      { at: 'shipped', reach: ['process', 'ship'], refused: ['process', 'ship'] },
+      {
+        at: 'delivered',
+        reach: ['process', 'ship', 'mark-delivered'],
+        refused: ['process', 'ship', 'mark-delivered'],
+      },
+    ]
 
-    it(`AC-5: a partially refunded order moves on only as its refunded-at status would: refused moves (and cancel) answer 409 and write nothing, the one allowed move answers 200; at confirmed process, at processing ship, at shipped mark-delivered, at delivered none; never a 500, a second shipment row or a second order.delivered (${dialect})`, async () => {
+    it(`AC-5: moves the table forbids stay forbidden whatever the money: after a partial refund at shipped, process and ship answer 409 ${INVALID_TRANSITION} with one shipment row; at delivered, process, ship and mark-delivered answer 409 with one order.delivered; cancel on a paid order, refunded or not, answers 409 order.paid; a refused command writes nothing and never answers 500 (${dialect})`, async () => {
       const outcomes: unknown[] = []
       const expected: unknown[] = []
-      for (const cell of CELLS) {
+      for (const cell of FORBIDDEN) {
         const order = await paidOrder()
         for (const m of cell.reach) await moved(order.id, m)
         await refunded(order.id, 700)
         const start = await written(order.id)
-        expect(start.status, `refunded at ${cell.at}`).toBe('partially_refunded')
+        outcomes.push([cell.at, 'after the refund', start.status, start.shipments])
+        expected.push([cell.at, 'after the refund', cell.at, 1])
 
         for (const m of cell.refused) {
           const res = await move(order.id, m)
-          outcomes.push([cell.at, m, ...answerOf(res), (await written(order.id)) as unknown])
+          outcomes.push([cell.at, m, ...answerOf(res), await written(order.id)])
           expected.push([cell.at, m, 409, INVALID_TRANSITION, start])
         }
         const cancelled = await cancel(order.id)
         outcomes.push([cell.at, 'cancel', ...answerOf(cancelled), await written(order.id)])
         expected.push([cell.at, 'cancel', 409, 'order.paid', start])
 
-        if (cell.allowed !== null) {
-          const res = await move(order.id, cell.allowed)
-          const after = await written(order.id)
-          outcomes.push([
-            cell.at,
-            cell.allowed,
-            ...answerOf(res),
-            after.status,
-            after.refundedMinor,
-          ])
-          expected.push([cell.at, cell.allowed, 200, null, MOVE_TO[cell.allowed], 700])
+        const delivered = (await eventsOf(order.id, EVT_ORDER_DELIVERED)).length
+        outcomes.push([cell.at, 'deliveries', delivered])
+        expected.push([cell.at, 'deliveries', cell.at === 'delivered' ? 1 : 0])
+      }
+
+      const paid = await paidOrder()
+      const partly = await paidOrder()
+      await refunded(partly.id, 700)
+      const whole = await paidOrder()
+      await refunded(whole.id, whole.captured)
+      for (const [name, order] of [
+        ['unrefunded', paid],
+        ['partly refunded', partly],
+        ['fully refunded', whole],
+      ] as const) {
+        const before = await written(order.id)
+        const res = await cancel(order.id)
+        outcomes.push([name, 'cancel', ...answerOf(res), await written(order.id)])
+        expected.push([name, 'cancel', 409, 'order.paid', before])
+      }
+      expect(outcomes).toEqual(expected)
+    }, 120_000)
+
+    // ─── AC-6 ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+    /** Refunds the whole capture at `at`, reached through the admin's routes. */
+    async function refundedInFullAt(at: OrderStatus, reach: Move[]) {
+      const order = await paidOrder()
+      for (const m of reach) await moved(order.id, m)
+      await refunded(order.id, order.captured)
+      return { ...order, at }
+    }
+
+    /** An order captured at a status a refund cannot be taken at; the importer writes any status. */
+    async function capturedAt(status: 'pending' | 'cancelled'): Promise<string> {
+      const totalMinor = 2500
+      const order = await k.services.order.importOrder({
+        orderId: randomUUID(),
+        orderNumber: `CAP-${randomUUID().slice(0, 8)}`,
+        status,
+        customerId: null,
+        email: `captured-${randomUUID()}@fulfil.test`,
+        billingAddress: address,
+        shippingAddress: address,
+        lineItems: [],
+        subtotalMinor: totalMinor,
+        taxTotalMinor: 0,
+        shippingTotalMinor: 0,
+        discountTotalMinor: 0,
+        totalMinor,
+        currency: 'GBP',
+        createdAt: new Date(),
+        capturedMinor: totalMinor,
+        captureMethod: 'manual',
+      })
+      return order.id
+    }
+
+    it(`AC-6: a full refund leaves the status: at confirmed, process answers 409 order.refunded and ship ${INVALID_TRANSITION}; at processing, ship answers 409 order.refunded and process ${INVALID_TRANSITION}, writing nothing; at shipped mark-delivered answers 200 and it reads delivered; a refund on a pending or cancelled order with a capture answers 409 ${INVALID_TRANSITION} and writes nothing (${dialect})`, async () => {
+      const outcomes: unknown[] = []
+      const expected: unknown[] = []
+
+      const CLOSED: Array<{ at: OrderStatus; reach: Move[]; answers: Array<[Move, string]> }> = [
+        {
+          at: 'confirmed',
+          reach: [],
+          answers: [
+            ['process', 'order.refunded'],
+            ['ship', INVALID_TRANSITION],
+          ],
+        },
+        {
+          at: 'processing',
+          reach: ['process'],
+          answers: [
+            ['ship', 'order.refunded'],
+            ['process', INVALID_TRANSITION],
+          ],
+        },
+      ]
+      for (const cell of CLOSED) {
+        const order = await refundedInFullAt(cell.at, cell.reach)
+        const start = await written(order.id)
+        outcomes.push([cell.at, 'after the full refund', start.status, start.shipments])
+        expected.push([cell.at, 'after the full refund', cell.at, 0])
+        for (const [m, code] of cell.answers) {
+          const res = await move(order.id, m)
+          outcomes.push([cell.at, m, ...answerOf(res), await written(order.id)])
+          expected.push([cell.at, m, 409, code, start])
         }
-        const end = await written(order.id)
+      }
+
+      const shipped = await refundedInFullAt('shipped', ['process', 'ship'])
+      outcomes.push(['shipped', (await storedMoney(raw, shipped.id)).status])
+      expected.push(['shipped', 'shipped'])
+      const deliver = await move(shipped.id, 'mark-delivered')
+      outcomes.push(['deliver', ...answerOf(deliver), (await storedMoney(raw, shipped.id)).status])
+      expected.push(['deliver', 200, null, 'delivered'])
+
+      for (const status of ['pending', 'cancelled'] as const) {
+        const id = await capturedAt(status)
+        const before = { ...(await written(id)), refunds: await storedRefunds(raw, id) }
+        const res = await refund(id, 100)
         outcomes.push([
-          cell.at,
-          'shipments, deliveries',
-          end.shipments,
-          (await eventsOf(order.id, EVT_ORDER_DELIVERED)).length,
+          status,
+          ...answerOf(res),
+          { ...(await written(id)), refunds: await storedRefunds(raw, id) },
         ])
-        const shipsBy = cell.reach.includes('ship') || cell.allowed === 'ship' ? 1 : 0
-        const deliversBy =
-          cell.reach.includes('mark-delivered') || cell.allowed === 'mark-delivered'
-        expected.push([cell.at, 'shipments, deliveries', shipsBy, deliversBy ? 1 : 0])
+        expected.push([status, 409, INVALID_TRANSITION, before])
       }
       expect(outcomes).toEqual(expected)
     }, 120_000)

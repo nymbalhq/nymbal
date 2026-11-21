@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, gt, isNull, lt, lte, sql } from 'drizzle-orm'
-import type { Cart, CartItem, CartSource } from '@nymbalhq/types'
+import type { Cart, CartItem, CartPromotions, CartSource } from '@nymbalhq/types'
 import {
   postgresDb,
   sqliteDb,
@@ -38,6 +38,11 @@ export interface CartRepository extends StoreRepository {
   /** Writes the cart whole and starts a new inactivity period (clears the abandonment claim). */
   put(tx: Tx, cart: Cart): Promise<void>
   remove(tx: Tx, token: string): Promise<void>
+  /**
+   * Replaces what the engine said of the cart and nothing else, if no command has written the cart since
+   * `updatedAt`: no timestamp moves, so a read counts as no activity.
+   */
+  setPromotions(tx: Tx, token: string, updatedAt: string, promotions: CartPromotions): Promise<void>
   /** Empties the cart if it is still live at `at`, in one conditional write; false when there was no live row to
    *  empty (expired, or deleted by a sweep or a merge). Starts a new inactivity period; the expiry stays as it was. */
   clearIfLive(tx: Tx, token: string, at: Date): Promise<boolean>
@@ -55,6 +60,7 @@ export interface CartRepository extends StoreRepository {
 }
 
 function rowToCart(store: 'sqlite' | 'postgres', row: Record<string, unknown>): Cart {
+  const promotions = parseJson<CartPromotions | null>(store, row.promotions, null)
   return {
     token: String(row.token),
     customerId: (row.customerId as string | null) ?? null,
@@ -65,6 +71,7 @@ function rowToCart(store: 'sqlite' | 'postgres', row: Record<string, unknown>): 
     expiresAt: fromTimestamp(row.expiresAt),
     createdAt: fromTimestamp(row.createdAt),
     updatedAt: fromTimestamp(row.updatedAt),
+    ...(promotions !== null && { promotions }),
   }
 }
 
@@ -81,6 +88,7 @@ function sqliteValues(cart: Cart) {
     createdAt: cart.createdAt,
     updatedAt: cart.updatedAt,
     abandonedNotifiedAt: null,
+    promotions: cart.promotions === undefined ? null : JSON.stringify(cart.promotions),
   }
 }
 
@@ -97,6 +105,7 @@ function postgresValues(cart: Cart) {
     createdAt: new Date(cart.createdAt),
     updatedAt: new Date(cart.updatedAt),
     abandonedNotifiedAt: null,
+    promotions: cart.promotions ?? null,
   }
 }
 
@@ -112,6 +121,7 @@ const fromExcluded = {
   createdAt: sql`excluded.created_at`,
   updatedAt: sql`excluded.updated_at`,
   abandonedNotifiedAt: sql`excluded.abandoned_notified_at`,
+  promotions: sql`excluded.promotions`,
 }
 
 function sqliteDue(window: AbandonedWindow) {
@@ -249,6 +259,7 @@ export function createCartRepository(store: CommandStore): CartRepository {
             subtotalMinor: 0,
             updatedAt: at.toISOString(),
             abandonedNotifiedAt: null,
+            promotions: null,
           })
           .where(and(eq(t.token, token), gt(t.expiresAt, at.toISOString())))
           .run()
@@ -265,10 +276,27 @@ export function createCartRepository(store: CommandStore): CartRepository {
           subtotalMinor: 0,
           updatedAt: at,
           abandonedNotifiedAt: null,
+          promotions: null,
         })
         .where(and(eq(t.token, token), gt(t.expiresAt, at)))
         .returning({ token: t.token })
       return rows.length > 0
+    },
+    async setPromotions(tx, token, updatedAt, promotions) {
+      if (tx.kind === 'sqlite') {
+        const t = sqliteSchema.carts
+        sqliteDb(tx)
+          .update(t)
+          .set({ promotions: JSON.stringify(promotions) })
+          .where(and(eq(t.token, token), eq(t.updatedAt, updatedAt)))
+          .run()
+        return
+      }
+      const t = postgresSchema.carts
+      await postgresDb(tx)
+        .update(t)
+        .set({ promotions })
+        .where(and(eq(t.token, token), eq(t.updatedAt, new Date(updatedAt))))
     },
     async deleteExpired(tx, at) {
       if (tx.kind === 'sqlite') {

@@ -16,3 +16,20 @@ export {
   startRefreshTokenSweeper,
   type RefreshTokenSweeperDeps,
 } from './refresh-token-sweeper.js'
+export {
+  startLegacyPasswordSweeper,
+  type LegacyPasswordSweeperDeps,
+} from './legacy-password-sweeper.js'
+export {
+  startRefundReconcileSweeper,
+  type RefundReconcileSweeperDeps,
+} from './refund-reconcile-sweeper.js'
+export {
+  startStuckProposalSweeper,
+  type StuckProposalSweeperDeps,
+} from './stuck-proposal-sweeper.js'
+export {
+  startUnconfirmedAccountSweeper,
+  UNCONFIRMED_ACCOUNT_TTL_MS,
+  type UnconfirmedAccountSweeperDeps,
+} from './unconfirmed-account-sweeper.js'

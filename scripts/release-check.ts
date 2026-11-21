@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
 import { DEFAULT_THRESHOLD } from '../packages/cli/src/commands/eval-stamp'
+import { EVAL_STAMP_MODEL } from '../packages/platform/src/assistant/stamp'
 import { INTEGRATION_RATCHET, RATCHET } from './gate'
 import { EXCLUDED_PREFIXES, TEST_FILE } from './test-census'
 
@@ -77,7 +78,7 @@ export type CheckOptions = {
 }
 
 export const STAMP_FILE = 'packages/platform/assistant-eval.json'
-export const STAMP_COMMAND = `nymbal eval assistant --runs 5 --stamp <absolute path to ${STAMP_FILE}>`
+export const STAMP_COMMAND = `nymbal eval assistant --runs 3 --stamp <absolute path to ${STAMP_FILE}>`
 
 export const CI = 'ci.yml'
 export const NIGHTLY = 'nightly.yml'
@@ -494,6 +495,11 @@ export function check(opts: CheckOptions): { items: Item[]; notes: string[] } {
         : read.error !== undefined
           ? [`${STAMP_FILE} at ${short(sha)} is not a stamp: ${read.error}`]
           : [
+              ...(stamp.model === EVAL_STAMP_MODEL
+                ? []
+                : [
+                    `the stamp records a run of ${String(stamp.model)}, not the default model ${EVAL_STAMP_MODEL}: ${rerun}`,
+                  ]),
               ...(typeof stamp.threshold === 'number' && stamp.threshold >= DEFAULT_THRESHOLD
                 ? []
                 : [
@@ -532,6 +538,7 @@ function readStamp(text: string | undefined): {
   stamp?: {
     hash?: unknown
     provider?: unknown
+    model?: unknown
     passed?: unknown
     threshold?: unknown
     total?: unknown

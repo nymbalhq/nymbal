@@ -801,5 +801,85 @@ export function emailFeedbackSuite(dialect: Kernel['dialect'], options: EmailFee
       expect(mailOf(bounced)).toEqual([0, ...mailOf(fresh).slice(1)])
       expect(mailOf(fresh)).toEqual([1, 1, 1])
     })
+
+    // ─── Clearing a suppression ──────────────────────────────────────────────────────────────────────────────
+
+    it(`AC-1: property: for any spelling of a suppressed address (case, surrounding spaces), clear answers true, isSuppressed is then false for every spelling, a second clear answers false, and another address's row is untouched (${dialect})`, async () => {
+      const suppress = (email: string, eventId: string) =>
+        k.store.transaction((tx) =>
+          k.repos.emailSuppression.suppress(tx, {
+            email,
+            reason: 'hard_bounce',
+            eventId,
+            at: new Date(),
+          }),
+        )
+      const clear = (email: string) =>
+        k.store.transaction((tx) => k.repos.emailSuppression.clear(tx, email))
+
+      await fc.assert(
+        fc.asyncProperty(
+          arbForm,
+          arbForm,
+          fc.array(arbForm, { minLength: 1, maxLength: 4 }),
+          async (stored, cleared, checked) => {
+            const address = freshEmail('cleared')
+            const other = freshEmail('kept')
+            const otherEvent = randomUUID()
+            await suppress(vary(address, stored), randomUUID())
+            await suppress(other, otherEvent)
+
+            const first = await clear(vary(address, cleared))
+            const spellings = [address, ...checked.map((f) => vary(address, f))]
+            const after: boolean[] = []
+            for (const spelling of spellings) {
+              after.push(
+                await k.store.read((tx) => k.repos.emailSuppression.isSuppressed(tx, spelling)),
+              )
+            }
+            const second = await clear(vary(address, cleared))
+
+            expect([first, second]).toEqual([true, false])
+            expect(after).toEqual(spellings.map(() => false))
+            expect(await suppressionsOf([address, other])).toEqual([
+              { email: norm(other), reason: 'hard_bounce', event_id: otherEvent },
+            ])
+          },
+        ),
+        { numRuns: options.propertyRuns },
+      )
+    }, 120_000)
+
+    it(`AC-4: an address suppressed by a hard bounce gets no alert on a restock; once cleared, the next restock mails it, while another address still suppressed gets nothing (${dialect})`, async () => {
+      const p = await seedProduct(0, 1000)
+      const cleared = freshEmail('cleared')
+      const kept = freshEmail('kept')
+      const people = [cleared, kept]
+      for (const email of people) {
+        const asked = await subscribe(email, p.variantId, 'back_in_stock')
+        expect(asked.status, asked.text).toBe(202)
+        await delivered()
+        const mail = mailsTo(email, CONFIRM_MAIL.back_in_stock).at(-1)!
+        const answered = await confirm(tokenOf(mail))
+        expect(answered.status, answered.text).toBe(200)
+        const bounced = await send(jsonDelivery({ id: freshId(), events: [hardBounce(email)] }))
+        expect(bounced.data).toEqual({ received: true, events: 1 })
+      }
+      await delivered()
+      const alerts = () => people.map((email) => mailsTo(email, ALERT_MAIL.back_in_stock).length)
+      const restock = async () => {
+        await k.services.inventory.adjustStock(p.variantId, 3, 'manual', 'clear-test')
+        await delivered()
+      }
+
+      await restock()
+      const whileSuppressed = alerts()
+      await k.store.transaction((tx) => k.repos.emailSuppression.clear(tx, cleared))
+      await k.services.inventory.adjustStock(p.variantId, -3, 'manual', 'clear-test')
+      await restock()
+
+      expect(whileSuppressed).toEqual([0, 0])
+      expect(alerts()).toEqual([1, 0])
+    }, 60_000)
   })
 }

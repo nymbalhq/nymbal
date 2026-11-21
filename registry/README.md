@@ -62,6 +62,12 @@ One passing night clears failing and suspended. An adapter suspended for 30 days
 Install scripts never run. Each adapter is installed and certified in its own container, with no network while it
 is certified and a time limit on each step.
 
+## The compatibility matrix
+
+The run also writes `matrix.json` beside the status page: for each Nymbal release, its package versions and every
+listed adapter's status and installed version. `nymbal upgrade` reads it and refuses a release that a store's adapter
+fails.
+
 ## Changing hands
 
 - A maintainer hands an adapter on by a pull request that both maintainers approve. If a maintainer does not answer

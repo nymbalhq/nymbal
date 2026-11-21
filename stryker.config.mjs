@@ -5,17 +5,29 @@
 // checkout and its restore replaces them with copies. The sandbox holds only what the platform unit tests and the
 // importer's mapper tests need, and is deleted after the run together with the per-worker setup files the Vitest
 // runner writes into it.
+import { machineBudget } from './scripts/machine-budget.ts'
+
+// The machine's budget (scripts/machine-budget.ts), not the cores less one, unless CI sizes its own.
+const concurrency = machineBudget().stryker
+
 /** @type {import('@stryker-mutator/api/core').PartialStrykerOptions} */
 export default {
+  ...(concurrency === undefined ? {} : { concurrency }),
   testRunner: 'vitest',
-  vitest: { configFile: 'vitest.stryker.config.ts' },
+  // Each test file in a process, not a worker thread: Node unloads a native addon when a worker exits, and
+  // better-sqlite3's finalizers then jump into the unmapped library and crash the run (seen on macOS).
+  vitest: { configFile: 'vitest.stryker.config.ts', pool: 'forks' },
   plugins: ['@stryker-mutator/vitest-runner'],
   mutate: [
     'packages/platform/src/services/**/*.ts',
     'packages/platform/src/repositories/**/*.ts',
+    'packages/platform/src/adapters/promotions/**/*.ts',
+    'packages/platform/src/adapters/tax/**/*.ts',
     // Measured by the integration run too (stryker.integration.config.mjs); here by the unit tests beside them.
     'packages/platform/src/events/relay.ts',
     'packages/platform/src/events/publisher.ts',
+    // The sunset sweep of imported password hashes, by the unit test beside it.
+    'packages/platform/src/sweepers/legacy-password-sweeper.ts',
     'packages/importers/src/woocommerce/mappers/**/*.ts',
     // No unit test reaches these: stryker.integration.config.mjs measures them, and the services' composition root is
     // wiring every integration test runs through. Here they would score 0 and only cost time.
@@ -27,9 +39,14 @@ export default {
     '!packages/platform/src/services/recently-viewed-service.ts',
     '!packages/platform/src/repositories/alert-subscription.ts',
     '!packages/platform/src/repositories/email-suppression.ts',
+    '!packages/platform/src/repositories/email-verification-token.ts',
+    '!packages/platform/src/repositories/password-reset-token.ts',
     '!packages/platform/src/repositories/proposal.ts',
+    '!packages/platform/src/repositories/report-rollup.ts',
     '!packages/platform/src/repositories/review.ts',
     '!**/*.test.ts',
+    // Test vectors and the helpers the tests derive from them, beside the code they test.
+    '!packages/platform/src/services/fixtures/**',
     '!**/*.d.ts',
     // Type tests (`expectTypeOf`): tsc checks them, nothing runs them, so every mutant would survive.
     '!**/*.test-d.ts',
@@ -54,7 +71,7 @@ export default {
     '/packages/types/dist',
     '**/CLAUDE.md',
   ],
-  disableTypeChecks: 'packages/platform/src/{services,repositories}/**/*.ts',
+  disableTypeChecks: 'packages/platform/src/{services,repositories,adapters/promotions}/**/*.ts',
   coverageAnalysis: 'perTest',
   // A static mutant (module-level code, or a factory every test's setup calls) reruns the whole suite with a reload, last
   // in the run, against an allowance shorter than the suite's cold start: those reruns were most of the run's tail,

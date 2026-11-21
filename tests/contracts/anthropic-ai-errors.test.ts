@@ -31,10 +31,10 @@ function stalling(status: number): void {
   })
 }
 
-async function failure(apiKey = KEY): Promise<AdapterError> {
+async function failure(apiKey = KEY, content = 'Say hello.'): Promise<AdapterError> {
   const adapter = createAnthropicAiAdapter({ apiKey, logger })
   try {
-    await adapter.chat([{ role: 'user', content: 'Say hello.' }])
+    await adapter.chat([{ role: 'user', content }])
   } catch (error) {
     return error as AdapterError
   }
@@ -83,6 +83,8 @@ describe('an Anthropic error body', () => {
 
   // Kills: the message passed on as the provider wrote it, the configured key (raw, base64 with or without its
   // padding, base64url) or another sk-ant- key in it; or the message dropped whole, losing what the merchant needs.
+  // The example: the configured key taken out of a longer key it begins, leaving that key's tail ("[redacted]__aaaa").
+  // The glued key: an sk-ant- key straight after the key's base64url form, with no word boundary before it.
   it('property: a message echoing the configured key in any form, or any sk- key, keeps its words and loses the keys', async () => {
     const keyArb = fc.stringMatching(/^[A-Za-z0-9_-]{16,48}$/)
     await fc.assert(
@@ -99,18 +101,27 @@ describe('an Anthropic error body', () => {
           401,
           body(
             'authentication_error',
-            `invalid x-api-key ${forms[0]} (${forms[1]}, ${forms[2]}, ${forms[3]}); not sk-ant-${other} either`,
+            `invalid x-api-key ${forms[0]} (${forms[1]}, ${forms[2]}, ${forms[3]}); not sk-ant-${other} either; nor ${forms[3]}sk-ant-${other}`,
           ),
         )
         const error = await failure(key)
         expect(error.code).toBe('adapter.auth_failed')
         expect(error.message).toBe(
-          'anthropic answered 401: invalid x-api-key [redacted] ([redacted], [redacted], [redacted]); not [redacted] either',
+          'anthropic answered 401: invalid x-api-key [redacted] ([redacted], [redacted], [redacted]); not [redacted] either; nor [redacted]',
         )
         expect(forms.filter((form) => JSON.stringify(error).includes(form))).toEqual([])
       }),
-      { numRuns: 40 },
+      { numRuns: 40, examples: [['__lookupSetter__', '__lookupSetter____aaaa']] },
     )
+  })
+
+  // Kills: key-shaped tokens taken out before the conversation's texts, so a text holding an sk- key no longer
+  // matches whole and the rest of what the shopper wrote reaches the merchant's error.
+  it('a message echoing a conversation text that holds an sk- key loses the whole text', async () => {
+    const said = 'Please check sk-ant-old_0123456789abcdef for the order to 12 Elm Street.'
+    answering(400, body('invalid_request_error', `messages.0.content: ${said} was refused`))
+    const error = await failure(KEY, said)
+    expect(error.message).toBe('anthropic answered 400: messages.0.content: [redacted] was refused')
   })
 
   // Kills: an uncapped message, so a provider's page-long text fills the merchant's error line.
@@ -138,7 +149,9 @@ describe('an Anthropic error body', () => {
     ])
     expect(
       outcomes.map((o) =>
-        o.status === 'rejected' ? [(o.reason as AdapterError).code, (o.reason as AdapterError).message] : o.status,
+        o.status === 'rejected'
+          ? [(o.reason as AdapterError).code, (o.reason as AdapterError).message]
+          : o.status,
       ),
     ).toEqual([
       ['adapter.cancelled', 'anthropic request cancelled by the caller'],

@@ -661,10 +661,21 @@ describe("a base run through pnpm: pnpm's own install before the run", () => {
     return env
   }
 
-  /** No dependency change: HEAD only gains multiply, a test needing it and a test the base passes. */
+  /**
+   * No dependency change: HEAD only gains multiply, a test needing it and a test the base passes. The workspace pins
+   * the repository's pnpm, not whichever is on PATH: 12.21.0 installs through the linked node_modules instead of failing.
+   */
   async function workspaceRepo(): Promise<{ root: string; base: string }> {
     const root = emptyRepo()
     writeWorkspace(root, '@scope-a', BASE_MATH)
+    const { packageManager } = JSON.parse(readFileSync(join(REPO, 'package.json'), 'utf8')) as {
+      packageManager: string
+    }
+    write(
+      root,
+      'package.json',
+      json({ name: 'tfob-workspace', private: true, type: 'module', packageManager }),
+    )
     await expectExit0(root, 'pnpm', ['install', '--offline', '--no-frozen-lockfile'])
     const base = commitAll(root, 'base')
     write(root, 'packages/lib/src/index.js', HEAD_MATH)

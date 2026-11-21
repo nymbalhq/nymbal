@@ -120,6 +120,7 @@ Migrate content from WooCommerce (or other sources) into Nymbal
 | `--rollback` | boolean | Remove every record the imports in this project created, from .nymbal-migration.json; needs no source or credentials | `false` |
 | `--yes` | boolean | With --rollback: remove without asking | `false` |
 | `--since` | string | Bring over what changed in WooCommerce since the last finished import (last), a date (2026-10-01, UTC) or a date-time with a zone |  |
+| `--password-hashes` | string | Attach WordPress password hashes (email&lt;TAB&gt;hash per line, from WP-CLI) to imported customers with no password; needs security.auth.legacy.until and no source credentials |  |
 
 ## `nymbal preview`
 
@@ -159,6 +160,14 @@ Add a provider by slot, a third-party adapter by package, or a service by recipe
 | `--install` | boolean | Install the packages (--no-install: they must already be installed) | `true` |
 | `--force` | boolean | Overwrite a config value the addition conflicts with | `false` |
 | `--dry-run` | boolean | Print the config change, the .env.example lines and the install line, and write nothing | `false` |
+
+## `nymbal upgrade`
+
+Move this store to the newest Nymbal release its adapters are certified with
+
+## `nymbal verify`
+
+Build the storefront for production and run a smoke journey (pages, cart, checkout, order, admin) on a throwaway store; your project's own store is not touched
 
 ## `nymbal doctor`
 
@@ -219,9 +228,9 @@ Delete saved settings (all, or one slot or path); needs no key
 
 ## `nymbal events`
 
-Read the event log without changing it
+Read the event log, and put dead events back for the running store to deliver
 
-Subcommands: `nymbal events query`, `nymbal events tail`.
+Subcommands: `nymbal events query`, `nymbal events tail`, `nymbal events retry`.
 
 ## `nymbal events query`
 
@@ -247,6 +256,33 @@ Print events as they are appended, until interrupted. Exact for serially committ
 | `--from` | string | Print events above this seq (default: the current maximum) |  |
 | `--json` | boolean | One envelope per line, with seq and deliveredAt | `false` |
 | `--payload` | boolean | Include each event’s payload (it may hold customer data) | `false` |
+
+## `nymbal events retry`
+
+List dead events, or put them back for the running store to deliver. Bare it lists and writes nothing.
+
+| Argument | Type | Description | Default |
+| --- | --- | --- | --- |
+| `<target>` | positional | One event, by seq or id |  |
+| `--all` | boolean | Every dead event, at most 100 a run | `false` |
+| `--type` | string | Only types matching this glob; * matches anything (order.*) |  |
+| `--since` | string | Only events appended at or after this ISO time |  |
+| `--until` | string | Only events appended before this ISO time |  |
+| `--dry-run` | boolean | Say what a retry would do and write nothing | `false` |
+
+## `nymbal suppressions`
+
+Manage the email suppression list
+
+Subcommands: `nymbal suppressions clear`.
+
+## `nymbal suppressions clear`
+
+Take one address off the email suppression list, so it is mailed again
+
+| Argument | Type | Description | Default |
+| --- | --- | --- | --- |
+| `<email>` | positional | The address to clear |  |
 
 ## `nymbal audit`
 
@@ -293,16 +329,16 @@ Subcommands: `nymbal eval assistant`.
 
 ## `nymbal eval assistant`
 
-Ask the store assistant the 27 golden questions with the project's AI provider, on a throwaway store
+Ask the store assistant the 28 golden questions with the project's AI provider, on a throwaway store
 
 | Argument | Type | Description | Default |
 | --- | --- | --- | --- |
 | `--only` | string | Run only these question ids, comma-separated |  |
-| `--threshold` | string | How many must pass for exit 0 (default 24) |  |
+| `--threshold` | string | How many must pass for exit 0 (default 25) |  |
 | `--runs` | string | Ask the set this many times, each on a fresh store, and judge each question by majority (default 1) |  |
 | `--json` | boolean | Print the tally and every run’s report as JSON | `false` |
 | `--verbose` | boolean | Print each call, its arguments and outcome, and each answer | `false` |
-| `--stamp` | string | Write the eval stamp to this file when the run passes: the hash of the prompt and tools, the provider, model and tally. Anthropic or OpenAI’s own API only, every question, the default threshold or above |  |
+| `--stamp` | string | Write the eval stamp to this file when the run passes: the hash of the prompt and tools, the provider, model and tally. Anthropic or OpenAI’s own API only, every question, the default threshold or above. The stamp is a statement about the default model on our prompt; the safety boundary holds for every provider and model because it is code |  |
 
 ## `nymbal test`
 

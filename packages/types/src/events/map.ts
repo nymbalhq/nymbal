@@ -26,6 +26,7 @@ export interface NymbalEventMap {
   [C.EVT_ORDER_STATUS_CHANGED]: P.OrderStatusChangedV1Payload
   [C.EVT_ORDER_CONFIRMATION_RESEND_REQUESTED]: P.OrderConfirmationResendRequestedV1Payload
   [C.EVT_ORDER_DELETED]: P.OrderDeletedV1Payload
+  [C.EVT_ORDER_NOTE_ADDED]: P.OrderNoteAddedV1Payload
 
   [C.EVT_INVENTORY_CHANGED]: P.InventoryChangedV1Payload
   [C.EVT_INVENTORY_RESERVED]: P.InventoryReservedV1Payload
@@ -36,6 +37,9 @@ export interface NymbalEventMap {
   [C.EVT_CUSTOMER_CREATED]: P.CustomerCreatedV1Payload
   [C.EVT_CUSTOMER_UPDATED]: P.CustomerUpdatedV1Payload
   [C.EVT_CUSTOMER_DELETED]: P.CustomerDeletedV1Payload
+  [C.EVT_CUSTOMER_PASSWORD_RESET_REQUESTED]: P.CustomerPasswordResetRequestedV1Payload
+  [C.EVT_CUSTOMER_VERIFICATION_REQUESTED]: P.CustomerVerificationRequestedV1Payload
+  [C.EVT_CUSTOMER_REGISTERED_AGAIN]: P.CustomerRegisteredAgainV1Payload
   [C.EVT_VISITOR_MERGED]: P.VisitorMergedV1Payload
 
   [C.EVT_CART_CREATED]: P.CartCreatedV1Payload
@@ -64,6 +68,8 @@ export interface NymbalEventMap {
   [C.EVT_PROPOSAL_REJECTED]: P.ProposalRejectedV1Payload
   [C.EVT_PROPOSAL_APPLIED]: P.ProposalAppliedV1Payload
   [C.EVT_PROPOSAL_FAILED]: P.ProposalFailedV1Payload
+
+  [C.EVT_SEARCH_ZERO_RESULTS]: P.SearchZeroResultsV1Payload
 
   [C.EVT_ADAPTER_ERROR]: P.AdapterErrorV1Payload
   [C.EVT_SETTINGS_CHANGED]: P.SettingsChangedV1Payload

@@ -1,4 +1,4 @@
-import { and, desc, eq, lt, ne, or, sql, type SQL } from 'drizzle-orm'
+import { and, asc, desc, eq, lt, ne, or, sql, type SQL } from 'drizzle-orm'
 import type { ProposalDecider, ProposalStatus, ProposalView } from '@nymbalhq/types'
 import {
   postgresDb,
@@ -93,6 +93,8 @@ export interface ProposalRepository extends StoreRepository {
   /** Newest first, the rows before `cursor`, at most `limit`. */
   list(tx: ReadTx, q: ProposalQuery): Promise<ProposalRecord[]>
   countPending(tx: ReadTx): Promise<number>
+  /** Rows still `approved` that were decided before `decidedBefore`, oldest decision first, at most `limit`. */
+  listStuck(tx: ReadTx, q: { decidedBefore: Date; limit: number }): Promise<ProposalRecord[]>
 }
 
 type Table = typeof sqliteSchema.proposals | typeof postgresSchema.proposals
@@ -333,6 +335,25 @@ export function createProposalRepository(store: CommandStore): ProposalRepositor
           ? sqliteDb(tx).select({ n }).from(s).where(eq(s.status, 'pending')).all()
           : await postgresDb(tx).select({ n }).from(p).where(eq(p.status, 'pending'))
       return Number(row?.n ?? 0)
+    },
+    async listStuck(tx, q) {
+      if (tx.kind === 'sqlite') {
+        return sqliteDb(tx)
+          .select()
+          .from(s)
+          .where(and(eq(s.status, 'approved'), lt(s.decidedAt, q.decidedBefore.toISOString())))
+          .orderBy(asc(s.decidedAt), asc(s.id))
+          .limit(q.limit)
+          .all()
+          .map((row) => toRecord('sqlite', row))
+      }
+      const rows = await postgresDb(tx)
+        .select()
+        .from(p)
+        .where(and(eq(p.status, 'approved'), lt(p.decidedAt, q.decidedBefore)))
+        .orderBy(asc(p.decidedAt), asc(p.id))
+        .limit(q.limit)
+      return rows.map((row) => toRecord('postgres', row))
     },
   }
 }

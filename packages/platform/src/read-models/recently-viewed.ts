@@ -103,9 +103,17 @@ export async function foldEvent(docs: ViewerDocuments, event: NymbalEvent<unknow
     const { visitorId, customerId } = event.payload as VisitorMergedV1Payload
     const visitorKey = viewerKey({ kind: 'visitor', id: visitorId })
     const customerKey = viewerKey({ kind: 'customer', id: customerId })
-    const next = merged(await docs.get(visitorKey), await docs.get(customerKey), customerKey)
+    // Only the views up to the merge move. A merge delivered again after the visitor's later views were projected
+    // (a commit projects its own events before the relay delivers older ones) leaves those with the visitor, as the
+    // fold in log order does.
+    const items = (await docs.get(visitorKey))?.items ?? []
+    const moved = items.filter((i) => i.viewedAt <= event.timestamp)
+    const kept = items.filter((i) => i.viewedAt > event.timestamp)
+    const visitor = moved.length === 0 ? null : { viewer: visitorKey, items: moved }
+    const next = merged(visitor, await docs.get(customerKey), customerKey)
     if (next !== null) await docs.put(customerKey, next)
-    await docs.delete(visitorKey)
+    if (kept.length === 0) await docs.delete(visitorKey)
+    else await docs.put(visitorKey, { viewer: visitorKey, items: kept })
   } else if (event.type === EVT_CUSTOMER_DELETED) {
     const { customerId } = event.payload as CustomerDeletedV1Payload
     await docs.delete(viewerKey({ kind: 'customer', id: customerId }))

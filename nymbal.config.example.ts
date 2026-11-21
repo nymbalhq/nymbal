@@ -10,6 +10,8 @@ export default defineConfig({
     currency: 'GBP',
     locale: 'en-GB',
     timezone: 'Europe/London',
+    // Prices hold their tax (VAT-style): checkout extracts tax from them instead of adding it on top.
+    pricesIncludeTax: false,
   },
 
   template: 'astro',
@@ -53,8 +55,29 @@ export default defineConfig({
     reviews: { provider: 'native' },
     search: { provider: 'native' },
     analytics: { provider: 'native' },
-    shipping: { provider: 'native' },
-    tax: { provider: 'native' },
+    shipping: {
+      provider: 'native',
+      // The delivery options checkout offers, in this order, priced in store.currency's minor units: the rows naming
+      // the address's country, else the rows naming none. freeOverMinor makes a row free once the goods, after their
+      // discount, reach it. No rows: one free Standard option everywhere.
+      // rates: [
+      //   { id: 'standard', name: 'Standard', countries: ['GB'], amountMinor: 399, freeOverMinor: 5000, estimatedDays: 3 },
+      //   { id: 'express', name: 'Express', countries: ['GB'], amountMinor: 999, estimatedDays: 1 },
+      //   { id: 'world', name: 'International', amountMinor: 1999 },
+      // ],
+      rates: [],
+    },
+    tax: {
+      provider: 'native',
+      // A row per jurisdiction the store collects in: a country, or a US state by its code. A tax code's rate
+      // replaces the row's percent for a product or variant carrying that code. No row: no tax. Shipping is taxed at
+      // the row's percent unless the row sets taxShipping: false.
+      // rates: [{ country: 'GB', percent: 20, codes: { food: 0 } }, { country: 'US', region: 'CA', percent: 7.25 }],
+      rates: [],
+      // When a third-party engine is down: refuse the checkout, or tax from the rates above.
+      onUnavailable: 'refuse',
+    },
+    promotions: { provider: 'native' },
     ai: {
       provider: 'anthropic',
       config: { apiKey: env('ANTHROPIC_API_KEY', 'anthropic-placeholder') },

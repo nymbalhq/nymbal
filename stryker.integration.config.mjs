@@ -5,10 +5,18 @@
 // The sandbox keeps every package: the integration tests import the Fastify adapter from packages/http/src. It keeps
 // the repository's shared test servers too (tests/support): without them order-email-retry fails to load there and
 // kills nothing. Every run is a full measurement, so there is no incremental file.
+import { machineBudget } from './scripts/machine-budget.ts'
+
+// The machine's budget (scripts/machine-budget.ts), not the cores less one, unless CI sizes its own.
+const concurrency = machineBudget().stryker
+
 /** @type {import('@stryker-mutator/api/core').PartialStrykerOptions} */
 export default {
+  ...(concurrency === undefined ? {} : { concurrency }),
   testRunner: 'vitest',
-  vitest: { configFile: 'vitest.stryker.integration.config.ts' },
+  // Each test file in a process, not a worker thread: Node unloads a native addon when a worker exits, and
+  // better-sqlite3's finalizers then jump into the unmapped library and crash the run (seen on macOS).
+  vitest: { configFile: 'vitest.stryker.integration.config.ts', pool: 'forks' },
   plugins: ['@stryker-mutator/vitest-runner'],
   mutate: [
     'packages/platform/src/services/alert-service.ts',
@@ -27,6 +35,12 @@ export default {
     'packages/platform/src/services/import-removal-service.ts',
     'packages/platform/src/services/description.ts',
     'packages/platform/src/repositories/audit-entry.ts',
+    'packages/platform/src/repositories/report-rollup.ts',
+    'packages/platform/src/repositories/password-reset-token.ts',
+    'packages/platform/src/assistant/loop.ts',
+    'packages/platform/src/assistant/mask.ts',
+    'packages/platform/src/mcp/invoke.ts',
+    'packages/platform/src/mcp/withhold.ts',
   ],
   ignorePatterns: [
     '/*',
@@ -42,7 +56,7 @@ export default {
     '/packages/adapters/*/*/dist',
     '**/CLAUDE.md',
   ],
-  disableTypeChecks: 'packages/platform/src/{services,repositories}/**/*.ts',
+  disableTypeChecks: 'packages/platform/src/{services,repositories,assistant,mcp}/**/*.ts',
   coverageAnalysis: 'perTest',
   // Static mutants are left out as in stryker.config.mjs: each reruns the whole suite with a reload, which is most of
   // the run's tail. Only pure static mutants are skipped; one a test also reaches runs against it.

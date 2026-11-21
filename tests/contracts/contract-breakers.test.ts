@@ -27,6 +27,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 // twin declares a word without its method, has a method without its word, declares tracking with no webhook, labels
 // without rates, an unknown word or one twice, and fails only the words case; a twin that buys a new label on a repeated
 // rate id fails only the labels cases; one with no word runs no rates, labels or tracking case at all.
+// The tax suite runs the same way on an in-memory provider that files documents: one twin answers its first line twice
+// and loses the second, one puts half a unit on a line's tax, one answers a total one more than its lines; each fails
+// only the case named for its defect, and the provider itself passes every case.
 // The reviews suite's submit case runs the same way: an adapter without submit that stores a review anyway, beside the
 // one that refuses it (seeded through `seed`), and a submit adapter that drops the customer and order beside the
 // control; each fails only the submit case.
@@ -53,6 +56,12 @@ const TRACKING_SHAPE = /\bshape:/
 const REVIEW_SUBMIT = /\bsubmit:/
 const SHIPPING_WORDS = /\bwords:/
 const SHIPPING_LABELS = /\blabels:/
+const REFUND_LIST = /\brefund list:/
+const TAX_LINES = /\blines:/
+const TAX_AMOUNTS = /\bamounts:/
+const TAX_TOTAL = /\btotal:/
+const TAX_SHIPPING_NULL = /\bshipping-null:/
+const TAX_SHIPPING_TAXED = /\bshipping-taxed:/
 
 interface Outcome {
   passed: string[]
@@ -141,6 +150,21 @@ describe('the published suites fail an adapter with the defect they exist for', 
     expect(run.controlPassed).toBe(run.badTotal)
   })
 
+  for (const [broken, defect] of [
+    ['payments-key-lost', 'loses each refund’s key'],
+    ['payments-other-intents', 'returns another payment’s refund'],
+    ['payments-lookup-refunds', 'moves money while it lists'],
+  ] as const) {
+    it(`AC-3: a payments adapter that ${defect} fails the refund list cases and nothing else; the same adapter without the defect passes every case`, () => {
+      const run = compare(broken, 'payments-control', REFUND_LIST)
+
+      expect(run.failed.length, run.why).toBeGreaterThan(0)
+      expect(run.offTopic, run.why).toEqual([])
+      expect(run.controlFailed, run.why).toEqual([])
+      expect(run.controlPassed).toBe(run.badTotal)
+    })
+  }
+
   it('AC-5: a commerce adapter whose healthCheck never settles fails the health case and nothing else, within the case bound', () => {
     const run = compare('reviews-health-hangs', 'reviews-control', HEALTH)
 
@@ -195,6 +219,32 @@ describe('the published reviews suite certifies a provider without on-site revie
 
     expect(run.failed.length, run.why).toBeGreaterThan(0)
     expect(run.offTopic, run.why).toEqual([])
+    expect(run.controlFailed, run.why).toEqual([])
+    expect(run.controlPassed).toBe(run.badTotal)
+  })
+})
+
+describe('the published promotions suite fails an adapter whose effects a settlement would have to guess at', () => {
+  it('AC-8: a promotions adapter whose money effect is a fraction of a minor unit fails a case about money effects; the same adapter without the defect passes every case', () => {
+    const run = compare('promotions-fractional-money', 'promotions-control', /money|integer/i)
+
+    expect(run.failed.length, run.why).toBeGreaterThan(0)
+    expect(
+      run.failed.some((name) => /money|integer/i.test(name)),
+      run.why,
+    ).toBe(true)
+    expect(run.controlFailed, run.why).toEqual([])
+    expect(run.controlPassed).toBe(run.badTotal)
+  })
+
+  it('AC-8: a promotions adapter whose line effect names a line the session does not have fails a case about line effects; the same adapter without the defect passes every case', () => {
+    const run = compare('promotions-unknown-line', 'promotions-control', /\bline\b/i)
+
+    expect(run.failed.length, run.why).toBeGreaterThan(0)
+    expect(
+      run.failed.some((name) => /\bline\b/i.test(name)),
+      run.why,
+    ).toBe(true)
     expect(run.controlFailed, run.why).toEqual([])
     expect(run.controlPassed).toBe(run.badTotal)
   })
@@ -404,4 +454,42 @@ describe('the published shipping suite fails an adapter whose words and methods 
       'words',
     ])
   })
+})
+
+describe('the published tax suite fails a provider whose quote the kernel must refuse', () => {
+  // Kills: a suite a provider passes while answering a quote checkout refuses as an outage.
+  it.each([
+    ['answers a repeated line id', 'tax-repeated-line', TAX_LINES],
+    ['answers a fractional amount', 'tax-fractional-amount', TAX_AMOUNTS],
+    ['answers a total that is not the sum of its lines', 'tax-total-not-sum', TAX_TOTAL],
+  ] as const)(
+    'AC-19: a tax provider that %s fails that case and nothing else; the same provider without the defect passes every case',
+    (_defect, broken, about) => {
+      const run = compare(broken, 'tax-control', about)
+
+      expect(run.failed.length, run.why).toBeGreaterThan(0)
+      expect(run.offTopic, run.why).toEqual([])
+      expect(run.controlFailed, run.why).toEqual([])
+      expect(run.controlPassed).toBe(run.badTotal)
+    },
+  )
+})
+
+describe('the published tax suite fails a provider that gets shipping wrong', () => {
+  // Kills: a suite a provider package passes while never charging tax on delivery, or while charging it on a delivery
+  // that was never sent.
+  it.each([
+    ['answers no tax on the shipping its runner names as taxed', 'tax-ignores-shipping', TAX_SHIPPING_TAXED],
+    ['taxes shipping on a request that sent none', 'tax-shipping-when-null', TAX_SHIPPING_NULL],
+  ] as const)(
+    'AC-27: a tax provider that %s fails that case and nothing else; the same provider without the defect passes every case',
+    (_defect, broken, about) => {
+      const run = compare(broken, 'tax-control', about)
+
+      expect(run.failed.length, run.why).toBeGreaterThan(0)
+      expect(run.offTopic, run.why).toEqual([])
+      expect(run.controlFailed, run.why).toEqual([])
+      expect(run.controlPassed).toBe(run.badTotal)
+    },
+  )
 })

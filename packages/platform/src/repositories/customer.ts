@@ -1,9 +1,11 @@
-import { asc, eq, gt, sql } from 'drizzle-orm'
+import { and, asc, eq, gt, gte, isNotNull, like, lt, notExists, sql, type SQL } from 'drizzle-orm'
 import type { Customer, CustomerAddress, Role } from '@nymbalhq/types'
 import {
   postgresDb,
   sqliteDb,
   type CommandStore,
+  type PostgresClient,
+  type SqliteClient,
   type ReadTx,
   type StoreRepository,
   type Tx,
@@ -12,6 +14,7 @@ import * as sqliteSchema from '../db/schema/sqlite.js'
 import * as postgresSchema from '../db/schema/postgres.js'
 import type { KeysetPage } from './page.js'
 import { parseJson, fromTimestamp } from './json.js'
+import { IMPORTED_NO_PASSWORD, LEGACY_PASSWORD_PREFIX } from '../services/legacy-passwords.js'
 
 export interface CustomerInsert {
   id: string
@@ -25,6 +28,8 @@ export interface CustomerInsert {
   /** Defaults to `['customer']`; only seed and admin code pass anything else. */
   roles?: Role[]
   requiresPasswordReset?: boolean
+  /** `'pending'` for a sign-up asked to confirm its address; absent leaves it null (never asked). */
+  emailVerification?: 'pending'
   createdAt: Date
   updatedAt: Date
 }
@@ -37,7 +42,15 @@ export interface CustomerUpdate {
   metadata?: Record<string, unknown>
   passwordHash?: string
   requiresPasswordReset?: boolean
+  /** A confirmation only ever moves a pending account to verified. */
+  emailVerification?: 'verified'
   updatedAt: Date
+}
+
+/** Sign-ups asked to confirm their address in a window, and how many of them did. */
+export interface VerificationFunnel {
+  started: number
+  verified: number
 }
 
 function rowToCustomer(
@@ -57,9 +70,47 @@ function rowToCustomer(
     metadata: parseJson<Record<string, unknown>>(store, row.metadata, {}),
     roles: parseJson<Role[]>(store, row.roles, ['customer']),
     requiresPasswordReset: Boolean(row.requiresPasswordReset),
+    ...((row.emailVerification === 'pending' || row.emailVerification === 'verified') && {
+      emailVerification: row.emailVerification,
+    }),
     createdAt: fromTimestamp(row.createdAt),
     updatedAt: fromTimestamp(row.updatedAt),
   }
+}
+
+/** The window an unconfirmed account is judged in: last written before `before`, links compared with `now`. */
+export interface UnconfirmedWindow {
+  before: Date
+  now: Date
+}
+
+// An account never confirmed, last written before `before`, with no order and no verification or reset link still open
+// at `now`. The list and the conditional delete read this one predicate, so a delete re-checks all of it.
+function sqliteUnconfirmedDue(db: SqliteClient, w: UnconfirmedWindow): SQL {
+  const { customers: c, orders, emailVerificationTokens, passwordResetTokens } = sqliteSchema
+  const now = w.now.toISOString()
+  const one = { one: sql`1` }
+  return and(
+    eq(c.emailVerification, 'pending'),
+    lt(c.updatedAt, w.before.toISOString()),
+    notExists(db.select(one).from(orders).where(eq(orders.customerId, c.id))),
+    ...[emailVerificationTokens, passwordResetTokens].map((t) =>
+      notExists(db.select(one).from(t).where(and(eq(t.customerId, c.id), gt(t.expiresAt, now)))),
+    ),
+  )!
+}
+
+function postgresUnconfirmedDue(db: PostgresClient, w: UnconfirmedWindow): SQL {
+  const { customers: c, orders, emailVerificationTokens, passwordResetTokens } = postgresSchema
+  const one = { one: sql`1` }
+  return and(
+    eq(c.emailVerification, 'pending'),
+    lt(c.updatedAt, w.before),
+    notExists(db.select(one).from(orders).where(eq(orders.customerId, c.id))),
+    ...[emailVerificationTokens, passwordResetTokens].map((t) =>
+      notExists(db.select(one).from(t).where(and(eq(t.customerId, c.id), gt(t.expiresAt, w.now)))),
+    ),
+  )!
 }
 
 /** A stored customer: its roles column is always read. */
@@ -81,7 +132,29 @@ export interface CustomerRepository extends StoreRepository {
     updatedAt: Date,
   ): Promise<void>
   delete(tx: Tx, id: string): Promise<void>
+  /** Ids of accounts due for removal as never confirmed, after `after`, ascending, at most `limit`. */
+  listUnconfirmed(
+    tx: ReadTx,
+    opts: UnconfirmedWindow & { after?: string; limit: number },
+  ): Promise<string[]>
+  /** Deletes the row only while it is still due; true when it went. Its credential rows are the caller's. */
+  deleteUnconfirmed(tx: Tx, id: string, window: UnconfirmedWindow): Promise<boolean>
+  /** Accounts created in `since <= created_at < until` that were asked to confirm, and of those the confirmed. */
+  verificationFunnel(tx: ReadTx, since: Date, until: Date): Promise<VerificationFunnel>
+  /** Writes `passwordHash` only where the row still holds `from`; whether it did. */
+  replacePasswordHash(tx: Tx, id: string, change: PasswordHashChange): Promise<boolean>
+  /** Every row holding an imported legacy hash gets the no-password marker; the rows it changed, as they are now. */
+  sunsetLegacyPasswords(tx: Tx, updatedAt: Date): Promise<CustomerWithHash[]>
+  countLegacyPasswords(tx: ReadTx): Promise<number>
 }
+
+export interface PasswordHashChange {
+  from: string
+  passwordHash: string
+  requiresPasswordReset: boolean
+}
+
+const LEGACY_LIKE = `${LEGACY_PASSWORD_PREFIX}%`
 
 export function createCustomerRepository(store: CommandStore): CustomerRepository {
   return {
@@ -169,6 +242,7 @@ export function createCustomerRepository(store: CommandStore): CustomerRepositor
         orderCount: 0,
         totalSpentMinor: 0,
         requiresPasswordReset: c.requiresPasswordReset ?? false,
+        emailVerification: c.emailVerification ?? null,
       }
       if (tx.kind === 'sqlite') {
         sqliteDb(tx)
@@ -204,6 +278,7 @@ export function createCustomerRepository(store: CommandStore): CustomerRepositor
         'phone',
         'passwordHash',
         'requiresPasswordReset',
+        'emailVerification',
       ] as const) {
         if (patch[k] !== undefined) {
           pg[k] = patch[k]
@@ -253,6 +328,77 @@ export function createCustomerRepository(store: CommandStore): CustomerRepositor
         })
         .where(eq(postgresSchema.customers.id, id))
     },
+    async verificationFunnel(tx, since, until) {
+      if (tx.kind === 'sqlite') {
+        const t = sqliteSchema.customers
+        const row = sqliteDb(tx)
+          .select({
+            started: sql<number>`count(*)`,
+            verified: sql<number>`count(*) filter (where ${t.emailVerification} = 'verified')`,
+          })
+          .from(t)
+          .where(
+            and(
+              gte(t.createdAt, since.toISOString()),
+              lt(t.createdAt, until.toISOString()),
+              isNotNull(t.emailVerification),
+            ),
+          )
+          .get()
+        return { started: Number(row?.started ?? 0), verified: Number(row?.verified ?? 0) }
+      }
+      const t = postgresSchema.customers
+      const [row] = await postgresDb(tx)
+        .select({
+          started: sql<number>`count(*)`,
+          verified: sql<number>`count(*) filter (where ${t.emailVerification} = 'verified')`,
+        })
+        .from(t)
+        .where(and(gte(t.createdAt, since), lt(t.createdAt, until), isNotNull(t.emailVerification)))
+      return { started: Number(row?.started ?? 0), verified: Number(row?.verified ?? 0) }
+    },
+    async listUnconfirmed(tx, opts) {
+      const { after, limit } = opts
+      if (tx.kind === 'sqlite') {
+        const db = sqliteDb(tx)
+        const t = sqliteSchema.customers
+        const rows = db
+          .select({ id: t.id })
+          .from(t)
+          .where(and(sqliteUnconfirmedDue(db, opts), after === undefined ? undefined : gt(t.id, after)))
+          .orderBy(asc(t.id))
+          .limit(limit)
+          .all()
+        return rows.map((r) => r.id)
+      }
+      const db = postgresDb(tx)
+      const t = postgresSchema.customers
+      const rows = await db
+        .select({ id: t.id })
+        .from(t)
+        .where(and(postgresUnconfirmedDue(db, opts), after === undefined ? undefined : gt(t.id, after)))
+        .orderBy(asc(t.id))
+        .limit(limit)
+      return rows.map((r) => r.id)
+    },
+    async deleteUnconfirmed(tx, id, window) {
+      if (tx.kind === 'sqlite') {
+        const db = sqliteDb(tx)
+        const t = sqliteSchema.customers
+        const result = db
+          .delete(t)
+          .where(and(eq(t.id, id), sqliteUnconfirmedDue(db, window)))
+          .run()
+        return result.changes > 0
+      }
+      const db = postgresDb(tx)
+      const t = postgresSchema.customers
+      const rows = await db
+        .delete(t)
+        .where(and(eq(t.id, id), postgresUnconfirmedDue(db, window)))
+        .returning({ id: t.id })
+      return rows.length > 0
+    },
     async delete(tx, id) {
       if (tx.kind === 'sqlite') {
         sqliteDb(tx).delete(sqliteSchema.customers).where(eq(sqliteSchema.customers.id, id)).run()
@@ -261,6 +407,63 @@ export function createCustomerRepository(store: CommandStore): CustomerRepositor
       await postgresDb(tx)
         .delete(postgresSchema.customers)
         .where(eq(postgresSchema.customers.id, id))
+    },
+    async replacePasswordHash(tx, id, change) {
+      const set = {
+        passwordHash: change.passwordHash,
+        requiresPasswordReset: change.requiresPasswordReset,
+      }
+      if (tx.kind === 'sqlite') {
+        const t = sqliteSchema.customers
+        const result = sqliteDb(tx)
+          .update(t)
+          .set({ ...set, updatedAt: new Date().toISOString() })
+          .where(and(eq(t.id, id), eq(t.passwordHash, change.from)))
+          .run()
+        return result.changes === 1
+      }
+      const t = postgresSchema.customers
+      const result = await postgresDb(tx)
+        .update(t)
+        .set({ ...set, updatedAt: new Date() })
+        .where(and(eq(t.id, id), eq(t.passwordHash, change.from)))
+      return result.rowCount === 1
+    },
+    async sunsetLegacyPasswords(tx, updatedAt) {
+      if (tx.kind === 'sqlite') {
+        const t = sqliteSchema.customers
+        return sqliteDb(tx)
+          .update(t)
+          .set({ passwordHash: IMPORTED_NO_PASSWORD, updatedAt: updatedAt.toISOString() })
+          .where(like(t.passwordHash, LEGACY_LIKE))
+          .returning()
+          .all()
+          .map((r) => rowToCustomer('sqlite', r as Record<string, unknown>))
+      }
+      const t = postgresSchema.customers
+      const rows = await postgresDb(tx)
+        .update(t)
+        .set({ passwordHash: IMPORTED_NO_PASSWORD, updatedAt })
+        .where(like(t.passwordHash, LEGACY_LIKE))
+        .returning()
+      return rows.map((r) => rowToCustomer('postgres', r as Record<string, unknown>))
+    },
+    async countLegacyPasswords(tx) {
+      if (tx.kind === 'sqlite') {
+        const t = sqliteSchema.customers
+        const row = sqliteDb(tx)
+          .select({ n: sql<number>`count(*)` })
+          .from(t)
+          .where(like(t.passwordHash, LEGACY_LIKE))
+          .get()
+        return Number(row?.n ?? 0)
+      }
+      const t = postgresSchema.customers
+      const [row] = await postgresDb(tx)
+        .select({ n: sql<number>`count(*)` })
+        .from(t)
+        .where(like(t.passwordHash, LEGACY_LIKE))
+      return Number(row?.n ?? 0)
     },
   }
 }

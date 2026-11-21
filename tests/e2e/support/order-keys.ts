@@ -16,7 +16,7 @@ const UPDATE_POSTGRES =
  * scripts/e2e-server.mjs recorded them: on a Postgres store set its DATABASE_URL names a database of the run's own,
  * which only the API's record knows.
  */
-function apiStoreEnv(): Record<string, string> {
+export function apiStoreEnv(): Record<string, string> {
   const file = process.env.NYMBAL_E2E_STORE_ENV_FILE
   if (file === undefined || file === '') {
     throw new Error(
