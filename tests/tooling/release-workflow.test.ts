@@ -1,5 +1,5 @@
-// Reads: .github/workflows/release.yml, .github/workflows/canary.yml
-import { readFileSync } from 'node:fs'
+// Reads: .github/workflows/*.yml
+import { globSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
@@ -175,7 +175,12 @@ type Step = {
   if?: string
   with?: Record<string, string>
 }
-type Job = { needs?: string | string[]; if?: string; steps?: Step[] }
+type Job = {
+  needs?: string | string[]
+  if?: string
+  permissions?: Record<string, string>
+  steps?: Step[]
+}
 
 /** The job keys as they appear in the text: two-space keys under the top-level `jobs:`. */
 function textualJobIds(source: string): string[] {
@@ -339,6 +344,38 @@ describe('AC-12: release.yml', () => {
       buildBeforePublish.map((s) => s.index),
       `a build not conditioned on changesets precedes publish (${publish.job}[${publish.index}])`,
     ).not.toHaveLength(0)
+  })
+})
+
+// npm takes publishes through trusted publishing: the publishing job's OIDC token is traded for a short-lived npm
+// token, so no workflow holds a stored npm token, and a job that publishes must be able to mint the OIDC token itself.
+describe('npm trusted publishing', () => {
+  const DIR = fileURLToPath(new URL('../../.github/workflows/', import.meta.url))
+  const WORKFLOWS = globSync('*.yml', { cwd: DIR })
+  const code = (name: string): string =>
+    readFileSync(`${DIR}${name}`, 'utf8')
+      .split('\n')
+      .filter((line) => !/^\s*#/.test(line))
+      .join('\n')
+
+  it('no workflow reads an npm token secret or sets NODE_AUTH_TOKEN', () => {
+    expect(WORKFLOWS).toEqual(expect.arrayContaining(['release.yml', 'canary.yml']))
+    const holders = WORKFLOWS.filter((name) => /\bNPM_TOKEN\b|\bNODE_AUTH_TOKEN\b/.test(code(name)))
+    expect(holders).toEqual([])
+  })
+
+  it('every job that publishes to npm has id-token: write in its own permissions', () => {
+    const publishing = [RELEASE, CANARY].flatMap((path) => {
+      const jobs = loadJobs(path)
+      return stepsOf(jobs)
+        .filter((s) => PUBLISH.test(s.run))
+        .map((s) => ({ where: `${path.split('/').pop()} ${s.job}`, job: jobs[s.job]! }))
+    })
+    expect(publishing.map((p) => p.where)).toEqual(['release.yml publish', 'canary.yml canary'])
+    const missing = publishing
+      .filter((p) => p.job.permissions?.['id-token'] !== 'write')
+      .map((p) => p.where)
+    expect(missing).toEqual([])
   })
 })
 
