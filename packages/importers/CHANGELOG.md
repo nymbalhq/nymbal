@@ -1,5 +1,38 @@
 # @nymbalhq/importers
 
+## 0.5.0
+
+### Minor Changes
+
+- d29f7e1: Breaking: a refund no longer changes an order's `status`, which now only says where the goods are. `OrderStatus` loses `refunded` and `partially_refunded` on every read, `statusBeforePartialRefund` and `orderMovesFrom` are gone, `?status=refunded` and `?status=partially_refunded` answer 400, and stored orders migrate on boot; event types and payloads are unchanged.
+  Read a refund from `payment.state`, now on shopper order answers, and filter with `?payment=unpaid|paid|partially_refunded|refunded`. A fully refunded unshipped order stays in `?status=confirmed`, and `?payment=` separates it; fulfilling it answers 409 `order.refunded`, while a shipped one may still be delivered. `@nymbalhq/types` adds `fulfilmentMoves` and `canRefund`.
+  WooCommerce `refunded` orders import as `confirmed`.
+
+### Patch Changes
+
+- 749d08d: `nymbal import --source woocommerce --password-hashes <file>` loads WordPress password hashes (`wp db query "SELECT user_email, user_pass FROM wp_users" --skip-column-names`) for imported customers, who then sign in with their WordPress password once and hold a Nymbal one. Set `security.auth.legacy.until` (a date at most 366 days ahead) first: after it, old hashes are refused and swept. `security.auth.legacy.maxCost: 11 | 12` accepts the costlier bcrypt WordPress writes on PHP 8.4, at the price of slower refused sign-ins until that date.
+- Updated dependencies [5118a9c]
+- Updated dependencies [2c34f0d]
+- Updated dependencies [ba1f2b3]
+- Updated dependencies [b4134f0]
+- Updated dependencies [86aed8e]
+- Updated dependencies [6822798]
+- Updated dependencies [b74f305]
+- Updated dependencies [c9bb448]
+- Updated dependencies [6339654]
+- Updated dependencies [e78beeb]
+- Updated dependencies [d29f7e1]
+- Updated dependencies [6ce7da1]
+- Updated dependencies [f7ad028]
+- Updated dependencies [5a71306]
+- Updated dependencies [2c34f0d]
+- Updated dependencies [4ad006f]
+- Updated dependencies [4097e20]
+- Updated dependencies [749d08d]
+  - @nymbalhq/platform@1.9.0
+  - @nymbalhq/types@1.9.0
+  - @nymbalhq/config@1.9.0
+
 ## 0.4.2
 
 ### Patch Changes

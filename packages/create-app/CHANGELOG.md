@@ -1,5 +1,18 @@
 # create-nymbal-app
 
+## 0.9.0
+
+### Minor Changes
+
+- d2377f9: `nymbal verify` builds the storefront for production and places an order on a throwaway store, with no secrets or database needed. New stores get `.github/workflows/nymbal.yml`, which runs it on every pull request and push to `main`.
+- d29f7e1: Breaking: a refund no longer changes an order's `status`, which now only says where the goods are. `OrderStatus` loses `refunded` and `partially_refunded` on every read, `statusBeforePartialRefund` and `orderMovesFrom` are gone, `?status=refunded` and `?status=partially_refunded` answer 400, and stored orders migrate on boot; event types and payloads are unchanged.
+  Read a refund from `payment.state`, now on shopper order answers, and filter with `?payment=unpaid|paid|partially_refunded|refunded`. A fully refunded unshipped order stays in `?status=confirmed`, and `?payment=` separates it; fulfilling it answers 409 `order.refunded`, while a shipped one may still be delivered. `@nymbalhq/types` adds `fulfilmentMoves` and `canRefund`.
+  WooCommerce `refunded` orders import as `confirmed`.
+
+### Patch Changes
+
+- 63a4e03: The Next.js template now requires `next` ^16.4.6, past two cache advisories (GHSA-mfr8-8qww-v76h, GHSA-vc7v-qv4w-wrv8); in an existing Next store, run `pnpm add next@^16.4.6`.
+
 ## 0.8.0
 
 ### Minor Changes

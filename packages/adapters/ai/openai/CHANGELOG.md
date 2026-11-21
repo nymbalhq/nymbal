@@ -1,5 +1,11 @@
 # @nymbalhq/ai-openai
 
+## 0.3.1
+
+### Patch Changes
+
+- a1a4870: A provider error that echoes your API key next to a longer key that begins with it no longer passes the rest of that key on in the error message.
+
 ## 0.3.0
 
 ### Minor Changes

@@ -1,5 +1,57 @@
 # @nymbalhq/platform
 
+## 1.9.0
+
+### Minor Changes
+
+- b4134f0: `nymbal events retry` lists dead events and puts them back for the running store to deliver, 100 a run; events older than `events.retentionDays` stay dead, and `nymbal doctor` names the command. Back-in-stock and price-drop alerts now re-read the variant, so a late event no longer mails a stale claim.
+- 86aed8e: Breaking: a command now answers once its events reach the `derived` subscriptions (projections, search, report rollups); mail, webhooks and a store's own subscriptions run after the answer, so a slow mail provider no longer slows requests or shows which addresses have accounts. A derived handler runs at the commit and again on delivery, so it must be idempotent; call `relay.drain()` to wait for every subscription.
+- 6822798: Shoppers can reset a forgotten password by email (`/account/forgot-password`) and change it on `/account/profile`, which signs out every other session; one account's failed sign-ins are refused past ten times the login limit until a reset.
+  Breaking: `security.auth.accessTtl` must be 1m to 1h and `refreshTtl` longer than it, or the store refuses to start, naming the field.
+  Per-address rate limits now count an IPv6 client by its /64, where before each full address was its own bucket.
+- b74f305: Discount codes: a `promotions` commerce slot with a native engine, `POST /api/cart/codes` and admin routes under `/api/admin/promotions`.
+  Cart, order and charge now come from one totals function; `POST /api/checkout` accepts `expectedTotalMinor` and refuses any other total.
+- c9bb448: Breaking for a third-party payments adapter: `PaymentsAdapter` gains a required `listRefunds(paymentId)` (oldest first), and `refund` must record its `idempotencyKey` where the list returns it.
+  A refund made in the provider's dashboard now appears on the order, and a refund left pending by a lost answer settles from the provider's list within minutes. Stripe endpoints also subscribe to `charge.refunded`.
+- 6339654: A store that confirms sign-ups by email removes an account never confirmed 30 days after its last sign-up attempt, unless it has an order. A shopper who never confirmed and comes back after that registers again.
+- d29f7e1: Breaking: a refund no longer changes an order's `status`, which now only says where the goods are. `OrderStatus` loses `refunded` and `partially_refunded` on every read, `statusBeforePartialRefund` and `orderMovesFrom` are gone, `?status=refunded` and `?status=partially_refunded` answer 400, and stored orders migrate on boot; event types and payloads are unchanged.
+  Read a refund from `payment.state`, now on shopper order answers, and filter with `?payment=unpaid|paid|partially_refunded|refunded`. A fully refunded unshipped order stays in `?status=confirmed`, and `?payment=` separates it; fulfilling it answers 409 `order.refunded`, while a shipped one may still be delivered. `@nymbalhq/types` adds `fulfilmentMoves` and `canRefund`.
+  WooCommerce `refunded` orders import as `confirmed`.
+- 6ce7da1: Breaking: on a store with an email provider, `POST /api/auth/register` answers 202 "check your email" for every address and signs nobody in until the mailed link (`/account/verify-email`) is followed; `security.auth.verification: 'off'` keeps the old behaviour, and a `native` store is `off` by default.
+  Support can send the link again or mark the email confirmed from the customer's admin page; `nymbal doctor` and the admin dashboard warn when sign-ups are not confirmed or mail may not be arriving.
+  Until an address is confirmed, a later register for it replaces the waiting account's password; its owner can still set their own with Forgot password.
+  A store scaffolded before this release needs the template's `/account/verify-email` page before it adds an email provider, or the mailed link lands on a missing page.
+- f7ad028: `commerce.shipping.rates` sets flat delivery options per country (optional `freeOverMinor`); `POST /api/checkout/quote` (MCP `checkout_quote`) prices the cart with shipping and tax, the checkout element and ACP show it and send `shippingOptionId` and `expectedTotalMinor`, and a checkout charging shipping or tax on top with no `expectedTotalMinor` is refused.
+  Tax rows gain `taxShipping` (default `true`): a store that zero-rates goods through `codes` still taxes delivery at the row's percent unless the row sets `taxShipping: false`.
+  Breaking: the SDK drops `setShippingMethod` and `ShippingMethod`; use `quote()` and `selectShippingOption(id)` (`useCheckout()`: `requestQuote` and `selectShippingOption`), and the state's `quote` and `quoting`.
+- 5a71306: An approved proposal whose server stopped before it finished now settles after 15 minutes without running again: Applied when the store shows it ran, Failed when it shows it did not, and a new Outcome unknown badge when it cannot tell, as for a refund.
+- 2c34f0d: `nymbal suppressions clear <email>` takes an address off the email suppression list.
+- 4ad006f: Checkout charges tax from `commerce.tax.rates` (a row per country or US state, optional per-code rates; `onUnavailable: 'refuse' | 'native'`), and `store.pricesIncludeTax: true` extracts it from prices, shown as "Tax (included)"; a store with no rates is unchanged.
+  Tax added on top of prices is charged only when `POST /api/checkout` sends the taxed total as `expectedTotalMinor`; the checkout element and agent checkouts do not send it yet, so they are refused on such a store.
+  Breaking for a `custom` tax adapter: `calculate` is replaced by `capabilities()` and `quote()` (optional `commit` and `refund`); run `runTaxContract` from `@nymbalhq/contract-tests` against it.
+- 4097e20: `dist/kit.js` puts a cart on a WordPress theme with one script tag and two meta tags, and a set-up that cannot work says why in the console. `POST /api/alerts/subscribe` accepts `linkOrigin`, held to `http.cors.allowedOrigins` and the new `http.cors.kitOrigins` (a site listed there gets CORS on the cart's routes alone), and `createNymbalClient` an `alertLinkOrigin`, so alert links reach the store.
+- 749d08d: `nymbal import --source woocommerce --password-hashes <file>` loads WordPress password hashes (`wp db query "SELECT user_email, user_pass FROM wp_users" --skip-column-names`) for imported customers, who then sign in with their WordPress password once and hold a Nymbal one. Set `security.auth.legacy.until` (a date at most 366 days ahead) first: after it, old hashes are refused and swept. `security.auth.legacy.maxCost: 11 | 12` accepts the costlier bcrypt WordPress writes on PHP 8.4, at the price of slower refused sign-ins until that date.
+
+### Patch Changes
+
+- 5118a9c: The admin shows order status changes, product edits and stock moves made elsewhere without a reload, and keeps an unsaved product edit when a new copy arrives. A refused stock adjustment shows the store's reason instead of Done.
+- 2c34f0d: The admin products search finds any product by name; a tracking number the carrier refuses leaves a note on the order; the assistant masks customer details in history changes; a price-drop email quotes the last price the subscriber was told.
+- ba1f2b3: `nymbal eval assistant --stamp` records the run's tokens, and a change of the default model now needs a new stamp.
+- e78beeb: A refresh still in flight for a token that a sign-out or a sign-out-everywhere just ended now gets a 401 instead of a new session.
+- Updated dependencies [86aed8e]
+- Updated dependencies [6822798]
+- Updated dependencies [b74f305]
+- Updated dependencies [c9bb448]
+- Updated dependencies [d29f7e1]
+- Updated dependencies [6ce7da1]
+- Updated dependencies [f7ad028]
+- Updated dependencies [5a71306]
+- Updated dependencies [4ad006f]
+- Updated dependencies [4097e20]
+- Updated dependencies [749d08d]
+  - @nymbalhq/types@1.9.0
+  - @nymbalhq/config@1.9.0
+
 ## 1.8.0
 
 ### Minor Changes

@@ -1,5 +1,12 @@
 # @nymbalhq/payments-stripe
 
+## 1.7.0
+
+### Minor Changes
+
+- c9bb448: Breaking for a third-party payments adapter: `PaymentsAdapter` gains a required `listRefunds(paymentId)` (oldest first), and `refund` must record its `idempotencyKey` where the list returns it.
+  A refund made in the provider's dashboard now appears on the order, and a refund left pending by a lost answer settles from the provider's list within minutes. Stripe endpoints also subscribe to `charge.refunded`.
+
 ## 1.6.0
 
 ### Minor Changes
