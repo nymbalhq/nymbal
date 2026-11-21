@@ -1135,7 +1135,7 @@ export async function mutateSet(
  * against this list. The platform's unit-test helpers (packages/platform/src/tests) are left to the nightly's
  * `--force` run: Stryker's incremental mode reuses a result whenever the mutated code and the test files that killed
  * or covered it are unchanged, so a helper change re-measures nothing unless the cache is pruned, and pruning the
- * whole platform set would outlast the mutation job.
+ * whole platform set would measure it cold.
  */
 const STRYKER_INPUTS = [
   'stryker.config.mjs',
@@ -1234,8 +1234,8 @@ async function incrementalReport(root: string): Promise<string> {
 }
 
 /**
- * Beside the incremental report: the commit the report's statuses were measured at. CI's mutation job writes it after
- * a passing stryker step, as its cache is saved only then.
+ * Beside the incremental report: the commit the report's statuses were measured at. The nightly full run writes it
+ * beside the report it caches.
  */
 function incrementalStamp(report: string): string {
   return `${report.replace(/\.json$/, '')}.commit`
@@ -1243,9 +1243,8 @@ function incrementalStamp(report: string): string {
 
 /**
  * The changed paths and moved ratchet entries the stryker step selects by. The incremental report holds statuses
- * from the commit its stamp names, and CI saves it only when the job passes, so after a red run that commit is
- * older than `base`: a file changed in between, outside `--mutate`, would be reported with statuses from before
- * its change. So whatever changed since the stamp counts too. A stamp naming no commit here leaves the report's age
+ * from the commit its stamp names, which can be older than `base`: a file changed in between, outside `--mutate`,
+ * would be reported with statuses from before its change. So whatever changed since the stamp counts too. A stamp naming no commit here leaves the report's age
  * unknown, and every tracked file counts as changed.
  */
 export async function strykerChanges(
@@ -1276,7 +1275,7 @@ export async function strykerChanges(
  * mutants of. Only those are measured afresh: a cached score under the entry would fail a file no change touched.
  * A file the report already holds at its entry keeps its statuses, and Stryker re-measures what changed sources and
  * tests reach in it, as in every other file. Dropping every moved entry's statuses measured 3,931 of 4,657 mutants
- * cold after a ratchet raised from a full run, past the mutation job's timeout.
+ * cold after a ratchet raised from a full run.
  */
 export async function belowCachedScore(root: string, moved: string[]): Promise<string[]> {
   if (moved.length === 0) return moved
@@ -2114,7 +2113,8 @@ function writeLastRun(root: string, steps: Step[]): void {
 
 /**
  * What the command line asks of the sentinels, stryker and perf-bytes steps. They run here only when asked: dev CI
- * runs every sentinel, the mutation job and the perf job on every push, and the release run passes `--sentinels all`.
+ * runs every sentinel and the perf job on every push, the nightly runs mutation, and the release run passes
+ * `--sentinels all`.
  * `--only` naming a step is asking for it; a Stryker run that is asked for blocks on the ratchet. `--sentinels` takes
  * `all`, `none` or a comma-separated list of ids, which run as given whatever changed.
  */

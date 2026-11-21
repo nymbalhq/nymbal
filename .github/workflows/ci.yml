@@ -4,7 +4,7 @@ name: CI
 # the shared branches only: a red dev run is a fix-forward task, and a release needs a green dev run first. A release
 # reads the push run at its candidate and dispatches `select=lighthouse` for the one thing a push leaves out: the
 # build and the perf job's Lighthouse suite, every other job and step skipped. `select=all` runs every job, as a push
-# does, and Lighthouse besides.
+# does, and Lighthouse besides. Mutation testing runs in the nightly (nightly.yml), whose red holds the next merge.
 on:
   push:
     branches: [main, dev]
@@ -258,53 +258,6 @@ jobs:
       - name: Platform and importers integration, contracts
         if: matrix.step == 'proof-kit-services'
         run: pnpm vitest run --project platform-integration --project importers-integration --project contracts-native
-
-  mutation:
-    name: Mutation — Stryker (incremental)
-    if: inputs.select != 'lighthouse'
-    runs-on: ubuntu-24.04
-    # A warm run mutates only what changed. A cold whole-set run (a fresh cache chain, a Stryker config change, or a
-    # Stryker upgrade that renames the tests the cached report keys on) does the nightly mutation-full run's work, 78 to
-    # 122 min there, so it has that job's allowance.
-    timeout-minutes: 180
-    needs: [build]
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: .node-version
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - uses: actions/download-artifact@v8
-        with:
-          name: build-output
-      - uses: actions/cache@v6
-        with:
-          # The .commit file names the commit the report was measured at. A failed job saves nothing, so the next run
-          # may restore an older report; the gate then mutates every file changed since that commit, not only since
-          # GATE_BASE.
-          path: |
-            reports/mutation/stryker-incremental.json
-            reports/mutation/stryker-incremental.commit
-          # The nightly's full run (nightly.yml, mutation-full) saves its report and stamp under
-          # stryker-incremental-v3-nightly-<sha>, which the restore prefix matches, seeding the chain; a key of its own
-          # keeps a passing push at the same sha from taking the save. Bumping the prefix drops the statuses carried forward and restores nothing until the next nightly;
-          # a push that mutates the whole set cold before then can outlast the timeout. A
-          # ratchet change keeps the chain: the gate measures afresh only the moved entries the cached report scores
-          # below (belowCachedScore in gate.ts), and the nightly full run stays the ground truth for the rest.
-          key: stryker-incremental-v3-${{ github.sha }}
-          restore-keys: stryker-incremental-v3-
-      - name: Mutation
-        run: pnpm exec tsx scripts/gate.ts --full --only stryker --no-build --base "$GATE_BASE"
-      # Only after a passing Mutation step, as the cache is saved only then: the stamp names the saved report's commit.
-      - name: Stamp the incremental report
-        run: |
-          if [ -f reports/mutation/stryker-incremental.json ]; then
-            git rev-parse HEAD > reports/mutation/stryker-incremental.commit
-          fi
 
   sentinels:
     name: Sentinels and tests-fail-on-base

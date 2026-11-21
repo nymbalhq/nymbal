@@ -20,8 +20,7 @@ import {
 // Stryker mutates, and the stryker step drops their mutants from reports/mutation/stryker-incremental.json before
 // Stryker runs, so they are measured fresh while every other file keeps its cached statuses. With identical ratchets
 // the plan is unchanged. A moved entry the cached report already scores at or above keeps its statuses: a ratchet raised
-// from a full run moved 31 entries, and dropping all their statuses measured 3,931 of 4,657 mutants cold, past the
-// mutation job's 45 minutes, on every push until a nightly reseeded the cache.
+// from a full run moved 31 entries, and dropping all their statuses measured 3,931 of 4,657 mutants cold.
 // The CLI runs in a scratch repository; `pnpm` is a stand-in that logs its calls and, when called to run Stryker,
 // copies the incremental report as Stryker would find it. `pnpm exec tsx` goes to the real tsx.
 

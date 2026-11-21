@@ -49,8 +49,17 @@ export function addDays(day: string, n: number): string {
 export const noonOf = (day: string, minutes = 0): Date =>
   new Date(new Date(`${day}T12:00:00.000Z`).getTime() + minutes * 60_000)
 
+/**
+ * Waits for the relay pass a command asks for. A write on a second SQLite connection while that pass holds the
+ * kernel's connection in a transaction sleeps the thread the pass needs to commit, and fails with SQLITE_BUSY.
+ */
+async function settled(k: Pick<Kernel, 'app'>): Promise<void> {
+  await k.app.relay.drain()
+}
+
 /** Empties the report tables, so one kernel serves many runs. */
-export async function clearReports(k: Pick<Kernel, 'dialect' | 'target'>): Promise<void> {
+export async function clearReports(k: Pick<Kernel, 'app' | 'dialect' | 'target'>): Promise<void> {
+  await settled(k)
   for (const table of ROLLUP_TABLES) await writeRaw(k.dialect, k.target, `DELETE FROM ${table}`)
 }
 
@@ -141,12 +150,13 @@ export async function seedOrder(
 
 /** A live cart row carrying `source`, through the cart service; synthetic is written after, as nothing makes one yet. */
 export async function seedCart(
-  k: Pick<Kernel, 'services' | 'dialect' | 'target'>,
+  k: Pick<Kernel, 'app' | 'services' | 'dialect' | 'target'>,
   source: OrderSource = 'storefront',
 ): Promise<string> {
   const known = source === SYNTHETIC ? 'storefront' : (source as 'storefront' | `agent:${string}`)
   const cart = await k.services.cart.getOrCreate(undefined, null, known)
   if (source === SYNTHETIC) {
+    await settled(k)
     await writeRaw(k.dialect, k.target, 'UPDATE carts SET source = ? WHERE token = ?', [
       SYNTHETIC,
       cart.token,
@@ -167,7 +177,7 @@ export interface Pool {
 
 /** Orders and carts of every source and currency the generators draw from. */
 export async function seedPool(
-  k: Pick<Kernel, 'store' | 'repos' | 'services' | 'dialect' | 'target'>,
+  k: Pick<Kernel, 'app' | 'store' | 'repos' | 'services' | 'dialect' | 'target'>,
 ): Promise<Pool> {
   const orders: Order[] = []
   for (const currency of ['GBP', 'EUR']) {
