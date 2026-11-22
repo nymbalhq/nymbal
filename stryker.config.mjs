@@ -28,6 +28,9 @@ export default {
     'packages/platform/src/events/publisher.ts',
     // The sunset sweep of imported password hashes, by the unit test beside it.
     'packages/platform/src/sweepers/legacy-password-sweeper.ts',
+    // The content role's copy rules and claim guard, by the unit tests beside them.
+    'packages/platform/src/roles/claims.ts',
+    'packages/platform/src/roles/seo-rules.ts',
     // The sweep that retries filings owed to the tax provider, by the unit test beside it.
     'packages/platform/src/sweepers/tax-document-sweeper.ts',
     'packages/importers/src/woocommerce/mappers/**/*.ts',

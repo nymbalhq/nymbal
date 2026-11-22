@@ -37,6 +37,8 @@
     "packages/platform/src/repositories/settings.ts": 70.15,
     "packages/platform/src/repositories/stock-adjustment.ts": 80.95,
     "packages/platform/src/repositories/variant.ts": 54.39,
+    "packages/platform/src/roles/claims.ts": 72.73,
+    "packages/platform/src/roles/seo-rules.ts": 68.72,
     "packages/platform/src/services/alert-token.ts": 100,
     "packages/platform/src/services/auth-service.ts": 75.08,
     "packages/platform/src/services/cart-service.ts": 97.04,

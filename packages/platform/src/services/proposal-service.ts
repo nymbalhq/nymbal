@@ -41,6 +41,11 @@ export interface ProposalServiceDeps {
 export interface ProposalService {
   /** Keeps a proposal pending; a proposer's repeat under one idempotency key answers the row it already has. */
   propose(p: Proposal): Promise<ProposalView>
+  /**
+   * Records a proposal already rejected by the content role's own rule, inserted and decided in one transaction so it
+   * is never pending; a proposer's repeat under one idempotency key answers the row it already has.
+   */
+  withhold(p: Proposal, reason: string): Promise<ProposalView>
   /** Approves a pending proposal and runs it as the approving admin; answers the settled row. */
   approve(id: string, by: RequestAuth): Promise<ProposalView>
   reject(id: string, by: RequestAuth, reason?: string): Promise<ProposalView>
@@ -82,6 +87,25 @@ export function createProposalService(deps: ProposalServiceDeps): ProposalServic
       : new ProposalError('proposal.decided', id, row.status)
   }
 
+  /** Inserts `p` and hands the new row to `created`; a proposer's repeat under one key answers the row it has. */
+  async function insertOnce(
+    tx: Tx,
+    p: Proposal,
+    created: (row: ProposalRecord) => Promise<ProposalRecord>,
+  ): Promise<ProposalRecord> {
+    const id = uuidv7()
+    const insert = insertOf(p, id)
+    if (!(await proposals.insert(tx, insert))) {
+      return (await proposals.findByKey(
+        tx,
+        insert.proposerId!,
+        insert.tool,
+        insert.idempotencyKey!,
+      ))!
+    }
+    return created((await proposals.findById(tx, id))!)
+  }
+
   async function approveAndRun(
     id: string,
     by: ProposalDecider,
@@ -112,21 +136,32 @@ export function createProposalService(deps: ProposalServiceDeps): ProposalServic
 
   return {
     async propose(p) {
-      const row = await store.transaction(async (tx) => {
-        const id = uuidv7()
-        const insert = insertOf(p, id)
-        if (!(await proposals.insert(tx, insert))) {
-          return (await proposals.findByKey(
-            tx,
-            insert.proposerId!,
-            insert.tool,
-            insert.idempotencyKey!,
-          ))!
-        }
-        const created = (await proposals.findById(tx, id))!
-        await publisher.correlated(p.correlationId).publish(EVT_PROPOSAL_CREATED, about(created))
-        return created
-      })
+      const row = await store.transaction((tx) =>
+        insertOnce(tx, p, async (created) => {
+          await publisher.correlated(p.correlationId).publish(EVT_PROPOSAL_CREATED, about(created))
+          return created
+        }),
+      )
+      return proposalView(row)
+    },
+
+    async withhold(p, reason) {
+      const by: ProposalDecider = { kind: 'policy', rule: 'agents.roles.content' }
+      const row = await store.transaction((tx) =>
+        insertOnce(tx, p, async (created) => {
+          await proposals.decide(tx, created.id, {
+            status: 'rejected',
+            by,
+            at: new Date(p.at),
+            reason,
+          })
+          const decided = (await proposals.findById(tx, created.id))!
+          const events = publisher.correlated(p.correlationId)
+          await events.publish(EVT_PROPOSAL_CREATED, about(decided))
+          await events.publish(EVT_PROPOSAL_REJECTED, { ...about(decided), decidedBy: by, reason })
+          return decided
+        }),
+      )
       return proposalView(row)
     },
 

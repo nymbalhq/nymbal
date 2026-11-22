@@ -43,6 +43,9 @@ export default defineConfig({
       'packages/platform/tests/integration/login-account-ceiling.test.ts',
       'packages/platform/src/events/*.test.ts',
       'packages/platform/src/services/proposal-service.test.ts',
+      // The content role: its runs reach the proposal service's withhold and the repository's proposer and tool filters.
+      'packages/platform/tests/integration/content-role*.test.ts',
+      'packages/platform/src/roles/content.test.ts',
       // The assistant's boundary: what its loop and the tool surface refuse, mask and keep for a person. The golden set's
       // own runs are left out (27 questions per test, a full run per mutant it reaches).
       'packages/platform/tests/integration/assistant-safety.test.ts',

@@ -106,6 +106,45 @@ export {
   type RunGoldenOptions,
 } from './assistant/eval.js'
 export { assistantEvalHash, type AssistantEvalStamp } from './assistant/stamp.js'
+export {
+  CLAIM_TERMS,
+  ORIGIN_TERMS,
+  claimGuard,
+  contentSourceOf,
+  sourceText,
+  type ContentSource,
+} from './roles/claims.js'
+export {
+  FILLER_PHRASES,
+  SEO_DESCRIPTION_MAX,
+  SEO_DESCRIPTION_MIN,
+  SEO_TITLE_MAX,
+  checkSeoCopy,
+  needsReview,
+  type ContentRoleField,
+  type SeoFinding,
+} from './roles/seo-rules.js'
+export {
+  CONTENT_AGENT,
+  CONTENT_JOB,
+  CONTENT_PROPOSER,
+  contentDrafts,
+  contentKeyOf,
+  contentRoleJob,
+  proposalArgsOf,
+  runContentRole,
+  type ContentRoleConfig,
+  type ContentRoleDeps,
+  type ContentRunReport,
+} from './roles/content.js'
+export {
+  CONTENT_CASES,
+  contentStore,
+  runContentEval,
+  type ContentCase,
+  type ContentEvalReport,
+  type ContentEvalResult,
+} from './roles/content-eval.js'
 export { ucpProfile, UCP_VERSION } from './agents/profile.js'
 export { agentNameOf } from './agents/agent-name.js'
 export { createUcpSurface, type UcpSurfaceDeps } from './agents/ucp-surface.js'

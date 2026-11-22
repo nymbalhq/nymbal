@@ -80,9 +80,9 @@ const SOURCES = {
  * JavaScript, category listings and header links, the review form's capability check, the product rating's
  * pass-through and the description sanitising, the shopper attestation's pass-through, the page policy, the shopper's
  * refund line, the forgot and reset password pages and the change-password form, the email confirmation page and the
- * sign-in page's link to it.
+ * sign-in page's link to it, and the product page's head from its SEO title and description.
  */
-const BASE_LINES = { astro: 4395, nextjs: 4159 } as const
+const BASE_LINES = { astro: 4395, nextjs: 4172 } as const
 
 /** Every file git tracks or would add under `dir`, relative to the repo root. */
 function filesUnder(dir: string): string[] {

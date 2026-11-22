@@ -100,4 +100,19 @@ export default defineConfig({
 
   // A nightly look at the store's own figures, from `at` store time.
   nightShift: { enabled: true, at: '03:00' },
+
+  // A weekly review that asks the AI provider for SEO titles and descriptions where a product's are missing or break
+  // the copy rules; each answer waits in the Inbox. Needs commerce.ai and the night shift.
+  // agents: {
+  //   roles: {
+  //     content: {
+  //       enabled: true,
+  //       schedule: 'weekly',
+  //       fields: ['seoTitle', 'seoDescription'],
+  //       prompt: 'Warm and plain; British spelling.',
+  //       maxProducts: 20,
+  //       maxTokensPerRun: 100_000,
+  //     },
+  //   },
+  // },
 })

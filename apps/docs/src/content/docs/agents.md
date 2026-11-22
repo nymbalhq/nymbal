@@ -92,6 +92,52 @@ data](../assistant-data/) says what it sends to your AI provider.
 In one message Ask makes at most three deletions, archives, cancellations or refunds, does not carry out such a change
 to many records at once, and is not offered the store's settings.
 
+## Content role
+
+The content role reviews your products' SEO titles and descriptions once a week, on Monday's night shift, and proposes
+new copy for the Inbox. It is off until you turn it on, and needs an AI provider (`commerce.ai`) and the night shift.
+
+```ts
+agents: {
+  roles: {
+    content: {
+      enabled: true,
+      schedule: 'weekly', // or 'daily'
+      fields: ['seoTitle', 'seoDescription'],
+      prompt: 'Warm and plain; British spelling.', // your voice, added to the role's instructions
+      maxProducts: 20,
+      maxTokensPerRun: 100_000,
+    },
+  },
+},
+```
+
+It picks up to `maxProducts` active products whose declared fields are blank, too long, a title without the product's
+name, or a description under 70 characters, both blank first, oldest first. For each it sends the model the product's
+own text: name, description, short description, variant names and options, metadata values and the current SEO
+fields. The model is offered no tools and never writes to a product.
+
+Each answer is checked before you see it. A title is at most 60 characters and holds the product name (its first three
+words when the name is longer); a description is 70 to 155. No emoji, markup, line breaks, all-caps words the product
+does not use, words repeated three times, or stock phrases such as "look no further". The claim guard withholds an
+answer naming a material, origin, certification, number, superlative, guarantee or free offer your product's own text
+does not state ("organic" for a cotton tee, "Italian" for a bag that names no country). The claim words are English: an
+answer in another language is checked only where it uses them.
+
+An answer that passes waits in the Inbox as a proposal by "the content role" until you approve it, whatever
+`agents.autoApprove` or `agents.mcp.writes` say. A withheld answer, or one the model skipped, is in the Inbox's decided
+list as rejected by `policy agents.roles.content`, with the reason. Each product version is asked about once: it is
+asked again only after it changes, and not while one of the role's proposals for it still waits. Withheld answers, the
+token cap and a provider failure appear in the morning's insights.
+
+A run makes one request per product, at most 512 tokens out each, and stops at the first request after
+`maxTokensPerRun` (about 2,000 tokens a product). Once approved, `seoTitle` is the product page's whole `<title>` and
+`seoDescription` its meta description; a blank field keeps the default. A WooCommerce delta import rewrites `seoTitle`
+and `seoDescription` on every product not marked enriched, so an approved title there lasts until the next delta.
+
+`nymbal eval content` scores the role on nine seeded cases with your provider, on a throwaway store; `--only <ids>`
+runs some of them.
+
 ## UCP
 
 The store publishes a Universal Commerce Protocol profile at `/.well-known/ucp`, and its UCP tools at

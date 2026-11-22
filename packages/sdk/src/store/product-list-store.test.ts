@@ -10,6 +10,8 @@ const emptyItem = {
   shortDescription: '',
   status: 'active' as const,
   type: 'simple' as const,
+  seoTitle: '',
+  seoDescription: '',
   media: [],
   variantCount: 0,
   inStock: false,

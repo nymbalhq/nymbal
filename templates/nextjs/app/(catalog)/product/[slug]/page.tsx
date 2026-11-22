@@ -4,7 +4,7 @@ import { preload } from 'react-dom'
 import { fetchCapabilities, fetchProduct, fetchProducts, fetchReviews } from '@/lib/api'
 import { cardProductOf, renderNymbal } from '@/lib/render'
 import { acceptsReviews } from '@/lib/reviews'
-import { descriptionText, productJsonLd, serializeJsonLd } from '@/lib/seo'
+import { productHead, productJsonLd, serializeJsonLd } from '@/lib/seo'
 import {
   Breadcrumb,
   ImageGallery,
@@ -36,10 +36,10 @@ export async function generateMetadata({ params }: ProductPageProps): Promise<Me
     return { title: 'Product Not Found' }
   }
 
+  const head = productHead(product)
   return {
-    title: product.name,
-    description:
-      descriptionText(product.shortDescription || product.description) || `Buy ${product.name}.`,
+    title: head.absolute ? { absolute: head.title } : head.title,
+    description: head.description,
   }
 }
 

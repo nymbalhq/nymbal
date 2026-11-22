@@ -200,6 +200,15 @@ describe('AC-1: agents.ucp and agents.crawl in the config', () => {
         others: 'allow',
       },
       assistant: { customerData: true, mask: ['email', 'phone', 'address', 'postcode'] },
+      roles: {
+        content: {
+          enabled: false,
+          schedule: 'weekly',
+          fields: ['seoTitle', 'seoDescription'],
+          maxProducts: 20,
+          maxTokensPerRun: 100_000,
+        },
+      },
     })
     expect(DEFAULT_AGENT_CRAWLERS.length).toBeGreaterThan(0)
     expect(NAMED_CRAWLERS).toEqual(expect.arrayContaining([...DEFAULT_AGENT_CRAWLERS]))

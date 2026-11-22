@@ -65,6 +65,7 @@ const INTEGRATION_FILES = [
   'packages/platform/src/assistant/mask.ts',
   'packages/platform/src/mcp/invoke.ts',
   'packages/platform/src/mcp/withhold.ts',
+  'packages/platform/src/roles/content.ts',
   'packages/platform/src/repositories/order-tax-document.ts',
 ]
 
@@ -88,6 +89,7 @@ const INTEGRATION_ONLY = [
   'packages/platform/src/assistant/mask.ts',
   'packages/platform/src/mcp/invoke.ts',
   'packages/platform/src/mcp/withhold.ts',
+  'packages/platform/src/roles/content.ts',
 ]
 
 /** Integration tests that fail in Stryker's sandbox, or import from outside it. */

@@ -13,6 +13,8 @@ function makeProduct(overrides?: Partial<DenormalisedProduct>): DenormalisedProd
     shortDescription: '',
     status: 'active',
     type: 'simple',
+    seoTitle: '',
+    seoDescription: '',
     media: [],
     variantCount: 1,
     inStock: true,

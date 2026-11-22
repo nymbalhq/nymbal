@@ -36,6 +36,8 @@ const product = fc.record({
   name: fc.stringMatching(/^[A-Z][a-z]{1,10}$/),
   description: fc.string({ maxLength: 40 }),
   shortDescription: fc.constant<string>(''),
+  seoTitle: fc.constant<string>(''),
+  seoDescription: fc.constant<string>(''),
   status: fc.constant<string>('active'),
   type: fc.constant<string>('simple'),
   media: fc.constant<unknown>([]),

@@ -52,7 +52,9 @@ import {
   type EventArchiveWriter,
   type SweeperHandle,
 } from './sweepers/index.js'
+import { NIGHT_SHIFT_JOBS } from './night-shift/jobs.js'
 import { startNightShift } from './night-shift/runner.js'
+import { contentRoleDeps, contentRoleJob } from './roles/content.js'
 import { importAdapterModule, resolveChoice } from './adapters/resolve.js'
 import type { AgentSurfaces, HttpAdapter, ToolSurface } from '@nymbalhq/types'
 import { RouteTable, recordingAdapter } from './mcp/route-table.js'
@@ -538,6 +540,24 @@ export async function createApp(
       )
     }
     if (config.nightShift.enabled) {
+      const content = config.agents.roles.content
+      const roleJobs =
+        content.enabled && adapters.ai !== null
+          ? [
+              contentRoleJob(
+                contentRoleDeps({
+                  store: platform.commandStore,
+                  proposalRepository: repos.proposal,
+                  products: services.product,
+                  proposals: services.proposals,
+                  ai: adapters.ai,
+                  role: content,
+                  config,
+                  logger,
+                }),
+              ),
+            ]
+          : []
       sweepers.push(
         startNightShift({
           store: platform.commandStore,
@@ -546,6 +566,7 @@ export async function createApp(
           logger,
           timeZone: config.store.timezone,
           at: config.nightShift.at,
+          jobs: [...NIGHT_SHIFT_JOBS, ...roleJobs],
           ...options.nightShift,
         }),
       )

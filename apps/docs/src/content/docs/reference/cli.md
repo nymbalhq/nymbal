@@ -335,9 +335,9 @@ Serve the store's agent tools on stdio, for an MCP host to launch (`nymbal mcp t
 
 ## `nymbal eval`
 
-Score a store feature against its golden questions
+Score a store feature against its golden questions or cases
 
-Subcommands: `nymbal eval assistant`.
+Subcommands: `nymbal eval assistant`, `nymbal eval content`.
 
 ## `nymbal eval assistant`
 
@@ -351,6 +351,18 @@ Ask the store assistant the 28 golden questions with the project's AI provider, 
 | `--json` | boolean | Print the tally and every run’s report as JSON | `false` |
 | `--verbose` | boolean | Print each call, its arguments and outcome, and each answer | `false` |
 | `--stamp` | string | Write the eval stamp to this file when the run passes: the hash of the prompt and tools, the provider, model and tally. Anthropic or OpenAI’s own API only, every question, the default threshold or above. The stamp is a statement about the default model on our prompt; the safety boundary holds for every provider and model because it is code |  |
+
+## `nymbal eval content`
+
+Run the content role on its 9 cases with the project's AI provider, on a throwaway store
+
+| Argument | Type | Description | Default |
+| --- | --- | --- | --- |
+| `--only` | string | Run only these case ids, comma-separated |  |
+| `--threshold` | string | How many must pass for exit 0 (default every case run) |  |
+| `--runs` | string | Run the cases this many times, each on a fresh store, and judge each case by majority (default 1) |  |
+| `--json` | boolean | Print the tally and results as JSON | `false` |
+| `--verbose` | boolean | Print what the role did with each case’s product | `false` |
 
 ## `nymbal test`
 

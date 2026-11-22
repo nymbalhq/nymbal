@@ -41,7 +41,14 @@ const CATEGORY = {
   position: 0,
   createdAt: '2026-10-24T00:00:00Z',
 }
-const PRODUCT = { id: 'prod_test', slug: 'test-product', name: 'Test Product', variants: [] }
+const PRODUCT = {
+  id: 'prod_test',
+  slug: 'test-product',
+  name: 'Test Product',
+  seoTitle: '',
+  seoDescription: '',
+  variants: [],
+}
 const LIST = { items: [PRODUCT], nextCursor: null }
 
 /** A 200 body each fetcher accepts, by the path it asks for. */

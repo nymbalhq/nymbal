@@ -2,6 +2,7 @@ import { and, asc, desc, eq, gte, lt, ne, or, sql, type SQL } from 'drizzle-orm'
 import {
   PROPOSAL_OUTCOME_UNKNOWN,
   type ProposalDecider,
+  type ProposalPolicyRule,
   type ProposalStatus,
   type ProposalView,
 } from '@nymbalhq/types'
@@ -77,6 +78,8 @@ export interface ProposalCursor {
 
 export interface ProposalQuery {
   status: 'pending' | 'decided' | 'all'
+  proposerId?: string
+  tool?: string
   cursor?: ProposalCursor
   limit: number
 }
@@ -161,7 +164,7 @@ export function proposalView(row: ProposalRecord): ProposalView {
     row.decidedByKind === 'admin'
       ? { kind: 'admin', id: row.decidedBy ?? '' }
       : row.decidedByKind === 'policy'
-        ? { kind: 'policy', rule: row.decidedBy as 'agents.mcp.writes' | 'agents.autoApprove' }
+        ? { kind: 'policy', rule: row.decidedBy as ProposalPolicyRule }
         : undefined
   return {
     id: row.id,
@@ -213,6 +216,8 @@ function listWhere(
   return and(
     q.status === 'pending' ? eq(t.status, 'pending') : undefined,
     q.status === 'decided' ? ne(t.status, 'pending') : undefined,
+    q.proposerId === undefined ? undefined : eq(t.proposerId, q.proposerId),
+    q.tool === undefined ? undefined : eq(t.tool, q.tool),
     cursor === undefined
       ? undefined
       : or(

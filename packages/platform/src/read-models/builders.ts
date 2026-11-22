@@ -54,6 +54,8 @@ export interface DenormalisedProduct {
   shortDescription: string
   status: string
   type: string
+  seoTitle: string
+  seoDescription: string
   media: unknown
   variantCount: number
   inStock: boolean
@@ -157,6 +159,9 @@ export function buildProductDoc(
     shortDescription: p.shortDescription,
     status: p.status,
     type: p.type,
+    // A snapshot replayed from an event older than the SEO columns carries neither field.
+    seoTitle: p.seoTitle ?? '',
+    seoDescription: p.seoDescription ?? '',
     media: p.media,
     variantCount: p.variants.length,
     inStock: p.variants.some((v) => v.stock > 0),

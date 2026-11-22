@@ -34,6 +34,9 @@ export interface DenormalisedProduct {
   shortDescription: string
   status: string
   type: string
+  /** The product's own page title and meta description; '' when the merchant has set none. */
+  seoTitle: string
+  seoDescription: string
   media: unknown
   variantCount: number
   inStock: boolean

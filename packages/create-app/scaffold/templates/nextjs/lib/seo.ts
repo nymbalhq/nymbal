@@ -3,6 +3,19 @@ import { descriptionText } from '@nymbalhq/web-components/ssr'
 
 export { descriptionText, serializeJsonLd } from '@nymbalhq/web-components/ssr'
 
+type HeadFields = 'name' | 'shortDescription' | 'description' | 'seoTitle' | 'seoDescription'
+
+/** A set SEO title is the whole title (absolute, so the layout's "%s | Nymbal" leaves it); blank keeps today's. */
+export function productHead(product: Pick<DenormalisedProduct, HeadFields>) {
+  const absolute = product.seoTitle.trim() !== ''
+  const fallback = descriptionText(product.shortDescription || product.description)
+  return {
+    title: absolute ? product.seoTitle : product.name,
+    description: product.seoDescription.trim() || fallback || `Buy ${product.name}.`,
+    absolute,
+  }
+}
+
 export interface BreadcrumbItem {
   name: string
   url: string

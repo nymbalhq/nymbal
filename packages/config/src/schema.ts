@@ -960,6 +960,30 @@ const acpKeys = z.array(acpKeyEntry).superRefine((entries, ctx) => {
   })
 })
 
+/** The product fields the content role may propose. */
+export const CONTENT_ROLE_FIELDS = ['seoTitle', 'seoDescription'] as const
+
+/**
+ * The content role: a weekly (or daily) night-shift review that asks the store's model for SEO copy on products whose
+ * declared `fields` are missing or break the copy rules, and leaves each answer as a pending proposal. It writes
+ * nothing itself. `prompt` is the merchant's voice, added to the role's instructions; `maxProducts` bounds the
+ * requests of one run and `maxTokensPerRun` the tokens it may spend.
+ */
+const contentRoleSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+    schedule: z.enum(['weekly', 'daily']).default('weekly'),
+    fields: z
+      .array(z.enum(CONTENT_ROLE_FIELDS))
+      .min(1)
+      .transform((fields) => [...new Set(fields)])
+      .default(() => [...CONTENT_ROLE_FIELDS]),
+    prompt: z.string().min(1).max(2000).optional(),
+    maxProducts: z.number().int().min(1).max(50).default(20),
+    maxTokensPerRun: z.number().int().min(1000).default(100_000),
+  })
+  .strict()
+
 /**
  * How agents reach the store. Under `mcp.writes: 'proposal'` an admin command tool's call is kept as a proposal an
  * admin approves or rejects, unless `autoApprove` lists its command; `'apply'` approves every command at the call.
@@ -1062,6 +1086,10 @@ export const agentsSchema = z
       })
       .strict()
       .prefault({}),
+    roles: z
+      .object({ content: contentRoleSchema.prefault({}) })
+      .strict()
+      .prefault({}),
   })
   .strict()
 
@@ -1115,6 +1143,21 @@ export const nymbalConfigSchema = z
         path: ['events', 'archive', 'bucket'],
         message: `events.archive.bucket is infrastructure.s3.bucket ('${archiveBucket}'), the media bucket, which serves its objects publicly; archive events to a private bucket of their own`,
       })
+    }
+    if (cfg.agents.roles.content.enabled) {
+      const problem =
+        cfg.commerce.ai.provider === 'none'
+          ? 'the content role needs commerce.ai: set an AI provider, or leave the role off'
+          : !cfg.nightShift.enabled
+            ? 'the content role runs in the night shift: turn nightShift.enabled on, or leave the role off'
+            : null
+      if (problem !== null) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['agents', 'roles', 'content', 'enabled'],
+          message: problem,
+        })
+      }
     }
     // SMTP left the kernel for @nymbalhq/email-smtp; a native block still asking for it would print to the console.
     const email = cfg.commerce.email

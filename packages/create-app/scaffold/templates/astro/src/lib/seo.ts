@@ -3,6 +3,27 @@ import { descriptionText } from '@nymbalhq/web-components/ssr'
 
 export { descriptionText, serializeJsonLd } from '@nymbalhq/web-components/ssr'
 
+/**
+ * The product page's <title> and meta description: the product's own SEO title, whole and with no store suffix, and its
+ * SEO description, when set; today's strings when either is blank.
+ */
+export function productHead(
+  product: Pick<
+    DenormalisedProduct,
+    'name' | 'shortDescription' | 'description' | 'seoTitle' | 'seoDescription'
+  >,
+): { title: string; description: string; absolute: boolean } {
+  const absolute = product.seoTitle.trim() !== ''
+  return {
+    title: absolute ? product.seoTitle : `${product.name} | Nymbal`,
+    description:
+      product.seoDescription.trim() !== ''
+        ? product.seoDescription
+        : descriptionText(product.shortDescription || product.description),
+    absolute,
+  }
+}
+
 export function productJsonLd(product: DenormalisedProduct, baseUrl: string) {
   // The SDK types `media` as unknown: the projection stores either URLs or `{ url }` objects.
   const media: unknown[] = Array.isArray(product.media) ? product.media : []
