@@ -592,7 +592,8 @@ export function createCheckoutService(
   }
 
   async function loadValidCart(token: string): Promise<Cart> {
-    const c = await cart.get(token)
+    // The place quoter evaluates the codes itself.
+    const c = await cart.get(token, { evaluate: false })
     if (!c) throw new NotFoundError('cart', token)
     if (!c.items.length) throw await cartEmpty(token)
     if (c.currency !== currency) {

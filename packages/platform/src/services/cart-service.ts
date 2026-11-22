@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util'
 import { v7 as uuidv7 } from 'uuid'
 import {
   CART_LINE_MAX_QTY,
@@ -36,8 +37,12 @@ const TTL_SECONDS_DEFAULT = 60 * 60 * 24 * 30
 export interface CartService {
   /** The live cart on `token`, or a new one opened with `source`; an existing cart keeps its own source. */
   getOrCreate(token?: string, customerId?: string | null, source?: CartSource): Promise<Cart>
-  /** The live cart. One stored while its engine was down is evaluated again first, and that result stored; no timestamp moves. */
-  get(token: string): Promise<Cart | null>
+  /**
+   * The live cart, or null. With `evaluate` (the default) a cart holding a code carries what the engine says of its
+   * codes now, stored when it changed (no timestamp moves); `evaluate: false` answers the stored cart, for a caller
+   * that evaluates the codes itself.
+   */
+  get(token: string, opts?: { evaluate?: boolean }): Promise<Cart | null>
   addItem(token: string, item: Omit<CartItem, 'qty'> & { qty?: number }): Promise<Cart>
   updateItemQuantity(token: string, variantId: string, qty: number): Promise<Cart>
   removeItem(token: string, variantId: string): Promise<Cart>
@@ -293,18 +298,23 @@ export function createCartService(deps: CreateCartServiceDeps): CartService {
       })
     },
 
-    async get(token) {
+    async get(token, { evaluate = true } = {}) {
       const at = now()
       const found = await store.read((tx) => carts.findByToken(tx, token))
       if (!live(found, at)) return null
-      if (quoter === undefined || found.promotions?.unavailable !== true) return found
-      // Evaluated outside any transaction: a read holds no cart lock during an outage.
-      // A cart stored unavailable holds a code, so the engine always answers it.
-      const fresh = await quoter.quote(found, false)
-      if (fresh!.unavailable) return found
+      const stored = found.promotions
+      if (!evaluate || quoter === undefined || !stored?.codes.length) return found
+      // Evaluated outside any transaction: a read holds no cart lock while the engine answers.
+      // A cart holding a code always gets a record back.
+      const fresh = (await quoter.quote(found, false))!
+      // Never a guessed discount: an outage shows no discount, and a read stores no outage.
+      if (fresh.unavailable) {
+        return { ...found, promotions: { ...stored, effects: [], unavailable: true } }
+      }
+      if (isDeepStrictEqual({ ...fresh, evaluatedAt: stored.evaluatedAt }, stored)) return found
       // Conditional on `updatedAt`: a command that committed while the engine answered has decided the cart already.
-      await store.transaction((tx) => carts.setPromotions(tx, token, found.updatedAt, fresh!))
-      return { ...found, promotions: fresh! }
+      await store.transaction((tx) => carts.setPromotions(tx, token, found.updatedAt, fresh))
+      return { ...found, promotions: fresh }
     },
 
     async addItem(token, item) {

@@ -2113,6 +2113,26 @@ describe('CheckoutService.beginCheckout: payment outcomes, resubmits, changed ca
       ])
     })
 
+    it('AC-6: a cart read asks the engine once; a quote adds one dry call and a place two, and loading the cart in either adds none', async () => {
+      const engine = scriptedEngine()
+      engine.answer(takes(500))
+      const { env, token } = await codedCart(engine)
+      const start = engine.calls.length
+
+      await env.cart.get(token)
+      expect(engine.calls.length).toBe(start + 1)
+
+      const quoted = await env.checkout.quote({ cartToken: token, shippingAddress: makeAddr() })
+      expect(quoted.totals.discountTotalMinor).toBe(500)
+      expect(engine.calls.slice(start + 1).map((c) => c.opts)).toEqual([{ dry: true }])
+
+      const placed = await place(env, token)
+      expect(engine.calls.slice(start + 2).map((c) => c.opts)).toEqual([
+        { dry: true },
+        { orderId: placed.orderId },
+      ])
+    })
+
     it('expectedTotalMinor equal to the total places; any other refuses before an order or a reservation exists', async () => {
       const engine = scriptedEngine()
       engine.answer(takes(500))

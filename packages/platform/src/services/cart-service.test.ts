@@ -11,6 +11,7 @@ import {
   type Cart,
   type CartItem,
   type Order,
+  type PromotionEffect,
   type PromotionsAdapter,
 } from '@nymbalhq/types'
 import { InMemoryDocumentStore } from '../document-store/in-memory.js'
@@ -32,7 +33,8 @@ import {
 } from './cart-service.js'
 import { createLogger } from '../logger.js'
 import { scriptedEngine } from '../tests/promotions.js'
-import { cartTotals } from './promotions-quote.js'
+import { cartCodes, cartTotals, settleInputOf } from './promotions-quote.js'
+import { settleQuote } from './totals.js'
 
 interface DepsOptions {
   now?: () => Date
@@ -1141,12 +1143,190 @@ describe('CartService: discount codes', () => {
     })
   })
 
-  it('get asks the engine nothing for a cart its engine answered', async () => {
-    const { service, token, engine, stored } = await coded()
-    await service.addCode(token, 'SAVE')
-    const calls = engine.calls.length
-    await expect(service.get(token)).resolves.toEqual(await stored())
-    expect(engine.calls).toHaveLength(calls)
+  describe('get re-prices a coded cart with what the engine says now', () => {
+    type Answer = { kind: 'accept'; amountMinor: number } | { kind: 'reject'; reason: string }
+
+    const effectsOf = (answer: Answer, code: string): PromotionEffect[] =>
+      answer.kind === 'accept'
+        ? [
+            { kind: 'code_accepted', code },
+            { kind: 'order', amountMinor: answer.amountMinor, label: code, code },
+          ]
+        : [{ kind: 'code_rejected', code, reason: answer.reason }]
+
+    const answering =
+      (answer: Answer) =>
+      (session: { codes: readonly string[] }): { effects: PromotionEffect[] } => ({
+        effects: effectsOf(answer, session.codes[0]!),
+      })
+
+    /** The code's status as the settled quote leaves it, written out rather than read through the code under test. */
+    const statusIn = (effects: readonly PromotionEffect[], code: string) => {
+      const verdict = effects.find(
+        (e) => (e.kind === 'code_accepted' || e.kind === 'code_rejected') && e.code === code,
+      )
+      return verdict?.kind === 'code_rejected'
+        ? { code, status: 'rejected', reason: verdict.reason }
+        : { code, status: 'accepted' }
+    }
+
+    const arbAnswer = (subtotal: number): fc.Arbitrary<Answer> =>
+      fc.oneof(
+        fc.record({
+          kind: fc.constant('accept' as const),
+          amountMinor: fc.oneof(fc.integer({ min: 1, max: subtotal }), fc.constant(subtotal)),
+        }),
+        fc.record({
+          kind: fc.constant('reject' as const),
+          reason: fc.oneof(
+            fc.constantFrom('expired', 'inactive', 'usage_cap_reached', 'minimum_not_met'),
+            fc.string({ minLength: 1, maxLength: 16 }),
+          ),
+        }),
+      )
+
+    it('AC-1: every read’s totals and code status are the settled quote of what the engine answers at that read', async () => {
+      const engine = scriptedEngine()
+      const { service } = await makeDeps(undefined, { promotions: engine.adapter })
+      await fc.assert(
+        fc.asyncProperty(
+          fc
+            .record({
+              priceMinor: fc.integer({ min: 1, max: 50_000 }),
+              qty: fc.integer({ min: 1, max: 4 }),
+            })
+            .chain(({ priceMinor, qty }) =>
+              fc.record({
+                priceMinor: fc.constant(priceMinor),
+                qty: fc.constant(qty),
+                answers: fc.array(arbAnswer(priceMinor * qty), { minLength: 1, maxLength: 5 }),
+              }),
+            ),
+          async ({ priceMinor, qty, answers }) => {
+            engine.answer(answering({ kind: 'accept', amountMinor: 1 }))
+            const { token } = await service.getOrCreate()
+            const lined = await service.addItem(token, { ...testItem, priceMinor, qty })
+            await service.addCode(token, 'SAVE')
+
+            for (const answer of answers) {
+              engine.answer(answering(answer))
+              const read = (await service.get(token))!
+              const settled = settleQuote(settleInputOf(lined, effectsOf(answer, 'SAVE'), false))
+              expect(cartTotals(read)).toEqual(settled.totals)
+              expect(cartCodes(read.promotions).codes).toEqual([statusIn(settled.effects, 'SAVE')])
+            }
+          },
+        ),
+        { numRuns: 30 },
+      )
+    })
+
+    for (const reason of ['expired', 'inactive']) {
+      it(`AC-1: a code accepted and since refused ${reason} reads rejected ${reason} at full price`, async () => {
+        const { service, token, engine } = await coded()
+        const added = await service.addCode(token, 'SAVE')
+        expect(cartTotals(added).discountTotalMinor).toBe(200)
+
+        engine.answer(answering({ kind: 'reject', reason }))
+        const read = (await service.get(token))!
+
+        expect(cartCodes(read.promotions).codes).toEqual([
+          { code: 'SAVE', status: 'rejected', reason },
+        ])
+        const totals = cartTotals(read)
+        expect(totals.discountTotalMinor).toBe(0)
+        expect(totals.totalMinor).toBe(totals.subtotalMinor)
+      })
+    }
+
+    it('AC-2: a changed verdict is stored with only its promotions changed and no cart.updated', async () => {
+      const { service, token, engine, eventBus, relay, stored } = await coded()
+      await service.addCode(token, 'SAVE')
+      const updates: unknown[] = []
+      await eventBus.subscribe(EVT_CART_UPDATED, (e) => {
+        updates.push(e.payload)
+      })
+      await relay.drain()
+      const before = (await stored())!
+      const updatesBefore = updates.length
+
+      engine.answer(answering({ kind: 'reject', reason: 'expired' }))
+      const read = (await service.get(token))!
+      await relay.drain()
+
+      const after = (await stored())!
+      expect(after).toEqual(read)
+      expect(cartCodes(after.promotions).codes).toEqual([
+        { code: 'SAVE', status: 'rejected', reason: 'expired' },
+      ])
+      expect({ ...after, promotions: before.promotions }).toEqual(before)
+      expect(after.updatedAt).toBe(before.updatedAt)
+      expect(after.expiresAt).toBe(before.expiresAt)
+      expect(updates.length).toBe(updatesBefore)
+    })
+
+    it('AC-2: a command that commits while the read’s engine answers keeps the cart it wrote', async () => {
+      const { service, token, engine, commandStore, repos, stored } = await coded()
+      await service.addCode(token, 'SAVE')
+      const before = (await stored())!
+      const written = {
+        ...before,
+        items: before.items.map((i) => ({ ...i, qty: i.qty + 1 })),
+        subtotalMinor: before.subtotalMinor + testItem.priceMinor,
+        updatedAt: new Date(Date.parse(before.updatedAt) + 1).toISOString(),
+      }
+      engine.answer(async (session) => {
+        await commandStore.transaction((tx) => repos.cart.put(tx, written))
+        return answering({ kind: 'reject', reason: 'expired' })(session)
+      })
+
+      await service.get(token)
+
+      expect(await stored()).toEqual(written)
+    })
+
+    it('AC-3: an unchanged verdict asks the engine once and writes nothing; a cart with no code asks it nothing', async () => {
+      const { service, token, engine, stored } = await coded()
+      const bare = (await stored())!
+      const callsBare = engine.calls.length
+      await expect(service.get(token)).resolves.toEqual(bare)
+      expect(engine.calls.length).toBe(callsBare)
+
+      await service.addCode(token, 'SAVE')
+      const before = (await stored())!
+      const calls = engine.calls.length
+
+      const read = await service.get(token)
+
+      expect(engine.calls.length).toBe(calls + 1)
+      expect(await stored()).toEqual(before)
+      expect(read).toEqual(before)
+    })
+
+    it('AC-4: a read while the engine fails shows the code pending at full price and stores nothing; the next read carries the engine’s verdict', async () => {
+      const { service, token, engine, stored } = await coded()
+      const added = await service.addCode(token, 'SAVE')
+      expect(cartTotals(added).discountTotalMinor).toBe(200)
+      const before = (await stored())!
+
+      engine.fail()
+      const down = (await service.get(token))!
+
+      expect(down.promotions).toEqual({ ...before.promotions, effects: [], unavailable: true })
+      expect(cartCodes(down.promotions).codes).toEqual([{ code: 'SAVE', status: 'pending' }])
+      const downTotals = cartTotals(down)
+      expect(downTotals.discountTotalMinor).toBe(0)
+      expect(downTotals.totalMinor).toBe(downTotals.subtotalMinor)
+      expect(await stored()).toEqual(before)
+
+      engine.recover()
+      engine.answer(answering({ kind: 'accept', amountMinor: 500 }))
+      const back = (await service.get(token))!
+
+      expect(cartCodes(back.promotions).codes).toEqual([{ code: 'SAVE', status: 'accepted' }])
+      expect(cartTotals(back).discountTotalMinor).toBe(500)
+      expect(cartTotals(back).totalMinor).toBe(cartTotals(back).subtotalMinor - 500)
+    })
   })
 
   it('get with no engine leaves a cart stored unavailable as it is', async () => {

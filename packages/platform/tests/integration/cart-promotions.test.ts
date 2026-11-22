@@ -2,7 +2,12 @@ import { randomUUID } from 'node:crypto'
 import fc from 'fast-check'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { NymbalConfig } from '@nymbalhq/config'
-import { EVT_CART_UPDATED, type PromotionSession, type PromotionsAdapter } from '@nymbalhq/types'
+import {
+  EVT_CART_UPDATED,
+  type CheckoutQuote,
+  type PromotionSession,
+  type PromotionsAdapter,
+} from '@nymbalhq/types'
 import { settleTotals } from '../../src/services/totals.js'
 import { serveKernel, type ServedKernel } from '../support/http.js'
 import { address, createKernel, seedVariant, type Kernel, type Seeded } from '../support/kernel.js'
@@ -15,6 +20,7 @@ import {
   scriptedEngine,
   seedPromotion,
   uniqueCode,
+  updatePromotion,
   type PricedCart,
   type ScriptedEngine,
   type Shop,
@@ -430,12 +436,13 @@ describe('AC-13: never a guessed discount on a cart', () => {
 
       expect(res.status, JSON.stringify(res.body)).toBe(503)
       expect(res.body.error?.code).toBe('cart.promotions_unavailable')
-      const after = await reload(shop, baseUrl)
-      expect(after.promotions).toEqual(cart.promotions)
-      expect(after.totals).toEqual(cart.totals)
     } finally {
       engine.recover()
     }
+    // Read once the engine is back: a read during an outage shows every code pending by design.
+    const after = await reload(shop, baseUrl)
+    expect(after.promotions).toEqual(cart.promotions)
+    expect(after.totals).toEqual(cart.totals)
   })
 
   it('AC-13: a cart write on a coded cart with the engine failing succeeds with promotions.unavailable, the code pending and no discount, never the last known one', async () => {
@@ -518,6 +525,84 @@ describe('AC-13: never a guessed discount on a cart', () => {
     } finally {
       engine.recover()
     }
+  })
+})
+
+describe('AC-5: GET /api/cart re-prices a code the store changed after the cart took it', () => {
+  // better-sqlite3 binds no boolean.
+  const activeValue = (on: boolean): boolean | number =>
+    k.dialect === 'postgres' ? on : on ? 1 : 0
+
+  /** A 20% code on a 1900 cart, accepted at 1520. */
+  async function discountedCart(): Promise<{ shop: Shop; code: string; id: string }> {
+    const code = uniqueCode('REPRICE')
+    const { id } = await seedPromotion(k, { code, kind: 'percent', percentBps: 2000 })
+    const seeded = await seedVariant(k, 20, { priceMinor: 1900 })
+    const shop = await freshShop()
+    await addLine(shop, seeded, 1)
+    const added = await putCode(shop, code)
+    expect(added.status, JSON.stringify(added.body)).toBe(200)
+    expect(added.body.data!.promotions.codes).toEqual([{ code, status: 'accepted' }])
+    expect(added.body.data!.totals.totalMinor).toBe(1520)
+    return { shop, code, id }
+  }
+
+  /** GET /api/cart, with the writes it committed that published nothing. */
+  async function read(shop: Shop): Promise<{ cart: PricedCart; quiet: unknown[] }> {
+    const res = await readCart(shop)
+    expect(res.status, JSON.stringify(res.body)).toBe(200)
+    return { cart: res.body.data!, quiet: writeAuditViolations().map((v) => [v.rule, v.tables]) }
+  }
+
+  async function quotedDiscount(shop: Shop): Promise<number> {
+    const res = await shop.call<CheckoutQuote>('POST', '/api/checkout/quote', {
+      shippingAddress: address,
+    })
+    expect(res.status, JSON.stringify(res.body)).toBe(200)
+    return res.body.data!.totals.discountTotalMinor
+  }
+
+  const onePromotionsWrite = [['domain change with no event', { carts: { update: 1 } }]]
+
+  it('AC-5: a deactivated code reads rejected inactive at 1900 as the quote charges, an unchanged re-read writes nothing, and reactivated it reads 1520 again', async () => {
+    const { shop, code, id } = await discountedCart()
+
+    await updatePromotion(k, id, 'active', activeValue(false))
+    const off = await read(shop)
+
+    expect(off.cart.promotions.codes).toEqual([{ code, status: 'rejected', reason: 'inactive' }])
+    expect(off.cart.totals.discountTotalMinor).toBe(0)
+    expect(off.cart.totals.totalMinor).toBe(1900)
+    expect(off.quiet).toEqual(onePromotionsWrite)
+    expect(await quotedDiscount(shop)).toBe(off.cart.totals.discountTotalMinor)
+
+    const again = await read(shop)
+    expect(again.cart).toEqual(off.cart)
+    expect(again.quiet).toEqual([])
+
+    await updatePromotion(k, id, 'active', activeValue(true))
+    const on = await read(shop)
+
+    expect(on.cart.promotions.codes).toEqual([{ code, status: 'accepted' }])
+    expect(on.cart.totals.totalMinor).toBe(1520)
+    expect(on.cart.totals.totalMinor).toBe(
+      on.cart.totals.subtotalMinor - on.cart.totals.discountTotalMinor,
+    )
+    expect(on.quiet).toEqual(onePromotionsWrite)
+  })
+
+  it('AC-5: a code expired since the cart took it reads rejected expired at 1900, as the quote charges', async () => {
+    const { shop, code, id } = await discountedCart()
+
+    await updatePromotion(k, id, 'expires_at', new Date(Date.now() - 60_000).toISOString())
+    const expired = await read(shop)
+
+    expect(expired.cart.promotions.codes).toEqual([{ code, status: 'rejected', reason: 'expired' }])
+    expect(expired.cart.totals.discountTotalMinor).toBe(0)
+    expect(expired.cart.totals.totalMinor).toBe(expired.cart.totals.subtotalMinor)
+    expect(expired.cart.totals.totalMinor).toBe(1900)
+    expect(expired.quiet).toEqual(onePromotionsWrite)
+    expect(await quotedDiscount(shop)).toBe(expired.cart.totals.discountTotalMinor)
   })
 })
 

@@ -39,7 +39,7 @@
     "packages/platform/src/repositories/variant.ts": 54.39,
     "packages/platform/src/services/alert-token.ts": 100,
     "packages/platform/src/services/auth-service.ts": 75.08,
-    "packages/platform/src/services/cart-service.ts": 96.54,
+    "packages/platform/src/services/cart-service.ts": 97.04,
     "packages/platform/src/services/category-service.ts": 86.89,
     "packages/platform/src/services/checkout-service.ts": 78.32,
     "packages/platform/src/services/customer-service.ts": 97.01,
