@@ -1,5 +1,5 @@
 import { v7 as uuidv7 } from 'uuid'
-import type { Address, Caller } from '@nymbalhq/types'
+import { currencyExponent, type Address, type Caller } from '@nymbalhq/types'
 import type { NymbalApp } from '../app.js'
 import { runAsActor } from '../audit/actor.js'
 import { formatMoney } from '../money.js'
@@ -656,11 +656,7 @@ export function goldenView(app: NymbalApp, caller: Caller, currency: string): Go
       return { id: product.id, variantId: variant.id }
     },
     money(minor) {
-      const digits =
-        new Intl.NumberFormat('en-GB', {
-          style: 'currency',
-          currency: currency.toUpperCase(),
-        }).resolvedOptions().maximumFractionDigits ?? 2
+      const digits = currencyExponent(currency)
       return [formatMoney(minor, currency), (minor / 10 ** digits).toFixed(digits)]
     },
   }

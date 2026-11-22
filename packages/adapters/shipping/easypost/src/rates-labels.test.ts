@@ -290,6 +290,85 @@ describe('AC-8: an amount is read exactly, never rounded', () => {
   })
 })
 
+/** Currencies whose ISO 4217 digits differ from ICU's (0 for each in ICU). */
+const ISO_NOT_ICU = [
+  { currency: 'HUF', digits: 2 },
+  { currency: 'IDR', digits: 2 },
+  { currency: 'COP', digits: 2 },
+  { currency: 'PKR', digits: 2 },
+  { currency: 'IQD', digits: 3 },
+] as const
+
+describe('AC-4: a rate is read with its currency’s ISO 4217 digits', () => {
+  // Kills: the adapter reading ICU's digits ("12.34" HUF refused as finer than 0 digits); an unlisted code read with
+  // the 2-digit fallback instead of refused.
+  it('AC-4: "12.34" HUF is 1234 and "1.250" IQD is 1250; over generated amounts in currencies where ISO and ICU differ, amountMinor is the amount written with ISO’s digits; "12.345" HUF is refused', async () => {
+    const a = easypost()
+    fake.rates([
+      { rate: '12.34', currency: 'HUF' },
+      { rate: '1.250', currency: 'IQD' },
+    ])
+    const examples = await outcomeOf(() =>
+      a.rate!({ from: FROM, to: TO, parcel: { weightGrams: 500 } }),
+    )
+    expect(
+      examples.value?.map((r) => [r.amountMinor, r.currency]),
+      String((examples.error as Error | undefined)?.message),
+    ).toEqual([
+      [1234, 'HUF'],
+      [1250, 'IQD'],
+    ])
+
+    await fc.assert(
+      fc.asyncProperty(
+        fc.constantFrom(...ISO_NOT_ICU),
+        fc.integer({ min: 0, max: 99_999_999 }),
+        async ({ currency, digits }, minor) => {
+          const amount = written(minor, digits, digits, 0)
+          fake.rates([{ rate: amount, currency }])
+
+          const rates = await a.rate!({ from: FROM, to: TO, parcel: { weightGrams: 500 } })
+
+          expect(
+            rates.map((r) => [r.amountMinor, r.currency]),
+            `${amount} ${currency}`,
+          ).toEqual([[minor, currency]])
+        },
+      ),
+      { numRuns: 60 },
+    )
+
+    fake.rates([{ rate: '12.345', currency: 'HUF' }])
+    const finer = await outcomeOf(() =>
+      a.rate!({ from: FROM, to: TO, parcel: { weightGrams: 500 } }),
+    )
+    expect(finer.value).toBeUndefined()
+    expect(codeOf(finer.error)).toBe('adapter.shipping.refused')
+    expect((finer.error as Error).message).toContain('12.345')
+  })
+
+  it('AC-4: a rate in a code ISO 4217 does not list with digits (ZZZ, XXX) rejects adapter.shipping.refused naming an unknown currency', async () => {
+    const a = easypost()
+    const outcomes: Array<[string, unknown, boolean]> = []
+    for (const currency of ['ZZZ', 'XXX']) {
+      fake.rates([{ rate: '12.34', currency }])
+      const { error } = await outcomeOf(() =>
+        a.rate!({ from: FROM, to: TO, parcel: { weightGrams: 500 } }),
+      )
+      outcomes.push([
+        currency,
+        codeOf(error),
+        String((error as Error | undefined)?.message).includes('unknown currency'),
+      ])
+    }
+
+    expect(outcomes).toEqual([
+      ['ZZZ', 'adapter.shipping.refused', true],
+      ['XXX', 'adapter.shipping.refused', true],
+    ])
+  })
+})
+
 const arbRates: fc.Arbitrary<FakeRate[]> = fc.array(
   fc.record({
     carrier: fc.constantFrom('USPS', 'UPS', 'FedEx'),

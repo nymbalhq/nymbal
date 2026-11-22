@@ -1,6 +1,7 @@
 import {
   AdapterError,
   boundedHealthCheck,
+  CURRENCY_MINOR_UNITS,
   HEALTH_CHECK_TIMEOUT_MS,
   type Address,
   type HealthReport,
@@ -99,19 +100,13 @@ function easypostAddress(a: Address): Json {
 }
 
 /**
- * EasyPost's decimal amount in the currency's minor units, exactly. Digits past the currency's are taken only as
- * zeros: rounding would quote or charge another amount than EasyPost's.
+ * EasyPost's decimal amount in the currency's ISO 4217 minor units, exactly. Digits past the currency's are taken only
+ * as zeros: rounding would quote or charge another amount than EasyPost's. A code ISO lists without digits is refused.
  */
 function minorUnits(amount: unknown, currency: unknown): number {
   const text = String(amount)
-  let digits: number
-  try {
-    digits =
-      new Intl.NumberFormat('en', {
-        style: 'currency',
-        currency: String(currency),
-      }).resolvedOptions().maximumFractionDigits ?? 2
-  } catch {
+  const digits = CURRENCY_MINOR_UNITS[String(currency).toUpperCase()]
+  if (digits === undefined) {
     throw refused(`EasyPost answered ${text} in an unknown currency ${String(currency)}`)
   }
   const match = /^(\d+)(?:\.(\d+))?$/.exec(text)

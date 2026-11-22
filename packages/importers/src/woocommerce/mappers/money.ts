@@ -1,11 +1,4 @@
-/** The minor-unit digits of `currency` (ISO 4217): 2 for GBP, 0 for JPY, 3 for KWD. The platform's `formatMoney` rule. */
-export function currencyExponent(currency: string): number {
-  const format = new Intl.NumberFormat('en-GB', {
-    style: 'currency',
-    currency: currency.toUpperCase(),
-  })
-  return format.resolvedOptions().maximumFractionDigits ?? 2
-}
+import { currencyExponent } from '@nymbalhq/types'
 
 const DECIMAL = /^([+-]?)(\d*)(?:\.(\d*))?$/
 

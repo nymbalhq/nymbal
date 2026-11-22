@@ -1,4 +1,4 @@
-import { currencyExponent } from '../woocommerce/mappers/money.js'
+import { currencyExponent } from '@nymbalhq/types'
 import type { DiffField, ProductDiff } from './types.js'
 
 type Rec = Record<string, unknown>

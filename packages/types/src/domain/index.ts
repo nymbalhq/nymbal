@@ -1,4 +1,5 @@
 export * from './money.js'
+export * from './currency.js'
 export * from './product.js'
 export * from './category.js'
 export * from './cart.js'

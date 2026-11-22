@@ -12,7 +12,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { useRefundOrder } from '@/hooks/useOrders'
 import { ApiError } from '@/lib/api'
-import { formatMoney, parseMoney } from '@/lib/money'
+import { formatMoney, parseMoney, toMoneyInput } from '@/lib/money'
 import { tid } from '@/lib/testid'
 import type { AdminOrder } from '@/types'
 
@@ -38,7 +38,7 @@ function refusalOf(err: unknown, currency: string): string {
 /** A refund by amount: anything up to what is refundable, the whole of it being a full refund. */
 export function OrderRefundDialog({ order, onClose }: OrderRefundDialogProps) {
   const { refundableMinor, currency } = order.payment
-  const [amount, setAmount] = useState((refundableMinor / 100).toFixed(2))
+  const [amount, setAmount] = useState(toMoneyInput(refundableMinor, currency))
   const [reason, setReason] = useState('')
   const [failure, setFailure] = useState<string | null>(null)
   // One refund request per dialog: a repeat of it (a double click, a retry after a lost answer) refunds once.
@@ -48,7 +48,7 @@ export function OrderRefundDialog({ order, onClose }: OrderRefundDialogProps) {
   const [busy, setBusy] = useState(false)
   const refundMutation = useRefundOrder()
 
-  const amountMinor = parseMoney(amount)
+  const amountMinor = parseMoney(amount, currency)
   const valid = amountMinor !== null && amountMinor > 0 && amountMinor <= refundableMinor
 
   const handleRefund = async () => {
@@ -108,7 +108,7 @@ export function OrderRefundDialog({ order, onClose }: OrderRefundDialogProps) {
               <Button
                 variant="outline"
                 type="button"
-                onClick={() => setAmount((refundableMinor / 100).toFixed(2))}
+                onClick={() => setAmount(toMoneyInput(refundableMinor, currency))}
               >
                 Full refund
               </Button>
