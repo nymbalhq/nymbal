@@ -70,7 +70,7 @@ export function inventoryRow(i: number) {
 }
 
 const DASHBOARD = {
-  today: { orderCount: 0, revenueMinor: 0, itemsShipped: 0 },
+  today: { day: '2026-01-01', timezone: 'UTC', paidOrders: 0, units: 0, money: [] },
   recentOrders: [],
   lowStock: [],
   agents: {

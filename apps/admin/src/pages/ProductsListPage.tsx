@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { useMutationState, type MutationKey } from '@tanstack/react-query'
 import { Plus, Search, Copy, Archive, MoreHorizontal, Package } from 'lucide-react'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
@@ -14,12 +15,19 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { EmptyState } from '@/components/common/EmptyState'
-import { useProducts, useDuplicateProduct, useArchiveProduct } from '@/hooks/useProducts'
+import {
+  useProducts,
+  useDuplicateProduct,
+  useArchiveProduct,
+  DUPLICATE_PRODUCT_KEY,
+  ARCHIVE_PRODUCT_KEY,
+} from '@/hooks/useProducts'
+import { ApiError } from '@/lib/api'
 import { formatMoney } from '@/lib/money'
 import { formatRelative } from '@/lib/dates'
 import { tid } from '@/lib/testid'
 import { cn } from '@/lib/utils'
-import type { ProductStatus } from '@nymbalhq/types'
+import type { ProductSnapshot, ProductStatus } from '@nymbalhq/types'
 
 const STATUS_FILTERS: { label: string; value: ProductStatus | 'all' }[] = [
   { label: 'All', value: 'all' },
@@ -34,6 +42,23 @@ const STATUS_BADGE: Record<ProductStatus, 'success' | 'default' | 'secondary'> =
   archived: 'secondary',
 }
 
+type RowOutcome =
+  | { kind: 'duplicated'; copy: ProductSnapshot }
+  | { kind: 'archived'; name: string }
+  | { kind: 'error'; message: string }
+
+/** The products with this action in flight: one mutation serves every row, so its variables say which. */
+function useInFlight(mutationKey: MutationKey): Set<string> {
+  const ids = useMutationState({
+    filters: { mutationKey, status: 'pending' },
+    select: (mutation) => mutation.state.variables as string,
+  })
+  return new Set(ids)
+}
+
+const failureMessage = (err: unknown, fallback: string) =>
+  err instanceof ApiError ? err.message : fallback
+
 export function ProductsListPage() {
   const navigate = useNavigate()
   const [statusFilter, setStatusFilter] = useState<ProductStatus | 'all'>('all')
@@ -47,6 +72,35 @@ export function ProductsListPage() {
 
   const duplicate = useDuplicateProduct()
   const archive = useArchiveProduct()
+  const duplicating = useInFlight(DUPLICATE_PRODUCT_KEY)
+  const archiving = useInFlight(ARCHIVE_PRODUCT_KEY)
+  const [outcome, setOutcome] = useState<RowOutcome | null>(null)
+
+  async function duplicateProduct(product: ProductSnapshot) {
+    setOutcome(null)
+    try {
+      const copy = await duplicate.mutateAsync(product.id)
+      setOutcome({ kind: 'duplicated', copy })
+    } catch (err) {
+      setOutcome({
+        kind: 'error',
+        message: failureMessage(err, 'The product could not be duplicated.'),
+      })
+    }
+  }
+
+  async function archiveProduct(product: ProductSnapshot) {
+    setOutcome(null)
+    try {
+      await archive.mutateAsync(product.id)
+      setOutcome({ kind: 'archived', name: product.name })
+    } catch (err) {
+      setOutcome({
+        kind: 'error',
+        message: failureMessage(err, 'The product could not be archived.'),
+      })
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -93,6 +147,30 @@ export function ProductsListPage() {
           />
         </div>
       </div>
+
+      {outcome?.kind === 'error' && (
+        <p role="alert" className="text-sm text-red-600" data-testid={tid('products', 'row', 'error')}>
+          {outcome.message}
+        </p>
+      )}
+      {outcome !== null && outcome.kind !== 'error' && (
+        <p role="status" className="text-sm text-zinc-600" data-testid={tid('products', 'row', 'result')}>
+          {outcome.kind === 'duplicated' ? (
+            <>
+              Duplicated as{' '}
+              <Link
+                to={`/products/${outcome.copy.slug}`}
+                className="font-medium text-zinc-900 underline"
+                data-testid={tid('products', 'row', 'result', 'link')}
+              >
+                {outcome.copy.name}
+              </Link>
+            </>
+          ) : (
+            `Archived ${outcome.name}`
+          )}
+        </p>
+      )}
 
       <div className="rounded-lg border border-zinc-200 bg-white overflow-hidden">
         {isLoading ? (
@@ -198,29 +276,46 @@ export function ProductsListPage() {
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-zinc-400 opacity-0 group-hover:opacity-100">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-zinc-400"
+                            aria-label={`Actions for ${product.name}`}
+                            data-testid={tid('products', 'row', 'actions', product.id)}
+                          >
                             <MoreHorizontal className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => navigate(`/products/${product.slug}`)}>
+                          <DropdownMenuItem
+                            onSelect={() => navigate(`/products/${product.slug}`)}
+                            data-testid={tid('products', 'row', 'edit', product.id)}
+                          >
                             Edit
                           </DropdownMenuItem>
                           <DropdownMenuItem
-                            onClick={() => void duplicate.mutateAsync(product.id)}
+                            disabled={duplicating.has(product.id)}
+                            onSelect={() => void duplicateProduct(product)}
                             className="gap-2"
+                            data-testid={tid('products', 'row', 'duplicate', product.id)}
                           >
                             <Copy className="h-3.5 w-3.5" />
                             Duplicate
                           </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            onClick={() => void archive.mutateAsync(product.id)}
-                            className="gap-2 text-zinc-500"
-                          >
-                            <Archive className="h-3.5 w-3.5" />
-                            Archive
-                          </DropdownMenuItem>
+                          {product.status !== 'archived' && (
+                            <>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                disabled={archiving.has(product.id)}
+                                onSelect={() => void archiveProduct(product)}
+                                className="gap-2 text-zinc-500"
+                                data-testid={tid('products', 'row', 'archive', product.id)}
+                              >
+                                <Archive className="h-3.5 w-3.5" />
+                                Archive
+                              </DropdownMenuItem>
+                            </>
+                          )}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </TableCell>

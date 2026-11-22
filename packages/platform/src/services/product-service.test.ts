@@ -518,3 +518,122 @@ describe('ProductService: audit notes', () => {
     await commandStore.close()
   })
 })
+
+describe('ProductService.duplicate', () => {
+  async function withOriginal() {
+    const ctx = await setup()
+    const original = await ctx.service.create({
+      slug: 'mug',
+      name: 'Mug',
+      description: 'A mug',
+      shortDescription: 'Mug short',
+      status: 'active',
+      type: 'variable',
+      seoTitle: 'Mug SEO',
+      seoDescription: 'Mug SEO desc',
+      media: [{ url: 'https://example.com/mug.jpg', altText: 'Mug', position: 0 }],
+      metadata: { brand: 'Acme' },
+      variants: [
+        {
+          sku: 'MUG-S',
+          name: 'Small',
+          priceMinor: 800,
+          compareAtPriceMinor: 1000,
+          weightGrams: 300,
+          stock: 7,
+          lowStockThreshold: 2,
+          options: [{ name: 'Size', value: 'S' }],
+          taxCode: 'reduced',
+        },
+        {
+          sku: 'MUG-L',
+          name: 'Large',
+          priceMinor: 1200,
+          stock: 4,
+          options: [{ name: 'Size', value: 'L' }],
+          taxCode: 'standard',
+        },
+      ],
+    })
+    return { ...ctx, original }
+  }
+
+  it('copies as a draft named "(Copy)" under -copy slugs and SKUs, every variant at stock 0 with its prices and tax code', async () => {
+    const { service, commandStore, original } = await withOriginal()
+    const copy = await service.duplicate(original.id)
+    expect(copy.id).not.toBe(original.id)
+    expect(copy.slug).toBe('mug-copy')
+    expect(copy.name).toBe('Mug (Copy)')
+    expect(copy.status).toBe('draft')
+    expect(copy).toMatchObject({
+      description: 'A mug',
+      shortDescription: 'Mug short',
+      type: 'variable',
+      seoTitle: 'Mug SEO',
+      seoDescription: 'Mug SEO desc',
+      metadata: { brand: 'Acme' },
+    })
+    const bySku = new Map(copy.variants.map((v) => [v.sku, v]))
+    expect([...bySku.keys()].sort()).toEqual(['MUG-L-COPY', 'MUG-S-COPY'])
+    for (const v of copy.variants) expect(v.stock).toBe(0)
+    expect(bySku.get('MUG-S-COPY')).toMatchObject({
+      name: 'Small',
+      priceMinor: 800,
+      compareAtPriceMinor: 1000,
+      weightGrams: 300,
+      lowStockThreshold: 2,
+      options: [{ name: 'Size', value: 'S' }],
+      taxCode: 'reduced',
+    })
+    expect(bySku.get('MUG-L-COPY')).toMatchObject({ priceMinor: 1200, taxCode: 'standard' })
+    const stored = await service.getById(copy.id)
+    expect(stored.variants.map((v) => v.stock)).toEqual([0, 0])
+    await commandStore.close()
+  })
+
+  it('leaves the original unchanged', async () => {
+    const { service, commandStore, original } = await withOriginal()
+    await service.duplicate(original.id)
+    const after = await service.getById(original.id)
+    expect(after).toEqual(original)
+    await commandStore.close()
+  })
+
+  it('a taken slug moves the copy to the first free -copy-<k> for slug and SKUs alike', async () => {
+    const { service, commandStore, original } = await withOriginal()
+    await service.create({ slug: 'mug-copy', name: 'Taken' })
+    await service.create({ slug: 'mug-copy-2', name: 'Taken too' })
+    const copy = await service.duplicate(original.id)
+    expect(copy.slug).toBe('mug-copy-3')
+    expect(copy.variants.map((v) => v.sku).sort()).toEqual(['MUG-L-COPY-3', 'MUG-S-COPY-3'])
+    await commandStore.close()
+  })
+
+  it('a taken SKU alone, on any variant, moves the copy to the next free suffix', async () => {
+    const { service, commandStore, original } = await withOriginal()
+    await service.create({
+      slug: 'other',
+      name: 'Other',
+      variants: [{ sku: 'MUG-L-COPY', name: 'Squatter', priceMinor: 1, stock: 0, options: [] }],
+    })
+    const copy = await service.duplicate(original.id)
+    expect(copy.slug).toBe('mug-copy-2')
+    expect(copy.variants.map((v) => v.sku).sort()).toEqual(['MUG-L-COPY-2', 'MUG-S-COPY-2'])
+    await commandStore.close()
+  })
+
+  it('successive copies take successive suffixes', async () => {
+    const { service, commandStore, original } = await withOriginal()
+    const first = await service.duplicate(original.id)
+    const second = await service.duplicate(original.id)
+    expect([first.slug, second.slug]).toEqual(['mug-copy', 'mug-copy-2'])
+    await commandStore.close()
+  })
+
+  it('an unknown id rejects with NotFoundError and creates nothing', async () => {
+    const { service, commandStore } = await setup()
+    await expect(service.duplicate(uuidv7())).rejects.toThrow(NotFoundError)
+    expect(await service.list()).toEqual([])
+    await commandStore.close()
+  })
+})

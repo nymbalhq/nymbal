@@ -33,6 +33,20 @@ export function useOrders(filters: OrderFilters = {}) {
   })
 }
 
+/** How many orders are pending, as the API counts them under that filter. */
+export function usePendingOrderCount() {
+  return useQuery({
+    queryKey: ['orders', 'count', 'pending'],
+    queryFn: async () => {
+      const page = await api.getPage<AdminOrder[]>('/api/admin/orders', {
+        status: 'pending',
+        limit: 1,
+      })
+      return Number(page.meta?.['total'] ?? 0)
+    },
+  })
+}
+
 export function useOrder(orderNumber: string) {
   return useQuery({
     queryKey: ['orders', 'detail', orderNumber],

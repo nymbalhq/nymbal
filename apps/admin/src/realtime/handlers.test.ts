@@ -626,6 +626,7 @@ describe('AC-4: a reconnect resyncs exactly the queries the live handlers mainta
     ['inventory', 'list'],
     ['products', 'list'],
     ['products', 'detail'],
+    ['orders', 'count'],
   ]
   const OTHER_PREFIXES: QueryKey[] = [
     ['me'],
@@ -658,7 +659,7 @@ describe('AC-4: a reconnect resyncs exactly the queries the live handlers mainta
       return { live, active, queryKey }
     })
 
-  it('AC-4: resyncLiveQueries refetches every active live query (products lists and details among them), marks every inactive one stale, refetches a pending first fetch anew rather than joining it, and leaves every other query as it was (property)', async () => {
+  it('AC-4, AC-7: resyncLiveQueries refetches every active live query (products lists and details and the pending order count among them), marks every inactive one stale, refetches a pending first fetch anew rather than joining it, and leaves every other query as it was (property)', async () => {
     await fc.assert(
       fc.asyncProperty(
         fc.uniqueArray(entryArb, {
@@ -753,6 +754,83 @@ describe('AC-4: a reconnect resyncs exactly the queries the live handlers mainta
         },
       ),
       { numRuns: 60 },
+    )
+  })
+})
+
+describe('AC-7: the pending order count follows every order event', () => {
+  const COUNT_KEY: QueryKey = ['orders', 'count', 'pending']
+  type Handle = ReturnType<typeof createEventHandlers>
+  const orderEvents: Array<[string, (handle: Handle, status: OrderStatus, n: number) => void]> = [
+    ['order.placed.v1', (h, status, n) => h('order.placed.v1', { order: order(`o-${n}`, status, n) })],
+    [
+      'order.paid.v1',
+      (h, _s, n) =>
+        h('order.paid.v1', { orderId: `o-${n}`, paymentIntentId: 'pi_1', amountMinor: 1000, currency: 'GBP' }),
+    ],
+    ['order.fulfilled.v1', (h, _s, n) => h('order.fulfilled.v1', { orderId: `o-${n}` })],
+    [
+      'order.shipped.v1',
+      (h, _s, n) => h('order.shipped.v1', { orderId: `o-${n}`, trackingNumber: 'TRK-1', carrier: 'DHL' }),
+    ],
+    ['order.delivered.v1', (h, _s, n) => h('order.delivered.v1', { orderId: `o-${n}` })],
+    [
+      'order.cancelled.v1',
+      (h, _s, n) => h('order.cancelled.v1', { orderId: `o-${n}`, reason: 'customer asked' }),
+    ],
+    [
+      'order.refunded.v1',
+      (h, _s, n) => {
+        const payload = { orderId: `o-${n}`, refundId: 'refund-1', amountMinor: 1000, currency: 'GBP', reason: 'returned' }
+        h('order.refunded.v1', payload)
+      },
+    ],
+    [
+      'order.partially_refunded.v1',
+      (h, _s, n) => {
+        const payload = {
+          orderId: `o-${n}`,
+          refundId: 'refund-2',
+          amountMinor: 500,
+          currency: 'GBP',
+          lineItems: [],
+          reason: 'one item',
+        }
+        h('order.partially_refunded.v1', payload)
+      },
+    ],
+    [
+      'order.status_changed.v1',
+      (h, status, n) => h('order.status_changed.v1', { orderId: `o-${n}`, from: 'pending', to: status }),
+    ],
+  ]
+
+  it('AC-7: property: order.placed.v1 with any order and every order-group event mark the pending count stale with its number unchanged, never writing an order list into it, beside any order lists', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.constantFrom(...orderEvents),
+        fc.constantFrom(...STATUSES),
+        fc.nat({ max: 5000 }),
+        fc.uniqueArray(fc.oneof(firstPageFilters, anyFilters), {
+          maxLength: 3,
+          selector: (f) => hashKey(listKey(f)),
+        }),
+        fc.integer({ min: 1, max: 40 }),
+        async ([type, fire], status, count, filters, n) => {
+          const qc = freshClient()
+          qc.setQueryData(COUNT_KEY, count)
+          for (const f of filters) qc.setQueryData(listKey(f), [order('o-other', 'confirmed', 0)])
+          const before = stateOf(qc, COUNT_KEY)
+
+          fire(createEventHandlers(qc), status, n)
+
+          const after = stateOf(qc, COUNT_KEY)
+          expect(after.data, `${type}: the count's data`).toBe(before.data)
+          expect(after.dataUpdatedAt, `${type}: nothing written`).toBe(before.dataUpdatedAt)
+          expect(after.isInvalidated, `${type}: the count is stale`).toBe(true)
+        },
+      ),
+      { numRuns: 120 },
     )
   })
 })

@@ -805,7 +805,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   'POST /api/admin/products/:id/duplicate': {
     name: 'admin.products.duplicate',
     command: 'product.duplicate',
-    description: 'Copy a product as a draft.',
+    description: 'Copy a product as a draft, with no stock.',
     params: idParams,
   },
   'POST /api/admin/products/:id/enhance': {

@@ -13,7 +13,7 @@ import {
 } from 'lucide-react'
 import { useMe } from '@/hooks/useMe'
 import { useAuth } from '@/hooks/useAuth'
-import { useOrders } from '@/hooks/useOrders'
+import { usePendingOrderCount } from '@/hooks/useOrders'
 import { usePendingProposalCount } from '@/hooks/useProposals'
 import { tid } from '@/lib/testid'
 import { cn } from '@/lib/utils'
@@ -31,13 +31,21 @@ const navItems = [
 ]
 
 function PendingOrdersBadge() {
-  const { data: orders } = useOrders({ status: 'pending', limit: 1 })
-  // We'd need a count endpoint; for now show a dot if any pending
-  if (!orders || orders.length === 0) return null
+  const { data: total } = usePendingOrderCount()
+  if (total === undefined || total === 0) return null
+  // The space is its own text node: an accessible name trims each element's text, so "Orders" and the count would join.
   return (
-    <span className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-500/20 px-1 text-[10px] font-semibold text-blue-400">
-      {orders.length}
-    </span>
+    <>
+      {' '}
+      <span
+        aria-hidden="true"
+        className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-500/20 px-1 text-[10px] font-semibold text-blue-400"
+        data-testid={tid('orders', 'pending', 'count')}
+      >
+        {total > 99 ? '99+' : String(total)}
+      </span>
+      <span className="sr-only">{total} pending</span>
+    </>
   )
 }
 

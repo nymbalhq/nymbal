@@ -100,9 +100,14 @@ export function useUnpublishProduct() {
   })
 }
 
+/** Mutation keys of the row actions, so a page can tell which products have one in flight. */
+export const DUPLICATE_PRODUCT_KEY = ['products', 'duplicate'] as const
+export const ARCHIVE_PRODUCT_KEY = ['products', 'archive'] as const
+
 export function useDuplicateProduct() {
   const queryClient = useQueryClient()
   return useMutation({
+    mutationKey: DUPLICATE_PRODUCT_KEY,
     mutationFn: (id: string) => api.post<ProductSnapshot>(`/api/admin/products/${id}/duplicate`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products', 'list'] })
@@ -113,7 +118,8 @@ export function useDuplicateProduct() {
 export function useArchiveProduct() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (id: string) => api.post<{ ok: true }>(`/api/admin/products/${id}/archive`),
+    mutationKey: ARCHIVE_PRODUCT_KEY,
+    mutationFn: (id: string) => api.post<ProductSnapshot>(`/api/admin/products/${id}/archive`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products'] })
     },

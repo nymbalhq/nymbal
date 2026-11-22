@@ -55,6 +55,11 @@ export interface ProductUpdateInput extends Omit<ProductUpdate, 'updatedAt'> {
 
 export interface ProductService {
   create(input: ProductCreateInput): Promise<ProductSnapshot>
+  /**
+   * Copies a product as a draft named "<name> (Copy)" with no stock. The copy takes the first free suffix, `-copy`
+   * then `-copy-<k>`, whose slug and every SKU (`-COPY`, `-COPY-<k>`) no product or variant in the store holds.
+   */
+  duplicate(id: string): Promise<ProductSnapshot>
   update(id: string, input: ProductUpdateInput): Promise<ProductSnapshot>
   delete(id: string): Promise<void>
   publish(id: string): Promise<void>
@@ -99,7 +104,7 @@ export function createProductService(deps: CreateProductServiceDeps): ProductSer
     return product
   }
 
-  return {
+  const service: ProductService = {
     async create(input) {
       audit.note('product.create')
       if (!input.slug.trim()) throw new ValidationError('Product slug is required')
@@ -157,6 +162,51 @@ export function createProductService(deps: CreateProductServiceDeps): ProductSer
         }
         await publisher.publish(EVT_PRODUCT_CREATED, { product: snap })
         return snap
+      })
+    },
+
+    async duplicate(id) {
+      const original = await service.getById(id)
+      const suffix = await store.read(async (tx) => {
+        for (let k = 1; ; k += 1) {
+          const tail = k === 1 ? '' : `-${k}`
+          if (await repos.product.findBySlug(tx, `${original.slug}-copy${tail}`)) continue
+          let skusFree = true
+          for (const v of original.variants) {
+            if (await repos.variant.findBySku(tx, `${v.sku}-COPY${tail}`)) {
+              skusFree = false
+              break
+            }
+          }
+          if (skusFree) return tail
+        }
+      })
+      return service.create({
+        slug: `${original.slug}-copy${suffix}`,
+        name: `${original.name} (Copy)`,
+        description: original.description,
+        shortDescription: original.shortDescription,
+        status: 'draft',
+        type: original.type,
+        seoTitle: original.seoTitle,
+        seoDescription: original.seoDescription,
+        media: original.media,
+        metadata: original.metadata,
+        categoryIds: original.categoryIds,
+        // A copy holds no goods: stock is received into it like any new product.
+        variants: original.variants.map((v) => ({
+          sku: `${v.sku}-COPY${suffix}`,
+          name: v.name,
+          priceMinor: v.priceMinor,
+          compareAtPriceMinor: v.compareAtPriceMinor,
+          weightGrams: v.weightGrams,
+          dimensions: v.dimensions,
+          stock: 0,
+          lowStockThreshold: v.lowStockThreshold,
+          options: v.options,
+          status: v.status,
+          taxCode: v.taxCode ?? null,
+        })),
       })
     },
 
@@ -302,4 +352,5 @@ export function createProductService(deps: CreateProductServiceDeps): ProductSer
       })
     },
   }
+  return service
 }
