@@ -59,7 +59,28 @@ const token =
   (value: string): Answer =>
   () =>
     json({ data: { token: value } })
-const cartAnswer: Answer = () => json({ data: { items: [], subtotalMinor: 0, currency: 'GBP' } })
+/** An empty cart as the cart routes answer it: the lines, what they come to, and the codes on it. */
+const cartAnswer: Answer = () =>
+  json({
+    data: {
+      items: [],
+      subtotalMinor: 0,
+      currency: 'GBP',
+      totals: {
+        currency: 'GBP',
+        subtotalMinor: 0,
+        discountTotalMinor: 0,
+        shippingTotalMinor: 0,
+        shippingDiscountMinor: 0,
+        taxTotalMinor: 0,
+        totalMinor: 0,
+        pricesIncludeTax: false,
+        lines: [],
+        applied: [],
+      },
+      promotions: { codes: [], unavailable: false },
+    },
+  })
 const failing: Answer = () => json({ error: { code: 'internal', message: 'boom' } }, 500)
 
 interface Run {

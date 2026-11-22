@@ -31,7 +31,15 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-const EMPTY = { items: [], subtotalMinor: 0, currency: '', itemCount: 0 }
+const EMPTY = {
+  items: [],
+  subtotalMinor: 0,
+  currency: '',
+  itemCount: 0,
+  discountTotalMinor: 0,
+  totalMinor: 0,
+  codes: [],
+}
 
 const aName = fc
   .stringMatching(/^[A-Za-z_][A-Za-z0-9_.-]{0,12}$/)
@@ -83,6 +91,17 @@ const aLine = fc.record({
   priceMinor: fc.integer({ min: 0, max: 100_000 }),
 })
 
+/** What the engine said of each code on the cart, as `GET /api/cart` answers it. */
+const aCode = fc.oneof(
+  fc.record({ code: fc.stringMatching(/^[A-Z0-9]{1,8}$/), status: fc.constant('accepted') }),
+  fc.record({ code: fc.stringMatching(/^[A-Z0-9]{1,8}$/), status: fc.constant('pending') }),
+  fc.record({
+    code: fc.stringMatching(/^[A-Z0-9]{1,8}$/),
+    status: fc.constant('rejected'),
+    reason: fc.constantFrom('expired', 'unknown'),
+  }),
+)
+
 describe('the cart the cart page renders from', () => {
   it('AC-7: for every Cookie header with no nymbal.cart pair (none, empty, other names, a name that only contains it), cartPageCart resolves the empty cart and makes no request', async () => {
     await fc.assert(
@@ -119,18 +138,41 @@ describe('the cart the cart page renders from', () => {
     )
   })
 
-  it('AC-7: with a nymbal.cart pair and a 200, over generated carts, cartPageCart resolves the API’s lines and sums with itemCount the sum of quantities, asking GET /api/cart with that token alone', async () => {
+  it('AC-7, AC-18: with a nymbal.cart pair and a 200, over generated carts, cartPageCart resolves the API’s lines and sums with itemCount the sum of quantities, discountTotalMinor and totalMinor from its totals and codes from its promotions, never the token, asking GET /api/cart with that token alone', async () => {
     await fc.assert(
       fc.asyncProperty(
         cartCookie,
         fc.array(aLine, { maxLength: 6 }),
         fc.constantFrom('GBP', 'USD', 'EUR'),
-        async ({ header, token }, items, currency) => {
+        fc.integer({ min: 0, max: 100 }),
+        fc.array(aCode, { maxLength: 5 }),
+        async ({ header, token }, items, currency, discountShare, codes) => {
           const subtotalMinor = items.reduce((sum, line) => sum + line.qty * line.priceMinor, 0)
+          const discountTotalMinor = Math.floor((subtotalMinor * discountShare) / 100)
+          const totals = {
+            currency,
+            subtotalMinor,
+            discountTotalMinor,
+            shippingTotalMinor: 0,
+            shippingDiscountMinor: 0,
+            taxTotalMinor: 0,
+            totalMinor: subtotalMinor - discountTotalMinor,
+            pricesIncludeTax: false,
+            lines: [],
+            applied: [],
+          }
           answer = () =>
             new Response(
               JSON.stringify({
-                data: { token, customerId: null, items, subtotalMinor, currency },
+                data: {
+                  token,
+                  customerId: null,
+                  items,
+                  subtotalMinor,
+                  currency,
+                  totals,
+                  promotions: { codes, unavailable: false },
+                },
               }),
               { status: 200, headers: { 'content-type': 'application/json' } },
             )
@@ -144,7 +186,11 @@ describe('the cart the cart page renders from', () => {
             subtotalMinor,
             currency,
             itemCount: items.reduce((sum, line) => sum + line.qty, 0),
+            discountTotalMinor,
+            totalMinor: subtotalMinor - discountTotalMinor,
+            codes,
           })
+          expect(JSON.stringify(cart)).not.toContain(token)
         },
       ),
       { numRuns: 60 },

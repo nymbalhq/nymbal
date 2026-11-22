@@ -101,6 +101,8 @@ interface State {
   hash?: string
   /** What `auth.register` answers once it succeeds: the register form's two endings. */
   registered?: 'signed-in' | 'verification-sent'
+  /** The cart store's `addCode` refuses, as the store does: `error` and `errorCode` set, the rest kept. */
+  codeRefused?: boolean
 }
 
 const state = (partial: Partial<State> = {}): State => ({
@@ -359,6 +361,12 @@ async function mount(
   installReviews(client as unknown as Record<string, unknown>, s)
   installCheckout(client as unknown as Record<string, unknown>, s.placeOrder ?? 'succeeded')
   installRecentlyViewed(client as unknown as Record<string, unknown>, s)
+  if (s.codeRefused === true) {
+    const cart = client.cart as unknown as Record<string, unknown>
+    cart['addCode'] = async () => {
+      client.cart.setState({ error: 'a cart holds at most 5 codes', errorCode: 'cart.code_limit' })
+    }
+  }
   for (const [name, partial] of Object.entries(s.stores)) {
     client[name as StoreName].setState(partial)
   }
@@ -430,6 +438,51 @@ function cartOf<T extends { qty: number; priceMinor: number }>(items: T[], loadi
     currency: 'GBP',
     loading,
     error: null,
+  }
+}
+
+/** A cart of lines holding an accepted and a refused code, a tenth off, as the cart store holds the API's answer. */
+function codedCartOf<T extends { qty: number; priceMinor: number }>(items: T[]) {
+  const cart = cartOf(items)
+  const discountTotalMinor = Math.floor(cart.subtotalMinor / 10)
+  return {
+    ...cart,
+    errorCode: null,
+    totals: {
+      currency: 'GBP',
+      subtotalMinor: cart.subtotalMinor,
+      discountTotalMinor,
+      shippingTotalMinor: 0,
+      shippingDiscountMinor: 0,
+      taxTotalMinor: 0,
+      totalMinor: cart.subtotalMinor - discountTotalMinor,
+      pricesIncludeTax: false,
+      lines: [],
+      applied: [],
+    },
+    promotions: {
+      codes: [
+        { code: 'SAVE10', status: 'accepted' },
+        { code: 'OLD5', status: 'rejected', reason: 'expired' },
+      ],
+      unavailable: false,
+    },
+  }
+}
+
+/** Types a code into the element's code block and presses Apply once (the store refuses it under `codeRefused`). */
+async function applyCode(el: HTMLElement): Promise<void> {
+  const root = el.shadowRoot
+  if (root === null) return
+  const input = deepAll(root, '[data-testid="discount-code-input"]')[0] as HTMLInputElement | undefined
+  if (input !== undefined) {
+    input.value = 'SIXTH'
+    input.dispatchEvent(new Event('input', { bubbles: true, composed: true }))
+  }
+  ;(deepAll(root, '[data-testid="discount-code-apply"]')[0] as HTMLElement | undefined)?.click()
+  for (let turn = 0; turn < 5; turn += 1) {
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    await settled(el)
   }
 }
 
@@ -786,6 +839,16 @@ const FIXED: Record<Tag, State[]> = {
   'nymbal-cart-page': [
     state(),
     state({ stores: { cart: cartOf([], true) } }),
+    // Codes listed, one refused, and an Apply the store refuses.
+    state({
+      stores: {
+        cart: codedCartOf([
+          { variantId: 'v1', productId: 'p1', productName: 'Mug', variantName: 'Blue', qty: 2, priceMinor: 1200, imageUrl: '' },
+        ]),
+      },
+      codeRefused: true,
+      walk: applyCode,
+    }),
     state({
       stores: {
         cart: cartOf([
@@ -892,6 +955,17 @@ const FIXED: Record<Tag, State[]> = {
         { variantId: 'v2', productName: 'Scarf', variantName: '', qty: 1, priceMinor: 2500 },
       ]),
     }).slice(0, 1),
+    // Codes listed in the summary, one refused, and an Apply the store refuses.
+    state({
+      stores: {
+        cart: codedCartOf([
+          { variantId: 'v1', productName: 'Mug', variantName: 'Blue', qty: 2, priceMinor: 1200 },
+        ]),
+      },
+      children: paymentChild('null'),
+      codeRefused: true,
+      walk: applyCode,
+    }),
   ],
   // Catalogue and page elements
   'nymbal-product-grid': [

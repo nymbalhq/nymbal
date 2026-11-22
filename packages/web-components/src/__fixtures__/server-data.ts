@@ -22,14 +22,21 @@ export interface CartProjection {
   subtotalMinor: number
   currency: string
   itemCount: number
+  discountTotalMinor: number
+  totalMinor: number
+  codes: Array<{ code: string; status: 'accepted' | 'rejected' | 'pending'; reason?: string }>
 }
 
 export function projectionOf(items: Line[]): CartProjection {
+  const subtotalMinor = items.reduce((n, i) => n + i.qty * i.priceMinor, 0)
   return {
     items,
-    subtotalMinor: items.reduce((n, i) => n + i.qty * i.priceMinor, 0),
+    subtotalMinor,
     currency: 'GBP',
     itemCount: items.reduce((n, i) => n + i.qty, 0),
+    discountTotalMinor: 0,
+    totalMinor: subtotalMinor,
+    codes: [],
   }
 }
 

@@ -1,4 +1,5 @@
 import type { AgentSurfaceUrls, Cart } from '@nymbalhq/types'
+import { cartTotals } from '../services/promotions-quote.js'
 import { UCP_CAPABILITY, UCP_VERSION, type UcpCapability } from './profile.js'
 
 /** A product as the catalogue routes answer it (the `products` read model). */
@@ -152,6 +153,8 @@ export function ucpCheckout(
   urls: AgentSurfaceUrls,
   links: readonly UcpLink[],
 ): Record<string, unknown> {
+  // A cart has no address, so no shipping or tax: its total is the lines less the codes' discount.
+  const totals = cartTotals(cart)
   return {
     ucp: {
       version: UCP_VERSION,
@@ -181,8 +184,12 @@ export function ucpCheckout(
     status: 'requires_escalation',
     currency: cart.currency,
     totals: [
-      { type: 'subtotal', amount: cart.subtotalMinor },
-      { type: 'total', amount: cart.subtotalMinor },
+      { type: 'subtotal', amount: totals.subtotalMinor },
+      // UCP's discount amounts are below zero.
+      ...(totals.discountTotalMinor > 0
+        ? [{ type: 'discount', display_text: 'Discount', amount: -totals.discountTotalMinor }]
+        : []),
+      { type: 'total', amount: totals.totalMinor },
     ],
     messages: [HANDOFF_MESSAGE],
     links: links.map((link) => ({ ...link })),

@@ -5,6 +5,7 @@ export type { ElementSchema, ElementAttributeType } from './base-element.js'
 export { define, type NymbalElementClass } from './define.js'
 
 export type { PaymentElementStatus } from './components/payment-element.js'
+export type { CartProjection } from './cart-projection.js'
 export { registerComponents } from './register-components.js'
 
 export { NymbalAddToCart } from './components/add-to-cart.js'

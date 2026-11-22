@@ -1,7 +1,9 @@
 import type {
+  CartCodes,
   CartItem,
   CheckoutPayment,
   CheckoutQuote,
+  CheckoutTotals,
   Customer,
   Address,
   Facet,
@@ -54,8 +56,14 @@ export interface CartState {
   subtotalMinor: number
   currency: string
   itemCount: number
+  /** What the cart comes to, codes' discount included, as the API last said; null before its first answer. */
+  totals: CheckoutTotals | null
+  /** What the engine said of each code on the cart. */
+  promotions: CartCodes
   loading: boolean
   error: string | null
+  /** The API's code for `error` (`cart.code_limit`, …), null when there is none or no API answer gave it. */
+  errorCode: string | null
 }
 
 export interface ProductState {

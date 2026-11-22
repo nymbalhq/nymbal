@@ -1,9 +1,10 @@
 import type {
-  Cart,
+  CartCodeStatus,
   CartItem,
   Customer,
   CustomerAddress,
   ShopperOrder,
+  ShopperCart,
   StoreCapabilities,
 } from '@nymbalhq/types'
 import type { CommerceAdapter } from '../src/adapter/commerce-adapter.js'
@@ -12,6 +13,8 @@ import type { CheckoutResult, DenormalisedProduct, OrderPage } from '../src/type
 /** What the stub answers; each test sets the part it reads back through a store. */
 export interface StubData {
   cartItems: CartItem[]
+  /** The cart's codes, each accepted and moving no money. */
+  cartCodes: string[]
   product: DenormalisedProduct
   listed: DenormalisedProduct[]
   found: DenormalisedProduct[]
@@ -60,6 +63,7 @@ export function cartItem(variantId: string, qty: number): CartItem {
 export function defaultData(): StubData {
   return {
     cartItems: [],
+    cartCodes: [],
     product: product('stub-product'),
     listed: [product('listed')],
     found: [product('found')],
@@ -78,17 +82,36 @@ export function defaultData(): StubData {
 
 /** An in-memory adapter: no network, every call answers from `data` at the time it is made. */
 export function stubAdapter(data: StubData = defaultData()): CommerceAdapter {
-  const cart = (): Cart => ({
-    token: 'cart-stub',
-    customerId: null,
-    items: data.cartItems,
-    subtotalMinor: data.cartItems.reduce((sum, i) => sum + i.priceMinor * i.qty, 0),
-    currency: 'GBP',
-    source: 'storefront',
-    expiresAt: '2026-11-30T00:00:00.000Z',
-    createdAt: '2026-10-30T00:00:00.000Z',
-    updatedAt: '2026-10-30T00:00:00.000Z',
-  })
+  const cart = (): ShopperCart => {
+    const subtotalMinor = data.cartItems.reduce((sum, i) => sum + i.priceMinor * i.qty, 0)
+    return {
+      token: 'cart-stub',
+      customerId: null,
+      items: data.cartItems,
+      subtotalMinor,
+      currency: 'GBP',
+      source: 'storefront',
+      expiresAt: '2026-11-30T00:00:00.000Z',
+      createdAt: '2026-10-30T00:00:00.000Z',
+      updatedAt: '2026-10-30T00:00:00.000Z',
+      totals: {
+        currency: 'GBP',
+        subtotalMinor,
+        discountTotalMinor: 0,
+        shippingTotalMinor: 0,
+        shippingDiscountMinor: 0,
+        taxTotalMinor: 0,
+        totalMinor: subtotalMinor,
+        pricesIncludeTax: false,
+        lines: [],
+        applied: [],
+      },
+      promotions: {
+        codes: data.cartCodes.map((code): CartCodeStatus => ({ code, status: 'accepted' })),
+        unavailable: false,
+      },
+    }
+  }
   const auth = async () => ({ customer: data.customer, accessToken: 'token-stub', expiresIn: 900 })
   const placed: CheckoutResult = {
     orderId: 'ord-stub',
@@ -109,6 +132,16 @@ export function stubAdapter(data: StubData = defaultData()): CommerceAdapter {
       removeItem: async () => cart(),
       updateQuantity: async () => cart(),
       clear: async () => cart(),
+      addCode: async (code: string) => {
+        const lower = code.toLowerCase()
+        if (!data.cartCodes.some((c) => c.toLowerCase() === lower)) data.cartCodes.push(code)
+        return cart()
+      },
+      removeCode: async (code: string) => {
+        const lower = code.toLowerCase()
+        data.cartCodes = data.cartCodes.filter((c) => c.toLowerCase() !== lower)
+        return cart()
+      },
     },
     products: {
       getBySlug: async () => data.product,

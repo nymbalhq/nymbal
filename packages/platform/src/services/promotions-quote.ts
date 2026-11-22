@@ -3,6 +3,8 @@ import {
   CheckoutError,
   type Address,
   type Cart,
+  type CartCodes,
+  type CartCodeStatus,
   type CartPromotions,
   type CheckoutTotals,
   type Logger,
@@ -114,17 +116,8 @@ export function cartTotals(cart: Cart, pricesIncludeTax = false): CheckoutTotals
   return settleTotals(settleInputOf(cart, cart.promotions?.effects ?? [], pricesIncludeTax))
 }
 
-export type CartCodeStatus = {
-  code: string
-  status: 'accepted' | 'rejected' | 'pending'
-  reason?: string
-}
-
 /** Each code on a cart with what the engine last said of it, as the cart routes answer it. */
-export function cartCodes(promotions: CartPromotions | undefined): {
-  codes: CartCodeStatus[]
-  unavailable: boolean
-} {
+export function cartCodes(promotions: CartPromotions | undefined): CartCodes {
   if (promotions === undefined) return { codes: [], unavailable: false }
   const { codes, effects, unavailable } = promotions
   return {

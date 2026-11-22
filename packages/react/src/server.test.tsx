@@ -48,7 +48,15 @@ const LINE = {
   priceMinor: 8900,
   imageUrl: '',
 }
-const CART = { items: [LINE], subtotalMinor: 17800, currency: 'GBP', itemCount: 2 }
+const CART = {
+  items: [LINE],
+  subtotalMinor: 17800,
+  currency: 'GBP',
+  itemCount: 2,
+  discountTotalMinor: 0,
+  totalMinor: 17800,
+  codes: [],
+}
 
 describe('AC-7: a wrapper given serverHtml renders it on its own tag', () => {
   it('AC-7: for every server-rendered element, renderToString(<Wrapper serverHtml={renderNymbal(tag).__html} />) is one <tag> holding what renderElement(tag) holds', () => {

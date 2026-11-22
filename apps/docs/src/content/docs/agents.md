@@ -36,6 +36,11 @@ shipping postcode with case and spaces ignored (`SW1` matches `SW1A 1AA` and `SW
 shipping country's two-letter ISO code (`UK` is read as `GB`); a store whose orders hold country names instead of
 codes, as an import may leave them, matches none.
 
+Discount codes go on a cart with `cart_addCode { cart, code }` and come off with `cart_removeCode { cart, code }`, the
+cart's handle from `cart_addItem` or `cart_get`; each answers the cart with its `totals` and, in `promotions.codes`, what
+the store said of each code (`accepted`, `rejected` with a `reason`, or `pending` while it cannot check codes). Without
+a handle they answer `cart.missing`. The admin's assistant is not offered them.
+
 ### Customer details agents are not sent
 
 An admin agent's tool results carry no customer email, phone, street line or postcode, over `POST /api/mcp` and
@@ -103,6 +108,9 @@ agents: {
 
 `nymbal doctor` warns when UCP checkout has no privacy or terms link, or the public URL is plain http.
 
+A UCP checkout takes no code itself; its totals carry the cart's discount (a negative `discount` entry) once the
+handed-over buyer, or an MCP agent with the cart's handle, adds one.
+
 ## ACP (beta)
 
 With `agents.acp` on, a shopping agent holding one of the store's keys buys over the Agentic Commerce Protocol
@@ -142,6 +150,12 @@ What each name records:
 Removing an entry and restarting revokes that assistant alone. A name reused for a new key takes over the old key's
 actor and its stored replays. `nymbal doctor`'s agents line lists the keys by name (`acp keys: muse, dots`), or
 `acp off`.
+
+A session takes discount codes as `discounts.codes` (or the deprecated `coupons` when `discounts` is absent), at most
+five, each replacing the codes sent before; `[]` clears them. Every session answers `discounts` with the codes held,
+`applied` (one entry per code, at the discount it gives) and `rejected` (with a `discount_code_*` reason), and a warning
+per rejected code; a rejected code does not stop payment. When codes cannot be checked just now the session is
+`not_ready_for_payment` with a message to send `discounts.codes` again.
 
 ## Reports
 

@@ -61,7 +61,26 @@ function partTexts(el: Element, part: string): string[] {
 }
 
 const names = (c: CartProjection): string[] => c.items.map((i) => i.productName)
-const settledCart = (c: CartProjection) => ({ ...c, loading: false, error: null })
+/** The cart store's state for a projection: the same lines, sums, totals and codes. */
+const settledCart = (c: CartProjection) => ({
+  ...c,
+  totals: {
+    currency: c.currency,
+    subtotalMinor: c.subtotalMinor,
+    discountTotalMinor: c.discountTotalMinor,
+    shippingTotalMinor: 0,
+    shippingDiscountMinor: 0,
+    taxTotalMinor: 0,
+    totalMinor: c.totalMinor,
+    pricesIncludeTax: false,
+    lines: [],
+    applied: [],
+  },
+  promotions: { codes: c.codes, unavailable: false },
+  loading: false,
+  error: null,
+  errorCode: null,
+})
 
 /** The cart elements: each shows its lines' names in `[part~=item-name]`. */
 for (const tag of ['nymbal-cart-page', 'nymbal-checkout', 'nymbal-cart-drawer']) {

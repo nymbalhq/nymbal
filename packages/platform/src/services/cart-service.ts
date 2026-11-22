@@ -99,7 +99,7 @@ export interface CreateCartServiceDeps {
 }
 
 /** Past this many codes on one cart a request is refused, a limit on hostile growth. */
-const MAX_CART_CODES = 5
+export const MAX_CART_CODES = 5
 
 function calcSubtotal(items: CartItem[]): number {
   return items.reduce((sum, item) => sum + item.priceMinor * item.qty, 0)

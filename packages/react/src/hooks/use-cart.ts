@@ -8,6 +8,8 @@ export interface UseCartReturn extends CartState {
   updateQuantity: (variantId: string, qty: number) => Promise<void>
   clear: () => Promise<void>
   load: () => Promise<void>
+  addCode: (code: string) => Promise<void>
+  removeCode: (code: string) => Promise<void>
 }
 
 export function useCart(): UseCartReturn {
@@ -24,5 +26,7 @@ export function useCart(): UseCartReturn {
     updateQuantity: client.cart.updateQuantity,
     clear: client.cart.clear,
     load: client.cart.load,
+    addCode: client.cart.addCode,
+    removeCode: client.cart.removeCode,
   }
 }

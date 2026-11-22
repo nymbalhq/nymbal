@@ -51,8 +51,6 @@ const EXCLUDED = [
   'admin.settings.delete',
   'admin.assistant.turn',
   'admin.assistant.stream',
-  'cart.addCode',
-  'cart.removeCode',
   'admin.promotions.list',
   'admin.promotions.create',
   'admin.promotions.update',
@@ -66,6 +64,8 @@ const CART_HANDLES = [
   'PATCH /api/cart/items/:variantId',
   'DELETE /api/cart/items/:variantId',
   'DELETE /api/cart',
+  'POST /api/cart/codes',
+  'DELETE /api/cart/codes/:code',
   'POST /api/checkout',
   'POST /api/checkout/quote',
 ].sort()
@@ -222,7 +222,7 @@ describe('AC-1: one tool per registry entry', () => {
     }
   })
 
-  it('AC-13: the entries marked tool: false are exactly the fourteen kept from agents plus proposal approve, proposal reject, settings put and delete, the assistant’s turn and stream, the cart-code and admin-promotion routes, the three password routes and the two confirmation routes, and every stream route is among them', () => {
+  it('AC-13: the entries marked tool: false are exactly the fourteen kept from agents plus proposal approve, proposal reject, settings put and delete, the assistant’s turn and stream, the admin-promotion routes, the three password routes and the two confirmation routes, and every stream route is among them', () => {
     const marked = Object.values(routeSchemas)
       .filter((entry) => entry.tool === false)
       .map((entry) => entry.name)
@@ -233,7 +233,7 @@ describe('AC-1: one tool per registry entry', () => {
     expect(streamed.filter((name) => !marked.includes(name))).toEqual([])
   })
 
-  it("AC-1: each tool's inputSchema is one object whose properties are its params, query and body keys flattened, plus cart on the seven cookie-named cart routes and idempotencyKey on every admin command, and whose required keys are the parts' required keys", () => {
+  it("AC-1: each tool's inputSchema is one object whose properties are its params, query and body keys flattened, plus cart on the nine cookie-named cart routes and idempotencyKey on every admin command, and whose required keys are the parts' required keys", () => {
     const handled = Object.entries(routeSchemas)
       .filter(([, entry]) => entry.handles?.['cart'] === 'nymbal.cart')
       .map(([key]) => key)

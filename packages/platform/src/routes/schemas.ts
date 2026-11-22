@@ -417,15 +417,15 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'POST /api/cart/codes': {
     name: 'cart.addCode',
+    handles: cartHandle,
     command: null,
-    tool: false,
     description: 'Add a discount code to the cart.',
     body: z.object({ code: z.string() }),
   },
   'DELETE /api/cart/codes/:code': {
     name: 'cart.removeCode',
+    handles: cartHandle,
     command: null,
-    tool: false,
     description: 'Remove a discount code from the cart.',
     params: z.object({ code: z.string() }),
   },

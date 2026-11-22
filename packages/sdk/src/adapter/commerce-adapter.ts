@@ -1,11 +1,11 @@
 import type {
   AlertKind,
-  Cart,
   CheckoutQuote,
   Customer,
   CustomerAddress,
   PublicReviewsResult,
   ReviewResult,
+  ShopperCart,
   ShopperOrder,
   StoreCapabilities,
 } from '@nymbalhq/types'
@@ -45,11 +45,13 @@ export interface CommerceAdapter {
     list(): Promise<{ items: DenormalisedProduct[] }>
   }
   cart: {
-    get(): Promise<Cart>
-    addItem(variantId: string, qty: number): Promise<Cart>
-    removeItem(variantId: string): Promise<Cart>
-    updateQuantity(variantId: string, qty: number): Promise<Cart>
-    clear(): Promise<Cart>
+    get(): Promise<ShopperCart>
+    addItem(variantId: string, qty: number): Promise<ShopperCart>
+    removeItem(variantId: string): Promise<ShopperCart>
+    updateQuantity(variantId: string, qty: number): Promise<ShopperCart>
+    clear(): Promise<ShopperCart>
+    addCode(code: string): Promise<ShopperCart>
+    removeCode(code: string): Promise<ShopperCart>
   }
   products: {
     getBySlug(slug: string): Promise<DenormalisedProduct>

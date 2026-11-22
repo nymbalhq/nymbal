@@ -16,6 +16,7 @@ export default defineConfig({
     // support modules or fixtures, cannot load there, and a test file that cannot load fails Stryker's initial run.
     exclude: [
       'packages/platform/tests/**',
+      'packages/platform/src/agents/acp/discounts.test.ts',
       'packages/platform/src/agents/agent-cart-source.test.ts',
       'packages/platform/src/agents/readiness.test.ts',
       'packages/platform/src/agents/ucp-surface.test.ts',

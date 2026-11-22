@@ -1,4 +1,4 @@
-import type { NymbalClient } from '@nymbalhq/sdk'
+import type { CartState, NymbalClient } from '@nymbalhq/sdk'
 import { registerClient } from '../registry.js'
 
 export function createMockStore<S>(initialState: S) {
@@ -19,13 +19,16 @@ export function createMockStore<S>(initialState: S) {
 }
 
 export function createMockClient(): NymbalClient {
-  const cartStore = createMockStore({
+  const cartStore = createMockStore<CartState>({
     items: [],
     subtotalMinor: 0,
     currency: 'GBP',
     itemCount: 0,
+    totals: null,
+    promotions: { codes: [], unavailable: false },
     loading: false,
     error: null,
+    errorCode: null,
   })
   const productStore = createMockStore({ product: null, selectedVariant: null, loading: false, error: null })
   const searchStore = createMockStore({
@@ -49,6 +52,8 @@ export function createMockClient(): NymbalClient {
       updateQuantity: async () => {},
       clear: async () => {},
       load: async () => {},
+      addCode: async () => {},
+      removeCode: async () => {},
     },
     product: {
       ...productStore,
