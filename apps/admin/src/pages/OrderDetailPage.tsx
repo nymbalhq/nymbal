@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import {
   ArrowLeft,
@@ -25,6 +25,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { OrderStatusBadge } from '@/components/orders/OrderStatusBadge'
 import { OrderStatusSelect } from '@/components/orders/OrderStatusSelect'
 import { OrderTimeline } from '@/components/orders/OrderTimeline'
+import { OrderBulkDialog } from '@/components/orders/OrderBulkDialog'
 import { OrderNotesPanel } from '@/components/orders/OrderNotesPanel'
 import { OrderRefundDialog } from '@/components/orders/OrderRefundDialog'
 import { ShipOrderDialog } from '@/components/orders/ShipOrderDialog'
@@ -36,10 +37,13 @@ import {
   useCancelOrder,
   useMarkDeliveredOrder,
   useResendConfirmation,
+  useUpdateOrderStatus,
 } from '@/hooks/useOrders'
+import { usePageCommands } from '@/hooks/usePageCommands'
 import { ApiError } from '@/lib/api'
 import { formatMoney } from '@/lib/money'
 import { formatDate } from '@/lib/dates'
+import { ORDER_COMMAND_LABELS, orderCommands, type OrderCommandId } from '@/lib/palette-commands'
 import { tid } from '@/lib/testid'
 import { cn } from '@/lib/utils'
 import type {
@@ -214,6 +218,7 @@ export function OrderDetailPage() {
   const { orderNumber } = useParams<{ orderNumber: string }>()
   const [showRefund, setShowRefund] = useState(false)
   const [showShip, setShowShip] = useState(false)
+  const [confirmCancel, setConfirmCancel] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   // Set in the click itself: `isPending` reaches the button only after a render, too late for a double click.
   const acting = useRef(false)
@@ -225,6 +230,28 @@ export function OrderDetailPage() {
   const cancelOrder = useCancelOrder()
   const markDelivered = useMarkDeliveredOrder()
   const resend = useResendConfirmation()
+  const updateStatus = useUpdateOrderStatus()
+  const runOrderCommand = useRef<(id: OrderCommandId) => void>(() => {})
+
+  // The palette lists this order's commands only while the order on screen is the route's: during an in-place move to
+  // another order the previous one's data must not be acted on.
+  const shown = order !== undefined && order.orderNumber === orderNumber ? order : null
+  useEffect(() => {
+    const { setScope, clearScope } = usePageCommands.getState()
+    if (shown === null) {
+      clearScope()
+      return
+    }
+    setScope({
+      title: `Order #${shown.orderNumber}`,
+      commands: orderCommands(shown).map((id) => ({
+        id: `order-${id}`,
+        label: ORDER_COMMAND_LABELS[id],
+        run: () => runOrderCommand.current(id),
+      })),
+    })
+    return clearScope
+  }, [shown])
 
   /** Runs one order action at a time and says why the server refused it. */
   const runAction = async (send: () => Promise<unknown>) => {
@@ -297,6 +324,26 @@ export function OrderDetailPage() {
     return null
   }
 
+  // The resend line reports the answer, refusal included, from the mutation's own state.
+  const resendConfirmation = () =>
+    void runAction(
+      () =>
+        new Promise<void>((resolve) => {
+          resend.mutate({ orderId: order.id }, { onSettled: () => resolve() })
+        }),
+    )
+
+  runOrderCommand.current = (id) => {
+    if (id === 'record-payment') void runAction(() => markPaid.mutateAsync({ orderId: order.id }))
+    if (id === 'process')
+      void runAction(() => updateStatus.mutateAsync({ orderId: order.id, action: 'process' }))
+    if (id === 'ship') setShowShip(true)
+    if (id === 'deliver') void runAction(() => markDelivered.mutateAsync(order.id))
+    if (id === 'refund') setShowRefund(true)
+    if (id === 'cancel') setConfirmCancel(true)
+    if (id === 'resend-confirmation') resendConfirmation()
+  }
+
   const primary = primaryAction()
   const resendDisabled = NO_CONFIRMATION_DUE.includes(order.status) || resend.isPending
   const resendResult = resend.isError
@@ -361,7 +408,7 @@ export function OrderDetailPage() {
             <DropdownMenuContent align="end" className="w-44">
               <DropdownMenuItem
                 onSelect={() => {
-                  if (!resendDisabled) resend.mutate({ orderId: order.id })
+                  if (!resendDisabled) resendConfirmation()
                 }}
                 className="gap-2"
                 disabled={resendDisabled}
@@ -611,6 +658,11 @@ export function OrderDetailPage() {
         orderNumber={order.orderNumber}
         open={showShip}
         onOpenChange={setShowShip}
+      />
+      <OrderBulkDialog
+        action={confirmCancel ? 'cancel' : null}
+        orders={[order]}
+        onClose={() => setConfirmCancel(false)}
       />
     </div>
   )
