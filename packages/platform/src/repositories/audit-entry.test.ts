@@ -34,7 +34,7 @@ const OUTCOMES: AuditOutcome[] = ['applied', 'refused']
 const entry = fc.record({
   minute: fc.integer({ min: 0, max: 5 }),
   kind: fc.constantFrom(...KINDS),
-  actorId: fc.constantFrom('a1', 'a2'),
+  actorId: fc.constantFrom('a1', 'a2', 'acp:a1'),
   command: fc.constantFrom(...COMMANDS),
   subject: fc.constantFrom('s1', 's2'),
   correlation: fc.constantFrom('k1', 'k2', null),
@@ -44,7 +44,7 @@ const entry = fc.record({
 
 const query = fc.record(
   {
-    actor: fc.constantFrom('admin', 'a1', 'customer:a2', 'admin:a1'),
+    actor: fc.constantFrom('admin', 'a1', 'customer:a2', 'admin:a1', 'acp:a1', 'system:acp:a1'),
     command: fc.constantFrom(...COMMANDS),
     subject: fc.constantFrom('s1', 's2'),
     correlation: fc.constantFrom('k1', 'k2'),
@@ -54,6 +54,19 @@ const query = fc.record(
   },
   { requiredKeys: [] },
 )
+
+type Row = typeof entry extends fc.Arbitrary<infer T> ? T : never
+
+const actorRow = (kind: AuditActor['kind'], actorId: Row['actorId'], minute: number): Row => ({
+  minute,
+  kind,
+  actorId,
+  command: COMMANDS[0]!,
+  subject: 's1',
+  correlation: null,
+  outcome: OUTCOMES[0]!,
+  status: 200,
+})
 
 type Written = AuditEntryInsert & { atIso: string }
 
@@ -69,7 +82,12 @@ type Filter = {
 
 function matches(e: Written, f: Filter): boolean {
   if (f.actor !== undefined) {
-    const [kind, id] = f.actor.includes(':') ? f.actor.split(':') : [undefined, undefined]
+    // Only a known kind before the first colon splits: an actor id may hold a colon itself.
+    const colon = f.actor.indexOf(':')
+    const head = colon > 0 ? f.actor.slice(0, colon) : ''
+    const [kind, id] = KINDS.includes(head as AuditActor['kind'])
+      ? [head, f.actor.slice(colon + 1)]
+      : [undefined, undefined]
     const ok =
       kind !== undefined
         ? e.actor.kind === kind && e.actor.id === id
@@ -156,7 +174,35 @@ describe('audit entries', () => {
           await store.close()
         },
       ),
-      { numRuns: 40 },
+      {
+        numRuns: 40,
+        // An id with a colon in it, filtered alone and under its kind: the cursor sits on the first match, so a
+        // listing that splits on an unknown kind returns nothing where the second match belongs.
+        examples: [
+          [
+            [
+              actorRow('system', 'acp:a1', 0),
+              actorRow('system', 'acp:a1', 1),
+              actorRow('admin', 'a1', 2),
+            ],
+            { actor: 'acp:a1' },
+            'asc',
+            6,
+            0,
+          ],
+          [
+            [
+              actorRow('system', 'acp:a1', 0),
+              actorRow('customer', 'acp:a1', 1),
+              actorRow('system', 'acp:a1', 2),
+            ],
+            { actor: 'system:acp:a1' },
+            'asc',
+            6,
+            0,
+          ],
+        ],
+      },
     )
   })
 

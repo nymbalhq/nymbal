@@ -105,19 +105,43 @@ agents: {
 
 ## ACP (beta)
 
-With `agents.acp` on, a shopping agent holding the store's key buys over the Agentic Commerce Protocol (2026-04-17) at
-`/api/acp`: it reads the product feed (`GET /api/acp/feed`), opens and updates a checkout session, and completes it
-with a delegated payment token (a Stripe Shared Payment Token), which the store charges through its payments provider.
-The order is the one the storefront's checkout makes, with its source `agent:<name>`. It is off by default:
+With `agents.acp` on, a shopping agent holding one of the store's keys buys over the Agentic Commerce Protocol
+(2026-04-17) at `/api/acp`: it reads the product feed (`GET /api/acp/feed`), opens and updates a checkout session, and
+completes it with a delegated payment token (a Stripe Shared Payment Token), which the store charges through its
+payments provider. The order is the one the storefront's checkout makes. It is off by default. Give each assistant its
+own key, by name:
 
 ```ts
+import { env } from '@nymbalhq/config'
+
 agents: {
-  acp: { enabled: true, links: [{ type: 'terms_of_use', url: 'https://example.com/terms' }] },
+  acp: {
+    enabled: true,
+    keys: [
+      { name: 'muse', key: env('NYMBAL_ACP_API_KEY_MUSE') },
+      { name: 'dots', key: env('NYMBAL_ACP_API_KEY_DOTS') },
+    ],
+    links: [{ type: 'terms_of_use', url: 'https://example.com/terms' }],
+  },
 },
 ```
 
-The key is `NYMBAL_ACP_API_KEY` (or `agents.acp.apiKey`), at least 32 characters (`openssl rand -base64 32`); the
-store refuses to start without it, or on a payments provider that cannot charge a delegated token (Stripe can).
+Each key is at least 32 characters (`openssl rand -base64 32`), and no two entries share a name or a key. A name is a
+lower-case letter or digit followed by up to 39 of `a-z`, `0-9`, `.`, `_` and `-`. Keep `_API_KEY` in the variable's
+name and `nymbal doctor` never prints its value. The store refuses to start with ACP on and no key, or on a payments
+provider that cannot charge a delegated token (Stripe can).
+
+What each name records:
+
+- The activity log's actor is `acp:<name>` of the key that sent the request (filter it with `?actor=acp:muse`). Only a
+  request under that key writes it, so it is the record of which assistant acted.
+- The cart and order carry the source `agent:<name>` of the key that opened the session. It is a label, not proof: a
+  UCP caller can name itself the same.
+- A replayed `Idempotency-Key` answers only the key that sent it first.
+
+Removing an entry and restarting revokes that assistant alone. A name reused for a new key takes over the old key's
+actor and its stored replays. `nymbal doctor`'s agents line lists the keys by name (`acp keys: muse, dots`), or
+`acp off`.
 
 ## Reports
 

@@ -837,16 +837,56 @@ export const ACP_LINK_TYPES = [
   'support',
 ] as const
 
-/** The shortest ACP key the store takes, from the config or `NYMBAL_ACP_API_KEY`. */
+/** The shortest key `agents.acp.keys` takes. */
 export const ACP_KEY_MIN_LENGTH = 32
+
+/** What an ACP key's name may be: it becomes the order source `agent:<name>`. */
+export const ACP_KEY_NAME = /^[a-z0-9][a-z0-9._-]{0,39}$/
+
+/**
+ * One assistant's ACP key. A refusal never echoes what was typed: a key pasted into the wrong field would reach a
+ * terminal or a CI log.
+ */
+const acpKeyEntry = z
+  .object({
+    name: z.string().regex(ACP_KEY_NAME, {
+      error: `must match ${ACP_KEY_NAME.source}: a lower-case letter or digit, then up to 39 of a-z, 0-9, '.', '_' or '-'`,
+    }),
+    key: z
+      .string()
+      .min(ACP_KEY_MIN_LENGTH, { error: `must be at least ${ACP_KEY_MIN_LENGTH} characters` }),
+  })
+  .strict()
+
+/** Each name labels one key and each key has one name, so revoking one assistant never revokes another. */
+const acpKeys = z.array(acpKeyEntry).superRefine((entries, ctx) => {
+  entries.forEach((entry, j) => {
+    const sameName = entries.findIndex((other) => other.name === entry.name)
+    if (sameName < j) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [j, 'name'],
+        message: `is already the name of agents.acp.keys.${sameName}`,
+      })
+    }
+    const sameKey = entries.findIndex((other) => other.key === entry.key)
+    if (sameKey < j) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [j, 'key'],
+        message: `is already the key of agents.acp.keys.${sameKey} (${entries[sameKey]!.name}): give each assistant its own`,
+      })
+    }
+  })
+})
 
 /**
  * How agents reach the store. Under `mcp.writes: 'proposal'` an admin command tool's call is kept as a proposal an
  * admin approves or rejects, unless `autoApprove` lists its command; `'apply'` approves every command at the call.
  * Either way the proposal is recorded. A command that moves money cannot be listed in `autoApprove`. `ucp` is the
  * Universal Commerce Protocol profile and its MCP endpoint; `links` are the legal pages a UCP checkout names. `acp`
- * is the Agentic Commerce Protocol's checkout (beta, off unless enabled), held by a bearer key of at least 32
- * characters (`apiKey`, else `NYMBAL_ACP_API_KEY`). `crawl` is what `robots.txt`, `llms.txt` and the product feed serve.
+ * is the Agentic Commerce Protocol's checkout (beta, off unless enabled), held by the bearer keys in `keys`, one per
+ * assistant by name, each at least 32 characters. `crawl` is what `robots.txt`, `llms.txt` and the product feed serve.
  * `assistant` is what the admin's assistant may send its AI provider.
  */
 export const agentsSchema = z
@@ -891,9 +931,12 @@ export const agentsSchema = z
     acp: z
       .object({
         enabled: z.boolean().default(false),
+        keys: acpKeys.optional(),
         apiKey: z
-          .string()
-          .min(ACP_KEY_MIN_LENGTH, { error: `must be at least ${ACP_KEY_MIN_LENGTH} characters` })
+          .never({
+            error:
+              "agents.acp.apiKey was removed: name each key in agents.acp.keys, such as [{ name: 'muse', key: env('NYMBAL_ACP_API_KEY_MUSE') }]",
+          })
           .optional(),
         links: z
           .array(

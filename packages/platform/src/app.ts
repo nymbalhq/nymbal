@@ -121,9 +121,6 @@ export interface CreateAppOptions extends ResolvePrimitivesOptions {
   unconfirmedAccountSweep?: { intervalMs?: number }
 }
 
-/** Who an ACP agent's keyed requests are recorded as: the agent's own name is a label anyone holding the key can set. */
-const ACP_ACTOR: Actor = { kind: 'system', id: 'acp' }
-
 /** Prices that hold their tax need an engine that extracts it: one that only adds tax would tax them twice. */
 function refuseTaxOnTopOfInclusivePrices(config: NymbalConfig, tax: TaxAdapter): void {
   if (!config.store.pricesIncludeTax || tax.capabilities().includes('inclusive')) return
@@ -506,7 +503,7 @@ export async function createApp(
         }
         const acp = resolveAcpSettings(config, adapters.payments)
         if (acp !== null) {
-          addSecret(acp.apiKey)
+          for (const { key } of acp.keys) addSecret(key)
           logger.warn(
             {},
             'agents.acp is on: Agentic Commerce Protocol checkout is beta, and its API may change',
@@ -578,15 +575,18 @@ export async function createApp(
               sessions: platform.documentStore,
               checkout: services.checkout,
               shippingRates: config.commerce.shipping.rates,
-              idempotent: (command, { key, hash }, run) =>
-                runAsActor(ACP_ACTOR, () =>
+              // The actor names the key that sent the request, which also keeps each key's Idempotency-Keys its own.
+              idempotent: (command, { key, hash, keyName }, run) => {
+                const actor: Actor = { kind: 'system', id: `acp:${keyName}` }
+                return runAsActor(actor, () =>
                   idempotentCommand(
                     platform.commandStore,
                     command,
-                    { actor: ACP_ACTOR, key, hash, provider: true },
+                    { actor, key, hash, provider: true },
                     run,
                   ),
-                ),
+                )
+              },
               payments: {
                 providerName: adapters.payments.providerName,
                 environment: acp.environment,

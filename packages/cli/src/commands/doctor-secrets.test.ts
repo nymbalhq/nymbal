@@ -179,3 +179,44 @@ describe('AC-6 (b): doctor prints no secret', () => {
     expect(text.code).toBe(json.code)
   }, 60_000)
 })
+
+describe('AC-9: doctor prints no named ACP key', () => {
+  // Kills: the `key` field escaping the config scrub, so a detail that echoes a named ACP key prints it.
+  it('AC-9: property: given a config whose agents.acp.keys hold generated keys and a report whose details echo them, the text and --json formats print none of them, and still print every check', () => {
+    const named = fc
+      .uniqueArray(
+        fc.record({
+          name: fc.stringMatching(/^[a-z][a-z0-9-]{2,12}$/),
+          key: secretArb.map((s) => `acpkey${s}xyzw`),
+        }),
+        { selector: (k) => k.name, minLength: 1, maxLength: 4 },
+      )
+      .filter((keys) => new Set(keys.map((k) => k.key)).size === keys.length)
+    fc.assert(
+      fc.property(named, fc.array(statusArb, { minLength: 2, maxLength: 2 }), (keys, statuses) => {
+        const names = ['agents', 'slot payments']
+        const details = [
+          `acp keys: ${keys.map((k) => `${k.name}=${k.key}`).join(', ')}`,
+          `bearer ${keys[0]!.key} refused`,
+        ]
+        const report = {
+          checks: names.map((name, i) => ({ name, status: statuses[i]!, detail: details[i]! })),
+        }
+        const config = {
+          ...repoConfig,
+          agents: { acp: { enabled: true, links: [], keys } },
+        } as unknown as NymbalConfig
+
+        const text = formatDoctorReport(report, { json: false, config, env: {} })
+        const json = formatDoctorReport(report, { json: true, config, env: {} })
+
+        expect(keys.filter((k) => text.includes(k.key) || json.includes(k.key))).toEqual([])
+        expect(doctorLines(text).map((l) => l.name)).toEqual(names)
+        expect(
+          (JSON.parse(json) as { checks: Array<{ name: string }> }).checks.map((x) => x.name),
+        ).toEqual(names)
+      }),
+      { numRuns: 200 },
+    )
+  })
+})

@@ -29,9 +29,12 @@ const JSON_STATUS: Record<Status, 'ok' | 'degraded' | 'down'> = {
 
 const COLOUR = { ok: pc.green, warn: pc.yellow, down: pc.red }
 
-/** Config keys whose values are secrets: `secretKey`, `webhookSecret`, `jwtSecret`, SMTP's `pass`, an `apiKey`. */
+/**
+ * Config keys whose values are secrets: `secretKey`, `webhookSecret`, `jwtSecret`, SMTP's `pass`, an `apiKey`, each
+ * `agents.acp.keys[].key`.
+ */
 const SECRET_KEY =
-  /secret|passw(?:or)?d|^pass$|token|api[-_]?key|private[-_]?key|credential|access[-_]?key/i
+  /secret|passw(?:or)?d|^pass$|^key$|token|api[-_]?key|private[-_]?key|credential|access[-_]?key/i
 /** Environment variables whose values are secrets: `STRIPE_SECRET_KEY`, `SMTP_PASS`, `AWS_SECRET_ACCESS_KEY`. */
 const SECRET_ENV =
   /SECRET|PASSWORD|PASSWD|(?:^|_)PASS(?:$|_)|TOKEN|API_KEY|PRIVATE_KEY|CREDENTIAL|ACCESS_KEY/i

@@ -1,4 +1,4 @@
-import { createHash, timingSafeEqual } from 'node:crypto'
+import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import {
   CART_LINE_MAX_QTY,
@@ -24,7 +24,6 @@ import { shippingOptions, type ShippingRate } from '../../services/shipping-quot
 import { formatMoney } from '../../money.js'
 import { ucpProduct, type ListedProduct } from '../catalog.js'
 import { toNymbalAddress } from './address.js'
-import { acpAgentName } from './agent-name.js'
 import {
   ACP_BASE_PATH,
   ACP_CAPABILITIES,
@@ -34,6 +33,7 @@ import {
   ACP_VERSION,
   acpHandler,
 } from './constants.js'
+import { acpKeyMatcher, type AcpKey } from './keys.js'
 import {
   acpSession,
   cartLines,
@@ -54,10 +54,13 @@ export interface AcpLink {
   title?: string | undefined
 }
 
-/** Runs a POST once per Idempotency-Key: its stored answer is replayed, and the key with another body is refused. */
+/**
+ * Runs a POST once per Idempotency-Key of the ACP key that sent it (`keyName`): its stored answer is replayed, and the
+ * Idempotency-Key with another body is refused.
+ */
 export type AcpIdempotent = (
   command: string,
-  request: { key: string; hash: string },
+  request: { key: string; hash: string; keyName: string },
   run: () => Promise<ResponseEnvelope>,
 ) => Promise<ResponseEnvelope>
 
@@ -81,7 +84,7 @@ export interface AcpSurfaceDeps {
   idempotent: AcpIdempotent
   payments: { providerName: string; environment: 'test' | 'production' }
   urls: () => AgentSurfaceUrls
-  config: { apiKey: string; links: readonly AcpLink[]; merchantId?: string | undefined }
+  config: { keys: readonly AcpKey[]; links: readonly AcpLink[]; merchantId?: string | undefined }
   store: { currency: string; name: string }
   logger: Logger
 }
@@ -299,12 +302,12 @@ const CART_REFUSAL: Record<string, string> = {
 /**
  * The Agentic Commerce Protocol's checkout over REST (`/api/acp/**`): a session is a guest cart, opened and changed
  * through the route tools as the calling agent, and completed by charging the agent's delegated payment through the
- * store's checkout. Every request is held to the store's ACP key, the pinned API version and, on a POST, an
- * Idempotency-Key, in that order, before anything is read.
+ * store's checkout. Every request is held to one of the store's ACP keys, the pinned API version and, on a POST, an
+ * Idempotency-Key, in that order, before anything is read. The matched key's name is the calling agent.
  */
 export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
   const { mcp, config } = deps
-  const storeKey = sha256(config.apiKey)
+  const matchKey = acpKeyMatcher(config.keys)
   const handler = () =>
     acpHandler({
       psp: deps.payments.providerName,
@@ -312,17 +315,19 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
       merchantId: config.merchantId,
     })
 
-  function callerOf(request: AgentRouteRequest): Caller {
-    return { agent: { name: acpAgentName(header(request, 'user-agent')) }, ip: request.ip }
+  function callerOf(request: AgentRouteRequest, agent: string): Caller {
+    return { agent: { name: agent }, ip: request.ip }
   }
 
-  /** The bearer (in constant time), the version and, on a POST, the key: the first that fails answers. */
-  function refusal(request: AgentRouteRequest, post: boolean): ResponseEnvelope | null {
+  /** The name of the key the bearer is, or null for any other bearer. */
+  function keyOf(request: AgentRouteRequest): string | null {
     const authorization = header(request, 'authorization') ?? ''
     const bearer = /^Bearer (.+)$/i.exec(authorization)?.[1] ?? ''
-    if (bearer === '' || !timingSafeEqual(sha256(bearer), storeKey)) {
-      return acpError(401, 'unauthorized', 'The bearer is not this store’s ACP key')
-    }
+    return matchKey(bearer)?.name ?? null
+  }
+
+  /** The version and, on a POST, the Idempotency-Key: the first that fails answers. */
+  function refusal(request: AgentRouteRequest, post: boolean): ResponseEnvelope | null {
     const version = header(request, 'api-version')
     if (version === undefined || version === '') {
       return acpError(400, 'missing_api_version', 'The API-Version header is required', {
@@ -714,7 +719,7 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
 
   // --- Routes ----------------------------------------------------------------------------------------------------
 
-  async function create(request: AgentRouteRequest): Promise<ResponseEnvelope> {
+  async function create(request: AgentRouteRequest, agent: string): Promise<ResponseEnvelope> {
     const body = parsed(createRequest, request.body)
     if (!body.ok) return body.answer
     const { data } = body
@@ -722,8 +727,8 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
       return invalid(`This store sells in ${deps.store.currency.toLowerCase()}`, '$.currency')
     }
     const lines = mergeItems(data.line_items)
-    const caller = callerOf(request)
-    return keyed('acp.create', request, async () => {
+    const caller = callerOf(request, agent)
+    return keyed('acp.create', request, agent, async () => {
       const refused = await check(lines, caller)
       if (refused !== null) return refused
       const opened = await mcp.call('cart_get', {}, caller)
@@ -751,7 +756,7 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
     return answer(request.params['id'] ?? '', 200)
   }
 
-  async function update(request: AgentRouteRequest): Promise<ResponseEnvelope> {
+  async function update(request: AgentRouteRequest, agent: string): Promise<ResponseEnvelope> {
     const id = request.params['id'] ?? ''
     const body = parsed(updateRequest, request.body)
     if (!body.ok) return body.answer
@@ -759,9 +764,9 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
     if (data.line_items !== undefined && data.line_items.length === 0) {
       return invalid('A session holds at least one item', '$.line_items')
     }
-    const caller = callerOf(request)
+    const caller = callerOf(request, agent)
     const lines = data.line_items === undefined ? undefined : mergeItems(data.line_items)
-    return keyed('acp.update', request, async () => {
+    return keyed('acp.update', request, agent, async () => {
       const loaded = await load(id)
       if (loaded === null) return notFound(id)
       if (loaded.status !== 'ready_for_payment' && loaded.status !== 'not_ready_for_payment') {
@@ -802,24 +807,24 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
     })
   }
 
-  async function cancel(request: AgentRouteRequest): Promise<ResponseEnvelope> {
+  async function cancel(request: AgentRouteRequest, agent: string): Promise<ResponseEnvelope> {
     const id = request.params['id'] ?? ''
     const body = parsed(cancelRequest, request.body)
     if (!body.ok) return body.answer
-    return keyed('acp.cancel', request, async () => {
+    return keyed('acp.cancel', request, agent, async () => {
       const loaded = await load(id)
       if (loaded === null) return notFound(id)
       // A session with an order (paid, or being paid) is never cancelled here: the order is the merchant's.
       if (loaded.status !== 'ready_for_payment' && loaded.status !== 'not_ready_for_payment') {
         return closed()
       }
-      await mcp.call('cart_clear', { cart: id }, callerOf(request))
+      await mcp.call('cart_clear', { cart: id }, callerOf(request, agent))
       await save(id, { ...loaded.stored, canceledAt: new Date().toISOString() })
       return answer(id, 200)
     })
   }
 
-  async function complete(request: AgentRouteRequest): Promise<ResponseEnvelope> {
+  async function complete(request: AgentRouteRequest, agent: string): Promise<ResponseEnvelope> {
     const id = request.params['id'] ?? ''
     const body = parsed(completeRequest, request.body)
     if (!body.ok) return body.answer
@@ -834,7 +839,7 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
         '$.payment_data.instrument.credential.type',
       )
     }
-    return keyed('acp.complete', request, async () => {
+    return keyed('acp.complete', request, agent, async () => {
       const loaded = await load(id)
       if (loaded === null) return notFound(id)
       if (loaded.status === 'completed' || loaded.status === 'canceled') return closed()
@@ -936,15 +941,16 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
     }
   }
 
-  /** A POST once per Idempotency-Key, scoped to the endpoint; the key with another body is ACP's 422. */
+  /** A POST once per Idempotency-Key, scoped to the endpoint and the ACP key; the key with another body is ACP's 422. */
   async function keyed(
     command: string,
     request: AgentRouteRequest,
+    keyName: string,
     run: () => Promise<ResponseEnvelope>,
   ): Promise<ResponseEnvelope> {
     const key = `acp:${sha256(header(request, 'idempotency-key') ?? '').toString('hex')}`
     const hash = requestHash({ params: request.params, body: request.body })
-    const result = await deps.idempotent(command, { key, hash }, run)
+    const result = await deps.idempotent(command, { key, hash, keyName }, run)
     const code = (result.body as { error?: { code?: unknown } } | undefined)?.error?.code
     if (result.status === 409 && code === 'idempotency.key_reused') {
       return acpError(
@@ -956,8 +962,8 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
     return result
   }
 
-  async function feed(request: AgentRouteRequest): Promise<ResponseEnvelope> {
-    const caller = callerOf(request)
+  async function feed(request: AgentRouteRequest, agent: string): Promise<ResponseEnvelope> {
+    const caller = callerOf(request, agent)
     const urls = deps.urls()
     const seller = { name: deps.store.name, links: config.links.map((link) => ({ ...link })) }
     const products: Record<string, unknown>[] = []
@@ -1002,7 +1008,7 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
   function route(
     method: 'GET' | 'POST',
     path: string,
-    handle: (request: AgentRouteRequest) => Promise<ResponseEnvelope>,
+    handle: (request: AgentRouteRequest, agent: string) => Promise<ResponseEnvelope>,
   ): AgentRoute {
     const post = method === 'POST'
     return {
@@ -1017,7 +1023,11 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
         }
         let result: ResponseEnvelope
         try {
-          result = refusal(request, post) ?? (await handle(request))
+          const agent = keyOf(request)
+          result =
+            agent === null
+              ? acpError(401, 'unauthorized', 'The bearer is not this store’s ACP key')
+              : (refusal(request, post) ?? (await handle(request, agent)))
         } catch (err) {
           deps.logger.error({ err, path }, 'an ACP request failed')
           result = acpError(500, 'processing_error', 'The store could not answer this request')

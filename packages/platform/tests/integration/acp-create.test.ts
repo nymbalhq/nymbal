@@ -5,6 +5,7 @@ import { acpExample, validateAcp } from '../../../../tests/fixtures/acp/validate
 import {
   ACP_ERROR,
   ACP_LINKS,
+  AGENT_SOURCE,
   acpClient,
   acpStore,
   cartOverHttp,
@@ -78,19 +79,20 @@ const lineSet = fc
   )
   .map((ls) => ls.map((l) => ({ variantId: pool[l.index]!.variantId, quantity: l.quantity })))
 
-/** A User-Agent and the agent name its cart's source carries. */
+/** User-Agents an agent may send: none of them moves the cart's source, which is the key's name. */
 const userAgent = fc.constantFrom(
-  ['ChatGPT/2.0 (Macintosh; +https://openai.com/bot)', 'chatgpt'] as const,
-  ['Perplexity-Shopper/1.1', 'perplexity-shopper'] as const,
-  ['', 'acp'] as const,
+  'ChatGPT/2.0 (Macintosh; +https://openai.com/bot)',
+  'Perplexity-Shopper/1.1',
+  'muse/1.0',
+  '',
 )
 
 describe('AC-4: a create opens a session on exactly the agent’s lines at the store’s prices', () => {
   // Kills: lines or quantities drift from the request or the cart; a total that is not the cart's; money leaving minor
-  // units; a session that reserves stock or places an order; a source that ignores the agent.
-  it('AC-4: property: over generated line sets of up to 10 in-stock variants at quantities 1-5, a create with a buyer and fulfillment_details answers 201 ready_for_payment, valid against CheckoutSession, with the request’s (item, quantity) pairs, the cart’s pairs, store prices and totals, the store currency in lower case, the one tokenized-card handler, the configured links and the cart’s expiry; GET answers it deep-equal; the cart’s source names the User-Agent’s agent; no stock moves and no order is made', async () => {
+  // units; a session that reserves stock or places an order; a source taken from the User-Agent, not the key.
+  it('AC-4: property: over generated line sets of up to 10 in-stock variants at quantities 1-5, a create with a buyer and fulfillment_details answers 201 ready_for_payment, valid against CheckoutSession, with the request’s (item, quantity) pairs, the cart’s pairs, store prices and totals, the store currency in lower case, the one tokenized-card handler, the configured links and the cart’s expiry; GET answers it deep-equal; the cart’s source is the key’s name whatever the User-Agent; no stock moves and no order is made', async () => {
     await fc.assert(
-      fc.asyncProperty(lineSet, userAgent, async (lines, [ua, name]) => {
+      fc.asyncProperty(lineSet, userAgent, async (lines, ua) => {
         const agent = acpClient(store.baseUrl, { userAgent: ua })
         const stocks = lines.map((l) => committedStock(store.kernel.target, l.variantId))
         const orders = committedCount(store.kernel.target, 'orders')
@@ -147,7 +149,7 @@ describe('AC-4: a create opens a session on exactly the agent’s lines at the s
         expect(Date.parse(session.expires_at ?? '')).toBe(Date.parse(row?.expiresAt ?? 'none'))
         expect(read.status).toBe(200)
         expect(read.body).toEqual(session)
-        expect(await storedCartSource(store.kernel, session.id)).toBe(`agent:${name}`)
+        expect(await storedCartSource(store.kernel, session.id)).toBe(AGENT_SOURCE)
         expect(lines.map((l) => committedStock(store.kernel.target, l.variantId))).toEqual(stocks)
         expect(committedCount(store.kernel.target, 'orders')).toBe(orders)
       }),
@@ -156,7 +158,7 @@ describe('AC-4: a create opens a session on exactly the agent’s lines at the s
         examples: [
           [
             pool.slice(0, 10).map((p, i) => ({ variantId: p.variantId, quantity: (i % 5) + 1 })),
-            ['', 'acp'],
+            '',
           ],
         ],
       },

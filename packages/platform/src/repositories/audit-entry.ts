@@ -61,9 +61,10 @@ const ACTOR_KINDS = new Set<string>(['admin', 'customer', 'guest', 'system', 'im
 
 type Table = typeof sqliteSchema.auditEntries | typeof postgresSchema.auditEntries
 
+/** `kind:id`, a kind alone, or an id alone: an id may hold a colon itself (`acp:muse`), so only a known kind splits. */
 function actorFilter(t: Table, actor: string): SQL | undefined {
   const colon = actor.indexOf(':')
-  if (colon > 0) {
+  if (colon > 0 && ACTOR_KINDS.has(actor.slice(0, colon))) {
     return and(eq(t.actorKind, actor.slice(0, colon)), eq(t.actorId, actor.slice(colon + 1)))
   }
   return ACTOR_KINDS.has(actor) ? eq(t.actorKind, actor) : eq(t.actorId, actor)

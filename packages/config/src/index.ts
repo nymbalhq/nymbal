@@ -29,6 +29,7 @@ export {
 } from './trusted-proxies.js'
 export {
   ACP_KEY_MIN_LENGTH,
+  ACP_KEY_NAME,
   ACP_LINK_TYPES,
   ASSISTANT_MASK_FIELDS,
   CUSTOMER_FIELDS,

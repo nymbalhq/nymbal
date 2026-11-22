@@ -19,10 +19,10 @@ interface Session {
 
 /** The store's ACP key, which the run's API is started with and hands to the journeys. */
 function acpKey(): string {
-  const key = process.env['NYMBAL_ACP_API_KEY'] ?? ''
+  const key = process.env['NYMBAL_ACP_API_KEY_E2E'] ?? ''
   expect(
     key.length,
-    'NYMBAL_ACP_API_KEY: the E2E API runs with agents.acp on under this key',
+    'NYMBAL_ACP_API_KEY_E2E: the E2E API runs with agents.acp on under this key, named e2e-agent',
   ).toBeGreaterThanOrEqual(32)
   return key
 }

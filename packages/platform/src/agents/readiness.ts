@@ -1,5 +1,7 @@
 import { CUSTOMER_FIELDS, DEFAULT_CUSTOMER_FIELDS, type NymbalConfig } from '@nymbalhq/config'
+import { ConfigError } from '@nymbalhq/types'
 import type { DiagnosisCheck } from '../diagnose.js'
+import { acpKeys } from './acp/keys.js'
 import { UCP_CAPABILITIES } from './ucp-surface.js'
 
 const NAME = 'agents'
@@ -49,16 +51,35 @@ function customerFieldsText(agents: NymbalConfig['agents']): string {
   return `customer fields: mcp withholds ${fieldsText(withhold)}; assistant ${told}`
 }
 
+/** The ACP keys by name (never by value), or, on with none, the refusal boot would stop on. */
+function acpText(acp: NymbalConfig['agents']['acp']): { text: string; refused: boolean } {
+  if (!acp.enabled) return { text: 'acp off', refused: false }
+  try {
+    return { text: `acp keys: ${acpKeys(acp).map((k) => k.name).join(', ')}`, refused: false }
+  } catch (error) {
+    if (!(error instanceof ConfigError)) throw error
+    return { text: error.message, refused: true }
+  }
+}
+
 /**
  * How ready the agent surfaces are, from the config and the environment alone. UCP checkout advertised without a
  * privacy and a terms link, or on a public plain-HTTP origin, is a warning; it is never `down`, because the surface
- * still serves and doctor's exit code belongs to the checks that stop a store.
+ * still serves and doctor's exit code belongs to the checks that stop a store. ACP on with no key is a warning too:
+ * boot refuses it, and the line says why.
  */
 export function agentReadiness(config: NymbalConfig, env: NodeJS.ProcessEnv): DiagnosisCheck {
   const { ucp, mcp } = config.agents
   const mcpText = `mcp ${mcp.enabled ? mcp.writes : 'off'}`
   const fields = customerFieldsText(config.agents)
-  if (!ucp.enabled) return { name: NAME, status: 'ok', detail: `ucp off; ${mcpText}; ${fields}` }
+  const acp = acpText(config.agents.acp)
+  if (!ucp.enabled) {
+    return {
+      name: NAME,
+      status: acp.refused ? 'degraded' : 'ok',
+      detail: `ucp off; ${mcpText}; ${acp.text}; ${fields}`,
+    }
+  }
 
   const present = new Set(ucp.links.map((link) => link.type))
   const missing = REQUIRED_LINKS.filter((type) => !present.has(type))
@@ -71,7 +92,11 @@ export function agentReadiness(config: NymbalConfig, env: NodeJS.ProcessEnv): Di
       : []),
   ]
   if (problems.length > 0) {
-    return { name: NAME, status: 'degraded', detail: [...problems, fields].join('; ') }
+    return { name: NAME, status: 'degraded', detail: [...problems, acp.text, fields].join('; ') }
   }
-  return { name: NAME, status: 'ok', detail: `ucp: ${capabilitiesText()}; ${mcpText}; ${fields}` }
+  return {
+    name: NAME,
+    status: acp.refused ? 'degraded' : 'ok',
+    detail: `ucp: ${capabilitiesText()}; ${mcpText}; ${acp.text}; ${fields}`,
+  }
 }
