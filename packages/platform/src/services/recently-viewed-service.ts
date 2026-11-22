@@ -28,7 +28,14 @@ export function createRecentlyViewedService(
   deps: RecentlyViewedServiceDeps,
 ): RecentlyViewedService {
   const { store, repos, publisher, logger } = deps
-  const now = deps.now ?? (() => new Date())
+  const clock = deps.now ?? (() => new Date())
+  // Each stamp strictly after the last: the read model moves a visitor's views up to the merge's instant, so a view
+  // sharing the merge's millisecond would move live but stay behind in a rebuild that folds in log order.
+  let last = -Infinity
+  const now = (): Date => {
+    last = Math.max(clock().getTime(), last + 1)
+    return new Date(last)
+  }
 
   return {
     async record(viewer, productId) {
