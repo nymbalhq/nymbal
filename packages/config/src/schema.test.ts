@@ -45,6 +45,19 @@ describe('nymbalConfigSchema', () => {
     expect(parsed).toEqual(nymbalConfigSchema.parse(structuredClone(parsed)))
   })
 
+  it('AC-12: features.autoUpdates is gone: neither a default config nor one that still sets it parses to a features object holding it', () => {
+    const fromDefault = nymbalConfigSchema.parse(baseConfig())
+    const stillSet = nymbalConfigSchema.safeParse({
+      ...baseConfig(),
+      features: { autoUpdates: true },
+    })
+
+    expect(Object.keys(fromDefault.features)).not.toContain('autoUpdates')
+    expect(stillSet.success && Object.keys(stillSet.data.features).includes('autoUpdates')).toBe(
+      false,
+    )
+  })
+
   it('rejects invalid template', () => {
     const cfg = baseConfig() as unknown as Record<string, unknown>
     cfg.template = 'svelte'

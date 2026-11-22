@@ -765,7 +765,6 @@ export const deploymentSchema = z.object({
 export const featuresSchema = z.object({
   staging: z.boolean().default(false),
   heartbeat: z.boolean().default(false),
-  autoUpdates: z.boolean().default(false),
 })
 
 /**
@@ -1034,7 +1033,6 @@ export const nymbalConfigSchema = z
     features: featuresSchema.default({
       staging: false,
       heartbeat: false,
-      autoUpdates: false,
     }),
     events: eventsSchema.prefault({}),
     agents: agentsSchema.prefault({}),

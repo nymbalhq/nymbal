@@ -21,6 +21,7 @@ import { mcpCommand } from './commands/mcp.js'
 import { evalCommand } from './commands/eval.js'
 import { upgradeCommand } from './commands/upgrade.js'
 import { verifyCommand } from './commands/verify.js'
+import { updateCheckCommand } from './commands/update-check.js'
 import {
   securityApplyCommand,
   securityDriftCommand,
@@ -56,6 +57,7 @@ export const main = defineCommand({
     add: addCommand,
     upgrade: upgradeCommand,
     verify: verifyCommand,
+    'update-check': updateCheckCommand,
     doctor: doctorCommand,
     heartbeat: heartbeatCommand,
     'security:plan': securityPlanCommand,

@@ -33,7 +33,7 @@ function fail(message: string): number {
 const readJson = (file: string): unknown => JSON.parse(readFileSync(file, 'utf8'))
 
 /** The version a package in `node_modules` declares, or undefined when it is absent or unreadable. */
-function installedVersion(root: string, name: string): string | undefined {
+export function installedVersion(root: string, name: string): string | undefined {
   try {
     const { version } = readJson(join(root, 'node_modules', name, 'package.json')) as {
       version?: unknown

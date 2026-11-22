@@ -166,42 +166,53 @@ function seedCmd(pm: PackageManager): [string, string[]] {
 /** Where every new store's CI workflow is written. */
 export const WORKFLOW_PATH = '.github/workflows/nymbal.yml'
 
-/** Per package manager: its setup before setup-node, setup-node's cache, the frozen install, and verify. */
+/** Per package manager: its setup before setup-node, setup-node's cache, the frozen install, and how it runs the CLI. */
 const WORKFLOW_ROWS: Record<
   PackageManager,
-  { setup: string | null; cache: string | null; install: string; verify: string }
+  { setup: string | null; cache: string | null; install: string; exec: string }
 > = {
-  npm: { setup: null, cache: 'npm', install: 'npm ci', verify: 'npx nymbal verify' },
+  npm: { setup: null, cache: 'npm', install: 'npm ci', exec: 'npx nymbal' },
   pnpm: {
     setup: 'uses: pnpm/action-setup@v6',
     cache: 'pnpm',
     install: 'pnpm install --frozen-lockfile',
-    verify: 'pnpm exec nymbal verify',
+    exec: 'pnpm exec nymbal',
   },
   'yarn-classic': {
     setup: null,
     cache: 'yarn',
     install: 'yarn install --frozen-lockfile',
-    verify: 'yarn run nymbal verify',
+    exec: 'yarn run nymbal',
   },
   'yarn-berry': {
     setup: 'run: npm install --global corepack && corepack enable',
     cache: 'yarn',
     install: 'yarn install --immutable',
-    verify: 'yarn exec nymbal verify',
+    exec: 'yarn exec nymbal',
   },
   // setup-node's cache takes npm, yarn and pnpm only.
   bun: {
     setup: 'uses: oven-sh/setup-bun@v2',
     cache: null,
     install: 'bun install --frozen-lockfile',
-    verify: 'bunx nymbal verify',
+    exec: 'bunx nymbal',
   },
 }
 
-/** The store's CI: installs from the lockfile and runs `nymbal verify` on every pull request and push to main. */
+/**
+ * The store's CI: `nymbal verify` on every pull request and push to main, and `nymbal update-check` on every pull
+ * request. Renovate reads a skipped check as green, so update-check has no branch condition.
+ */
 export function renderWorkflow(pm: PackageManager): string {
   const row = WORKFLOW_ROWS[pm]
+  const setupAndInstall = [
+    ...(row.setup === null ? [] : [`      - ${row.setup}`]),
+    '      - uses: actions/setup-node@v7',
+    '        with:',
+    '          node-version-file: .node-version',
+    ...(row.cache === null ? [] : [`          cache: ${row.cache}`]),
+    `      - run: ${row.install}`,
+  ]
   return [
     '# Checks this store still builds and takes an order: `nymbal verify` on a throwaway store, no secrets needed.',
     'name: Nymbal',
@@ -220,15 +231,34 @@ export function renderWorkflow(pm: PackageManager): string {
     '    timeout-minutes: 20',
     '    steps:',
     '      - uses: actions/checkout@v7',
-    ...(row.setup === null ? [] : [`      - ${row.setup}`]),
-    '      - uses: actions/setup-node@v7',
+    ...setupAndInstall,
+    `      - run: ${row.exec} verify`,
+    '',
+    '  auto-update:',
+    "    if: github.event_name == 'pull_request'",
+    '    runs-on: ubuntu-24.04',
+    '    timeout-minutes: 10',
+    '    steps:',
+    '      - uses: actions/checkout@v7',
     '        with:',
-    '          node-version-file: .node-version',
-    ...(row.cache === null ? [] : [`          cache: ${row.cache}`]),
-    `      - run: ${row.install}`,
-    `      - run: ${row.verify}`,
+    // The commit and its first parent, which update-check compares with.
+    '          fetch-depth: 2',
+    ...setupAndInstall,
+    `      - run: ${row.exec} update-check`,
     '',
   ].join('\n')
+}
+
+/** Where every new store's Renovate config is written. */
+export const RENOVATE_PATH = 'renovate.json'
+
+/** Nymbal's store preset: one pull request per Nymbal release, and nothing merges itself. */
+export function renderRenovate(): string {
+  const config = {
+    $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+    extends: ['github>nymbalhq/nymbal//renovate/store'],
+  }
+  return `${JSON.stringify(config, null, 2)}\n`
 }
 
 function devCmd(pm: PackageManager): string {
@@ -355,7 +385,7 @@ export async function main(argv: string[] = process.argv, deps: MainDeps = {}): 
       await mkdir(targetDir, { recursive: true })
     }
     await scaffold(targetDir, answers)
-    await writeWorkflow(targetDir, pm)
+    await writeCiFiles(targetDir, pm)
     const admin = newAdminCredentials(flags.adminEmail)
     await writeAdminEnv(targetDir, admin)
     process.stdout.write(`Created ${answers.directory}\n`)
@@ -456,7 +486,7 @@ export async function main(argv: string[] = process.argv, deps: MainDeps = {}): 
   note(pc.dim(`Scaffolding into ${targetDir}`), 'Creating project')
 
   await scaffold(targetDir, answers)
-  await writeWorkflow(targetDir, pm)
+  await writeCiFiles(targetDir, pm)
   const admin = newAdminCredentials(String(adminEmail).trim())
   await writeAdminEnv(targetDir, admin)
 
@@ -529,10 +559,11 @@ export async function scaffold(dir: string, answers: Answers): Promise<void> {
   await patchPackageJson(dir, answers.directory)
 }
 
-async function writeWorkflow(dir: string, pm: PackageManager): Promise<void> {
+async function writeCiFiles(dir: string, pm: PackageManager): Promise<void> {
   const path = resolve(dir, WORKFLOW_PATH)
   await mkdir(dirname(path), { recursive: true })
   await writeFile(path, renderWorkflow(pm), 'utf8')
+  await writeFile(resolve(dir, RENOVATE_PATH), renderRenovate(), 'utf8')
 }
 
 async function patchPackageJson(dir: string, name: string): Promise<void> {
@@ -633,7 +664,6 @@ export default defineConfig({
   features: {
     staging: false,
     heartbeat: false,
-    autoUpdates: false,
   },
 })
 `

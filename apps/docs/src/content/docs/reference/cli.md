@@ -169,6 +169,14 @@ Move this store to the newest Nymbal release its adapters are certified with
 
 Build the storefront for production and run a smoke journey (pages, cart, checkout, order, admin) on a throwaway store; your project's own store is not touched
 
+## `nymbal update-check`
+
+Decide whether a dependency update may merge itself under the auto-updates Renovate preset
+
+| Argument | Type | Description | Default |
+| --- | --- | --- | --- |
+| `--base` | string | The git revision the update is compared with | `"HEAD^1"` |
+
 ## `nymbal doctor`
 
 Check the project without changing it: config, packages, command store, migrations, slots and primitives
