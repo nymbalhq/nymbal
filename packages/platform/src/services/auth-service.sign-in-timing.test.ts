@@ -1,4 +1,3 @@
-import { performance } from 'node:perf_hooks'
 import bcrypt from 'bcryptjs'
 import { describe, expect, it } from 'vitest'
 import { AuthError } from '@nymbalhq/types'
@@ -20,14 +19,10 @@ import {
 // A sign-in answers alike for a known address, an unknown one and an imported one with no password: each spends one
 // bcrypt round at the store's cost, against the customer's hash or a dummy at the same cost, and each refuses with the
 // one message. The dummy is published with the code, so its password signs nobody in, an imported customer included.
-// Timings are real bcrypt at the real cost. A shared machine slows for seconds at a time, so the three are timed in
-// turn within each round and compared within the round: a slow stretch falls on every class, not on one.
+// The work is counted, not timed, in auth-service.legacy-work.test.ts: a wall-clock ratio on a shared machine only
+// ever went red falsely.
 
 const PASSWORD = 'sign-in-timing-correct-horse'
-const WRONG = 'sign-in-timing-wrong-horse'
-const ROUNDS = 12
-const LOWEST = 0.4
-const HIGHEST = 2.5
 
 async function setup() {
   const commandStore = createCommandStore(
@@ -73,85 +68,7 @@ async function refusalOf(p: Promise<unknown>): Promise<{ code: string; message: 
   }
 }
 
-function median(values: number[]): number {
-  const sorted = [...values].sort((a, b) => a - b)
-  const mid = Math.floor(sorted.length / 2)
-  return sorted.length % 2 === 1 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2
-}
-
-/** The wall time of one call, awaited to its settlement. */
-async function timeMs(call: () => Promise<unknown>): Promise<number> {
-  const start = performance.now()
-  await call().catch(() => undefined)
-  return performance.now() - start
-}
-
-const ORDERS = [
-  [0, 1, 2],
-  [1, 2, 0],
-  [2, 0, 1],
-  [0, 2, 1],
-  [2, 1, 0],
-  [1, 0, 2],
-] as const
-
-/**
- * Times the three sign-ins once each per round, in an order that turns every round so none always runs first or last,
- * and returns each class's median time and the median over rounds of its time over the known address's in that round.
- */
-async function timeInTurn(
-  known: () => Promise<unknown>,
-  unknown: () => Promise<unknown>,
-  imported: () => Promise<unknown>,
-  rounds = ROUNDS,
-) {
-  const calls = [known, unknown, imported]
-  const times: [number[], number[], number[]] = [[], [], []]
-  for (let round = 0; round < rounds; round += 1) {
-    for (const i of ORDERS[round % ORDERS.length]!) times[i]!.push(await timeMs(calls[i]!))
-  }
-  const [k, u, m] = times
-  return {
-    ms: { known: median(k), unknown: median(u), imported: median(m) },
-    ratio: {
-      unknown: median(u.map((t, r) => t / k[r]!)),
-      imported: median(m.map((t, r) => t / k[r]!)),
-    },
-  }
-}
-
 describe('AC-1: a sign-in answers in one time and one message for known, unknown and imported addresses', () => {
-  it('AC-1: over real bcrypt at the real cost, the median sign-in time for an unknown address and for an imported customer is 0.4 to 2.5 times that for a known address with a wrong password, and all three refuse auth.invalid_credentials with one message', async () => {
-    const { auth, commandStore } = await setup()
-    try {
-      await auth.register({ email: 'known@timing.test', password: PASSWORD })
-      await auth.importCustomer({ email: 'imported@timing.test' })
-      // The first compare in a process pays for compilation; it is no sample.
-      await auth.login('known@timing.test', WRONG).catch(() => undefined)
-
-      const { ms, ratio } = await timeInTurn(
-        () => auth.login('known@timing.test', WRONG),
-        () => auth.login('nobody@timing.test', WRONG),
-        () => auth.login('imported@timing.test', WRONG),
-      )
-      const refusals = [
-        await refusalOf(auth.login('known@timing.test', WRONG)),
-        await refusalOf(auth.login('nobody@timing.test', WRONG)),
-        await refusalOf(auth.login('imported@timing.test', WRONG)),
-      ]
-
-      const label = `median of ${ROUNDS} rounds: known ${ms.known.toFixed(1)} ms, unknown ${ms.unknown.toFixed(1)} ms (${ratio.unknown.toFixed(2)}x), imported ${ms.imported.toFixed(1)} ms (${ratio.imported.toFixed(2)}x)`
-      expect(ratio.unknown, label).toBeGreaterThanOrEqual(LOWEST)
-      expect(ratio.unknown, label).toBeLessThanOrEqual(HIGHEST)
-      expect(ratio.imported, label).toBeGreaterThanOrEqual(LOWEST)
-      expect(ratio.imported, label).toBeLessThanOrEqual(HIGHEST)
-      expect(refusals.map((r) => r.code)).toEqual(refusals.map(() => 'auth.invalid_credentials'))
-      expect(new Set(refusals.map((r) => r.message)).size).toBe(1)
-    } finally {
-      await commandStore.close()
-    }
-  }, 60_000)
-
   it('AC-1: the dummy hash is a hash of DUMMY_PASSWORD at PASSWORD_HASH_ROUNDS, the cost a registered customer’s stored hash has', async () => {
     const { auth, repos, commandStore } = await setup()
     try {

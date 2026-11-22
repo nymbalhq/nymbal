@@ -266,7 +266,8 @@ export const HARNESS_PROJECTS = ['tooling', 'architecture']
 export const SLOW_HARNESS_PROJECTS = ['tooling-slow']
 
 /**
- * The harness projects gate:full leaves out when no harness path changed. `architecture` is not one: it guards
+ * The harness projects gate:full leaves out of its run of every test: none of their tests run when no harness path
+ * changed, and for a harness change only those a related run selects (`plan`). `architecture` is not one: it guards
  * product code (no Stripe import in the kernel, the framework-agnostic guard), so gate:full runs it on every change.
  */
 export const FULL_GATE_HARNESS_PROJECTS = ['tooling', ...SLOW_HARNESS_PROJECTS]
@@ -1333,12 +1334,13 @@ export type PlanInput = {
   /**
    * The harness's own Vitest projects (`HARNESS_PROJECTS`): `all` runs them whatever changed (dev CI); `changed`,
    * the default, leaves them out when no harness path changed: all of them in the plain gate, the tooling ones in
-   * gate:full (`FULL_GATE_HARNESS_PROJECTS`).
+   * gate:full (`FULL_GATE_HARNESS_PROJECTS`), which for a harness change runs the tooling tests the change reaches.
    */
   harness?: 'all' | 'changed' | undefined
   /**
-   * Harness test files that read a changed file outside their imports (`harnessInputTests`): gate:full and the plain
-   * gate's `changed` run keep their projects, and the latter takes them beside the changed paths. None when not given.
+   * Harness test files that read a changed file outside their imports (`harnessInputTests`): the plain gate's
+   * `changed` run and gate:full's related run of the tooling projects take them beside the changed paths, and a
+   * gate:full that runs those projects whole keeps them. None when not given.
    */
   inputReaders?: string[] | undefined
   /** The paths that run hands `vitest related`: `changed` with both sides of each rename. `changed` when not given. */
@@ -1600,22 +1602,37 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
   // The plain gate never runs the slow harness projects, unless `--harness all` asks for every one.
   const plainApart = (projects: string[]): string[] =>
     full || input.harness === 'all' ? projects : [...projects, ...SLOW_HARNESS_PROJECTS]
-  // A harness test that reads a changed file keeps its project: gate:full runs that project whole, the plain gate's
-  // `vitest related` is handed the test itself.
+  // A harness test that reads a changed file keeps its project: gate:full runs that project whole or hands the test to
+  // its related run (below), the plain gate's `vitest related` is handed the test itself.
   const readers = input.inputReaders ?? []
-  const readerProjects = new Set<string>(
-    readers.map((file) => (file.startsWith('tests/architecture/') ? 'architecture' : 'tooling')),
-  )
+  const readerProject = (file: string): string =>
+    file.startsWith('tests/architecture/') ? 'architecture' : 'tooling'
+  const readerProjects = new Set<string>(readers.map(readerProject))
   const readersKept = harnessSkipped.filter((project) => !readerProjects.has(project))
-  const harnessApart = skipEnv(plainApart(full ? readersKept : harnessSkipped))
+  // gate:full takes from the tooling projects what the plain gate takes for the change: the tests its paths reach by
+  // import and those whose `// Reads:` matches them, in a `vitest related` run of their own after every other test
+  // (architecture runs whole in every gate:full). The projects run whole for a configuration change (the plain gate
+  // runs the whole suite then), with no base, under `--harness all` (dev CI's dispatch and nightly), and in a sharded
+  // run (dev CI's push), which a related run cannot split.
+  const toolingReaders = readers.filter((file) => readerProject(file) === 'tooling')
+  const harnessRelated =
+    full &&
+    input.harness !== 'all' &&
+    input.noBase !== true &&
+    shard === undefined &&
+    selectTests(changed).mode !== 'all' &&
+    (harnessKept || toolingReaders.length > 0)
+  const harnessApart = skipEnv(
+    plainApart(full ? (harnessRelated ? FULL_GATE_HARNESS_PROJECTS : readersKept) : harnessSkipped),
+  )
   const changedApart = skipEnv(plainApart(readersKept))
   // CI exports the pushed branch's previous tip as GATE_BASE to every step; the plain gate hands its Vitest runs its
   // own base the same way, so a script that reads it fails here as it would there.
   const baseEnv = full || input.noBase === true ? '' : `GATE_BASE=${shellWord(base)} `
-  const related = [...new Set([...(input.relatedPaths ?? changed), ...readers])]
-    .sort()
-    .map(shellWord)
-    .join(' ')
+  const relatedTo = (files: string[]): string =>
+    [...new Set([...(input.relatedPaths ?? changed), ...files])].sort().map(shellWord).join(' ')
+  const related = relatedTo(readers)
+  const harnessRelatedPaths = relatedTo(toolingReaders)
   const perfPackages = input.perfPackages ?? ['packages/platform']
   const perfReached =
     selection.mode === 'all' ||
@@ -1645,7 +1662,11 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
           }
         : {
             name: 'tests',
-            command: `${baseEnv}${harnessApart}pnpm run test${perfApart} ${VITEST_JSON}${shardPart}`,
+            command:
+              `${baseEnv}${harnessApart}pnpm run test${perfApart} ${VITEST_JSON}${shardPart}` +
+              (harnessRelated
+                ? ` && pnpm exec vitest related --run ${FULL_GATE_HARNESS_PROJECTS.map((p) => `--project ${p}`).join(' ')} --passWithNoTests ${harnessRelatedPaths}`
+                : ''),
             ...buildNeeds,
           }
   const steps: StepSpec[] = [
@@ -1834,12 +1855,17 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
           },
       { name: 'e2e astro-custom', command: e2e('astro-custom'), needs: mailpitNeeds },
       { name: 'e2e nextjs-custom', command: e2e('nextjs-custom'), needs: mailpitNeeds },
-      { name: 'e2e mail-outage', command: e2e('mail-outage'), needs: mailpitNeeds },
       { name: 'e2e astro-nosearch', command: e2e('astro-nosearch'), needs: e2eNeeds },
       { name: 'e2e nextjs-nosearch', command: e2e('nextjs-nosearch'), needs: e2eNeeds },
       { name: 'e2e astro-override', command: e2e('astro-override'), needs: e2eNeeds },
       { name: 'e2e nextjs-override', command: e2e('nextjs-override'), needs: e2eNeeds },
     )
+    // Only when `--only` names it (the nightly's job): most of its 40 s waits on the real retry delay, and integration
+    // tests hold what it proves (packages/platform/tests/integration/email-outage.test.ts, order-email-retry.test.ts):
+    // no mail refused in an outage is lost, and each is sent once after it.
+    if (input.only?.includes('e2e mail-outage') === true) {
+      steps.push({ name: 'e2e mail-outage', command: e2e('mail-outage'), needs: mailpitNeeds })
+    }
     // Off by default: one more image set and target against a full run already over budget. `--only` naming a step
     // must find it (`select` throws on an absent one), so naming either turns both on.
     if (

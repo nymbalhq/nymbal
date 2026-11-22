@@ -109,7 +109,10 @@ async function answerOf(stored: string, password: string, m: MaxCost): Promise<b
 
 const utf8Bytes = (s: string): number => Buffer.byteLength(s, 'utf8')
 
-const SIGNABLE = VECTORS.filter((v) => v.nymbalVerifies)
+// The trim and inner-edit matrices check the rule around the hash, the same code for every vector, so they take one
+// vector per format, the bcrypt ones at cost 10: a probe of a cost-12 vector is four times the work and proves nothing
+// more. That every vector verifies at all is the known-answer test's.
+const MATRIX = ['phpass ascii', 'wp bcrypt 10 ascii', 'bcrypt 10 ascii'].map(vector)
 
 describe('AC-1: known answers from WordPress', () => {
   it('AC-1: with maxCost 12 every WordPress-made vector verifies with its password, except phpass over 256 bytes, which does not', async () => {
@@ -118,8 +121,8 @@ describe('AC-1: known answers from WordPress', () => {
     expect(answers).toEqual(VECTORS.map((v) => [v.name, v.nymbalVerifies]))
   }, 30_000)
 
-  it('AC-1: a vector’s password with PHP-trim whitespace added at either end still verifies, as WordPress trims it; whitespace PHP keeps, and a NUL the slashing has made \\0, does not at either end', async () => {
-    for (const v of SIGNABLE) {
+  it('AC-1: a vector’s password with PHP-trim whitespace added at either end still verifies, as WordPress trims it, in each format; whitespace PHP keeps, and a NUL the slashing has made \\0, does not at either end', async () => {
+    for (const v of MATRIX) {
       await fc.assert(
         fc.asyncProperty(outerWhitespace(v.password), async (typed) => {
           expect(
@@ -166,8 +169,8 @@ describe('AC-1: known answers from WordPress', () => {
     expect(answers).toEqual(slashed.map((v) => [v.name, true, false, false]))
   }, 60_000)
 
-  it('AC-1: a password one inner edit away (insert, delete, replace, case flip, an inner space) does not verify against any vector', async () => {
-    for (const v of SIGNABLE) {
+  it('AC-1: a password one inner edit away (insert, delete, replace, case flip, an inner space) does not verify against a vector of each format', async () => {
+    for (const v of MATRIX) {
       await fc.assert(
         fc.asyncProperty(innerEdit(v.password), async (wrong) => {
           expect(

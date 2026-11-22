@@ -729,9 +729,9 @@ jobs:
       - name: Install Playwright system libraries
         if: steps.browsers.outputs.cache-hit == 'true'
         run: pnpm --filter @nymbalhq/e2e exec playwright install-deps chromium
-      # The mail outage journey turns this job's Mailpit's Chaos on, so it runs here, after the other target is done.
-      - name: Next.js on custom providers (functional, a11y), then a mail outage
-        run: pnpm exec tsx scripts/gate.ts --full --only "e2e nextjs-custom,e2e mail-outage" --services external --no-build --base "$GATE_BASE"
+      # The mail outage journey runs in the nightly (nightly.yml, e2e-mail-outage).
+      - name: Next.js on custom providers (functional, a11y)
+        run: pnpm exec tsx scripts/gate.ts --full --only "e2e nextjs-custom" --services external --no-build --base "$GATE_BASE"
       - name: Upload the Playwright reports
         if: always()
         uses: actions/upload-artifact@v7

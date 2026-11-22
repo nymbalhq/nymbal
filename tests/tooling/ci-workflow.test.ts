@@ -259,14 +259,7 @@ const RUNS_TESTS =
   /scripts\/gate\.ts|\bgate:full\b|\bvitest\b|\bplaywright\s+test\b|\bstryker\b|\bpnpm\s+(?:run\s+)?(?:test|mutation|sentinels)\b|create-nymbal-app/
 
 /** The CI jobs that must use the build artefact (besides build itself). */
-const SPEC_JOBS = [
-  'gate-tests',
-  'integration',
-  'sentinels',
-  'e2e-astro',
-  'e2e-nextjs',
-  'e2e-admin',
-]
+const SPEC_JOBS = ['gate-tests', 'integration', 'sentinels', 'e2e-astro', 'e2e-nextjs', 'e2e-admin']
 
 function uploadsOf(job: Job): Step[] {
   return (job.steps ?? []).filter((s) => s.uses?.startsWith('actions/upload-artifact@'))
@@ -997,6 +990,56 @@ describe('AC-13: the custom-store E2E jobs have the Mailpit their journeys read'
     expect(problems).toEqual([])
     expect(planned).toBe(Object.keys(MAILPIT_E2E_JOBS).length)
   })
+
+  it('AC-13: the mail outage journey runs in the nightly alone, in a job whose Mailpit has Chaos on and is given to gate.ts under --services external, and no push job runs it', () => {
+    const nightly = loadWorkflow(NIGHTLY)
+    const github = nightlyDispatch('dev', 'f')
+    const runners = gateCalls(nightly, github).filter((c) =>
+      onlyOf(c.args).includes('e2e mail-outage'),
+    )
+    const pushRunners = gateCalls(loadWorkflow(WORKFLOW), DEV_PUSH).filter((c) =>
+      onlyOf(c.args).includes('e2e mail-outage'),
+    )
+    const rows = runners.map((call) => {
+      const job = nightly.jobs[call.job]!
+      const mailpit = Object.values(job.services ?? {}).find((svc) =>
+        (svc?.image ?? '').startsWith('axllent/mailpit'),
+      )
+      const published = publishedPorts(mailpit)
+      const run = execute(nightly, github).find((r) => r.job === call.job)!
+      const api = run.env.NYMBAL_TEST_MAILPIT_URL
+      const steps = plan({
+        full: true,
+        base: 'HEAD',
+        changed: [],
+        mutated: [],
+        only: onlyOf(call.args),
+        services: flag(call.args, '--services') === 'external' ? 'external' : 'compose',
+        mailpitUrl: api || undefined,
+        noBuild: call.args.includes('--no-build'),
+        artefactPresent: true,
+      } as PlanInput).steps
+      return {
+        only: onlyOf(call.args),
+        chaos: text(
+          (mailpit as { env?: Record<string, unknown> } | undefined)?.env?.['MP_ENABLE_CHAOS'],
+        ),
+        api: portOf(api ?? '') === published.get('8025'),
+        smtp: portOf(run.env.NYMBAL_TEST_MAILPIT_SMTP ?? '') === published.get('1025'),
+        runs: steps.filter((s) => s.skip === undefined).map((s) => s.name),
+      }
+    })
+    expect(rows).toEqual([
+      {
+        only: ['e2e mail-outage'],
+        chaos: 'true',
+        api: true,
+        smtp: true,
+        runs: ['e2e mail-outage'],
+      },
+    ])
+    expect(pushRunners).toEqual([])
+  })
 })
 
 /** The projects a `playwright test` command selects: `--project a`, `--project=a`, or `--project a b`. */
@@ -1562,6 +1605,8 @@ function harnessLeftOut(file: string, github: Ctx, changed: string): string[][] 
       if (harness !== 'all' && harness !== 'changed') {
         throw new Error(`${call.job}: --harness ${harness}`)
       }
+      // A sharded call (the push's) runs the harness projects whole; gate:full's related run is for an unsharded one.
+      const shard = flag(call.args, '--shard')?.split('/').map(Number)
       const tests = plan({
         full: call.args.includes('--full'),
         base: 'HEAD',
@@ -1569,6 +1614,7 @@ function harnessLeftOut(file: string, github: Ctx, changed: string): string[][] 
         mutated: [],
         only: onlyOf(call.args),
         harness,
+        ...(shard === undefined ? {} : { shard: { index: shard[0]!, count: shard[1]! } }),
       }).steps.find((s) => s.name === 'tests')
       return leftOut(tests?.command ?? '', HARNESS)
     })
