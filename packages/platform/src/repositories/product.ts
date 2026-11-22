@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, sql, type SQL, type SQLWrapper } from 'drizzle-orm'
+import { and, asc, eq, gt, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm'
 import type { Product, ProductStatus, ProductType, ProductMedia } from '@nymbalhq/types'
 import {
   postgresDb,
@@ -44,18 +44,22 @@ export interface ProductUpdate {
 }
 
 /**
- * Whether the name holds `q`, ignoring case: instr and strpos compare characters, so a % or _ matches only itself.
- * SQLite's own lower() folds ASCII alone, so that side goes through the store connection's unicode_lower.
+ * Whether the name or the slug holds `q`, ignoring case: instr and strpos compare characters, so a % or _ matches only
+ * itself. SQLite's own lower() folds ASCII alone, so that side goes through the store connection's unicode_lower.
+ * or() parenthesises its terms, which keeps the match whole inside the caller's and().
  */
-function nameHolds(
+function nameOrSlugHolds(
   kind: CommandStore['kind'],
   name: SQLWrapper,
+  slug: SQLWrapper,
   q: string | undefined,
 ): SQL | undefined {
   if (!q) return undefined
-  return kind === 'sqlite'
-    ? sql`instr(unicode_lower(${name}), unicode_lower(cast(${q} as text))) > 0`
-    : sql`strpos(lower(${name}), lower(cast(${q} as text))) > 0`
+  const holds = (column: SQLWrapper) =>
+    kind === 'sqlite'
+      ? sql`instr(unicode_lower(${column}), unicode_lower(cast(${q} as text))) > 0`
+      : sql`strpos(lower(${column}), lower(cast(${q} as text))) > 0`
+  return or(holds(name), holds(slug))
 }
 
 function rowToProduct(store: CommandStore['kind'], row: Record<string, unknown>): Product {
@@ -144,7 +148,7 @@ export function createProductRepository(store: CommandStore): ProductRepository 
           .where(
             and(
               opts.status ? eq(t.status, opts.status) : undefined,
-              nameHolds('sqlite', t.name, opts.q),
+              nameOrSlugHolds('sqlite', t.name, t.slug, opts.q),
             ),
           )
           .orderBy(asc(t.createdAt), asc(t.id))
@@ -160,7 +164,7 @@ export function createProductRepository(store: CommandStore): ProductRepository 
         .where(
           and(
             opts.status ? eq(t.status, opts.status) : undefined,
-            nameHolds('postgres', t.name, opts.q),
+            nameOrSlugHolds('postgres', t.name, t.slug, opts.q),
           ),
         )
         .orderBy(asc(t.createdAt), asc(t.id))

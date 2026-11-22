@@ -732,10 +732,10 @@ export const routeSchemas: Record<string, RouteSchema> = {
   'GET /api/admin/products': {
     name: 'admin.products.list',
     summary: 'product',
-    description: 'List products, filtered by status or name.',
+    description: 'List products, filtered by status, or by part of the name or slug.',
     query: z.object({
       status: productStatus.describe('draft, active or archived.').optional(),
-      q: queryValue.describe("Part of the product's name."),
+      q: queryValue.describe("Part of the product's name or slug."),
       ...pagingOf(50, 200),
     }),
   },

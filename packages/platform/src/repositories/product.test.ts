@@ -1,13 +1,14 @@
 import fc from 'fast-check'
 import pg from 'pg'
 import { describe, expect, it, vi } from 'vitest'
+import type { ProductStatus } from '@nymbalhq/types'
 import { InMemoryDocumentStore } from '../document-store/in-memory.js'
 import { createCommandStore, type CommandStore } from '../db/command-store.js'
 import { runMigrations } from '../db/migrate.js'
 import { buildRepositories } from './index.js'
 import { createProductRepository, type ProductInsert, type ProductRepository } from './product.js'
 
-// A search matches literally and ignores case in any script, the order is stable across equal timestamps, and an
+// A search matches the name or the slug literally and ignores case in any script, the order is stable across equal timestamps, and an
 // insert or a patch writes what it was given and leaves the rest.
 
 async function setup() {
@@ -61,38 +62,53 @@ const FULL = {
 } as unknown as Partial<ProductInsert>
 
 describe('ProductRepository on SQLite', () => {
-  // Defect: the search goes back to LIKE, so a wildcard in the term matches everything, or folds ASCII only, or
-  // the listed order comes from the row id alone.
-  it('property: a search returns exactly the names holding the term, by creation time then id', async () => {
+  // Defect: a column drops out of the match, LIKE comes back (a wildcard matches everything), the fold is ASCII
+  // only, the order changes, or the name-or-slug match loses its own parentheses inside the status filter, so a slug
+  // match in another status comes back.
+  it('AC-4: property: a search returns exactly the rows in the status whose name or slug holds the term, literally and case folded, by creation time then id', async () => {
     const env = await setup()
-    const name = fc.string({
-      unit: fc.constantFrom('a', 'A', 'é', 'É', '%', '_', 'x'),
-      maxLength: 5,
-    })
+    const unit = fc.constantFrom('a', 'A', 'é', 'É', '%', '_', "'", 'x')
+    const status = fc.constantFrom<ProductStatus>('draft', 'active', 'archived')
     await fc.assert(
       fc.asyncProperty(
-        fc.array(fc.record({ name, second: fc.integer({ min: 0, max: 2 }) }), { maxLength: 8 }),
-        fc.string({ unit: fc.constantFrom('a', 'É', '%', '_'), minLength: 1, maxLength: 2 }),
-        async (rows, q) => {
+        fc.array(
+          fc.record({
+            name: fc.string({ unit, maxLength: 4 }),
+            slug: fc.string({ unit, maxLength: 4 }),
+            status,
+            second: fc.integer({ min: 0, max: 2 }),
+          }),
+          { maxLength: 8 },
+        ),
+        fc.string({ unit: fc.constantFrom('a', 'É', '%', '_', "'"), minLength: 1, maxLength: 2 }),
+        fc.option(status, { nil: undefined }),
+        async (rows, q, wanted) => {
           await env.store.transaction(async (tx) => {
             for (const row of await env.repo.list(tx)) await env.repo.delete(tx, row.id)
           })
-          const inserted = rows.map((r, i) =>
-            product(`p${String(rows.length - i).padStart(2, '0')}`, {
+          // The suffix shares no character with the term's alphabet, so it never makes a match.
+          const inserted = rows.map((r, i) => {
+            const id = `p${String(rows.length - i).padStart(2, '0')}`
+            return product(id, {
               name: r.name,
+              slug: `${r.slug}-${id}`,
+              status: r.status,
               createdAt: at(r.second),
-            }),
-          )
+            })
+          })
           await insert(env, ...inserted)
 
+          const holds = (text: string) => text.toLowerCase().includes(q.toLowerCase())
           const expected = inserted
-            .filter((r) => r.name.toLowerCase().includes(q.toLowerCase()))
+            .filter((r) => wanted === undefined || r.status === wanted)
+            .filter((r) => holds(r.name) || holds(r.slug))
             .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || (a.id < b.id ? -1 : 1))
 
-          expect(ids(await list(env, { q }))).toEqual(ids(expected))
+          const opts = wanted === undefined ? { q } : { q, status: wanted }
+          expect(ids(await list(env, opts))).toEqual(ids(expected))
         },
       ),
-      { numRuns: 40 },
+      { numRuns: 60 },
     )
     await env.store.close()
   })
@@ -279,7 +295,14 @@ const COLUMNS =
   '"id", "slug", "name", "description", "short_description", "status", "type", "seo_title", "seo_description", "media", "metadata", "tax_code", "created_at", "updated_at"'
 const SELECT = `select ${COLUMNS} from "products"`
 const ORDER = 'order by "products"."created_at" asc, "products"."id" asc'
-const NAME_HOLDS = 'strpos(lower("products"."name"), lower(cast($1 as text))) > 0'
+
+/** The statement with each bound value written in its placeholder's place, so a term bound once or per column reads the same. */
+function withValues({ text, values }: Sent): string {
+  return text.replace(/\$(\d+)/g, (_, n: string) => {
+    const value = values[Number(n) - 1]
+    return typeof value === 'string' ? `'${value}'` : String(value)
+  })
+}
 
 const ROW = [
   'p1',
@@ -369,8 +392,10 @@ describe('ProductRepository on Postgres', () => {
     expect(page).toEqual([MAPPED])
   })
 
-  // Defect: Postgres goes back to ILIKE, loses the literal cast, drops a filter, or loses the tie-break on id.
-  it('list sends a literal search inside the status, in a stable order, and maps the rows', async () => {
+  // Defect: Postgres matches the name alone, goes back to ILIKE, loses the literal cast, drops the status filter once a
+  // term is present, lets the name-or-slug match out of its parentheses, writes the term into the text instead of binding
+  // it, or loses the tie-break on id.
+  it('AC-5: list sends a literal, case-folded name-or-slug search inside the status, in a stable order, and maps the rows', async () => {
     let rows: unknown
 
     const sent = await withPostgres([ROW], (repo, store) =>
@@ -381,14 +406,30 @@ describe('ProductRepository on Postgres', () => {
       }),
     )
 
-    expect(sent).toEqual([
-      { text: `${SELECT} where ${NAME_HOLDS} ${ORDER} limit $2 offset $3`, values: ['50%', 7, 3] },
-      {
-        text: `${SELECT} where ("products"."status" = $1 and strpos(lower("products"."name"), lower(cast($2 as text))) > 0) ${ORDER} limit $3`,
-        values: ['active', 'a', 100],
-      },
-      { text: `${SELECT} ${ORDER} limit $1`, values: [100] },
-    ])
+    const holds = (column: string, q: string) =>
+      `strpos(lower("products"."${column}"), lower(cast('${q}' as text))) > 0`
+    const nameOrSlug = (q: string) => [
+      `(${holds('name', q)} or ${holds('slug', q)})`,
+      `(${holds('slug', q)} or ${holds('name', q)})`,
+    ]
+    expect(sent).toHaveLength(3)
+    // The term travels bound, once per column, and never in the statement's text.
+    expect(sent[0]?.values).toEqual(['50%', '50%', 7, 3])
+    expect(sent[0]?.text).not.toContain('50%')
+    expect(sent[1]?.values).toEqual(['active', 'a', 'a', 100])
+    expect(sent[1]?.text).not.toContain("'a'")
+    const [search, inStatus, plain] = sent.map(withValues)
+    expect(
+      nameOrSlug('50%').map((m) => `${SELECT} where ${m} ${ORDER} limit 7 offset 3`),
+      `sent: ${search}`,
+    ).toContain(search)
+    expect(
+      nameOrSlug('a').map(
+        (m) => `${SELECT} where ("products"."status" = 'active' and ${m}) ${ORDER} limit 100`,
+      ),
+      `sent: ${inStatus}`,
+    ).toContain(inStatus)
+    expect(plain).toBe(`${SELECT} ${ORDER} limit 100`)
     expect(rows).toEqual([MAPPED])
   })
 

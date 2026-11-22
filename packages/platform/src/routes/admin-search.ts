@@ -37,10 +37,7 @@ export function registerAdminSearchRoute(
           .slice(0, 5)
 
         // Products
-        const allProducts = await product.list({ limit: 200 })
-        const matchedProducts = allProducts
-          .filter((p) => p.name.toLowerCase().includes(q) || p.slug.toLowerCase().includes(q))
-          .slice(0, 5)
+        const matchedProducts = await product.list({ q: qRaw, limit: 5 })
 
         // Customers — discover via orders
         const customerResults = await repos.order.store.read(async (tx) => {
