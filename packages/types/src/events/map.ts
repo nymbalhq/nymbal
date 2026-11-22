@@ -71,6 +71,8 @@ export interface NymbalEventMap {
 
   [C.EVT_SEARCH_ZERO_RESULTS]: P.SearchZeroResultsV1Payload
 
+  [C.EVT_INSIGHT_CREATED]: P.InsightCreatedV1Payload
+
   [C.EVT_ADAPTER_ERROR]: P.AdapterErrorV1Payload
   [C.EVT_SETTINGS_CHANGED]: P.SettingsChangedV1Payload
 }

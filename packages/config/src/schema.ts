@@ -850,6 +850,24 @@ export const eventsSchema = z
   })
   .strict()
 
+/**
+ * The nightly look at the store's own figures. `at` is the store time (`store.timezone`) from which the night is due,
+ * as two-digit hours and minutes. The night is due from `at` until midnight, so the latest is 22:59: a later one leaves
+ * the scheduler's tick too few minutes of the day to land in.
+ */
+export const nightShiftSchema = z
+  .object({
+    enabled: z.boolean().default(true),
+    at: z
+      .string()
+      .regex(
+        /^([01]\d|2[0-2]):[0-5]\d$/,
+        'at must be a store time from "00:00" to "22:59", so the night has an hour to run',
+      )
+      .default('03:00'),
+  })
+  .strict()
+
 const MCP_WRITES = ['proposal', 'apply'] as const
 
 /**
@@ -1063,6 +1081,7 @@ export const nymbalConfigSchema = z
     events: eventsSchema.prefault({}),
     agents: agentsSchema.prefault({}),
     heartbeat: heartbeatSchema.prefault({}),
+    nightShift: nightShiftSchema.prefault({}),
   })
   .superRefine((cfg, ctx) => {
     if (cfg.features.heartbeat) {

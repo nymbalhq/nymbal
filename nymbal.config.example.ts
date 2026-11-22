@@ -97,4 +97,7 @@ export default defineConfig({
     // true needs a `heartbeat` block: the store check's address, and optionally a saved card to charge and refund.
     heartbeat: false,
   },
+
+  // A nightly look at the store's own figures, from `at` store time.
+  nightShift: { enabled: true, at: '03:00' },
 })

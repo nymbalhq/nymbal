@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, inArray, lt, min } from 'drizzle-orm'
+import { and, asc, eq, gte, inArray, lt, min, ne, notInArray } from 'drizzle-orm'
 import type { OrderRefund, OrderRefundStatus } from '@nymbalhq/types'
 import {
   postgresDb,
@@ -59,7 +59,16 @@ export interface OrderRefundRepository extends StoreRepository {
   orderIdsSince(tx: ReadTx, since: Date): Promise<string[]>
   /** The orders holding a `pending` refund made before `before`, the one waiting longest first, at most `limit`. */
   pendingOrderIds(tx: ReadTx, before: Date, limit: number): Promise<string[]>
+  /**
+   * When each refund a shopper of a real order got was made, at or after `since`: succeeded, not a capture returned on
+   * a cancelled order (`system:checkout`), and not of a synthetic or imported order. Oldest first.
+   */
+  countedRefundTimes(tx: ReadTx, since: Date): Promise<Date[]>
 }
+
+/** Orders whose refunds say nothing about shoppers: the heartbeat's own and those an import brought in. */
+const UNCOUNTED_SOURCES = ['synthetic', 'import']
+const CHECKOUT_ACTOR = 'system:checkout'
 
 export function createOrderRefundRepository(store: CommandStore): OrderRefundRepository {
   async function list(tx: ReadTx, orderIds: string[]): Promise<OrderRefund[]> {
@@ -189,6 +198,43 @@ export function createOrderRefundRepository(store: CommandStore): OrderRefundRep
         .orderBy(asc(min(t.createdAt)), asc(t.orderId))
         .limit(limit)
       return rows.map((r) => r.orderId)
+    },
+    async countedRefundTimes(tx, since) {
+      if (tx.kind === 'sqlite') {
+        const r = sqliteSchema.orderRefunds
+        const o = sqliteSchema.orders
+        return sqliteDb(tx)
+          .select({ at: r.createdAt })
+          .from(r)
+          .innerJoin(o, eq(o.id, r.orderId))
+          .where(
+            and(
+              eq(r.status, 'succeeded'),
+              gte(r.createdAt, since.toISOString()),
+              ne(r.actor, CHECKOUT_ACTOR),
+              notInArray(o.source, UNCOUNTED_SOURCES),
+            ),
+          )
+          .orderBy(asc(r.createdAt))
+          .all()
+          .map((row) => new Date(row.at))
+      }
+      const r = postgresSchema.orderRefunds
+      const o = postgresSchema.orders
+      const rows = await postgresDb(tx)
+        .select({ at: r.createdAt })
+        .from(r)
+        .innerJoin(o, eq(o.id, r.orderId))
+        .where(
+          and(
+            eq(r.status, 'succeeded'),
+            gte(r.createdAt, since),
+            ne(r.actor, CHECKOUT_ACTOR),
+            notInArray(o.source, UNCOUNTED_SOURCES),
+          ),
+        )
+        .orderBy(asc(r.createdAt))
+      return rows.map((row) => row.at)
     },
   }
 }

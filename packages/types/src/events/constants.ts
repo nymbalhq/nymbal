@@ -89,6 +89,9 @@ export const EVT_PROPOSAL_FAILED = 'proposal.failed.v1'
 // Search
 export const EVT_SEARCH_ZERO_RESULTS = 'search.zero_results.v1'
 
+// Insights: what the night shift found in the store's own figures
+export const EVT_INSIGHT_CREATED = 'insight.created.v1'
+
 // System
 export const EVT_ADAPTER_ERROR = 'adapter.error.v1'
 export const EVT_SETTINGS_CHANGED = 'settings.changed.v1'
@@ -140,6 +143,7 @@ export const STANDARD_EVENT_TYPES = [
   EVT_PAYMENT_FAILED,
   EVT_PAYMENT_REFUNDED,
   EVT_SEARCH_ZERO_RESULTS,
+  EVT_INSIGHT_CREATED,
   EVT_ALERT_REQUESTED,
   EVT_ALERT_REPEATED,
   EVT_ALERT_CONFIRMED,

@@ -758,6 +758,50 @@ export const reportMembers = pgTable(
   }),
 )
 
+// --- Night shift ------------------------------------------------------------
+
+export const insights = pgTable(
+  'insights',
+  {
+    id: text('id').primaryKey(),
+    job: text('job').notNull(),
+    subject: text('subject').notNull(),
+    runDay: text('run_day').notNull(),
+    dataDay: text('data_day').notNull(),
+    status: text('status').notNull(),
+    severity: text('severity').notNull(),
+    summary: text('summary').notNull(),
+    facts: jsonb('facts').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    dismissedAt: timestamp('dismissed_at', { withTimezone: true }),
+  },
+  (t) => ({
+    keyUnique: uniqueIndex('insights_key_unique').on(t.job, t.subject, t.runDay),
+    subjectIdx: index('insights_subject_idx').on(t.job, t.subject, t.status),
+    statusCheck: check('insights_status', sql`${t.status} IN ('open', 'dismissed')`),
+  }),
+)
+
+export const nightShiftRuns = pgTable(
+  'night_shift_runs',
+  {
+    job: text('job').notNull(),
+    runDay: text('run_day').notNull(),
+    status: text('status').notNull(),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
+    finishedAt: timestamp('finished_at', { withTimezone: true }),
+    insights: integer('insights').notNull().default(0),
+    error: text('error'),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.job, t.runDay] }),
+    statusCheck: check(
+      'night_shift_runs_status',
+      sql`${t.status} IN ('running', 'done', 'failed')`,
+    ),
+  }),
+)
+
 export const schema = {
   categories,
   products,
@@ -790,4 +834,6 @@ export const schema = {
   reportProductDays,
   reportSearchDays,
   reportMembers,
+  insights,
+  nightShiftRuns,
 }

@@ -18,6 +18,16 @@ const RATE_SOURCE = 'storefront'
 
 export type ReportGrain = 'day' | 'hour'
 
+/** The days a runway is read over: the last 28 closed days, or fewer from the first day with figures. */
+export function runwayWindow(
+  closedThrough: string,
+  since: string | null,
+): { from: string; windowDays: number } {
+  const earliest = addDays(closedThrough, -(RUNWAY_DAYS - 1))
+  const from = since !== null && since > earliest ? since : earliest
+  return { from, windowDays: daysBetween(from, closedThrough) }
+}
+
 export interface ReportDeps {
   store: CommandStore
   repo: ReportRollupRepository
@@ -380,9 +390,7 @@ async function defaultReport(
   const searchesTo = query.to === undefined ? closedTo : period.to < today ? period.to : today
   const searches = await repo.zeroResultTerms(tx, from, searchesTo, query.limit)
 
-  const earliestRunway = addDays(closedThrough, -(RUNWAY_DAYS - 1))
-  const runwayFrom = since !== null && since > earliestRunway ? since : earliestRunway
-  const windowDays = daysBetween(runwayFrom, closedThrough)
+  const { from: runwayFrom, windowDays } = runwayWindow(closedThrough, since)
   const sold = windowDays > 0 ? await repo.unitsSold(tx, runwayFrom, closedThrough) : []
   const runway: RunwayItem[] = sold
     .map((row) => ({

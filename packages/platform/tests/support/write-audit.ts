@@ -45,6 +45,8 @@ export const EXEMPT_TABLES: Readonly<Record<string, string>> = {
   report_search_days:
     'a figure the report handler folds from an event it is delivered, in that delivery',
   report_members: 'a digest the report handler writes beside a figure, in that delivery',
+  night_shift_runs:
+    "the runner's claim and record of a night's job; no read model is built from it",
 }
 
 /** Kernel event types a transaction may insert with no domain change, each because the event is all there is to write. */

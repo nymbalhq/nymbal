@@ -51,6 +51,7 @@ import {
   type EventArchiveWriter,
   type SweeperHandle,
 } from './sweepers/index.js'
+import { startNightShift } from './night-shift/runner.js'
 import { importAdapterModule, resolveChoice } from './adapters/resolve.js'
 import type { AgentSurfaces, HttpAdapter, ToolSurface } from '@nymbalhq/types'
 import { RouteTable, recordingAdapter } from './mcp/route-table.js'
@@ -120,6 +121,8 @@ export interface CreateAppOptions extends ResolvePrimitivesOptions {
   proposalSweep?: { intervalMs?: number; stuckAfterMs?: number }
   /** How often accounts never confirmed are looked for; tests shorten it. The 30 days they are kept is fixed. */
   unconfirmedAccountSweep?: { intervalMs?: number }
+  /** How often the night shift looks whether its night is due (5 minutes), and its clock, read on every tick. */
+  nightShift?: { intervalMs?: number; now?: () => Date }
 }
 
 /** Prices that hold their tax need an engine that extracts it: one that only adds tax would tax them twice. */
@@ -515,6 +518,19 @@ export async function createApp(
         }),
       }),
     ]
+    if (config.nightShift.enabled) {
+      sweepers.push(
+        startNightShift({
+          store: platform.commandStore,
+          repos,
+          publisher,
+          logger,
+          timeZone: config.store.timezone,
+          at: config.nightShift.at,
+          ...options.nightShift,
+        }),
+      )
+    }
 
     let agents: AgentSurfaces | undefined
     const app: NymbalApp = {

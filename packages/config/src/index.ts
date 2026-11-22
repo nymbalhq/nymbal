@@ -52,6 +52,7 @@ export {
   eventsSchema,
   eventArchiveSchema,
   agentsSchema,
+  nightShiftSchema,
   type AssistantMaskField,
   type CustomerField,
   type NymbalConfig,

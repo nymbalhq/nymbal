@@ -260,6 +260,22 @@ export interface SearchZeroResultsV1Payload {
   term: string
 }
 
+export type InsightSeverity = 'info' | 'warning' | 'critical'
+/** Flat figures behind an insight; every number its summary prints is one of these values. No customer data. */
+export type InsightFacts = Record<string, string | number | null>
+export interface InsightCreatedV1Payload {
+  insightId: string
+  job: string
+  subject: string
+  /** The store day the night ran for, `YYYY-MM-DD`. */
+  day: string
+  /** The closed day the figures end on, the day before `day`. */
+  dataDay: string
+  severity: InsightSeverity
+  summary: string
+  facts: InsightFacts
+}
+
 export interface PaymentRefundedV1Payload {
   paymentId: string
   orderId: string

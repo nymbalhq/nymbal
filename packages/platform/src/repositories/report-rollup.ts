@@ -70,6 +70,8 @@ export interface ReportRollupRepository extends StoreRepository {
   deleteMembersBefore(tx: Tx, at: Date): Promise<number>
   /** The earliest day with a row in any figure table, or null when there is none. */
   since(tx: ReadTx): Promise<string | null>
+  /** As `since`, leaving out sales and product rows an import wrote: the first day the store took figures itself. */
+  liveSince(tx: ReadTx): Promise<string | null>
   salesTotals(tx: ReadTx, from: string, to: string): Promise<SalesTotalRow[]>
   salesHours(tx: ReadTx, from: string, to: string): Promise<SalesHourReadRow[]>
   funnelTotals(tx: ReadTx, from: string, to: string): Promise<FunnelTotalRow[]>
@@ -78,6 +80,16 @@ export interface ReportRollupRepository extends StoreRepository {
   /** The variants with units sold over the days, with their stock now; a variant since deleted is left out. */
   unitsSold(tx: ReadTx, from: string, to: string): Promise<UnitsSoldRow[]>
   zeroResultTerms(tx: ReadTx, from: string, to: string, limit: number): Promise<SearchTermRow[]>
+  /**
+   * The terms searched at least `minSearches` times on `day` and on no day from `quietFrom` to the day before, most
+   * searched first, then by term.
+   */
+  newZeroResultTerms(
+    tx: ReadTx,
+    day: string,
+    quietFrom: string,
+    minSearches: number,
+  ): Promise<SearchTermRow[]>
 }
 
 // Plain SQL for both dialects: the statements here are the same on each, and a parameter given as an ISO string reads
@@ -193,6 +205,19 @@ export function createReportRollupRepository(store: CommandStore): ReportRollupR
               SELECT local_day FROM report_sales_hours
               UNION ALL SELECT local_day FROM report_funnel_days
               UNION ALL SELECT local_day FROM report_product_days
+              UNION ALL SELECT local_day FROM report_search_days
+            ) AS days`,
+      )
+      return row?.['day'] == null ? null : text(row['day'])
+    },
+
+    async liveSince(tx) {
+      const [row] = await rows(
+        tx,
+        sql`SELECT MIN(local_day) AS day FROM (
+              SELECT local_day FROM report_sales_hours WHERE source <> 'import'
+              UNION ALL SELECT local_day FROM report_funnel_days
+              UNION ALL SELECT local_day FROM report_product_days WHERE source <> 'import'
               UNION ALL SELECT local_day FROM report_search_days
             ) AS days`,
       )
@@ -315,6 +340,20 @@ export function createReportRollupRepository(store: CommandStore): ReportRollupR
         sql`SELECT term, SUM(searches) AS searches FROM report_search_days
             WHERE local_day >= ${from} AND local_day <= ${to}
             GROUP BY term ORDER BY SUM(searches) DESC, term LIMIT ${limit}`,
+      )
+      return found.map((r) => ({ term: text(r['term']), searches: num(r['searches']) }))
+    },
+
+    async newZeroResultTerms(tx, day, quietFrom, minSearches) {
+      const found = await rows(
+        tx,
+        sql`SELECT d.term, d.searches FROM report_search_days d
+            WHERE d.local_day = ${day} AND d.searches >= ${minSearches}
+              AND NOT EXISTS (
+                SELECT 1 FROM report_search_days q
+                WHERE q.term = d.term AND q.local_day >= ${quietFrom} AND q.local_day < ${day}
+              )
+            ORDER BY d.searches DESC, d.term`,
       )
       return found.map((r) => ({ term: text(r['term']), searches: num(r['searches']) }))
     },

@@ -51,6 +51,7 @@ import { createOrderShipmentRepository, type OrderShipmentRepository } from './o
 import { createProposalRepository, type ProposalRepository } from './proposal.js'
 import { createPromotionRepository, type PromotionRepository } from './promotion.js'
 import { createReportRollupRepository, type ReportRollupRepository } from './report-rollup.js'
+import { createInsightRepository, type InsightRepository } from './insight.js'
 
 export * from './product.js'
 export * from './variant.js'
@@ -77,6 +78,7 @@ export * from './order-shipment.js'
 export * from './proposal.js'
 export * from './promotion.js'
 export * from './report-rollup.js'
+export * from './insight.js'
 export * from './page.js'
 
 export interface Repositories {
@@ -107,6 +109,7 @@ export interface Repositories {
   proposal: ProposalRepository
   promotion: PromotionRepository
   reportRollup: ReportRollupRepository
+  insight: InsightRepository
 }
 
 export function buildRepositories(
@@ -142,5 +145,6 @@ export function buildRepositories(
     proposal: createProposalRepository(commandStore),
     promotion: createPromotionRepository(commandStore),
     reportRollup: createReportRollupRepository(commandStore),
+    insight: createInsightRepository(commandStore),
   }
 }

@@ -43,6 +43,7 @@ export default {
     '!packages/platform/src/repositories/password-reset-token.ts',
     '!packages/platform/src/repositories/proposal.ts',
     '!packages/platform/src/repositories/report-rollup.ts',
+    '!packages/platform/src/repositories/insight.ts',
     '!packages/platform/src/repositories/review.ts',
     '!**/*.test.ts',
     // Test vectors and the helpers the tests derive from them, beside the code they test.
