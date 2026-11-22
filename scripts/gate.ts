@@ -1233,41 +1233,13 @@ async function incrementalReport(root: string): Promise<string> {
   return resolve(root, (await strykerConfig(root)).incrementalFile ?? STRYKER_INCREMENTAL_DEFAULT)
 }
 
-/**
- * Beside the incremental report: the commit the report's statuses were measured at. The nightly full run writes it
- * beside the report it caches.
- */
-function incrementalStamp(report: string): string {
-  return `${report.replace(/\.json$/, '')}.commit`
-}
-
-/**
- * The changed paths and moved ratchet entries the stryker step selects by. The incremental report holds statuses
- * from the commit its stamp names, which can be older than `base`: a file changed in between, outside `--mutate`,
- * would be reported with statuses from before its change. So whatever changed since the stamp counts too. A stamp naming no commit here leaves the report's age
- * unknown, and every tracked file counts as changed.
- */
-export async function strykerChanges(
+/** The changed paths and moved ratchet entries the stryker step selects by. */
+export function strykerChanges(
   root: string,
   base: string,
   changed: string[],
-): Promise<{ changed: string[]; moved: string[] }> {
-  const moved = ratchetChangesSince(root, base)
-  const stampPath = incrementalStamp(await incrementalReport(root))
-  if (!existsSync(stampPath)) return { changed, moved }
-  const stamp = readFileSync(stampPath, 'utf8').trim()
-  const at = /^[0-9a-f]{40}$/i.test(stamp) ? commitOf(root, stamp) : undefined
-  if (at === undefined) {
-    process.stderr.write(
-      `stryker: the incremental report's commit ${stamp || '(empty)'} is not in this clone; the whole mutate set is measured\n`,
-    )
-    return { changed: [...new Set([...changed, ...lines(git(root, ['ls-files']))])], moved }
-  }
-  if (at === base) return { changed, moved }
-  return {
-    changed: [...new Set([...changed, ...changedFiles(root, at)])].sort(),
-    moved: [...new Set([...moved, ...ratchetChangesSince(root, at)])],
-  }
+): { changed: string[]; moved: string[] } {
+  return { changed, moved: ratchetChangesSince(root, base) }
 }
 
 /**
@@ -2301,7 +2273,7 @@ async function main(argv: string[]): Promise<number> {
   const inputReaders = harnessInputTests(root, relatedPaths)
   const forStryker =
     values.full && strykerMode !== 'off'
-      ? await strykerChanges(root, base, changed)
+      ? strykerChanges(root, base, changed)
       : { changed: [], moved: [] }
   const moved = forStryker.moved
   const readsChanged =
