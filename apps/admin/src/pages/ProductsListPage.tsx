@@ -22,6 +22,7 @@ import {
   DUPLICATE_PRODUCT_KEY,
   ARCHIVE_PRODUCT_KEY,
 } from '@/hooks/useProducts'
+import { useStoreCurrency } from '@/hooks/useMe'
 import { ApiError } from '@/lib/api'
 import { formatMoney } from '@/lib/money'
 import { formatRelative } from '@/lib/dates'
@@ -75,6 +76,7 @@ export function ProductsListPage() {
   const duplicating = useInFlight(DUPLICATE_PRODUCT_KEY)
   const archiving = useInFlight(ARCHIVE_PRODUCT_KEY)
   const [outcome, setOutcome] = useState<RowOutcome | null>(null)
+  const currency = useStoreCurrency()
 
   async function duplicateProduct(product: ProductSnapshot) {
     setOutcome(null)
@@ -258,8 +260,8 @@ export function ProductsListPage() {
                       {product.type}
                     </TableCell>
                     <TableCell className="text-right font-mono text-sm">
-                      {primaryVariant
-                        ? formatMoney(primaryVariant.priceMinor, 'GBP')
+                      {primaryVariant && currency !== undefined
+                        ? formatMoney(primaryVariant.priceMinor, currency)
                         : '—'}
                     </TableCell>
                     <TableCell>

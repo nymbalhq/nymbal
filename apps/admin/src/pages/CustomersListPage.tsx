@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/common/EmptyState'
 import { useCustomers } from '@/hooks/useCustomers'
+import { useStoreCurrency } from '@/hooks/useMe'
 import { formatMoney } from '@/lib/money'
 import { formatDate, formatRelative } from '@/lib/dates'
 import { tid } from '@/lib/testid'
@@ -14,6 +15,7 @@ import { cn } from '@/lib/utils'
 export function CustomersListPage() {
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
+  const currency = useStoreCurrency()
 
   const { data: customers, isLoading } = useCustomers({
     q: search || undefined,
@@ -106,7 +108,7 @@ export function CustomersListPage() {
                       {customer.orderCount}
                     </TableCell>
                     <TableCell className="text-right font-mono text-sm text-zinc-700">
-                      {formatMoney(customer.totalSpentMinor, 'GBP')}
+                      {currency !== undefined ? formatMoney(customer.totalSpentMinor, currency) : '—'}
                     </TableCell>
                     <TableCell className="text-sm text-zinc-500">
                       {formatDate(customer.createdAt)}

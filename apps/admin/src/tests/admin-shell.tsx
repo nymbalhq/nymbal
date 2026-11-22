@@ -193,7 +193,15 @@ export function fakeShellApi(seed: Partial<ShellData> = {}): ShellApi {
       case '/api/admin/proposals':
         return json({ data: { items: [], pending: 0 } })
       case '/api/admin/me':
-        return json({ data: { userId: 'admin-1', roles: ['owner'], storeName: 'Test Store', environment: 'development' } })
+        return json({
+          data: {
+            userId: 'admin-1',
+            roles: ['owner'],
+            storeName: 'Test Store',
+            environment: 'development',
+            currency: 'GBP',
+          },
+        })
       case '/api/admin/mail-health':
         return json({ data: { warning: null } })
       default:

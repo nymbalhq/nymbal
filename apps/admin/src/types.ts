@@ -65,6 +65,8 @@ export interface AdminMe {
   roles: string[]
   storeName: string
   environment: string
+  /** The store's currency, which product prices and customer totals are in. */
+  currency: string
 }
 
 export interface DashboardStats {

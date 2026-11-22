@@ -23,6 +23,7 @@ import { HistoryTab } from '@/components/history/HistoryTab'
 import { UnsavedChangesGuard } from '@/components/common/UnsavedChangesGuard'
 import { useProduct, useCreateProduct, useUpdateProduct } from '@/hooks/useProducts'
 import { useIntentKey } from '@/hooks/useIntentKey'
+import { useStoreCurrency } from '@/hooks/useMe'
 import { tid } from '@/lib/testid'
 import type { ProductSnapshot, ProductStatus, Variant, ProductMedia } from '@nymbalhq/types'
 
@@ -56,6 +57,7 @@ export function ProductEditPage() {
   const { data: existingProduct, isLoading } = useProduct(isNew ? '' : (slug ?? ''))
   const createProduct = useCreateProduct()
   const updateProduct = useUpdateProduct()
+  const currency = useStoreCurrency()
 
   const [form, setForm] = useState<Partial<ProductSnapshot>>(DEFAULT_PRODUCT)
   const [isDirty, setIsDirty] = useState(false)
@@ -138,7 +140,6 @@ export function ProductEditPage() {
   }
 
   const productId = existingProduct?.id ?? 'new'
-  const currency = 'GBP' // From store settings in production
 
   return (
     <div className="space-y-4">
@@ -273,13 +274,18 @@ export function ProductEditPage() {
             <TabsContent value="variants">
               <div className="rounded-lg border border-zinc-200 bg-white p-5">
                 <h3 className="text-sm font-semibold text-zinc-900 mb-3">Variants</h3>
-                <VariantTable
-                  productId={productId}
-                  variants={form.variants ?? []}
-                  onChange={(v: Variant[]) => update('variants', v)}
-                  currency={currency}
-                  existing={!isNew}
-                />
+                {/* The table reads the currency into its inputs once, at mount, so it waits for the store's. */}
+                {currency !== undefined ? (
+                  <VariantTable
+                    productId={productId}
+                    variants={form.variants ?? []}
+                    onChange={(v: Variant[]) => update('variants', v)}
+                    currency={currency}
+                    existing={!isNew}
+                  />
+                ) : (
+                  <Skeleton className="h-32 w-full" />
+                )}
               </div>
             </TabsContent>
 

@@ -60,6 +60,17 @@ function fakeApi() {
     const url = new URL(String(input instanceof Request ? input.url : input), 'http://localhost/')
     const method = (init.method ?? 'GET').toUpperCase()
     if (url.pathname === '/api/csrf') return json({ data: { token: 'tok' } })
+    if (url.pathname === '/api/admin/me') {
+      return json({
+        data: {
+          userId: 'admin-1',
+          roles: ['admin'],
+          storeName: 'Test Store',
+          environment: 'development',
+          currency: 'GBP',
+        },
+      })
+    }
     if (method === 'GET' && url.pathname === `/api/admin/products/${PRODUCT.slug}`) {
       return json({ data: PRODUCT })
     }

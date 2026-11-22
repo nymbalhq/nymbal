@@ -84,6 +84,17 @@ function fakeApi(products: ProductSnapshot[]) {
     const url = new URL(String(input instanceof Request ? input.url : input), 'http://localhost/')
     const method = (init.method ?? 'GET').toUpperCase()
     if (url.pathname === '/api/csrf') return json({ data: { token: 'tok' } })
+    if (url.pathname === '/api/admin/me') {
+      return json({
+        data: {
+          userId: 'admin-1',
+          roles: ['admin'],
+          storeName: 'Test Store',
+          environment: 'development',
+          currency: 'GBP',
+        },
+      })
+    }
     const one = /^\/api\/admin\/products\/([^/]+)$/.exec(url.pathname)
     if (method === 'GET' && one) {
       const found = find(decodeURIComponent(one[1]!))
