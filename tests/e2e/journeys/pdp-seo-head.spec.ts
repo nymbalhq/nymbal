@@ -2,12 +2,12 @@ import { randomUUID } from 'node:crypto'
 import type { APIRequestContext, Page } from '@playwright/test'
 import { adminToken } from '../support/checkout'
 import { API_URL, csrf } from '../support/csrf'
-import { isNext } from '../support/elements'
 import { expect, test } from '../support/fixtures'
 
 // On both templates the product page's head reads the product's SEO title and description: a set SEO title is the
-// whole <title> (no store suffix) and a set SEO description the meta description (and, on Astro, the Open Graph pair;
-// Next emits none). Blank fields keep today's head. A title holding markup is text in the head and runs nothing.
+// whole <title> (no store suffix) and a set SEO description the meta description. Blank fields keep today's head.
+// A title holding markup is text in the head and runs nothing. AC-1 (the Open Graph assertions): on both templates
+// og:title is the <title> and og:description the meta description, set or blank, with og:type website.
 
 interface Made {
   slug: string
@@ -49,14 +49,15 @@ async function headOf(page: Page) {
     description: await content('meta[name="description"]'),
     ogTitle: await content('meta[property="og:title"]'),
     ogDescription: await content('meta[property="og:description"]'),
+    ogType: await content('meta[property="og:type"]'),
   }
 }
 
 test.describe('AC-19: the product page head reads the product’s SEO fields', () => {
-  test('AC-19: a product made with seoTitle and seoDescription shows them as its <title> and meta description (on Astro also og:title and og:description); one made with both blank shows "<name> | Nymbal" and its description', async ({
+  test('AC-1: a product made with seoTitle and seoDescription shows them as its <title>, meta description, og:title and og:description; one made with both blank shows "<name> | Nymbal" and its description in the same pairs', async ({
     page,
     request,
-  }, testInfo) => {
+  }) => {
     const tag = randomUUID().slice(0, 6)
     const seoTitle = `Waxed Field Tote ${tag} for the Daily Commute`
     const seoDescription = `A roomy waxed tote ${tag} with a zip pocket and sturdy handles, sized for the commute and weekend errands.`
@@ -78,18 +79,25 @@ test.describe('AC-19: the product page head reads the product’s SEO fields', (
     await page.goto(`/product/${blank.slug}`)
     const blankHead = await headOf(page)
 
-    const og = (title: string, description: string) =>
-      isNext(testInfo)
-        ? { ogTitle: null, ogDescription: null }
-        : { ogTitle: title, ogDescription: description }
     expect(setHead).toEqual({
       title: seoTitle,
       description: seoDescription,
-      ...og(seoTitle, seoDescription),
+      ogTitle: seoTitle,
+      ogDescription: seoDescription,
+      ogType: 'website',
     })
     expect({ title: blankHead.title, description: blankHead.description }).toEqual({
-      title: `${blank.name} | Nymbal`,
+      title: blank.name + ' | Nymbal',
       description: 'A plain tote for errands.',
+    })
+    expect({
+      ogTitle: blankHead.ogTitle,
+      ogDescription: blankHead.ogDescription,
+      ogType: blankHead.ogType,
+    }).toEqual({
+      ogTitle: blankHead.title,
+      ogDescription: blankHead.description,
+      ogType: 'website',
     })
   })
 

@@ -40,6 +40,8 @@ export async function generateMetadata({ params }: ProductPageProps): Promise<Me
   return {
     title: head.absolute ? { absolute: head.title } : head.title,
     description: head.description,
+    // Next fills og:title and og:description from the resolved title and description.
+    openGraph: { type: 'website' },
   }
 }
 
