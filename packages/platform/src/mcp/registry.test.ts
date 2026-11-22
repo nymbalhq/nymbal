@@ -22,7 +22,8 @@ import { RouteTable, recordingAdapter } from './route-table.js'
 
 /**
  * Every entry the registry keeps from the tool list: credentials, streams, provider-signed bytes, files, view history,
- * the AI key; a proposal's decision, so no agent approves its own; a settings value, so none sits in a proposal, and its clearing, so no agent clears one; the
+ * the AI key; a proposal's decision, so no agent approves its own; an insight's dismissal, so no agent silences what
+ * the merchant has not seen; a settings value, so none sits in a proposal, and its clearing, so no agent clears one; the
  * assistant's turn and stream, which spend the AI key, so no agent calls the assistant.
  */
 const EXCLUDED = [
@@ -47,6 +48,7 @@ const EXCLUDED = [
   'admin.products.enhance',
   'admin.proposals.approve',
   'admin.proposals.reject',
+  'admin.insights.dismiss',
   'admin.settings.put',
   'admin.settings.delete',
   'admin.assistant.turn',
@@ -222,7 +224,7 @@ describe('AC-1: one tool per registry entry', () => {
     }
   })
 
-  it('AC-13: the entries marked tool: false are exactly the fourteen kept from agents plus proposal approve, proposal reject, settings put and delete, the assistant’s turn and stream, the admin-promotion routes, the three password routes and the two confirmation routes, and every stream route is among them', () => {
+  it('AC-13: the entries marked tool: false are exactly the fourteen kept from agents plus proposal approve, proposal reject, the insight dismiss, settings put and delete, the assistant’s turn and stream, the admin-promotion routes, the three password routes and the two confirmation routes, and every stream route is among them', () => {
     const marked = Object.values(routeSchemas)
       .filter((entry) => entry.tool === false)
       .map((entry) => entry.name)

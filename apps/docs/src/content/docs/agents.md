@@ -162,6 +162,7 @@ per rejected code; a rejected code does not stop payment. When codes cannot be c
 `GET /api/admin/reports` serves the store's daily figures to the admin assistant and MCP (`admin_reports_get`):
 sales by day and hour, the funnel, top products, what shoppers searched for and did not find, and stock runway. Viewers
 are counted as aggregates; no visitor or customer id is stored in a report.
+`admin_insights_list` reads the night shift's open insights, the most serious first; only an admin dismisses one.
 
 ## Crawlers
 

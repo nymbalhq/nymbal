@@ -37,6 +37,7 @@ export default {
     'packages/platform/src/repositories/audit-entry.ts',
     'packages/platform/src/repositories/report-rollup.ts',
     'packages/platform/src/repositories/insight.ts',
+    'packages/platform/src/services/insight-service.ts',
     'packages/platform/src/repositories/password-reset-token.ts',
     'packages/platform/src/assistant/loop.ts',
     'packages/platform/src/assistant/mask.ts',

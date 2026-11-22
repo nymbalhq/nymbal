@@ -1099,6 +1099,21 @@ export const routeSchemas: Record<string, RouteSchema> = {
     body: z.object({ reason: z.string().max(500).optional() }),
   },
 
+  // Admin: the night shift's insights. Agents read the open list; only a person dismisses one.
+  'GET /api/admin/insights': {
+    name: 'admin.insights.list',
+    description:
+      "List the open insights the night shift found in the store's own figures, most serious first, then the newest night: each a sentence, its severity and the figures behind it. A dismissed insight is not listed.",
+  },
+  'POST /api/admin/insights/:id/dismiss': {
+    name: 'admin.insights.dismiss',
+    command: 'insight.dismiss',
+    tool: false,
+    description:
+      'Dismiss an open insight: it leaves the brief and its subject is not raised again for 7 days.',
+    params: idParams,
+  },
+
   // Webhooks
   'POST /api/webhooks/:adapter': {
     name: 'webhooks.receive',

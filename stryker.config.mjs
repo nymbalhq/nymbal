@@ -37,6 +37,7 @@ export default {
     '!packages/platform/src/services/description.ts',
     '!packages/platform/src/services/import-removal-service.ts',
     '!packages/platform/src/services/index.ts',
+    '!packages/platform/src/services/insight-service.ts',
     '!packages/platform/src/services/proposal-service.ts',
     '!packages/platform/src/services/recently-viewed-service.ts',
     '!packages/platform/src/repositories/alert-subscription.ts',

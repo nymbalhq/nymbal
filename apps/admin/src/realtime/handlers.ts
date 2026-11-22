@@ -81,6 +81,7 @@ const LIVE_QUERY_PREFIXES: QueryKey[] = [
   ['inventory', 'list'],
   ['proposals'],
   ['products'],
+  ['insights'],
 ]
 
 /**
@@ -203,6 +204,12 @@ export function createEventHandlers(queryClient: QueryClient) {
             message: `${event.payload.command} may or may not have gone through. Check it in the inbox before doing it again.`,
           })
         }
+        break
+      }
+
+      case 'insight.created.v1':
+      case 'insight.dismissed.v1': {
+        void queryClient.invalidateQueries({ queryKey: ['insights'] })
         break
       }
 

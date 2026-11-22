@@ -51,7 +51,8 @@ export default defineConfig({
 `nightShift` looks at the store's own figures once a night, from `at` in `store.timezone` until midnight, so the
 latest `at` is `'22:59'`: variants about to run out, new searches that found nothing, a fall in paid orders or
 checkout success, a rise in refunds, and events or proposals that failed. Each finding is kept as an insight with the
-figures behind it. Nothing leaves the store and no AI model is called; a later admin release shows the insights.
+figures behind it. Nothing leaves the store and no AI model is called; the admin's Inbox shows them each morning, and
+a dismissed one stays quiet for 7 days.
 
 `nymbal add` edits this file for you: `npx nymbal add postgres` sets the command store, `npx nymbal add stripe`
 the payments provider, and each lists the variables it needs in `.env.example`. See [Adapters](../adapters/).

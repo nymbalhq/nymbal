@@ -269,27 +269,69 @@ export interface InsightSeed {
   runDay: string
   status: 'open' | 'dismissed'
   dismissedAt: Date | null
+  severity?: InsightDraft['severity']
+  summary?: string
+  facts?: InsightDraft['facts']
 }
 
-/** An insight row as an earlier night (and, for a dismissed one, a later dismiss) left it, through the repository. */
-export async function seedInsight(k: Side, seed: InsightSeed): Promise<void> {
+/**
+ * An insight row as an earlier night (and, for a dismissed one, a later dismiss) left it, through the repository; its
+ * id. A warning with no facts unless the seed says otherwise.
+ */
+export async function seedInsight(k: Side, seed: InsightSeed): Promise<string> {
+  const id = randomUUID()
   await unaudited(() =>
     k.store.transaction(async (tx) => {
       await k.repos.insight.insert(tx, {
-        id: randomUUID(),
+        id,
         job: seed.job,
         subject: seed.subject,
         runDay: seed.runDay,
         dataDay: addDays(seed.runDay, -1),
         status: seed.status,
-        severity: 'warning',
-        summary: `Seeded insight about ${seed.subject}.`,
-        facts: {},
+        severity: seed.severity ?? 'warning',
+        summary: seed.summary ?? `Seeded insight about ${seed.subject}.`,
+        facts: seed.facts ?? {},
         createdAt: noonOf(addDays(seed.runDay, -1)),
         dismissedAt: seed.dismissedAt,
       })
     }),
   )
+  return id
+}
+
+export const INSIGHT_DISMISSED = 'insight.dismissed.v1'
+
+export interface DismissPayload {
+  insightId: string
+  job: string
+  subject: string
+  dismissedAt: string
+}
+
+/** The payload of every `insight.dismissed.v1` in the log for one insight, in log order. */
+export async function dismissEvents(raw: RawReader, insightId: string): Promise<DismissPayload[]> {
+  const rows = await eventRows(raw, 'type = ?', [INSIGHT_DISMISSED])
+  return rows
+    .map((row) => row.envelope.payload as DismissPayload)
+    .filter((p) => p.insightId === insightId)
+}
+
+/** One insight's `status` and `dismissed_at` (as an ISO instant) as a second connection reads them. */
+export async function insightState(
+  raw: RawReader,
+  id: string,
+): Promise<{ status: string; dismissedAt: string | null } | undefined> {
+  const [row] = await raw.rows<Record<string, unknown>>(
+    'SELECT status, dismissed_at FROM insights WHERE id = ?',
+    [id],
+  )
+  if (row === undefined) return undefined
+  const at = row['dismissed_at']
+  return {
+    status: String(row['status']),
+    dismissedAt: at == null ? null : new Date(at as string | Date).toISOString(),
+  }
 }
 
 /** Empties everything a night reads or writes, so one kernel serves many fixtures. */

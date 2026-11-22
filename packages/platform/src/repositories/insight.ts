@@ -1,5 +1,5 @@
 import { and, asc, eq, gte, inArray, lt, or, type SQL } from 'drizzle-orm'
-import type { InsightFacts, InsightSeverity } from '@nymbalhq/types'
+import type { InsightFacts, InsightSeverity, InsightStatus } from '@nymbalhq/types'
 import {
   postgresDb,
   sqliteDb,
@@ -11,8 +11,6 @@ import {
 import * as sqliteSchema from '../db/schema/sqlite.js'
 import * as postgresSchema from '../db/schema/postgres.js'
 import { fromTimestamp, parseJson } from './json.js'
-
-export type InsightStatus = 'open' | 'dismissed'
 
 /** One `insights` row. */
 export interface InsightRecord {
@@ -64,6 +62,9 @@ export interface InsightRepository extends StoreRepository {
   insert(tx: Tx, row: InsightInsert): Promise<boolean>
   /** Whether the subject has an open insight of any day, or one dismissed at or after `dismissedSince`. */
   suppressed(tx: ReadTx, job: string, subject: string, dismissedSince: Date): Promise<boolean>
+  findById(tx: ReadTx, id: string): Promise<InsightRecord | null>
+  /** Dismisses an open insight at `at`; false when there is no such row or it is already dismissed. */
+  dismiss(tx: Tx, id: string, at: Date): Promise<boolean>
   /** Oldest run day first, then subject. */
   list(tx: ReadTx, q: InsightQuery): Promise<InsightRecord[]>
   problemRuns(tx: ReadTx, days: string[], staleBefore: Date): Promise<ProblemRun[]>
@@ -186,6 +187,29 @@ export function createInsightRepository(store: CommandStore): InsightRepository 
               .where(suppressedWhere(pi, job, subject, dismissedSince))
               .limit(1)
       return found.length > 0
+    },
+    async findById(tx, id) {
+      if (tx.kind === 'sqlite') {
+        const row = sqliteDb(tx).select().from(si).where(eq(si.id, id)).get()
+        return row === undefined ? null : toRecord('sqlite', row)
+      }
+      const [row] = await postgresDb(tx).select().from(pi).where(eq(pi.id, id)).limit(1)
+      return row === undefined ? null : toRecord('postgres', row)
+    },
+    async dismiss(tx, id, at) {
+      if (tx.kind === 'sqlite') {
+        const result = sqliteDb(tx)
+          .update(si)
+          .set({ status: 'dismissed', dismissedAt: at.toISOString() })
+          .where(and(eq(si.id, id), eq(si.status, 'open')))
+          .run()
+        return result.changes > 0
+      }
+      const result = await postgresDb(tx)
+        .update(pi)
+        .set({ status: 'dismissed', dismissedAt: at })
+        .where(and(eq(pi.id, id), eq(pi.status, 'open')))
+      return (result.rowCount ?? 0) > 0
     },
     async list(tx, q) {
       if (tx.kind === 'sqlite') {

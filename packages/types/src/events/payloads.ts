@@ -275,6 +275,13 @@ export interface InsightCreatedV1Payload {
   summary: string
   facts: InsightFacts
 }
+/** An admin dismissed an open insight; the audit entry names the admin. */
+export interface InsightDismissedV1Payload {
+  insightId: string
+  job: string
+  subject: string
+  dismissedAt: string
+}
 
 export interface PaymentRefundedV1Payload {
   paymentId: string

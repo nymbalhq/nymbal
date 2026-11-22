@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import {
+  currencyExponent,
   errorText,
   type PaymentsAdapter,
   type Refund,
@@ -23,9 +24,7 @@ export interface CardCheckTarget {
 
 /** `amountMinor` in `currency`'s major unit, with its code: `1.00 GBP`, `100 JPY`. */
 function money(amountMinor: number, currency: string): string {
-  const digits =
-    new Intl.NumberFormat('en', { style: 'currency', currency }).resolvedOptions()
-      .maximumFractionDigits ?? 2
+  const digits = currencyExponent(currency)
   return `${(amountMinor / 10 ** digits).toFixed(digits)} ${currency}`
 }
 

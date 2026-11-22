@@ -1,5 +1,10 @@
-import type { Order, OrderSource } from '@nymbalhq/types'
+import { randomUUID } from 'node:crypto'
+import fc from 'fast-check'
+import type { InsightView, Order, OrderSource } from '@nymbalhq/types'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { adminSession, auditRows, type AdminSession, type Answer } from '../audit.js'
+import { serveKernel, type ServedKernel } from '../http.js'
+import { maxSeq } from '../outbox.js'
 import { NIGHT_SHIFT_JOBS, type NightShiftJob } from '../../../src/night-shift/jobs.js'
 import { runNightShift, type JobRun } from '../../../src/night-shift/runner.js'
 import type { InsightRecord } from '../../../src/repositories/insight.js'
@@ -13,9 +18,11 @@ import {
   daysBack,
   daysRange,
   depsOf,
+  dismissEvents,
   draft,
   insightEvents,
   insightRows,
+  insightState,
   noonOf,
   numbersNotInFacts,
   resetNight,
@@ -34,18 +41,21 @@ import { SYNTHETIC, seedOrder } from '../report-rollups.js'
 import { clockAt, openReplica, type Replica } from '../replica.js'
 
 // The night shift's new SQL on one dialect: the refund count and its windows, the operator checks, the claim two
-// replicas race for, the suppression of a subject already raised, and an insight's facts as the row and its event
-// carry them. Figures go in through the rollup repository, faults through their own repositories; the night runs
-// through `runNightShift`, and the tables are read back on a second connection.
+// replicas race for, the suppression of a subject already raised, an insight's facts as the row and its event carry
+// them, and the conditional dismiss two admins race for. Figures go in through the rollup repository, faults through
+// their own repositories; the night runs through `runNightShift`, a dismiss over HTTP on the same kernel, and the
+// tables are read back on a second connection.
 
 export function nightShiftSuite(dialect: Kernel['dialect'], start: () => Promise<Kernel>): void {
   describe(`night shift (${dialect})`, () => {
     let k: Kernel
+    let served: ServedKernel | undefined
     let raw: RawReader
     const replicas: Replica[] = []
 
     beforeAll(async () => {
       k = await start()
+      served = await serveKernel(k)
       raw = openRaw(k.dialect, k.target)
     }, 60_000)
 
@@ -56,7 +66,9 @@ export function nightShiftSuite(dialect: Kernel['dialect'], start: () => Promise
     afterAll(async () => {
       for (const replica of replicas.splice(0)) await replica.close()
       await raw?.close()
-      await k?.close()
+      // Stopping the server closes the kernel under it.
+      if (served !== undefined) await served.stop()
+      else await k?.close()
     })
 
     const orderOf = (source: string): Promise<Order> =>
@@ -380,6 +392,95 @@ export function nightShiftSuite(dialect: Kernel['dialect'], start: () => Promise
         expect(record!.facts).toEqual(facts)
         expect(payload!.day).toBe(RUN_DAY)
         expect(payload!.dataDay).toBe(DATA_DAY)
+      })
+    })
+
+    describe('AC-4: a dismiss is one conditional change, however many admins race for it', () => {
+      const admins: AdminSession[] = []
+
+      beforeAll(async () => {
+        admins.push(await adminSession(k, served!.baseUrl), await adminSession(k, served!.baseUrl))
+      }, 60_000)
+
+      const openInsight = () =>
+        seedInsight(k, {
+          job: 'probe-dismiss',
+          subject: `subject-${randomUUID()}`,
+          runDay: RUN_DAY,
+          status: 'open',
+          dismissedAt: null,
+        })
+
+      const dismiss = (admin: AdminSession, id: string, key: string) =>
+        admin.send<InsightView>('POST', `/api/admin/insights/${id}/dismiss`, undefined, {
+          'Idempotency-Key': key,
+        })
+
+      /** The outcomes of the insight.dismiss entries sent under one key. */
+      async function outcomesUnder(key: string): Promise<string[]> {
+        const rows = await auditRows(raw, 'command = ? AND idempotency_key = ?', ['insight.dismiss', key])
+        return rows.map((r) => r.outcome).sort()
+      }
+
+      const codeOf = (a: Answer<unknown>) => a.body.error?.code
+
+      it(`AC-4: property: k in 2..5 dismisses of one insight by two admins under distinct keys started together: one 200, k - 1 answers 409 insight.dismissed, one insight.dismissed.v1, one applied and k - 1 refused entries, and the row keeps the winner's dismissedAt (${dialect})`, async () => {
+        await fc.assert(
+          fc.asyncProperty(fc.integer({ min: 2, max: 5 }), async (n) => {
+            const id = await openInsight()
+            const keys = Array.from({ length: n }, () => `dismiss:${randomUUID()}`)
+
+            const answers = await Promise.all(
+              keys.map((key, i) => dismiss(admins[i % admins.length]!, id, key)),
+            )
+
+            const won = answers.flatMap((a, i) => (a.status === 200 ? [{ a, key: keys[i]! }] : []))
+            const lost = answers.flatMap((a, i) => (a.status === 200 ? [] : [{ a, key: keys[i]! }]))
+            expect(won).toHaveLength(1)
+            expect(lost.map(({ a }) => [a.status, codeOf(a)])).toEqual(
+              lost.map(() => [409, 'insight.dismissed']),
+            )
+            const winner = won[0]!.a.body.data!
+            const events = await dismissEvents(raw, id)
+            expect(events.map((e) => e.dismissedAt)).toEqual([winner.dismissedAt])
+            expect(await outcomesUnder(won[0]!.key)).toEqual(['applied'])
+            for (const { key } of lost) expect(await outcomesUnder(key)).toEqual(['refused'])
+            expect(await insightState(raw, id)).toEqual({
+              status: 'dismissed',
+              dismissedAt: winner.dismissedAt,
+            })
+          }),
+          { numRuns: 6 },
+        )
+      }, 120_000)
+
+      it(`AC-4: the same key sent twice gets the same answer, one event, and one applied and one replayed entry (${dialect})`, async () => {
+        const id = await openInsight()
+        const key = `dismiss:${randomUUID()}`
+
+        const first = await dismiss(admins[0]!, id, key)
+        const again = await dismiss(admins[0]!, id, key)
+
+        expect([first.status, again.status]).toEqual([200, 200])
+        expect(again.body.data).toEqual(first.body.data)
+        expect((await dismissEvents(raw, id)).map((e) => e.dismissedAt)).toEqual([
+          first.body.data!.dismissedAt,
+        ])
+        expect(await outcomesUnder(key)).toEqual(['applied', 'replayed'])
+      })
+
+      it(`AC-4: an unknown id answers 404 insight.not_found, changes no insight, publishes nothing and leaves one refused entry (${dialect})`, async () => {
+        await openInsight()
+        const rowsBefore = await insightRows(raw)
+        const seqBefore = await maxSeq(raw)
+        const key = `dismiss:${randomUUID()}`
+
+        const answer = await dismiss(admins[0]!, randomUUID(), key)
+
+        expect([answer.status, codeOf(answer)]).toEqual([404, 'insight.not_found'])
+        expect(await insightRows(raw)).toEqual(rowsBefore)
+        expect(await maxSeq(raw)).toBe(seqBefore)
+        expect(await outcomesUnder(key)).toEqual(['refused'])
       })
     })
   })

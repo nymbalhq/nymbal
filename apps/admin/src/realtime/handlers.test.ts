@@ -1027,3 +1027,103 @@ describe('AC-14: an outcome the store cannot prove reaches the merchant', () => 
     )
   })
 })
+
+describe('AC-8: the night shift reaches an open Inbox', () => {
+  type Handle = ReturnType<typeof createEventHandlers>
+  const INSIGHT_EVENTS: Array<[string, (handle: Handle) => void]> = [
+    [
+      'insight.created.v1',
+      (h) =>
+        h('insight.created.v1', {
+          insightId: 'ins-1',
+          job: 'stock-runway',
+          subject: 'variant:v-1',
+          day: '2026-11-21',
+          dataDay: '2026-11-20',
+          severity: 'warning',
+          summary: 'Merino crew sock (MCS-42) has 5 days of stock left.',
+          facts: { stock: 5, daysLeft: 5 },
+        }),
+    ],
+    [
+      'insight.dismissed.v1',
+      (h) =>
+        h('insight.dismissed.v1', {
+          insightId: 'ins-1',
+          job: 'stock-runway',
+          subject: 'variant:v-1',
+          dismissedAt: '2026-11-21T09:00:00.000Z',
+        }),
+    ],
+  ]
+  const insightKey = fc
+    .option(fc.constantFrom<unknown>('list', 'one', { status: 'open' }), { nil: undefined })
+    .map((tail): QueryKey => (tail === undefined ? ['insights'] : ['insights', tail]))
+  const OTHERS: QueryKey[] = [
+    ['orders', 'list', {}],
+    ['orders', 'detail', 'NYM-1001'],
+    ['dashboard'],
+    ['proposals', 'list', 'pending'],
+    ['proposals', 'count'],
+    ['products', 'list', {}],
+    ['inventory', 'list', {}],
+    ['customers', 'list', {}],
+    ['activity', {}],
+    ['me'],
+  ]
+
+  it('AC-8: insight.created.v1 and insight.dismissed.v1 mark every insights query stale with its data unchanged and leave every other query as it was (property)', () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom(...INSIGHT_EVENTS),
+        fc.uniqueArray(insightKey, { minLength: 1, maxLength: 4, selector: (key) => hashKey(key) }),
+        ([type, fire], insightKeys) => {
+          const qc = freshClient()
+          insightKeys.forEach((key) => qc.setQueryData(key, { items: [{ id: 'ins-1' }], key }))
+          OTHERS.forEach((key) => qc.setQueryData(key, { key }))
+          const before = new Map(
+            [...insightKeys, ...OTHERS].map((key) => [hashKey(key), stateOf(qc, key)]),
+          )
+
+          fire(createEventHandlers(qc))
+
+          for (const key of insightKeys) {
+            const label = `${type} ${hashKey(key)}`
+            expect(qc.getQueryData(key), `${label}: data`).toEqual(before.get(hashKey(key))!.data)
+            expect(qc.getQueryState(key)?.isInvalidated, `${label}: stale`).toBe(true)
+          }
+          for (const key of OTHERS) {
+            expect(stateOf(qc, key), `${type}: untouched ${hashKey(key)}`).toEqual(
+              before.get(hashKey(key)),
+            )
+          }
+        },
+      ),
+      { numRuns: 40 },
+    )
+  })
+
+  it('AC-8: a reconnect refetches an active insights list', async () => {
+    const qc = freshClient()
+    let reads = 0
+    const observer = new QueryObserver(qc, {
+      queryKey: ['insights', 'list'],
+      queryFn: async () => {
+        reads += 1
+        return { items: [], read: reads }
+      },
+      staleTime: Infinity,
+    })
+    const unsubscribe = observer.subscribe(() => {})
+    await fetchesSettled(qc)
+    const readsBefore = reads
+
+    await resyncLiveQueries(qc)
+    await fetchesSettled(qc)
+
+    expect(reads).toBe(readsBefore + 1)
+    expect(qc.getQueryData(['insights', 'list'])).toEqual({ items: [], read: reads })
+    unsubscribe()
+    qc.clear()
+  })
+})

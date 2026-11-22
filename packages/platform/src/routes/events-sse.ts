@@ -151,7 +151,15 @@ export function registerEventsSseRoute(adapter: HttpAdapter, deps: RegisterEvent
     // Unnamed: every open tab, on every instance, receives every event. A shared name would make the tabs consumers
     // of one group on a shared bus, each event reaching one of them.
     const subscription = await eventBus.subscribe(
-      ['order.*', 'payment.*', 'inventory.*', 'adapter.*', 'proposal.*', ...ADMIN_PRODUCT_EVENTS],
+      [
+        'order.*',
+        'payment.*',
+        'inventory.*',
+        'adapter.*',
+        'proposal.*',
+        'insight.*',
+        ...ADMIN_PRODUCT_EVENTS,
+      ],
       (event) => {
         // The heartbeat's order is placed and cancelled at once; a live list or toast would show it every run.
         if (event.type === EVT_ORDER_PLACED && isSynthetic(event.payload)) return

@@ -39,6 +39,7 @@ import {
   type ProposalServiceDeps,
 } from './proposal-service.js'
 import { createImportRemovalService, type ImportRemovalService } from './import-removal-service.js'
+import { createInsightService, type InsightService } from './insight-service.js'
 import { legacyUntilOf } from './legacy-passwords.js'
 import { createTaxDocuments, type TaxDocuments } from './tax-documents.js'
 
@@ -57,6 +58,7 @@ export * from './alert-service.js'
 export * from './review-service.js'
 export * from './proposal-service.js'
 export * from './import-removal-service.js'
+export * from './insight-service.js'
 export * from './tax-documents.js'
 export {
   acceptLegacyHash,
@@ -105,6 +107,7 @@ export interface ServiceRegistry {
   review: ReviewService
   proposals: ProposalService
   importRemoval: ImportRemovalService
+  insights: InsightService
   taxDocuments: TaxDocuments
 }
 
@@ -125,6 +128,8 @@ export interface BuildServicesDeps {
   jwtSecret: string
   /** Runs a stored proposal through its route: the tool surface `attachHttp` builds. */
   executeProposal: ProposalServiceDeps['execute']
+  /** The night shift's clock, which a dismissed insight is stamped with. */
+  nightShiftNow?: () => Date
 }
 
 export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
@@ -288,6 +293,12 @@ export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
       repos,
       publisher,
       logger: logger.child({ service: 'import-removal' }),
+    }),
+    insights: createInsightService({
+      store,
+      insights: repos.insight,
+      publisher,
+      ...(deps.nightShiftNow !== undefined && { now: deps.nightShiftNow }),
     }),
     taxDocuments: createTaxDocuments({
       store,

@@ -415,6 +415,7 @@ export async function createApp(
           throw new Error('a proposal runs through the routes attachHttp registers')
         return mcp.execute(row, auth)
       },
+      ...(options.nightShift?.now !== undefined && { nightShiftNow: options.nightShift.now }),
     })
 
     await registerHandlers({
