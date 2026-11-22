@@ -30,9 +30,10 @@ export function scrub(text: string): string {
 const MAX_DEPTH = 16
 
 /**
- * A copy of `value` with every string scrubbed, deeply: plain objects, arrays and errors (their own properties,
- * message, stack and cause, keeping the prototype so serializers still see an error). Other class instances are kept
- * as they are.
+ * A copy of `value` with every string scrubbed, deeply: plain objects, arrays, Maps, Sets and errors (their own
+ * properties, message, stack and cause, keeping the prototype so serializers still see an error). Other class
+ * instances are kept as they are.
+ * A Map's object keys come back as new (scrubbed) objects, so a lookup by the original key object misses on the copy.
  */
 export function scrubDeep<T>(value: T): T {
   if (ordered.length === 0) return value
@@ -68,6 +69,19 @@ function copy(value: unknown, depth: number, seen: WeakMap<object, unknown>): un
         configurable: true,
       })
     }
+    return out
+  }
+  if (value instanceof Map) {
+    const out = new Map<unknown, unknown>()
+    seen.set(value, out)
+    for (const [key, inner] of value)
+      out.set(copy(key, depth + 1, seen), copy(inner, depth + 1, seen))
+    return out
+  }
+  if (value instanceof Set) {
+    const out = new Set<unknown>()
+    seen.set(value, out)
+    for (const member of value) out.add(copy(member, depth + 1, seen))
     return out
   }
   const proto = Object.getPrototypeOf(value) as object | null
