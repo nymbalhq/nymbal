@@ -10,7 +10,8 @@ import { DEFINITIONS, RATE_BASIS, RATE_FLOORS } from './definitions.js'
 import { addDays, daysBetween, localDayOf } from './time.js'
 
 // The answer to `GET /api/admin/reports`, built so a model reading it cannot misstate it: every figure says what it
-// counts, its period, its timezone and its currency, and a total never holds a part day.
+// counts, its period, its timezone and its currency. A money total may hold today, marked `partial`; a rate, a funnel
+// total and top products never hold a part day.
 
 const DEFAULT_DAYS: Record<'day' | 'hour', number> = { day: 31, hour: 7 }
 const RUNWAY_DAYS = 28
@@ -72,6 +73,7 @@ interface MoneyRow extends MoneyFigures {
 
 export interface MoneyTotal extends MoneyRow {
   window: SectionWindow
+  partial: boolean
 }
 
 export interface MoneySeriesRow extends MoneyRow {
@@ -257,7 +259,10 @@ function assertRange(from: string, to: string, grain: ReportGrain | undefined): 
   }
 }
 
-/** The report for `query`: only closed days reach a total or a rate; today appears only in a `grain` read's series. */
+/**
+ * The report for `query`: money totals run through today, marked `partial`; rates, the funnel and top products count
+ * closed days only.
+ */
 export async function readReport(deps: ReportDeps, query: ReportQuery): Promise<ReportResponse> {
   const { store, repo, timeZone, now } = deps
   const today = localDayOf(now(), timeZone)
@@ -337,10 +342,16 @@ async function defaultReport(
   const closedTo = period.to < closedThrough ? period.to : closedThrough
   const window: SectionWindow = { from, to: closedTo, timezone: timeZone }
   const anyClosedDay = from <= closedTo
+  const moneyTo = period.to < today ? period.to : today
+  const moneyWindow: SectionWindow = { from, to: moneyTo, timezone: timeZone }
 
+  const money = moneyRows(await repo.salesTotals(tx, from, moneyTo)).map((row) => ({
+    ...row,
+    window: moneyWindow,
+    partial: moneyTo === today,
+  }))
   const sales = await repo.salesTotals(tx, from, closedTo)
   const funnel = await repo.funnelTotals(tx, from, closedTo)
-  const money = moneyRows(sales).map((row) => ({ ...row, window }))
 
   const paidBySource = new Map<string, number>()
   for (const row of sales) {
@@ -408,7 +419,7 @@ async function defaultReport(
     .slice(0, query.limit)
 
   return {
-    window: { ...window, grain: null, closedThrough },
+    window: { ...moneyWindow, grain: null, closedThrough },
     since,
     definitions: DEFINITIONS,
     money: { totals: money },

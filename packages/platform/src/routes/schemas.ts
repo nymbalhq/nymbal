@@ -566,9 +566,9 @@ export const routeSchemas: Record<string, RouteSchema> = {
   'GET /api/admin/reports': {
     name: 'admin.reports.get',
     description:
-      'Sales, conversion, top products, zero-result searches and stock runway over store days. Quote the basis with a rate; never divide fields yourself. Money is in minor units of the row’s currency. Ask with grain=day for a series or for today; for a long range or a busy store, narrow the range.',
+      'Sales, conversion, top products, zero-result searches and stock runway over store days. Money totals run through `to` (today by default) and include today so far, marked partial. Rates, the funnel, top products, zero-result searches (unless `to` is named) and stock runway count closed days only; each section’s window gives its days. Quote the basis with a rate; never divide fields yourself. Money is in minor units of the row’s currency. Ask with grain=day for a series; for a long range or a busy store, narrow the range.',
     query: z.object({
-      from: z.iso.date().optional().describe('First store day, YYYY-MM-DD; the last 30 closed days by default.'),
+      from: z.iso.date().optional().describe('First store day, YYYY-MM-DD; 30 days before `to` by default, 6 with grain=hour.'),
       to: z.iso.date().optional().describe('Last store day, YYYY-MM-DD; today by default.'),
       grain: z.enum(['day', 'hour']).optional().describe('Asks for a series by day or hour.'),
       limit: queryValue.describe('How many of each list to answer: 10 by default, at most 50; a large limit on a busy store may be cut.'),

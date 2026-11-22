@@ -216,7 +216,7 @@ export const GOLDEN_QUESTIONS: readonly GoldenQuestion[] = [
     id: 'sales-30-days',
     ask: 'How did sales do over the last 30 days?',
     kind: 'read',
-    calls: ['admin_dashboard|admin_orders_list'],
+    calls: ['admin_dashboard|admin_orders_list|admin_reports_get'],
     answer: async (store) => {
       const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
       const kept = itemsOf(await store.read('admin_orders_list', { limit: '200' }))
