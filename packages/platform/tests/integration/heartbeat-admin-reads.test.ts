@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import fc from 'fast-check'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import type { OrderSource, OrderStatus } from '@nymbalhq/types'
+import type { OrderSource, OrderStatus, TodayFigures } from '@nymbalhq/types'
 import { contextOf, HEARTBEAT_EMAIL, quotedCheckout, withHeartbeat } from '../support/heartbeat.js'
 import { serveKernel, type ServedKernel } from '../support/http.js'
 import { createKernel, seedVariant, type Kernel, type Seeded } from '../support/kernel.js'
@@ -33,6 +33,7 @@ describe('synthetic orders and the admin reads', () => {
   let k: Kernel
   let served: ServedKernel
   let admin: AdminClient
+  let variant: Seeded
   /** Every order written so far, in the order written. */
   const written: Listed[] = []
 
@@ -40,6 +41,7 @@ describe('synthetic orders and the admin reads', () => {
     k = await createKernel({ dialect: 'sqlite', configure: withHeartbeat() })
     served = await serveKernel(k)
     admin = await adminClient(k, served.baseUrl)
+    variant = await seedVariant(k, 20)
   }, 60_000)
   afterAll(async () => {
     await served?.stop()
@@ -136,8 +138,44 @@ describe('synthetic orders and the admin reads', () => {
     }
   })
 
-  // Kills: the dashboard or the admin search reading the unfiltered list; an order read by number hidden too.
+  // Kills: the dashboard's figures or list counting the synthetic order, or the admin search reading the unfiltered
+  // list; an order read by number hidden too.
   it('AC-4: the dashboard counts and lists no synthetic order, admin search finds a real order by number and no synthetic one, and GET /api/admin/orders/:orderNumber still answers a synthetic order', async () => {
+    const today = async (): Promise<TodayFigures> => {
+      const res = await admin.call<{ today: TodayFigures }>('GET', '/api/admin/dashboard')
+      expect(res.status, JSON.stringify(res.body)).toBe(200)
+      return res.body.data!.today
+    }
+    const net = (figures: TodayFigures): number =>
+      figures.money.find((row) => row.currency === k.config.store.currency)?.netCapturedMinor ?? 0
+
+    // Today's figures come from payments, so the store check and a paid storefront order go through the checkout.
+    const before = await today()
+    const check = await quotedCheckout(served.baseUrl, variant, HEARTBEAT_EMAIL)
+    expect(check.answer.body.error?.code, JSON.stringify(check.answer.body)).toBe(
+      'checkout.synthetic',
+    )
+    const paid = await quotedCheckout(served.baseUrl, variant, `buyer-${randomUUID()}@shop.test`)
+    expect(paid.answer.status, JSON.stringify(paid.answer.body)).toBe(200)
+    const after = await today()
+    expect({
+      paidOrders: after.paidOrders - before.paidOrders,
+      units: after.units - before.units,
+      netCapturedMinor: net(after) - net(before),
+    }).toEqual({ paidOrders: 1, units: 1, netCapturedMinor: paid.answer.body.data!.totalMinor })
+    written.push(
+      {
+        orderNumber: contextOf(check.answer)['orderNumber'] as string,
+        status: 'cancelled',
+        source: 'synthetic',
+      },
+      {
+        orderNumber: paid.answer.body.data!.orderNumber,
+        status: 'confirmed',
+        source: 'storefront',
+      },
+    )
+
     const [realOne, syntheticOne] = await insertOrders(k, [
       { status: 'confirmed', source: 'storefront', orderNumber: `HB-${randomUUID().slice(0, 12)}` },
       { status: 'cancelled', source: 'synthetic', orderNumber: `HB-${randomUUID().slice(0, 12)}` },
@@ -148,11 +186,9 @@ describe('synthetic orders and the admin reads', () => {
     )
 
     const dashboard = await admin.call<{
-      today: { orderCount: number }
       recentOrders: Array<{ orderNumber: string; source?: string }>
     }>('GET', '/api/admin/dashboard')
     expect(dashboard.status).toBe(200)
-    expect(dashboard.body.data!.today.orderCount).toBe(real().length)
     const recent = dashboard.body.data!.recentOrders.map((o) => o.orderNumber)
     expect(recent.filter((n) => numbers(synthetic()).includes(n))).toEqual([])
     expect(recent).toContain(realOne!.orderNumber)

@@ -501,8 +501,12 @@ function answer(
           p,
           'admin_dashboard',
           {},
-          (r) =>
-            `Sales came to ${money(num(recOf(r['today'])['revenueMinor']))} over the last 30 days.`,
+          (r) => {
+            // The store currency's row comes first.
+            const rows = recOf(r['today'])['money']
+            const store = recOf(Array.isArray(rows) ? rows[0] : undefined)
+            return `Sales came to ${money(num(store['netCapturedMinor']))} over the last 30 days.`
+          },
           noFact,
         )
       }
@@ -802,7 +806,8 @@ function convertAnswer(result: Body, deviation: Deviation | undefined): string {
   const rates = recOf(result['rates'])
   const rate = recOf(rates['paidPerCheckoutStarted'])
   const reason = String(rate['reason'] ?? '')
-  if (deviation === 'convert-no-basis') return `There is no conversion rate for last week: ${reason}.`
+  if (deviation === 'convert-no-basis')
+    return `There is no conversion rate for last week: ${reason}.`
   const basis = String(rate['basis'] ?? '')
   const window = recOf(rate['window'])
   return `There is no conversion rate for last week: ${reason}. Basis: ${basis} Window: ${String(window['from'])} to ${String(window['to'])}, ${String(window['timezone'])}.`

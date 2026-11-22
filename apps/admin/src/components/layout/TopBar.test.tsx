@@ -65,7 +65,22 @@ beforeEach(() => {
     if (url.pathname === '/api/admin/dashboard')
       return json({
         data: {
-          today: { orderCount: 0, revenueMinor: 0, itemsShipped: 0 },
+          today: {
+            day: '2026-11-22',
+            timezone: 'Europe/London',
+            paidOrders: 0,
+            units: 0,
+            money: [
+              {
+                currency: 'GBP',
+                capturedMinor: 0,
+                refundedMinor: 0,
+                netCapturedMinor: 0,
+                paidOrders: 0,
+                bySource: [],
+              },
+            ],
+          },
           recentOrders: [],
           lowStock: [],
           agents: {

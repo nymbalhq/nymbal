@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { ShoppingBag, DollarSign, Truck, AlertTriangle, TrendingUp, Bot } from 'lucide-react'
+import { ShoppingBag, DollarSign, Package, AlertTriangle, TrendingUp, Bot } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { OrderStatusBadge } from '@/components/orders/OrderStatusBadge'
 import { EmptyState } from '@/components/common/EmptyState'
@@ -51,9 +51,23 @@ interface StatCardProps {
   subtext?: string | undefined
   loading?: boolean | undefined
   color?: 'blue' | 'green' | 'violet' | undefined
+  valueTestId?: string | undefined
+  /** The money the value shows, as data-minor and data-currency on the value. */
+  valueMoney?: { minor: number; currency: string } | undefined
+  children?: React.ReactNode
 }
 
-function StatCard({ icon, label, value, subtext, loading, color = 'blue' }: StatCardProps) {
+function StatCard({
+  icon,
+  label,
+  value,
+  subtext,
+  loading,
+  color = 'blue',
+  valueTestId,
+  valueMoney,
+  children,
+}: StatCardProps) {
   const colors = {
     blue: 'bg-blue-50 text-blue-600',
     green: 'bg-green-50 text-green-600',
@@ -75,9 +89,17 @@ function StatCard({ icon, label, value, subtext, loading, color = 'blue' }: Stat
         </>
       ) : (
         <>
-          <p className="text-2xl font-semibold font-mono text-zinc-900">{value}</p>
+          <p
+            className="text-2xl font-semibold font-mono text-zinc-900"
+            data-testid={valueTestId}
+            data-minor={valueMoney?.minor}
+            data-currency={valueMoney?.currency}
+          >
+            {value}
+          </p>
           <p className="mt-0.5 text-xs text-zinc-500">{label}</p>
           {subtext && <p className="mt-1 text-[11px] text-zinc-400">{subtext}</p>}
+          {children}
         </>
       )}
     </div>
@@ -203,6 +225,8 @@ export function DashboardPage() {
   const { data, isLoading } = useDashboard()
   const { data: mailHealth } = useMailHealth()
   const navigate = useNavigate()
+  const today = data?.today
+  const sales = today?.money[0]
 
   return (
     <div className="space-y-6">
@@ -210,7 +234,9 @@ export function DashboardPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-lg font-semibold text-zinc-900">{me?.storeName ?? 'Dashboard'}</h1>
-          <p className="text-sm text-zinc-500">Today's performance at a glance</p>
+          <p className="text-sm text-zinc-500">
+            {today ? `Today in ${today.timezone}` : 'Today'}
+          </p>
         </div>
         <LiveIndicator />
       </div>
@@ -230,25 +256,44 @@ export function DashboardPage() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatCard
           icon={<ShoppingBag className="h-4.5 w-4.5" />}
-          label="Orders today"
-          value={String(data?.today.orderCount ?? 0)}
+          label="Paid orders today"
+          value={String(today?.paidOrders ?? 0)}
           loading={isLoading}
           color="blue"
+          valueTestId={tid('dashboard', 'today', 'paid-orders')}
         />
         <StatCard
           icon={<DollarSign className="h-4.5 w-4.5" />}
-          label="Revenue today"
-          value={data ? formatMoneyCompact(data.today.revenueMinor, data.agents.currency) : '—'}
-          subtext={data ? formatMoney(data.today.revenueMinor, data.agents.currency) : undefined}
+          label="Sales today"
+          value={sales ? formatMoneyCompact(sales.netCapturedMinor, sales.currency) : '—'}
+          subtext={sales ? formatMoney(sales.netCapturedMinor, sales.currency) : undefined}
           loading={isLoading}
           color="green"
-        />
+          valueTestId={tid('dashboard', 'today', 'sales')}
+          valueMoney={sales && { minor: sales.netCapturedMinor, currency: sales.currency }}
+        >
+          {today && today.money.length > 1 && (
+            <ul className="mt-2 space-y-0.5 font-mono text-xs text-zinc-600">
+              {today.money.slice(1).map((row) => (
+                <li
+                  key={row.currency}
+                  data-testid={tid('dashboard', 'today', 'sales-other')}
+                  data-currency={row.currency}
+                  data-minor={row.netCapturedMinor}
+                >
+                  {formatMoney(row.netCapturedMinor, row.currency)}
+                </li>
+              ))}
+            </ul>
+          )}
+        </StatCard>
         <StatCard
-          icon={<Truck className="h-4.5 w-4.5" />}
-          label="Items shipped"
-          value={String(data?.today.itemsShipped ?? 0)}
+          icon={<Package className="h-4.5 w-4.5" />}
+          label="Items sold today"
+          value={String(today?.units ?? 0)}
           loading={isLoading}
           color="violet"
+          valueTestId={tid('dashboard', 'today', 'items')}
         />
       </div>
 

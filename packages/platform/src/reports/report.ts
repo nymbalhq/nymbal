@@ -163,12 +163,12 @@ const NO_FIGURES = (): FunnelCounts => ({
   paymentsFailed: 0,
 })
 
-function moneyFigures(capturedMinor: number, refundedMinor: number, paidOrders: number): MoneyFigures {
+export function moneyFigures(capturedMinor: number, refundedMinor: number, paidOrders: number): MoneyFigures {
   return { capturedMinor, refundedMinor, netCapturedMinor: capturedMinor - refundedMinor, paidOrders }
 }
 
 /** Each currency's row, its figures the sum of its sources. */
-function moneyRows(rows: readonly SalesTotalRow[]): MoneyRow[] {
+export function moneyRows(rows: readonly SalesTotalRow[]): MoneyRow[] {
   const byCurrency = new Map<string, SalesTotalRow[]>()
   for (const row of rows) {
     byCurrency.set(row.currency, [...(byCurrency.get(row.currency) ?? []), row])

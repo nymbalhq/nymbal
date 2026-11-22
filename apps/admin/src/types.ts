@@ -7,6 +7,7 @@ import type {
   OrderPayment,
   OrderRefund,
   StockStatus,
+  TodayFigures,
   VariantOption,
 } from '@nymbalhq/types'
 
@@ -67,11 +68,7 @@ export interface AdminMe {
 }
 
 export interface DashboardStats {
-  today: {
-    orderCount: number
-    revenueMinor: number
-    itemsShipped: number
-  }
+  today: TodayFigures
   recentOrders: Order[]
   lowStock: InventoryRow[]
   agents: AgentsDashboard
