@@ -1,5 +1,6 @@
 import Fastify, {
   errorCodes,
+  type FastifyError,
   type FastifyInstance,
   type InjectOptions,
   type LightMyRequestResponse,
@@ -157,15 +158,28 @@ export class FastifyHttpAdapter implements HttpAdapter {
       // Fastify's default takes `req.id` from an inbound `request-id` header, unvalidated; the id is always ours.
       requestIdHeader: false,
       genReqId: () => uuidv7(),
+      // A URL Fastify cannot decode, or an over-long param, is refused before any hook runs: this answer sets the
+      // headers the hooks would.
+      frameworkErrors: (err, req, reply) => {
+        req.correlationId = this.#correlationIdOf(req)
+        const envelope = this.#errorEnvelope(err, req)
+        envelope.headers = {
+          [CORRELATION_ID_HEADER]: req.correlationId,
+          ...(req.url.startsWith('/api/') && { 'cache-control': 'no-store' }),
+        }
+        return this.#applyEnvelope(reply, envelope)
+      },
     })
-    // Hooks rather than #buildContext and #applyEnvelope: Fastify's own 404 and body-parse 400 never reach a route
-    // handler, and they carry the id too.
+    // Hooks rather than #buildContext and #applyEnvelope: Fastify's own 404, the error handler's answers (a body it
+    // cannot parse included) and the origin lock's 403 never reach a route handler, and they carry the id too. Only
+    // `frameworkErrors` answers before the hooks, so it sets the id itself.
     this.#app.decorateRequest('correlationId', '')
     this.#app.decorateRequest('clientIp', '')
+    this.#app.setErrorHandler((err, req, reply) =>
+      this.#applyEnvelope(reply, this.#errorEnvelope(err, req)),
+    )
     this.#app.addHook('onRequest', async (req, reply) => {
-      const inbound = req.headers[CORRELATION_ID_HEADER]
-      if (typeof inbound === 'string' && isValidCorrelationId(inbound)) req.correlationId = inbound
-      else req.correlationId = isValidCorrelationId(req.id) ? req.id : uuidv7()
+      req.correlationId = this.#correlationIdOf(req)
       const locked = this.#takeOriginProof(req)
       if (!locked && this.#refusesUnlocked(req)) {
         req.clientIp = req.raw.socket.remoteAddress ?? req.ip
@@ -599,6 +613,35 @@ export class FastifyHttpAdapter implements HttpAdapter {
       )
     }
     return peer
+  }
+
+  /** A valid inbound id, else the request's own. */
+  #correlationIdOf(req: FastifyRequest): string {
+    const inbound = req.headers[CORRELATION_ID_HEADER]
+    if (typeof inbound === 'string' && isValidCorrelationId(inbound)) return inbound
+    return isValidCorrelationId(req.id) ? req.id : uuidv7()
+  }
+
+  /**
+   * An error raised outside a route handler, by Fastify or a plugin. A 4xx keeps Fastify's code and message, so a
+   * client can tell the cases apart; anything else hides its message, as `#renderError` does.
+   */
+  #errorEnvelope(err: unknown, req: FastifyRequest): ResponseEnvelope {
+    const { statusCode, code } = (err ?? {}) as Partial<FastifyError>
+    const status = typeof statusCode === 'number' ? statusCode : 500
+    const message = err instanceof Error ? err.message : String(err)
+    if (status >= 400 && status < 500) {
+      this.#requestLogger(req).warn({ err }, message)
+      return {
+        status,
+        body: { error: { code: typeof code === 'string' ? code : `http.${status}`, message } },
+      }
+    }
+    this.#requestLogger(req).error({ err }, message)
+    return {
+      status: status >= 500 && status < 600 ? status : 500,
+      body: { error: { code: 'internal', message: 'Internal server error' } },
+    }
   }
 
   #requestLogger(req: FastifyRequest): Logger {

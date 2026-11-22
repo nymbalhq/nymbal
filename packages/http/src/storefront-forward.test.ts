@@ -24,6 +24,7 @@ const logger = {
 }
 const security = securitySchema.parse({ adapter: 'middleware' })
 const PUBLIC_URL = 'https://shop.example'
+const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
 
 let cleanup: Array<() => void | Promise<void>> = []
 afterEach(async () => {
@@ -386,7 +387,7 @@ describe('AC-2: a Connection header naming the forwarded headers does not strip 
 // AC-3: a request line under /api/ whose percent-encoding does not decode is the API's to refuse; it must not fall
 // through to the storefront's wildcard.
 describe('AC-3: a malformed /api/ URL is refused by the API', () => {
-  it('AC-3: /api/ targets with a bad percent-encoding answer 400 JSON FST_ERR_BAD_URL and never reach the storefront', async () => {
+  it('AC-3: /api/ targets with a bad percent-encoding answer 400 FST_ERR_BAD_URL in the error envelope with a correlation id, and never reach the storefront', async () => {
     const up = await startUpstream()
     const { base } = await serve(up.port)
     const malformed = fc.oneof(
@@ -404,7 +405,10 @@ describe('AC-3: a malformed /api/ URL is refused by the API', () => {
 
         expect(res.status).toBe(400)
         expect(res.headers['content-type']).toMatch(/^application\/json/)
-        expect((JSON.parse(res.body.toString()) as { code?: string }).code).toBe('FST_ERR_BAD_URL')
+        expect(JSON.parse(res.body.toString())).toEqual({
+          error: { code: 'FST_ERR_BAD_URL', message: expect.any(String) },
+        })
+        expect(res.headers['x-correlation-id']).toEqual(expect.stringMatching(UUID_V7))
       }),
       { numRuns: 30 },
     )
