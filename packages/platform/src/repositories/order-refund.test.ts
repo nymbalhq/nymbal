@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import fc from 'fast-check'
 import pg from 'pg'
 import { v7 as uuidv7 } from 'uuid'
-import type { OrderRefundStatus } from '@nymbalhq/types'
+import type { OrderRefundStatus, OrderSource } from '@nymbalhq/types'
 import { InMemoryDocumentStore } from '../document-store/in-memory.js'
 import { createCommandStore } from '../db/command-store.js'
 import { runMigrations } from '../db/migrate.js'
@@ -27,7 +27,7 @@ async function setup() {
 type Env = Awaited<ReturnType<typeof setup>>
 
 let sequence = 0
-async function order(env: Env): Promise<string> {
+async function order(env: Env, source?: OrderSource): Promise<string> {
   const id = uuidv7()
   const now = new Date()
   sequence += 1
@@ -51,6 +51,7 @@ async function order(env: Env): Promise<string> {
       notes: '',
       metadata: {},
       paymentIntentId: null,
+      ...(source === undefined ? {} : { source }),
       createdAt: now,
       updatedAt: now,
     }),
@@ -344,6 +345,97 @@ describe('OrderRefundRepository', () => {
 
       expect(got).toEqual(['order-a', 'order-b'])
       expect(sent).toEqual([['pending', before.toISOString(), 7]])
+    } finally {
+      connect.mockRestore()
+      await store.close()
+    }
+  })
+  // Defect: the refund-rate figure counts what says nothing about shoppers (a pending or failed refund, a capture
+  // checkout returned on a cancelled order, a synthetic or imported order's refund), the bound is strict or reversed,
+  // or the times come back unordered or as strings.
+  it('countedRefundTimes answers the time of each succeeded shopper refund at or after the time, oldest first', async () => {
+    const env = await setup()
+    const sources: OrderSource[] = ['storefront', 'agent:shop-bot', 'synthetic', 'import']
+    const statuses: OrderRefundStatus[] = ['succeeded', 'pending', 'failed']
+    const actors = ['admin:1', 'system:checkout', 'system:webhook']
+    let run = 0
+    await fc.assert(
+      fc.asyncProperty(
+        fc.array(
+          fc.record({
+            source: fc.integer({ min: 0, max: sources.length - 1 }),
+            status: fc.integer({ min: 0, max: statuses.length - 1 }),
+            actor: fc.integer({ min: 0, max: actors.length - 1 }),
+            at: fc.integer({ min: -3, max: 3 }),
+          }),
+          { maxLength: 8 },
+        ),
+        fc.integer({ min: -3, max: 3 }),
+        async (specs, sinceAt) => {
+          // Each run an hour after the last, so earlier runs' rows all fall before this run's time.
+          run += 1
+          const base = Date.UTC(2026, 9, 1, run, 0, 0)
+          for (const s of specs) {
+            const orderId = await order(env, sources[s.source])
+            await insert(
+              env,
+              row(orderId, {
+                status: statuses[s.status]!,
+                actor: actors[s.actor]!,
+                createdAt: new Date(base + s.at * 1000),
+              }),
+            )
+          }
+          const since = new Date(base + sinceAt * 1000)
+          const got = await env.store.read((tx) => env.repo.countedRefundTimes(tx, since))
+          const expected = specs
+            .filter(
+              (s) =>
+                s.at >= sinceAt &&
+                statuses[s.status] === 'succeeded' &&
+                actors[s.actor] !== 'system:checkout' &&
+                (s.source === 0 || s.source === 1),
+            )
+            .map((s) => base + s.at * 1000)
+            .sort((a, b) => a - b)
+          expect(got.map((d) => d.getTime())).toEqual(expected)
+        },
+      ),
+      { numRuns: 25 },
+    )
+    await env.store.close()
+  })
+
+  // Defect: the Postgres half drops a filter (the status, the checkout actor, the uncounted sources) or answers rows
+  // instead of times; drizzle's real Postgres driver stands here against a connection that records and answers.
+  it('countedRefundTimes on Postgres sends every filter and answers the times returned', async () => {
+    const sent: unknown[][] = []
+    const times = ['2026-10-01T10:00:01.000Z', '2026-10-01T10:00:04.000Z']
+    const connection = {
+      query: async (_statement: unknown, values: unknown[]) => {
+        sent.push(values)
+        return { rows: times.map((t) => [t]) }
+      },
+      release: () => undefined,
+    }
+    const connect = vi
+      .spyOn(pg.Pool.prototype, 'connect')
+      .mockImplementation(async () => connection as never)
+    const store = createCommandStore(
+      // @ts-expect-error minimal config
+      { infrastructure: { commandStore: 'postgres' }, store: { name: 'test', currency: 'GBP' } },
+      { postgresUrl: 'postgres://unused/none' },
+    )
+    const since = new Date('2026-10-01T10:00:00.000Z')
+    try {
+      const got = await store.read((tx) =>
+        createOrderRefundRepository(store).countedRefundTimes(tx, since),
+      )
+
+      expect(got.map((d) => d.toISOString())).toEqual(times)
+      expect(sent).toEqual([
+        ['succeeded', since.toISOString(), 'system:checkout', 'synthetic', 'import'],
+      ])
     } finally {
       connect.mockRestore()
       await store.close()

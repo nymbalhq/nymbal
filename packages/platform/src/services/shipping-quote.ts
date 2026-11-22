@@ -70,7 +70,8 @@ const idPart = (name: string): string =>
   name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
+    // A run is one `_` by now, so each end holds at most one.
+    .replace(/^_|_$/g, '')
 
 /**
  * A carrier option's id, from its carrier and service alone, so it is the same on every rating call while the rate
@@ -107,7 +108,8 @@ export function carrierOptions(rates: readonly CarrierRate[], currency: string):
       carrier: rate.carrier,
       service: rate.service,
     }))
-    .sort((a, b) => a.amountMinor - b.amountMinor || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+    // The ids are the map's keys, so two are never equal.
+    .sort((a, b) => a.amountMinor - b.amountMinor || (a.id < b.id ? -1 : 1))
 }
 
 /** A rate the kernel can charge: names it can make an id of, a whole amount ≥ 0 and an ISO 4217 code. */

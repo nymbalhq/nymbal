@@ -1,5 +1,6 @@
 import { css, html, nothing } from 'lit'
-import { cartCodeMessage, type CartCodeStatus } from '@nymbalhq/types'
+import type { CartCodeStatus } from '@nymbalhq/types'
+import { cartCodeMessage } from '@nymbalhq/types/cart-codes'
 
 /** The parts of the code block, listed in the schema of each element that renders it. */
 export const CODE_PARTS = [

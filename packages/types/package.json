@@ -29,6 +29,10 @@
     "./us-states": {
       "types": "./dist/us-states.d.ts",
       "import": "./dist/us-states.js"
+    },
+    "./cart-codes": {
+      "types": "./dist/cart-codes.d.ts",
+      "import": "./dist/cart-codes.js"
     }
   },
   "files": [

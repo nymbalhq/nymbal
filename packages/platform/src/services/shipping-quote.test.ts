@@ -645,6 +645,7 @@ describe('AC-9: the carrier is asked once per rating and never priced around', (
     { label: "'GB'", currency: 'GB' },
     { label: "'GBPP'", currency: 'GBPP' },
     { label: '42', currency: 42 },
+    { label: "['GBP'], text only once coerced", currency: ['GBP'] },
   ])(
     'AC-9: an answer holding a rate in currency $label is an outage with one warn naming the provider',
     async ({ currency }) => {
@@ -655,6 +656,8 @@ describe('AC-9: the carrier is asked once per rating and never priced around', (
 
       expect(error).toMatchObject({ code: 'checkout.shipping_unavailable' })
       expect(warnedProviders).toEqual([provider])
+      // Refused as the carrier's answer, not failing later on a code that only passed the pattern once coerced.
+      expect((error?.cause as Error).message).toMatch(/rates the port refuses/)
     },
   )
 
@@ -666,6 +669,7 @@ describe('AC-9: the carrier is asked once per rating and never priced around', (
     { label: 'service undefined', bad: rateOf({ service: undefined }) },
     { label: 'service a number', bad: rateOf({ service: 7 }) },
     { label: 'a null rate', bad: null },
+    { label: 'an undefined rate', bad: undefined },
     { label: 'a number for a rate', bad: 42 },
   ])('AC-9: an answer holding $label is an outage, not a TypeError', async ({ bad }) => {
     const { error, warnedProviders, provider } = await rejectionOf([rateOf(), bad])
@@ -673,6 +677,7 @@ describe('AC-9: the carrier is asked once per rating and never priced around', (
     expect(error).toMatchObject({ code: 'checkout.shipping_unavailable' })
     expect(warnedProviders).toEqual([provider])
     expect(error?.cause).not.toBeInstanceOf(TypeError)
+    expect((error?.cause as Error).message).toMatch(/rates the port refuses/)
   })
 
   // Kills: an answer that is not a list (or an adapter with no rate function) read as one.
@@ -709,6 +714,26 @@ describe('AC-9: the carrier is asked once per rating and never priced around', (
     expect(warnedProviders).toEqual([provider])
     expect(error?.cause).toBe(thrown)
   })
+
+  // Kills: the outage reaching the shopper or the operator's log with a blank message, so neither can tell what failed.
+  it('AC-9: an outage tells the shopper the delivery price failed and logs that the carrier was unavailable', async () => {
+    const refused = await rejectionOf([rateOf({ amountMinor: -1 })])
+    const thrown = new Error('carrier account suspended')
+    const threw = await rejectionOf(
+      undefined,
+      fakeCarrier(() => {
+        throw thrown
+      }).adapter,
+    )
+    const { rater, warns } = raterFor(fakeCarrier(() => [rateOf({ amountMinor: -1 })]).adapter)
+    await rater.rate(SHIP_TO, PARCEL).catch(() => undefined)
+
+    for (const { error } of [refused, threw]) {
+      expect(error?.message).toBe('The delivery price could not be worked out')
+    }
+    expect((refused.error?.cause as Error).message).toMatch(/rates the port refuses/)
+    expect(warns.map((w) => w.msg)).toEqual(['carrier unavailable at checkout'])
+  })
 })
 
 describe('AC-16: the carrier is down past its bound', () => {
@@ -741,6 +766,8 @@ describe('AC-16: the carrier is down past its bound', () => {
     expect(before).toBe('pending')
     expect(state).toBe('rejected')
     expect(error).toMatchObject({ code: 'checkout.shipping_unavailable' })
+    // The log says how long the carrier was given.
+    expect(((error as Error).cause as Error).message).toContain(`${boundMs} ms`)
     expect(warns.map((w) => w.obj['provider'])).toEqual([adapter.providerName])
     expect(calls.length).toBe(1)
   })
@@ -784,6 +811,7 @@ describe('AC-9: rates the store cannot offer are dropped with a warn', () => {
       ],
     ])
     expect(warns[0]?.obj['provider']).toBe(adapter.providerName)
+    expect(warns[0]?.msg).toMatch(/^carrier rates dropped: /)
   })
 
   // Kills: the store currency compared as written, so a store configured in lower case drops its own rates.
