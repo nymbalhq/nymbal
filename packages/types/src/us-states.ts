@@ -1,4 +1,4 @@
-/** The 50 states and DC by postal code: the regions a US row of the tax table may name, and the names a shopper may type. */
+/** The 50 states and DC by postal code: the regions a US row of the tax table may name, and the names a shopper may type or pick. */
 export const US_STATES: Readonly<Record<string, string>> = {
   AL: 'Alabama',
   AK: 'Alaska',

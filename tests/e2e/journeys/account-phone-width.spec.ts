@@ -1,7 +1,9 @@
+import { randomUUID } from 'node:crypto'
 import { devices } from '@playwright/test'
 import { expect, test } from '../support/fixtures'
 import { shopperWithOrder } from '../support/checkout'
-import { signIn } from '../support/sign-in'
+import { API_URL, csrf } from '../support/csrf'
+import { formReady, signIn } from '../support/sign-in'
 
 // AC-1: at Pixel 7 (412 px) a signed-in shopper's account pages are no wider than the viewport. On Astro the account
 // grid's one `1fr` column would take the sidebar's min-content width (its nav is a row of `nowrap` links) without
@@ -66,5 +68,47 @@ test.describe('Account at Pixel 7', () => {
       expect.soft(scrollWidth, measured).toBeLessThanOrEqual(viewportWidth + 1)
       expect.soft(innerWidth, measured).toBe(viewportWidth)
     }
+  })
+
+  // Kills: a select's intrinsic width (its longest option) widening the add form's grid track past the phone's width.
+  test('AC-10: signed in, /account/addresses with South Georgia & South Sandwich Islands chosen is no wider than the viewport, and the country select ends inside its form', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(60_000)
+    const email = `countrywidth${randomUUID().slice(0, 8)}@e2e.test`
+    const reg = await request.post(`${API_URL}/api/auth/register`, {
+      headers: await csrf(request),
+      data: { email, password: PASSWORD, firstName: 'Ada', lastName: 'Countrywidth' },
+    })
+    expect(reg.ok(), `POST /api/auth/register: ${await reg.text()}`).toBe(true)
+    await signIn(page, email, PASSWORD)
+    await page.waitForURL((url) => url.pathname.replace(/\/$/, '') === '/account', {
+      timeout: 15_000,
+    })
+
+    await page.goto('/account/addresses')
+    await formReady(page, 'nymbal-address-book')
+    const form = page.getByTestId('add-address-form')
+    const country = form.getByLabel('Country', { exact: true })
+    await country.selectOption(
+      { label: 'South Georgia & South Sandwich Islands' },
+      { timeout: 10_000 },
+    )
+
+    const viewportWidth = pixel7.viewport.width
+    const { scrollWidth, innerWidth } = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      innerWidth: window.innerWidth,
+    }))
+    const measured = `/account/addresses: scrollWidth ${scrollWidth}, innerWidth ${innerWidth}, Pixel 7 ${viewportWidth}`
+    expect.soft(scrollWidth, measured).toBeLessThanOrEqual(viewportWidth + 1)
+    expect.soft(innerWidth, measured).toBe(viewportWidth)
+    const select = await country.boundingBox()
+    const box = await form.boundingBox()
+    expect(
+      select!.x + select!.width - (box!.x + box!.width),
+      'country select past its form',
+    ).toBeLessThanOrEqual(0)
   })
 })

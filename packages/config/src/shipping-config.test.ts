@@ -1,4 +1,5 @@
 import fc from 'fast-check'
+import * as types from '@nymbalhq/types'
 import { describe, expect, it } from 'vitest'
 import { nymbalConfigSchema, type NymbalConfigInput } from './schema.js'
 
@@ -141,5 +142,42 @@ describe('AC-1: the shipping config', () => {
         rates: [STANDARD, EXPRESS, { ...EXPRESS, id: 'express-fr', countries: ['FR'] }],
       }).paths,
     ).toEqual([])
+  })
+})
+
+/** The codes an address may carry, from @nymbalhq/types. */
+function countryCodes(): readonly string[] {
+  const codes = (types as unknown as { COUNTRY_CODES?: readonly string[] }).COUNTRY_CODES
+  expect(codes, '@nymbalhq/types exports COUNTRY_CODES').toBeInstanceOf(Array)
+  return codes!
+}
+
+describe('AC-8: a shipping row names ISO 3166-1 countries', () => {
+  // Kills: a row naming UK boots and silently offers GB shoppers the rest-of-world rate; or XX, which no address carries.
+  it("AC-8: UK or XX among a row's countries is refused at commerce.shipping.rates.0.countries.1, and UK's message names GB", () => {
+    for (const country of ['UK', 'XX']) {
+      expect(
+        refused({ provider: 'native', rates: [{ ...EXPRESS, countries: ['GB', country] }] }).paths,
+        country,
+      ).toEqual(['commerce.shipping.rates.0.countries.1'])
+    }
+    const uk = nymbalConfigSchema.safeParse(
+      config({ provider: 'native', rates: [{ ...EXPRESS, countries: ['GB', 'UK'] }] }),
+    )
+    expect(uk.success ? [] : uk.error.issues.map((i) => i.message)).toEqual([
+      expect.stringContaining('use "GB" for the United Kingdom'),
+    ])
+  })
+
+  // Kills: a valid code stops a store booting.
+  it('AC-8: a row naming every COUNTRY_CODES entry parses with those countries', () => {
+    const countries = [...countryCodes()]
+    const parsed = nymbalConfigSchema.safeParse(
+      config({ provider: 'native', rates: [{ ...EXPRESS, countries }] }),
+    )
+
+    expect(
+      parsed.success ? parsed.data.commerce.shipping.rates[0]?.countries : parsed.error.issues,
+    ).toEqual(countries)
   })
 })

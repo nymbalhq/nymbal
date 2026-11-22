@@ -2,8 +2,10 @@ import { z, type ZodTypeAny } from 'zod'
 import { ASSISTANT_MASK_FIELDS } from '@nymbalhq/config'
 import {
   CART_LINE_MAX_QTY,
+  isCountryCode,
   ORDER_STATUS_TRANSITIONS,
   PRODUCT_SORT_KEYS,
+  US_STATES,
   type OrderStatus,
 } from '@nymbalhq/types'
 
@@ -126,7 +128,7 @@ const variantIdParams = z.object({ variantId: id })
 const orderNumberParams = z.object({ orderNumber: id })
 const settingParams = z.object({ slot: id, path: id })
 
-const address = z.object({
+const addressFields = z.object({
   firstName: z.string(),
   lastName: z.string(),
   company: z.string().optional(),
@@ -135,9 +137,31 @@ const address = z.object({
   city: z.string(),
   region: z.string(),
   postalCode: z.string(),
-  country: z.string(),
+  /** Read in any case with spaces around it and passed on as the code, so the tax and shipping tables match it. */
+  country: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .refine(isCountryCode, 'country takes an ISO 3166-1 two-letter code, such as "GB"'),
   phone: z.string().optional(),
 })
+
+/** What the tax table reads as a US state: its code or its name, in any case with spaces around it. */
+const US_REGIONS = new Set(
+  Object.entries(US_STATES).flatMap(([code, name]) => [code, name.toUpperCase()]),
+)
+
+/** A US address names a state the tax table can place; its region is passed on as sent. */
+function usRegion(a: { country: string; region: string }, ctx: z.RefinementCtx): void {
+  if (a.country !== 'US' || US_REGIONS.has(a.region.trim().toUpperCase())) return
+  ctx.addIssue({
+    code: 'custom',
+    path: ['region'],
+    message: 'a US region is a state\'s two-letter code or name, such as "CA"',
+  })
+}
+
+const address = addressFields.superRefine(usRegion)
 
 const money = z.number().int()
 const productStatus = z.enum(['draft', 'active', 'archived'])
@@ -491,10 +515,12 @@ export const routeSchemas: Record<string, RouteSchema> = {
     name: 'customers.addAddress',
     command: 'customer.addAddress',
     description: 'Save an address for the signed-in customer.',
-    body: address.extend({
-      isDefaultBilling: z.boolean().optional(),
-      isDefaultShipping: z.boolean().optional(),
-    }),
+    body: addressFields
+      .extend({
+        isDefaultBilling: z.boolean().optional(),
+        isDefaultShipping: z.boolean().optional(),
+      })
+      .superRefine(usRegion),
   },
   'DELETE /api/customers/me/addresses/:id': {
     name: 'customers.removeAddress',

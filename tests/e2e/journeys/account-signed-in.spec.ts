@@ -103,9 +103,9 @@ test.describe('Signed-in account', () => {
     await form.getByTestId('new-address-lastName').fill(shopper.lastName)
     await form.getByTestId('new-address-addressLine1').fill(line1)
     await form.getByTestId('new-address-city').fill('London')
+    await form.getByTestId('new-address-country').selectOption('GB')
     await form.getByTestId('new-address-region').fill('Greater London')
     await form.getByTestId('new-address-postalCode').fill(postalCode)
-    await form.getByTestId('new-address-country').fill('GB')
     await form.getByTestId('save-address').click()
     await expect(list).toContainText(line1, { timeout: 10_000 })
     await expect(list).toContainText(postalCode)
@@ -131,9 +131,9 @@ test.describe('Signed-in account', () => {
     await page.getByTestId('shipping-lastName').fill(shopper.lastName)
     await page.getByTestId('shipping-addressLine1').fill('9 Checkout Row')
     await page.getByTestId('shipping-city').fill('London')
+    await page.getByTestId('shipping-country').selectOption('GB')
     await page.getByTestId('shipping-region').fill('Greater London')
     await page.getByTestId('shipping-postalCode').fill(shipPostal)
-    await page.getByTestId('shipping-country').fill('GB')
     await page.getByTestId('shipping-continue').click()
     await page.getByTestId('place-order').click()
     // A signed-in checkout lands on the account's own order page, with no key in its URL.
@@ -325,9 +325,9 @@ test.describe('Account views are elements', () => {
     await book.getByTestId('new-address-lastName').fill(lastName)
     await book.getByTestId('new-address-addressLine1').fill(line1)
     await book.getByTestId('new-address-city').fill('London')
+    await book.getByTestId('new-address-country').selectOption('GB')
     await book.getByTestId('new-address-region').fill('Greater London')
     await book.getByTestId('new-address-postalCode').fill('E1 6AN')
-    await book.getByTestId('new-address-country').fill('GB')
     await book.getByTestId('save-address').click()
     await expect.poll(async () => (await addresses()).length, { timeout: 10_000 }).toBe(before + 1)
     expect((await addresses()).map((a) => a.addressLine1)).toContain(line1)
@@ -359,9 +359,9 @@ async function placeSignedIn(
   await page.getByTestId('shipping-lastName').fill(shopper.lastName)
   await page.getByTestId('shipping-addressLine1').fill(addressLine1)
   await page.getByTestId('shipping-city').fill('London')
+  await page.getByTestId('shipping-country').selectOption('GB')
   await page.getByTestId('shipping-region').fill('Greater London')
   await page.getByTestId('shipping-postalCode').fill('E1 6AN')
-  await page.getByTestId('shipping-country').fill('GB')
   await page.getByTestId('shipping-continue').click()
   await page.getByTestId('place-order').click()
   await page.waitForURL(onAccountOrder, { timeout: 20_000 })
@@ -425,5 +425,50 @@ test.describe('Another shopper’s order', () => {
     const detail = page.getByTestId('order-detail')
     await expect(detail).toContainText(n, { timeout: 10_000 })
     await expect(detail).toContainText(placed.productName)
+  })
+})
+
+test.describe('The address book’s country is a list', () => {
+  // Kills: the add form's country still free text, a select whose choice is not what the element sends, the server
+  // render and the upgraded element disagreeing, or a template's address page that does not use the element.
+  test('AC-9: account.address-country-select: a signed-in shopper chooses United Kingdom by the label Country, types a county and saves; GET /api/customers/me/addresses holds the address with country GB and the county as typed', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(90_000)
+    const shopper = newShopper()
+    await register(page, shopper)
+    const auth = { headers: { authorization: `Bearer ${await apiToken(request, shopper)}` } }
+    const saved = async (): Promise<
+      Array<{ addressLine1: string; region: string; country: string }>
+    > =>
+      (
+        (await (await request.get(`${API}/api/customers/me/addresses`, auth)).json()) as {
+          data: Array<{ addressLine1: string; region: string; country: string }>
+        }
+      ).data
+
+    await page.goto('/account/addresses')
+    await formReady(page, 'nymbal-address-book')
+    const book = page.locator('nymbal-address-book')
+    const line1 = `${randomUUID().slice(0, 6)} County Lane`
+    await book.getByTestId('new-address-firstName').fill(shopper.firstName)
+    await book.getByTestId('new-address-lastName').fill(shopper.lastName)
+    await book.getByTestId('new-address-addressLine1').fill(line1)
+    await book.getByTestId('new-address-city').fill('Canterbury')
+    await book
+      .getByLabel('Country', { exact: true })
+      .selectOption({ label: 'United Kingdom' }, { timeout: 10_000 })
+    await book.getByLabel('State / County', { exact: true }).fill('Kent')
+    await book.getByTestId('new-address-postalCode').fill('CT1 2EH')
+    await book.getByTestId('save-address').click()
+
+    await expect
+      .poll(
+        async () =>
+          (await saved()).filter((a) => a.addressLine1 === line1).map((a) => [a.region, a.country]),
+        { timeout: 10_000 },
+      )
+      .toEqual([['Kent', 'GB']])
   })
 })

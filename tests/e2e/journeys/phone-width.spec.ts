@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 import { expect, test } from '../support/fixtures'
 import { API_URL } from '../support/csrf'
 import { adminToken, ownProduct } from '../support/checkout'
@@ -15,6 +15,15 @@ async function expectPhoneWidth(page: Page, name: string): Promise<void> {
   const { scrollWidth, innerWidth, viewport, measured } = await phoneWidths(page, name)
   expect.soft(scrollWidth, measured).toBeLessThanOrEqual(viewport + 1)
   expect.soft(innerWidth, measured).toBe(viewport)
+}
+
+/** How far the right edge of `inner`'s box lies past the right edge of `outer`'s; at most 0 when it ends inside. */
+async function overhang(inner: Locator, outer: Locator): Promise<number> {
+  const a = await inner.boundingBox()
+  const b = await outer.boundingBox()
+  expect(a, 'the inner box is laid out').not.toBeNull()
+  expect(b, 'the outer box is laid out').not.toBeNull()
+  return a!.x + a!.width - (b!.x + b!.width)
 }
 
 /** Opens `path`, waits for what shows the page has rendered, and measures it. */
@@ -123,6 +132,7 @@ test.describe('Storefront at a phone’s width @phone-width', () => {
     await expect(page.getByTestId('shipping-firstName')).toBeVisible()
     await expectPhoneWidth(page, 'checkout-shipping')
 
+    await page.getByTestId('shipping-country').selectOption('GB')
     for (const [field, value] of Object.entries({
       firstName: 'Journey',
       lastName: 'Shopper',
@@ -130,7 +140,6 @@ test.describe('Storefront at a phone’s width @phone-width', () => {
       city: 'Leeds',
       region: 'West Yorkshire',
       postalCode: 'LS1 4AP',
-      country: 'GB',
     })) {
       await page.getByTestId(`shipping-${field}`).fill(value)
     }
@@ -142,5 +151,42 @@ test.describe('Storefront at a phone’s width @phone-width', () => {
     await page.waitForURL(/\/order\//, { timeout: 20_000 })
     await expect(page.getByTestId('order-heading')).toBeVisible({ timeout: 15_000 })
     await expectPhoneWidth(page, 'order')
+  })
+
+  // Kills: a select's intrinsic width (its longest option) widening the form's grid track past the phone's width.
+  test('AC-10: the checkout shipping step with South Georgia & South Sandwich Islands chosen, then United States and District of Columbia, is no wider than the viewport, and the country select ends inside its form', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(90_000)
+    const product = await ownProduct(request, await adminToken(request), 5)
+    await page.goto(`/product/${product.slug}`)
+    await page.getByTestId('add-to-cart').click({ timeout: 15_000 })
+    await expect(page.getByTestId('cart-drawer')).toBeInViewport({ timeout: 10_000 })
+    // The checkout's script attaches the forms' handlers by `load`; a Continue pressed before submits natively.
+    await page.goto('/checkout')
+    await page.waitForLoadState('load')
+    await page
+      .getByTestId('contact-email')
+      .fill(`countrywidth-${randomUUID().slice(0, 8)}@e2e.test`)
+    await page.getByTestId('contact-continue').click()
+    const form = page.getByTestId('shipping-form')
+    const country = form.getByLabel('Country', { exact: true })
+
+    await country.selectOption(
+      { label: 'South Georgia & South Sandwich Islands' },
+      { timeout: 10_000 },
+    )
+    await expectPhoneWidth(page, 'checkout-shipping South Georgia')
+    expect
+      .soft(await overhang(country, form), 'country select past its form')
+      .toBeLessThanOrEqual(0)
+
+    await country.selectOption({ label: 'United States' })
+    await form
+      .getByLabel('State', { exact: true })
+      .selectOption({ label: 'District of Columbia' }, { timeout: 10_000 })
+    await expectPhoneWidth(page, 'checkout-shipping District of Columbia')
+    expect(await overhang(country, form), 'country select past its form').toBeLessThanOrEqual(0)
   })
 })

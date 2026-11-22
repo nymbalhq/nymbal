@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { Slot } from '@nymbalhq/types'
+import { isCountryCode, US_STATES, type Slot } from '@nymbalhq/types'
 import { BUILT_IN, PROVIDER_NAME, slotFolder } from './adapter-names.js'
 import {
   COMMAND_STORES,
@@ -12,7 +12,6 @@ import {
   trustedProxyMessage,
   trustedProxyProblem,
 } from './trusted-proxies.js'
-import { US_STATES } from './us-states.js'
 
 const rateLimitRuleSchema = z.object({
   requests: z.number().int().positive(),
@@ -27,6 +26,18 @@ const rateLimitPathPattern = /^\/[\w\-/*:]*$/
 /** The schema's JWT secret when none is configured: fine for development, refused in production. */
 export const DEFAULT_JWT_SECRET = 'dev-secret-please-override-me-1234567890'
 
+/** A country a table row or the ship-from address names: one an address can carry, so a row cannot silently miss. */
+const countrySchema = z.string().superRefine((code, ctx) => {
+  if (isCountryCode(code)) return
+  ctx.addIssue({
+    code: z.ZodIssueCode.custom,
+    message:
+      code === 'UK'
+        ? 'country is an ISO 3166-1 two-letter code; use "GB" for the United Kingdom'
+        : `country is an ISO 3166-1 two-letter code in upper case, such as "GB"; '${code}' is not one`,
+  })
+})
+
 /** An address the store ships from; `region` may be empty, for countries without one. */
 const shipFromSchema = z.object({
   firstName: z.string().min(1),
@@ -37,7 +48,7 @@ const shipFromSchema = z.object({
   city: z.string().min(1),
   region: z.string(),
   postalCode: z.string().min(1),
-  country: z.string().regex(/^[A-Z]{2}$/, 'country must be two upper-case letters, such as "GB"'),
+  country: countrySchema,
   phone: z.string().optional(),
 })
 
@@ -570,7 +581,7 @@ const taxPercentSchema = z
 /** A jurisdiction the store collects tax in: a country, or one of its regions (a US state by its postal code). */
 const taxRateSchema = z
   .object({
-    country: z.string().regex(/^[A-Z]{2}$/, 'country must be two upper-case letters, such as "GB"'),
+    country: countrySchema,
     region: z.string().min(1).optional(),
     percent: taxPercentSchema,
     /** The rate for a tax code in this jurisdiction, over `percent`. */
@@ -632,10 +643,7 @@ const shippingRateSchema = z.object({
     ),
   name: z.string().min(1).max(64),
   /** Absent: every country no other row names. */
-  countries: z
-    .array(z.string().regex(/^[A-Z]{2}$/, 'country must be two upper-case letters, such as "GB"'))
-    .min(1)
-    .optional(),
+  countries: z.array(countrySchema).min(1).optional(),
   amountMinor: z.number().int().nonnegative(),
   /** Free when the goods, after their discount, come to at least this. */
   freeOverMinor: z.number().int().positive().optional(),

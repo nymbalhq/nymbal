@@ -21,6 +21,14 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./countries": {
+      "types": "./dist/countries.d.ts",
+      "import": "./dist/countries.js"
+    },
+    "./us-states": {
+      "types": "./dist/us-states.d.ts",
+      "import": "./dist/us-states.js"
     }
   },
   "files": [

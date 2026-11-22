@@ -1109,8 +1109,7 @@ describe('AC-11: requires_action with nothing on the page to take the payment', 
 
 // ─── The quote on the page ──────────────────────────────────────────────────
 
-const NO_SHIPPING =
-  "We don't deliver to this address. Enter the country as its two-letter code, such as GB."
+const NO_SHIPPING = "We don't deliver to this address."
 const TOTAL_UNAVAILABLE = "We couldn't work out your total just now. Please try again."
 const TOTAL_CHANGED = 'The total has changed. Please check it and place your order again.'
 const EXPIRED = 'Your session has expired. Sign in again to place your order.'

@@ -93,8 +93,7 @@ const SESSION_EXPIRED = 'Your session has expired. Sign in again to place your o
 const SIGN_IN_HREF = '/account/login?redirect=%2Fcheckout'
 /** The refusals of a customer's order request whose token is gone: sent again, it would place a guest order. */
 const SESSION_ENDED = new Set(['auth.token_invalid', 'auth.token_expired'])
-const NO_SHIPPING =
-  "We don't deliver to this address. Enter the country as its two-letter code, such as GB."
+const NO_SHIPPING = "We don't deliver to this address."
 const TOTAL_UNAVAILABLE = "We couldn't work out your total just now. Please try again."
 const TOTAL_CHANGED = 'The total has changed. Please check it and place your order again.'
 /** Refusals at Place Order after which the store has quoted again: the summary shows the new total. */

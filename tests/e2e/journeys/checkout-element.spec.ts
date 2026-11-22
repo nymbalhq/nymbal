@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto'
-import type { Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 import { API_URL } from '../support/csrf'
 import {
   adminToken,
   openCheckout,
+  ORDER_KEY_HEADER,
+  orderKeyOf,
   orderNumberOf,
   ordersFor,
   ownProduct,
@@ -17,15 +19,16 @@ import { expect, test } from '../support/fixtures'
 // renders under the cursor, so the second click lands on its button, and the element's multi-click guard stops it.
 // Each test buys a product of its own, and the order is read back through the admin API.
 
+// In the form's order: the country is chosen before the region, whose control it decides.
 const FIELDS = [
   'firstName',
   'lastName',
   'addressLine1',
   'addressLine2',
   'city',
+  'country',
   'region',
   'postalCode',
-  'country',
 ] as const
 type Field = (typeof FIELDS)[number]
 type Address = Partial<Record<Field, string>>
@@ -65,6 +68,21 @@ function typed(address: Record<string, unknown>): Address {
   )
 }
 
+/** Fills an address form's fields given in `address`: the country is a select, the others text. */
+async function enterAddress(
+  scope: Page | Locator,
+  prefix: 'shipping' | 'billing',
+  address: Address,
+): Promise<void> {
+  for (const field of FIELDS) {
+    const value = address[field]
+    if (value === undefined) continue
+    const control = scope.getByTestId(`${prefix}-${field}`)
+    if (field === 'country') await control.selectOption(value, { timeout: 10_000 })
+    else await control.fill(value, { timeout: 10_000 })
+  }
+}
+
 /** Every POST /api/checkout the page sends, from now on. */
 function checkoutPosts(page: Page): string[] {
   const posts: string[] = []
@@ -89,9 +107,7 @@ test.describe('Checkout is an element', () => {
     await openCheckout(page, product)
     await walkToPayment(page, email('billing'))
     await page.getByTestId('billing-same').uncheck({ timeout: 10_000 })
-    for (const field of FIELDS) {
-      await page.getByTestId(`billing-${field}`).fill(BILLING[field], { timeout: 10_000 })
-    }
+    await enterAddress(page, 'billing', BILLING)
     await page.getByTestId('place-order').click()
     await page.waitForURL(/\/order\//, { timeout: 20_000 })
     const orderNumber = orderNumberOf(page)
@@ -115,6 +131,48 @@ test.describe('Checkout is an element', () => {
 
     const cart = await page.request.get(`${API_URL}/api/cart`)
     expect(((await cart.json()) as { data: { items: unknown[] } }).data.items).toHaveLength(0)
+  })
+
+  // Kills: the country or the US state still free text, a select whose choice is not what the element sends, or the
+  // server render and the upgraded element disagreeing, so the order holds something else than the codes chosen.
+  test('AC-9: checkout.country-select: a guest chooses United States by the label Country and California by the label State, places the order, and the order read with the key in its confirmation URL holds country US and region CA', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(90_000)
+    const token = await adminToken(request)
+    const product = await ownProduct(request, token, 5)
+
+    await openCheckout(page, product)
+    const checkout = page.locator('nymbal-checkout')
+    await checkout.getByTestId('contact-email').fill(email('us'), { timeout: 15_000 })
+    await checkout.getByTestId('contact-continue').click()
+    const shipping = checkout.getByTestId('shipping-form')
+    await shipping.getByTestId('shipping-firstName').fill('Grace')
+    await shipping.getByTestId('shipping-lastName').fill('Hopper')
+    await shipping.getByTestId('shipping-addressLine1').fill('1 Harbor Way')
+    await shipping.getByTestId('shipping-city').fill('Los Angeles')
+    await shipping
+      .getByLabel('Country', { exact: true })
+      .selectOption({ label: 'United States' }, { timeout: 10_000 })
+    await shipping
+      .getByLabel('State', { exact: true })
+      .selectOption({ label: 'California' }, { timeout: 10_000 })
+    await shipping.getByTestId('shipping-postalCode').fill('90001')
+    await checkout.getByTestId('shipping-continue').click()
+    await expect(checkout.getByTestId('place-order')).toBeEnabled({ timeout: 10_000 })
+    await checkout.getByTestId('place-order').click()
+    await page.waitForURL(/\/order\//, { timeout: 20_000 })
+    const orderNumber = orderNumberOf(page)
+
+    const res = await request.get(`${API_URL}/api/orders/${encodeURIComponent(orderNumber)}`, {
+      headers: { [ORDER_KEY_HEADER]: orderKeyOf(page) },
+    })
+    expect(res.status(), `GET /api/orders/${orderNumber}: ${await res.text()}`).toBe(200)
+    const { shippingAddress } = (
+      (await res.json()) as { data: { shippingAddress: { country: string; region: string } } }
+    ).data
+    expect([shippingAddress.country, shippingAddress.region]).toEqual(['US', 'CA'])
   })
 
   // Kills: a checkout still rendered from template markup, a payment element moved into the shadow root (or not
@@ -171,13 +229,7 @@ test.describe('Checkout is an element', () => {
     await expect(checkout.getByTestId('shipping-firstName')).toBeVisible({ timeout: 10_000 })
     await expect(checkout.getByTestId('place-order'), 'one step, not two').toBeHidden()
 
-    await checkout.getByTestId('shipping-firstName').fill(SHIPPING.firstName!)
-    await checkout.getByTestId('shipping-lastName').fill(SHIPPING.lastName!)
-    await checkout.getByTestId('shipping-addressLine1').fill(SHIPPING.addressLine1!)
-    await checkout.getByTestId('shipping-city').fill(SHIPPING.city!)
-    await checkout.getByTestId('shipping-region').fill(SHIPPING.region!)
-    await checkout.getByTestId('shipping-postalCode').fill(SHIPPING.postalCode!)
-    await checkout.getByTestId('shipping-country').fill(SHIPPING.country!)
+    await enterAddress(checkout, 'shipping', SHIPPING)
     await checkout.getByTestId('shipping-continue').dblclick()
     await page.waitForLoadState('networkidle')
 
@@ -219,10 +271,7 @@ test.describe('Checkout is an element', () => {
         const checkout = page.locator('nymbal-checkout')
         await checkout.getByTestId('contact-email').fill(buyer, { timeout: 15_000 })
         await checkout.getByTestId('contact-continue').click()
-        for (const field of FIELDS) {
-          const value = SHIPPING[field]
-          if (value !== undefined) await checkout.getByTestId(`shipping-${field}`).fill(value)
-        }
+        await enterAddress(checkout, 'shipping', SHIPPING)
         const cont = checkout.getByTestId('shipping-continue')
         if (hand === 'dblclick') {
           await cont.dblclick()
@@ -264,10 +313,7 @@ test.describe('Checkout is an element', () => {
     const checkout = page.locator('nymbal-checkout')
     await checkout.getByTestId('contact-email').fill(email('w1'), { timeout: 15_000 })
     await checkout.getByTestId('contact-continue').click()
-    for (const field of FIELDS) {
-      const value = SHIPPING[field]
-      if (value !== undefined) await checkout.getByTestId(`shipping-${field}`).fill(value)
-    }
+    await enterAddress(checkout, 'shipping', SHIPPING)
     await checkout.getByTestId('shipping-continue').click()
     await expect(checkout.getByTestId('place-order')).toBeVisible()
 
