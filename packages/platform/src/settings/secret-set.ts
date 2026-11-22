@@ -4,6 +4,8 @@ import { SECRET_MIN_LENGTH, type Logger } from '@nymbalhq/types'
 // a value that contains another is replaced whole. Process-wide: a logger built anywhere scrubs what any store holds.
 const secrets = new Set<string>()
 let ordered: string[] = []
+// Whether some form holds the mask character: only such a secret can be rebuilt by a mask and the text beside it.
+let maskable = false
 
 const MASK = '***'
 
@@ -14,17 +16,27 @@ export function addSecret(value: string): void {
   const before = secrets.size
   for (const form of [value, bytes.toString('base64'), bytes.toString('base64url')]) {
     secrets.add(form)
+    if (form.includes('*')) maskable = true
   }
   if (secrets.size !== before) ordered = [...secrets].sort((a, b) => b.length - a.length)
 }
 
 /** `text` with every secret in the set replaced by `***`. */
 export function scrub(text: string): string {
+  // A secret holding `*` can be rebuilt from a mask and the text beside it (`*abcdefgh` then `abcdefgh` becomes
+  // `***abcdefgh`), so while such a secret is registered, passes repeat until one replaces nothing. Every form is
+  // longer than the mask, so each replacement shortens the text and the loop ends. Without one, a mask holds no
+  // secret's character at its edges and one pass is enough.
   let out = text
-  for (const secret of ordered) {
-    if (out.includes(secret)) out = out.split(secret).join(MASK)
+  for (;;) {
+    let replaced = false
+    for (const secret of ordered) {
+      if (!out.includes(secret)) continue
+      out = out.split(secret).join(MASK)
+      replaced = true
+    }
+    if (!replaced || !maskable) return out
   }
-  return out
 }
 
 const MAX_DEPTH = 16

@@ -33,6 +33,8 @@ export default {
     'packages/platform/src/roles/seo-rules.ts',
     // The sweep that retries filings owed to the tax provider, by the unit test beside it.
     'packages/platform/src/sweepers/tax-document-sweeper.ts',
+    // Secret scrubbing for logs and error answers, by the unit test beside it.
+    'packages/platform/src/settings/secret-set.ts',
     'packages/importers/src/woocommerce/mappers/**/*.ts',
     // No unit test reaches these: stryker.integration.config.mjs measures them, and the services' composition root is
     // wiring every integration test runs through. Here they would score 0 and only cost time.

@@ -61,6 +61,7 @@
     "packages/platform/src/services/tax-quote.ts": 84.62,
     "packages/platform/src/services/tax-rates.ts": 95.31,
     "packages/platform/src/services/totals.ts": 80.63,
+    "packages/platform/src/settings/secret-set.ts": 98.44,
     "packages/platform/src/sweepers/legacy-password-sweeper.ts": 58.33,
     "packages/platform/src/sweepers/tax-document-sweeper.ts": 53.57
   }
