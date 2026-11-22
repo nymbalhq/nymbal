@@ -133,9 +133,10 @@ export function createTaxDocuments(deps: TaxDocumentsDeps): TaxDocuments {
       }
 
       // Cleared only when the record, read with the order's refunds in one transaction, owes nothing: a refund that
-      // settled meanwhile, or whose filing another call failed and recorded, keeps it due.
+      // settled meanwhile, or whose filing another call failed and recorded, keeps it due. The record is locked so
+      // such a failure cannot commit between the refunds read and the clear (Postgres runs READ COMMITTED).
       const settled = await store.transaction(async (tx) => {
-        const current = (await records.find(tx, orderId))!
+        const current = (await records.lock(tx, orderId))!
         const owed = filesRefunds()
           ? unfiled(await repos.orderRefund.listByOrder(tx, orderId), current)
           : []

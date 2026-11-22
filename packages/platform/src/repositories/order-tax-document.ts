@@ -42,6 +42,9 @@ export interface DueSummary {
 
 export interface OrderTaxDocumentRepository extends StoreRepository {
   find(tx: ReadTx, orderId: string): Promise<OrderTaxDocument | null>
+  /** The record, read under its row lock until the transaction ends (Postgres `FOR UPDATE`; on SQLite the open
+   *  `BEGIN IMMEDIATE` transaction already holds every write). */
+  lock(tx: Tx, orderId: string): Promise<OrderTaxDocument | null>
   /** Makes the order's record `pending`; does nothing when it has one. */
   insertPending(tx: Tx, row: { orderId: string; provider: string; at: Date }): Promise<void>
   /** Records the provider's document; false unless the record was `pending`. */
@@ -102,6 +105,18 @@ export function createOrderTaxDocumentRepository(store: CommandStore): OrderTaxD
         return row ? rowToDocument('sqlite', row) : null
       }
       const [row] = await postgresDb(tx).select().from(p).where(eq(p.orderId, orderId))
+      return row ? rowToDocument('postgres', row) : null
+    },
+    async lock(tx, orderId) {
+      if (tx.kind === 'sqlite') {
+        const row = sqliteDb(tx).select().from(s).where(eq(s.orderId, orderId)).get()
+        return row ? rowToDocument('sqlite', row) : null
+      }
+      const [row] = await postgresDb(tx)
+        .select()
+        .from(p)
+        .where(eq(p.orderId, orderId))
+        .for('update')
       return row ? rowToDocument('postgres', row) : null
     },
     async insertPending(tx, { orderId, provider, at }) {

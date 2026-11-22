@@ -36,6 +36,8 @@ const COLUMNS = [
 
 const T0 = Date.parse('2026-11-20T09:00:00.000Z')
 const MINUTE = 60_000
+const WAITER_DEADLINE_MS = 5_000
+const POLL_MS = 10
 
 /** A timestamp as epoch ms, null when unset, however the dialect hands it back. */
 const ms = (value: unknown): number | null =>
@@ -58,12 +60,13 @@ async function columnsOf(store: CommandStore): Promise<string[]> {
 export function orderTaxDocumentsSuite(dialect: Kernel['dialect'], fresh: Fresh): void {
   describe(`AC-11: the order tax document record (${dialect})`, () => {
     let db: Awaited<ReturnType<Fresh>>
+    let storage: { sqlitePath: string } | { postgresUrl: string }
     let store: CommandStore
     let repo: Repositories['orderTaxDocument']
 
     beforeAll(async () => {
       db = await fresh()
-      const storage = dialect === 'sqlite' ? { sqlitePath: db.target } : { postgresUrl: db.target }
+      storage = dialect === 'sqlite' ? { sqlitePath: db.target } : { postgresUrl: db.target }
       store = createCommandStore(kernelConfig(dialect), storage)
       await runMigrations(store, { migrationsRoot: MIGRATIONS_ROOT })
       repo = buildRepositories(
@@ -215,6 +218,99 @@ export function orderTaxDocumentsSuite(dialect: Kernel['dialect'], fresh: Fresh)
         T0 + 6 * MINUTE,
       ])
       expect(ms(again!.updatedAt)).toBe(T0 + 6 * MINUTE)
+    })
+
+    // Kills: a lock that reads another record, or reads it differently, than find on one dialect.
+    it(`AC-2: lock answers what find answers: the record as written, and null for an unknown order (${dialect})`, async () => {
+      const orderId = await pending('filing-tax', T0)
+      await write((tx) => repo.commit(tx, orderId, 'doc-locked', new Date(T0 + MINUTE)))
+      await write((tx) => repo.addRefund(tx, orderId, 're-locked', 1_250, new Date(T0 + 2 * MINUTE)))
+      await write((tx) => repo.recordFailure(tx, orderId, 'busy', new Date(T0 + 3 * MINUTE)))
+
+      const found = await find(orderId)
+      const locked = await write((tx) => repo.lock(tx, orderId))
+      const unknown = await write((tx) => repo.lock(tx, randomUUID()))
+
+      expect(locked).toEqual(found)
+      expect([locked!.documentId, locked!.filedRefundIds, Number(locked!.attempts)]).toEqual([
+        'doc-locked',
+        ['re-locked'],
+        1,
+      ])
+      expect(unknown).toBeNull()
+    })
+
+    /** Backends of this database waiting on a lock another transaction holds. */
+    async function lockWaiters(): Promise<number> {
+      const clients = rawClients(store)
+      if (clients.kind !== 'postgres') return 0
+      const result = await clients.pool.query<{ n: string }>(
+        "SELECT count(*) AS n FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'",
+      )
+      return Number(result.rows[0]?.n ?? 0)
+    }
+
+    /**
+     * Resolves once the other write is queued behind the held transaction: on Postgres when a backend of this database
+     * waits on a lock, or the write has already landed (nothing held it), or the deadline passes, and the outcomes
+     * decide; on SQLite after a macrotask, by which time its BEGIN IMMEDIATE waits for the holder's COMMIT.
+     */
+    async function otherIsWaiting(landed: () => boolean): Promise<void> {
+      if (dialect === 'sqlite') {
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        return
+      }
+      const deadline = Date.now() + WAITER_DEADLINE_MS
+      while (!landed() && (await lockWaiters()) < 1 && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, POLL_MS))
+      }
+    }
+
+    // Kills: a lock that takes no row lock on Postgres (a plain select), so a failure recorded meanwhile lands before
+    // the holder's clear and the clear wipes it.
+    it(`AC-2: lock holds the record until its transaction ends: a failure recorded on a second store meanwhile lands after the holder's clear, so the record ends with one attempt, that failure's error and due since it (${dialect})`, async () => {
+      const orderId = await pending('filing-tax', T0)
+      await write((tx) => repo.recordFailure(tx, orderId, 'earlier', new Date(T0 + MINUTE)))
+      await write((tx) => repo.recordFailure(tx, orderId, 'earlier', new Date(T0 + 2 * MINUTE)))
+
+      const second = createCommandStore(kernelConfig(dialect), storage)
+      try {
+        const secondRepo = buildRepositories(
+          second,
+          new InMemoryDocumentStore({ sweepIntervalMs: 0 }),
+        ).orderTaxDocument
+
+        let locked!: () => void
+        const isLocked = new Promise<void>((resolve) => (locked = resolve))
+        let release!: () => void
+        const released = new Promise<void>((resolve) => (release = resolve))
+        const holder = write(async (tx) => {
+          await repo.lock(tx, orderId)
+          locked()
+          await released
+          await repo.clear(tx, orderId, new Date(T0 + 3 * MINUTE))
+        })
+        // Held: the record is locked and not yet cleared. A failure before that fails the test here.
+        await Promise.race([isLocked, holder])
+
+        let landed = false
+        const failure = second
+          .transaction((tx) =>
+            secondRepo.recordFailure(tx, orderId, 'while held', new Date(T0 + 4 * MINUTE)),
+          )
+          .finally(() => {
+            landed = true
+          })
+        await otherIsWaiting(() => landed)
+        release()
+        await Promise.all([holder, failure])
+      } finally {
+        await second.close()
+      }
+      const after = await find(orderId)
+
+      expect(Number(after!.attempts), 'one attempt after the clear, not the earlier ones plus it').toBe(1)
+      expect([after!.lastError, ms(after!.dueSince)]).toEqual(['while held', T0 + 4 * MINUTE])
     })
 
     // Kills: a sweep ordered by due_since (rows that always fail starve the rest), one that takes another provider's
