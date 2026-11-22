@@ -2,11 +2,14 @@ import { useState } from 'react'
 import { Outlet } from 'react-router-dom'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { TopBar } from '@/components/layout/TopBar'
+import { ShortcutHelp } from '@/components/common/ShortcutHelp'
+import { useShortcuts } from '@/hooks/useShortcuts'
 import { RealtimeProvider } from '@/realtime/provider'
 
 export function AdminLayout() {
   // Below md the sidebar is off-canvas; at md and up it is always shown and this state has no effect.
   const [navOpen, setNavOpen] = useState(false)
+  const { helpOpen, setHelpOpen } = useShortcuts()
 
   return (
     <RealtimeProvider>
@@ -25,6 +28,7 @@ export function AdminLayout() {
             <Outlet />
           </div>
         </main>
+        <ShortcutHelp open={helpOpen} onOpenChange={setHelpOpen} />
       </div>
     </RealtimeProvider>
   )

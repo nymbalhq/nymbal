@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Plus, Search, Copy, Archive, MoreHorizontal, Package } from 'lucide-react'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
@@ -85,6 +85,8 @@ export function ProductsListPage() {
           <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
           <Input
             placeholder="Search products..."
+            aria-label="Search products"
+            data-search-field
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9 h-8 text-sm"
@@ -136,9 +138,13 @@ export function ProductsListPage() {
                 return (
                   <TableRow
                     key={product.id}
+                    data-row-id={product.id}
                     data-testid={tid('products', 'row', product.id)}
                     className="cursor-pointer"
-                    onClick={() => navigate(`/products/${product.slug}`)}
+                    onClick={(e) => {
+                      if ((e.target as Element).closest('a')) return
+                      navigate(`/products/${product.slug}`)
+                    }}
                   >
                     <TableCell>
                       {primaryMedia ? (
@@ -155,7 +161,13 @@ export function ProductsListPage() {
                     </TableCell>
                     <TableCell>
                       <div>
-                        <p className="font-medium text-zinc-800">{product.name}</p>
+                        <Link
+                          to={`/products/${product.slug}`}
+                          data-row-link
+                          className="block font-medium text-zinc-800 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                        >
+                          {product.name}
+                        </Link>
                         <p className="font-mono text-[10px] text-zinc-400">{product.slug}</p>
                       </div>
                     </TableCell>
