@@ -618,6 +618,9 @@ export const routeSchemas: Record<string, RouteSchema> = {
           'The shipping country as a two-letter ISO code: GB for the United Kingdom, DE for Germany, US for the United States.',
         )
         .optional(),
+      source: queryValue.describe(
+        'Only synthetic: the heartbeat checks, placed and cancelled at once, which the list otherwise leaves out.',
+      ),
       ...pagingOf(50, 200),
     }),
   },

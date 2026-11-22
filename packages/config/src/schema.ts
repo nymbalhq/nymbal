@@ -769,6 +769,35 @@ export const featuresSchema = z.object({
 })
 
 /**
+ * What `nymbal heartbeat` checks, once `features.heartbeat` is on. The store check checks out with `store.email`, which
+ * the store places and cancels at once; the card check charges and refunds the saved card when both ids are set.
+ */
+export const heartbeatSchema = z.object({
+  /** Default `http://127.0.0.1:<http.port>`. */
+  apiUrl: z.string().url().optional(),
+  /** Default `store.url`; with neither, the storefront pages are not checked. */
+  storefrontUrl: z.string().url().optional(),
+  store: z
+    .object({
+      email: z.string().min(1).optional(),
+      address: shipFromSchema.optional(),
+      /** The variant taken; absent, the first product whose first variant has stock. */
+      sku: z.string().min(1).optional(),
+    })
+    .prefault({}),
+  card: z
+    .object({
+      /** The provider's customer id (Stripe `cus_…`). */
+      customer: z.string().min(1).optional(),
+      /** The provider's payment method id (Stripe `pm_…`), saved to that customer. */
+      paymentMethod: z.string().min(1).optional(),
+      /** In `store.currency`: no one constant clears every currency's minimum charge. */
+      amountMinor: z.number().int().positive().default(100),
+    })
+    .prefault({}),
+})
+
+/**
  * The bucket delivered events past retention are archived to before they are deleted. Its objects hold customer
  * data, so it must be private: never the media bucket, which serves its objects publicly. Credentials come from the
  * AWS SDK's default chain, as `infrastructure.s3`'s do.
@@ -1009,8 +1038,29 @@ export const nymbalConfigSchema = z
     }),
     events: eventsSchema.prefault({}),
     agents: agentsSchema.prefault({}),
+    heartbeat: heartbeatSchema.prefault({}),
   })
   .superRefine((cfg, ctx) => {
+    if (cfg.features.heartbeat) {
+      const { store, card } = cfg.heartbeat
+      for (const field of ['email', 'address'] as const) {
+        if (store[field] === undefined) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['heartbeat', 'store', field],
+            message: `heartbeat.store.${field} is required while features.heartbeat is on`,
+          })
+        }
+      }
+      if ((card.customer === undefined) !== (card.paymentMethod === undefined)) {
+        const missing = card.customer === undefined ? 'customer' : 'paymentMethod'
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['heartbeat', 'card', missing],
+          message: `heartbeat.card.${missing} is missing: set both card ids for the card check, or neither`,
+        })
+      }
+    }
     const archiveBucket = cfg.events.archive?.bucket
     if (
       archiveBucket !== undefined &&

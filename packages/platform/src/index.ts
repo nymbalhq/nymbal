@@ -145,6 +145,7 @@ export {
   type DiagnosisStatus,
 } from './diagnose.js'
 export { runSeed, type SeedDeps, type SeedResult } from './seed/run.js'
+export { resolveStorePayments, type ResolveStorePaymentsOptions } from './heartbeat-payments.js'
 export {
   decrypt,
   encrypt,

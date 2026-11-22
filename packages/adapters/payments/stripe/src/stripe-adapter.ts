@@ -12,6 +12,8 @@ import {
   type PaymentsAdapter,
   type ProviderRefund,
   type Refund,
+  type SavedCardCharge,
+  type SavedCardOutcome,
   type WebhookResult,
 } from '@nymbalhq/types'
 
@@ -102,6 +104,36 @@ function isDefiniteRefusal(err: unknown): boolean {
   return e?.rawType === 'card_error' || e?.rawType === 'invalid_request_error'
 }
 
+/**
+ * The metadata key that marks a heartbeat's card charge: its webhooks are no order's payment. Only the secret key can
+ * set an intent's metadata, and the webhook is signed.
+ */
+const HEARTBEAT_METADATA = 'nymbal_heartbeat'
+
+/** A saved-card charge Stripe refused or never answered, told apart by who has to act. */
+function savedCardFailure(err: unknown): SavedCardOutcome {
+  const e = err as {
+    statusCode?: unknown
+    rawType?: unknown
+    code?: unknown
+    decline_code?: unknown
+    message?: unknown
+  } | null
+  const message = typeof e?.message === 'string' ? e.message : String(err)
+  const status = typeof e?.statusCode === 'number' ? e.statusCode : undefined
+  if (status === 401 || status === 403) return { status: 'key_refused', detail: message }
+  if (e?.rawType === 'card_error') {
+    const codes = [e.code, e.decline_code].filter((c): c is string => typeof c === 'string')
+    return { status: 'card_refused', detail: [...codes, message].join(': ') }
+  }
+  // A detached payment method or a wrong customer: the card's set-up needs the merchant, not Stripe. A rate limit (429)
+  // is Stripe not taking the request now, so it falls through to an outage.
+  if (status !== undefined && status >= 400 && status < 500 && status !== 429) {
+    return { status: 'card_refused', detail: message }
+  }
+  return { status: 'provider_unreachable', detail: message }
+}
+
 function toIntent(intent: Stripe.PaymentIntent): PaymentIntent {
   return {
     id: intent.id,
@@ -138,7 +170,7 @@ export function createStripePaymentsAdapter(deps: {
   return {
     kind: 'payments',
     providerName: 'stripe',
-    capabilities: () => ['intent', 'capture', 'refund', 'webhook', 'delegated'],
+    capabilities: () => ['intent', 'capture', 'refund', 'webhook', 'delegated', 'saved-card'],
     // Without a key the storefront's stripe driver reports it cannot mount, which keeps Place Order disabled.
     client: () => ({
       driver: 'stripe',
@@ -188,6 +220,46 @@ export function createStripePaymentsAdapter(deps: {
         return toIntent(intent)
       } catch (err) {
         throw new PaymentError('intent_failed', 'Stripe createPaymentIntent failed', { cause: err })
+      }
+    },
+    async chargeSavedCard(charge: SavedCardCharge): Promise<SavedCardOutcome> {
+      let intent: Stripe.PaymentIntent
+      try {
+        intent = await stripeClient.paymentIntents.create(
+          {
+            amount: charge.amountMinor,
+            currency: charge.currency.toLowerCase(),
+            customer: charge.customerRef,
+            payment_method: charge.paymentMethodRef,
+            confirm: true,
+            off_session: true,
+            automatic_payment_methods: { enabled: true, allow_redirects: 'never' },
+            metadata: { ...(charge.metadata ?? {}), [HEARTBEAT_METADATA]: 'card' },
+          },
+          { idempotencyKey: charge.idempotencyKey },
+        )
+      } catch (err) {
+        return savedCardFailure(err)
+      }
+      if (intent.status === 'succeeded') {
+        return {
+          status: 'captured',
+          paymentId: intent.id,
+          amountMinor: intent.amount_received ?? intent.amount,
+          currency: toIsoCurrency(intent.currency),
+        }
+      }
+      if (intent.status === 'processing') {
+        return {
+          status: 'provider_unreachable',
+          paymentId: intent.id,
+          detail: `payment ${intent.id} still processing: refund it in the provider's dashboard once it settles`,
+        }
+      }
+      const why = intent.last_payment_error?.message
+      return {
+        status: 'card_refused',
+        detail: `payment ${intent.id} is ${intent.status}${why !== undefined ? `: ${why}` : ''}`,
       }
     },
     async capturePayment(intentId, amountMinor): Promise<PaymentCapture> {
@@ -279,6 +351,11 @@ export function createStripePaymentsAdapter(deps: {
         })
       }
       const baseResult = { verified: true, eventId: event.id } as const
+      const marked = (event.data.object as { metadata?: Record<string, string> | null }).metadata
+      if (marked?.[HEARTBEAT_METADATA] !== undefined) {
+        logger.debug({ type: event.type }, 'stripe webhook of a heartbeat charge ignored')
+        return { ...baseResult, kind: 'ignored' }
+      }
       switch (event.type) {
         case 'payment_intent.succeeded': {
           const intent = event.data.object as Stripe.PaymentIntent

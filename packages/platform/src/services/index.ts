@@ -189,6 +189,10 @@ export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
     payments,
     currency: config.store.currency,
     keyLifetimeMs: parseDurationToMs(config.commerce.orders.keyLifetime.checkout),
+    ...(config.features.heartbeat &&
+      config.heartbeat.store.email !== undefined && {
+        heartbeatEmail: config.heartbeat.store.email,
+      }),
   })
   return {
     product: createProductService({

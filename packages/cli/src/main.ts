@@ -11,6 +11,7 @@ import { previewCommand } from './commands/preview.js'
 import { configValidateCommand } from './commands/config-validate.js'
 import { addCommand } from './commands/add.js'
 import { doctorCommand } from './commands/doctor.js'
+import { heartbeatCommand } from './commands/heartbeat.js'
 import { secretsCommand } from './commands/secrets.js'
 import { eventsCommand } from './commands/events.js'
 import { suppressionsCommand } from './commands/suppressions.js'
@@ -56,6 +57,7 @@ export const main = defineCommand({
     upgrade: upgradeCommand,
     verify: verifyCommand,
     doctor: doctorCommand,
+    heartbeat: heartbeatCommand,
     'security:plan': securityPlanCommand,
     'security:apply': securityApplyCommand,
     'security:drift': securityDriftCommand,

@@ -48,6 +48,7 @@ export {
   httpSchema,
   deploymentSchema,
   featuresSchema,
+  heartbeatSchema,
   eventsSchema,
   eventArchiveSchema,
   agentsSchema,

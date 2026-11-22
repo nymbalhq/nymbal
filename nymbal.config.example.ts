@@ -90,6 +90,7 @@ export default defineConfig({
 
   features: {
     staging: false,
+    // true needs a `heartbeat` block: the store check's address, and optionally a saved card to charge and refund.
     heartbeat: false,
     autoUpdates: false,
   },

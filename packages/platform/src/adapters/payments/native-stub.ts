@@ -12,6 +12,8 @@ import {
   type PaymentsAdapter,
   type ProviderRefund,
   type Refund,
+  type SavedCardCharge,
+  type SavedCardOutcome,
   type WebhookResult,
 } from '@nymbalhq/types'
 import { noopInitialize, okHealth } from '../base.js'
@@ -26,6 +28,9 @@ interface StubIntent {
 }
 
 const STUB_ID_PREFIX = 'pi_stub_'
+
+/** The saved-card customer whose card the stub declines, as a declining test card would. */
+const DECLINING_CUSTOMER = 'cus_stub_decline'
 
 function rejected(message: string): PaymentError {
   return new PaymentError('refund_rejected', message)
@@ -69,12 +74,14 @@ export function createNativeStubPaymentsAdapter(deps: { logger: Logger }): Payme
   const listed = new Map<string, ProviderRefund[]>()
   const hold = (refund: ProviderRefund) =>
     listed.set(refund.paymentId, [...(listed.get(refund.paymentId) ?? []), refund])
+  /** Each saved-card charge key's answer, which a retry under the key gets back without charging again. */
+  const charges = new Map<string, SavedCardOutcome>()
   return {
     kind: 'payments',
     providerName: 'native-stub',
     // No `webhook`: parseWebhook verifies no signature, so a template cannot rely on it. `delegated`: a delegated token
-    // is ignored, and the receipt email decides as for any intent.
-    capabilities: () => ['intent', 'capture', 'refund', 'delegated'],
+    // is ignored, and the receipt email decides as for any intent. `saved-card`: DECLINING_CUSTOMER is declined.
+    capabilities: () => ['intent', 'capture', 'refund', 'delegated', 'saved-card'],
     // Nothing to collect: the receipt email decides the outcome.
     client: () => ({ driver: 'test-mode', options: {} }),
     producesEvents: [EVT_PAYMENT_CAPTURED, EVT_PAYMENT_FAILED, EVT_PAYMENT_REFUNDED],
@@ -95,6 +102,32 @@ export function createNativeStubPaymentsAdapter(deps: { logger: Logger }): Payme
       intents.set(id, intent)
       logger.debug({ intentId: id, status: intent.status }, 'stub payment intent created')
       return toIntent(intent)
+    },
+
+    async chargeSavedCard(charge: SavedCardCharge): Promise<SavedCardOutcome> {
+      const replay = charges.get(charge.idempotencyKey)
+      if (replay !== undefined) return replay
+      let outcome: SavedCardOutcome
+      if (charge.customerRef === DECLINING_CUSTOMER) {
+        outcome = { status: 'card_refused', detail: `card_declined: ${DECLINING_CUSTOMER}` }
+      } else {
+        const id = `${STUB_ID_PREFIX}${uuidv7()}`
+        intents.set(id, {
+          id,
+          amountMinor: charge.amountMinor,
+          currency: charge.currency,
+          status: 'succeeded',
+          refundedMinor: 0,
+        })
+        outcome = {
+          status: 'captured',
+          paymentId: id,
+          amountMinor: charge.amountMinor,
+          currency: charge.currency,
+        }
+      }
+      charges.set(charge.idempotencyKey, outcome)
+      return outcome
     },
 
     async capturePayment(intentId): Promise<PaymentCapture> {

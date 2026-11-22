@@ -178,6 +178,10 @@ Check the project without changing it: config, packages, command store, migratio
 | `--json` | boolean | Print the checks as one JSON document | `false` |
 | `--timeout` | string | How long each check may take, in ms (default 5000) |  |
 
+## `nymbal heartbeat`
+
+Check once that the store takes an order (placed and cancelled) and the saved card is charged and refunded
+
 ## `nymbal security:plan`
 
 Show what security:apply would change on the Cloudflare zone

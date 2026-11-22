@@ -32,16 +32,17 @@ export default defineConfig({
 
 ## The sections
 
-| Section                            | What it sets                                                                                                                   |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `store`                            | Name, currency, locale, time zone, and the storefront's public URL (order emails link to it).                                  |
-| `template`                         | `astro` or `nextjs`: which storefront `nymbal dev`, `build` and `start` run.                                                   |
-| `infrastructure`                   | Where commands and events are kept (`sqlite` or `postgres`), the read-model store, the event bus, media storage.               |
-| `commerce`                         | One provider per slot: payments, email, reviews, search, analytics, shipping, tax, AI.                                         |
-| `security`                         | Rate limits, bot protection, security headers, CSRF, sign-in token settings, the origin lock's header (`originLock.header`).   |
-| `http`                             | The API's port, CORS origins, the proxies in front (`trustedProxies`) and a client-address header (`clientIpHeader`).          |
-| `agents`                           | MCP and UCP, whether an agent's admin writes apply or wait as proposals, and what crawlers may read. See [Agents](../agents/). |
-| `events`, `deployment`, `features` | Event retention and archiving, the deployment strategy, optional features.                                                     |
+| Section                            | What it sets                                                                                                                                                                           |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `store`                            | Name, currency, locale, time zone, and the storefront's public URL (order emails link to it).                                                                                          |
+| `template`                         | `astro` or `nextjs`: which storefront `nymbal dev`, `build` and `start` run.                                                                                                           |
+| `infrastructure`                   | Where commands and events are kept (`sqlite` or `postgres`), the read-model store, the event bus, media storage.                                                                       |
+| `commerce`                         | One provider per slot: payments, email, reviews, search, analytics, shipping, tax, AI.                                                                                                 |
+| `security`                         | Rate limits, bot protection, security headers, CSRF, sign-in token settings, the origin lock's header (`originLock.header`).                                                           |
+| `http`                             | The API's port, CORS origins, the proxies in front (`trustedProxies`) and a client-address header (`clientIpHeader`).                                                                  |
+| `agents`                           | MCP and UCP, whether an agent's admin writes apply or wait as proposals, and what crawlers may read. See [Agents](../agents/).                                                         |
+| `events`, `deployment`, `features` | Event retention and archiving, the deployment strategy, optional features.                                                                                                             |
+| `heartbeat`                        | What `nymbal heartbeat` checks once `features.heartbeat` is on: the address its store check uses, and the saved card it charges and refunds. See [Deploying](../deploying/#heartbeat). |
 
 `store.timezone` must be an IANA time zone, such as `Europe/London`, `America/New_York` or `UTC`; a name like
 `London` or `GMT+1` is refused at startup.

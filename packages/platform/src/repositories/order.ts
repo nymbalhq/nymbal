@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, gte, inArray, lt, lte, notInArray, or, sql, type SQL } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, gte, inArray, lt, lte, ne, notInArray, or, sql, type SQL } from 'drizzle-orm'
 import type {
   Address,
   CaptureMethod,
@@ -73,6 +73,8 @@ export interface OrderListFilter {
   postcode?: string
   /** The shipping country equals this, case-insensitive; a missing or empty shipping country matches nothing. */
   country?: string
+  /** `synthetic`: only the heartbeat's orders. Absent: every order but those. */
+  source?: 'synthetic'
 }
 
 type OrdersTable = typeof sqliteSchema.orders | typeof postgresSchema.orders
@@ -121,6 +123,7 @@ function listWhere(
       ? undefined
       : or(holds(sql`coalesce(${t.customerId}, '')`, f.customer), holds(email, f.customer)),
     f.q === undefined ? undefined : or(holds(sql`${t.orderNumber}`, f.q), holds(email, f.q)),
+    f.source === 'synthetic' ? eq(t.source, 'synthetic') : ne(t.source, 'synthetic'),
   ]
   if (f.postcode !== undefined) {
     const stored = shipped('postalCode')

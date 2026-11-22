@@ -174,6 +174,12 @@ export interface CreateCheckoutServiceDeps {
   pricesIncludeTax?: boolean
   /** `commerce.shipping.rates`; empty or absent, every address gets one free `standard` option. */
   shippingRates?: readonly ShippingRate[]
+  /**
+   * The heartbeat's address, given only while `features.heartbeat` is on: a checkout with exactly this email (trimmed,
+   * in any case) is the store check's, placed as a synthetic order with no stock reserved, cancelled in the same
+   * transaction, never paid, and refused `synthetic` naming it.
+   */
+  heartbeatEmail?: string
 }
 
 /** The checkout keys an order keeps: each mint past this deletes the oldest, so a checkout loop cannot grow the table. */
@@ -273,9 +279,13 @@ const SUPERSEDE_ATTEMPTS = 3
  */
 const ABANDON_AFTER_MS = 120_000
 
+/** Why the heartbeat's order is cancelled, in its history. */
+const SYNTHETIC_REASON = 'synthetic: heartbeat store check'
+
 /** What one pass under the cart lock decided, with the key minted for the order it answers. */
 type Placement =
   | { kind: 'placed'; order: Order; orderKey: string | undefined }
+  | { kind: 'synthetic'; order: Order }
   | { kind: 'existing'; order: Order & { paymentIntentId: string }; orderKey: string | undefined }
   | { kind: 'cancel-first'; order: Order & { paymentIntentId: string } }
 
@@ -296,6 +306,7 @@ export function createCheckoutService(
   const keyLifetimeMs = deps.keyLifetimeMs ?? DEFAULT_CHECKOUT_KEY_LIFETIME_MS
   const pricesIncludeTax = deps.pricesIncludeTax ?? false
   const shippingRates = deps.shippingRates ?? []
+  const heartbeatEmail = deps.heartbeatEmail?.trim().toLowerCase()
   const quotes = createPlaceQuoter({
     engine: deps.promotions,
     boundMs: deps.promotionsBoundMs ?? PROMOTIONS_BOUND_MS,
@@ -894,12 +905,14 @@ export function createCheckoutService(
    * T1, under the cart's row lock: the cart's pending order is returned when it is for this cart, superseded when the
    * cart changed and its intent is cancelled, or cancelled itself when its intent is no longer open (`closed`, by the
    * reason), or abandoned when it never got an intent; or else the stock is reserved and a new pending order created
-   * with no intent yet. Nothing is written unless an order is created or cancelled.
+   * with no intent yet. Nothing is written unless an order is created or cancelled. A `synthetic` checkout reserves
+   * nothing, and its order is created and cancelled here.
    */
   async function place(
     tx: Tx,
     input: BeginCheckoutInput,
     closed: ReadonlyMap<string, string>,
+    synthetic: boolean,
   ): Promise<Placement> {
     // Read again under the lock: the lines to order are the ones no concurrent cart command can change now.
     const cartDoc = await repos.cart.lock(tx, input.cartToken)
@@ -939,7 +952,8 @@ export function createCheckoutService(
     audit.note('checkout.place', [{ type: 'order', id: orderId }])
     const correlationId = currentCorrelationId()
     const reservationIds: string[] = []
-    for (const item of cartDoc.items) {
+    // A synthetic order is cancelled before this transaction ends: stock is read above, never taken.
+    for (const item of synthetic ? [] : cartDoc.items) {
       try {
         const r = await inventory.reserveStock(item.variantId, item.qty, orderId)
         reservationIds.push(r.reservationId)
@@ -1007,7 +1021,7 @@ export function createCheckoutService(
         ...(shipping !== undefined && { shipping }),
       } satisfies DraftMetadata,
       cartToken: cartDoc.token,
-      source: cartDoc.source,
+      source: synthetic ? 'synthetic' : cartDoc.source,
     })
     if (quote.skipped) {
       await repos.orderHistory.append(tx, {
@@ -1031,6 +1045,7 @@ export function createCheckoutService(
         timestamp: new Date(),
       })
     }
+    if (synthetic) return { kind: 'synthetic', order: await cancelDraft(order.id, SYNTHETIC_REASON) }
     return { kind: 'placed', order, orderKey: await mintKey(tx, order) }
   }
 
@@ -1246,11 +1261,21 @@ export function createCheckoutService(
       audit.note('checkout.place')
       try {
         await loadValidCart(input.cartToken)
+        const synthetic =
+          heartbeatEmail !== undefined && input.email.trim().toLowerCase() === heartbeatEmail
         // Intents no longer open with the provider (cancelled by this checkout, or failed or cancelled there), with
         // the reason the pending order holding one is cancelled when the next pass finds it under the lock.
         const closed = new Map<string, string>()
         for (let attempt = 0; ; attempt += 1) {
-          const placement = await store.transaction((tx) => place(tx, input, closed))
+          const placement = await store.transaction((tx) => place(tx, input, closed, synthetic))
+          if (placement.kind === 'synthetic') {
+            // After the commit, so the refusal's order is there to read; withOrderKey adds its key.
+            throw new CheckoutError(
+              'synthetic',
+              'A heartbeat checkout: the order was placed and cancelled',
+              { context: { orderNumber: placement.order.orderNumber } },
+            )
+          }
           if (placement.kind === 'placed') {
             return withKey(await pay(input, placement.order), placement.orderKey)
           }

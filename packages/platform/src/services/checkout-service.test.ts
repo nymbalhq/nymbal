@@ -3523,3 +3523,136 @@ describe('CheckoutService: shipping at checkout', () => {
     await env.commandStore.close()
   })
 })
+
+// The heartbeat's address is matched trimmed and case-blind on both sides; its order is placed and cancelled in one
+// transaction, never reserves stock and never reaches the provider. Every other address checks out as before.
+describe('CheckoutService: the heartbeat address', () => {
+  type Env = Awaited<ReturnType<typeof setup>>
+  const logger = createLogger({ pretty: false, level: 'error' })
+  const CONFIGURED = '  Heartbeat@Shop.Example '
+
+  /** The service with the heartbeat set, recording every reservation and intent it asks for. */
+  function heartbeatCheckout(env: Env) {
+    const asked = { reserved: [] as string[], intents: [] as PaymentIntentParams[] }
+    const checkout = createCheckoutService({
+      store: env.commandStore,
+      repos: env.repos,
+      publisher: env.publisher,
+      logger,
+      cart: env.cart,
+      orders: env.order,
+      inventory: {
+        ...env.inventory,
+        async reserveStock(variantId, qty, orderId) {
+          asked.reserved.push(variantId)
+          return env.inventory.reserveStock(variantId, qty, orderId)
+        },
+      },
+      payments: {
+        ...env.payments,
+        async createPaymentIntent(params) {
+          asked.intents.push(params)
+          return env.payments.createPaymentIntent(params)
+        },
+      },
+      currency: 'GBP',
+      heartbeatEmail: CONFIGURED,
+    })
+    return { checkout, asked }
+  }
+
+  async function cartOf(env: Env) {
+    const tag = uuidv7().slice(-8)
+    const product = await env.product.create({
+      slug: `heartbeat-${tag}`,
+      name: `Heartbeat ${tag}`,
+      status: 'active',
+      variants: [
+        {
+          sku: `HB-${tag}`,
+          name: 'One',
+          priceMinor: 900,
+          stock: 4,
+          lowStockThreshold: 0,
+          options: [],
+        },
+      ],
+    })
+    const variant = product.variants[0]!
+    const cart = await env.cart.getOrCreate()
+    await env.cart.addItem(cart.token, {
+      variantId: variant.id,
+      productId: product.id,
+      productName: product.name,
+      variantName: variant.name,
+      priceMinor: variant.priceMinor,
+      imageUrl: '',
+      qty: 2,
+    })
+    return { token: cart.token, variantId: variant.id }
+  }
+
+  const begin = (
+    checkout: ReturnType<typeof createCheckoutService>,
+    token: string,
+    email: string,
+  ) =>
+    checkout.beginCheckout({
+      cartToken: token,
+      email,
+      billingAddress: makeAddr(),
+      shippingAddress: makeAddr(),
+    })
+  const stockOf = async (env: Env, variantId: string) =>
+    (await env.commandStore.read((tx) => env.repos.variant.findById(tx, variantId)))!.stock
+
+  // Kills: either side compared untrimmed or with its case, the refusal not raised, or the synthetic order reserving
+  // stock, asking the provider for an intent, staying pending or losing its synthetic source.
+  it('the configured address in another case with spaces around it is refused synthetic, naming an order that is cancelled, synthetic, reserved nothing and was never sent to the provider', async () => {
+    const env = await setup()
+    const { checkout, asked } = heartbeatCheckout(env)
+    const { token, variantId } = await cartOf(env)
+
+    const refused = await begin(checkout, token, ' heartbeat@SHOP.example  ').catch(
+      (err: unknown) => err,
+    )
+
+    expect(refused).toBeInstanceOf(CheckoutError)
+    expect(refused).toMatchObject({ code: 'checkout.synthetic' })
+    const orderNumber = (refused as CheckoutError).context['orderNumber'] as string
+    const order = await env.commandStore.read((tx) =>
+      env.repos.order.findByOrderNumber(tx, orderNumber),
+    )
+    expect({ status: order?.status, source: order?.source }).toEqual({
+      status: 'cancelled',
+      source: 'synthetic',
+    })
+    expect(asked).toEqual({ reserved: [], intents: [] })
+    expect(await stockOf(env, variantId)).toBe(4)
+    await env.relay.drain()
+    await env.commandStore.close()
+  })
+
+  // Kills: every checkout treated as the heartbeat's once one is configured.
+  it('any other address is placed as before: a pending storefront order holding its reservation and the provider’s intent', async () => {
+    const env = await setup()
+    const { checkout, asked } = heartbeatCheckout(env)
+    const { token, variantId } = await cartOf(env)
+
+    const placed = await begin(checkout, token, 'heartbeat+shopper@shop.example')
+
+    const order = (await env.commandStore.read((tx) =>
+      env.repos.order.findById(tx, placed.orderId),
+    ))!
+    expect({ source: order.source, cancelled: order.status === 'cancelled' }).toEqual({
+      source: 'storefront',
+      cancelled: false,
+    })
+    expect(asked.reserved).toEqual([variantId])
+    expect(asked.intents).toHaveLength(1)
+    expect(asked.intents[0]!.amountMinor).toBe(order.totalMinor)
+    expect(await stockOf(env, variantId)).toBe(2)
+    await env.relay.drain()
+    await env.commandStore.close()
+  })
+})

@@ -92,6 +92,13 @@ export function registerAdminOrdersRoutes(
         if (status !== undefined) filter.status = status as OrderStatus
         const payment = one('payment')
         if (payment !== undefined) filter.payment = payment as PaymentState
+        const source = one('source')
+        if (source !== undefined) {
+          if (source !== 'synthetic') {
+            return fail('admin.invalid', `source must be synthetic, got ${source}`, 400)
+          }
+          filter.source = source
+        }
         for (const [key, into] of [
           ['dateFrom', 'from'],
           ['dateTo', 'to'],

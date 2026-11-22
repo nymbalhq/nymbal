@@ -46,7 +46,11 @@ export const MOVED_ADAPTERS: readonly MovedAdapter[] = (
       dir: 'packages/adapters/payments/stripe',
       name: '@nymbalhq/payments-stripe',
       retired: scoped('adapter-', 'stripe'),
-      tests: ['src/stripe-adapter.test.ts', 'src/stripe-refund-records.test.ts'],
+      tests: [
+        'src/stripe-adapter.test.ts',
+        'src/stripe-heartbeat-webhooks.test.ts',
+        'src/stripe-refund-records.test.ts',
+      ],
     },
     {
       from: 'packages/adapter-smtp',

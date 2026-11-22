@@ -41,6 +41,30 @@ export interface CheckoutPayment {
   reason?: string
 }
 
+/** A charge of a card the provider holds for a customer, made with no shopper present; it is captured in full. */
+export interface SavedCardCharge {
+  /** The provider's customer (Stripe `cus_…`). */
+  customerRef: string
+  /** The provider's payment method saved to that customer (Stripe `pm_…`). */
+  paymentMethodRef: string
+  amountMinor: number
+  /** ISO 4217. */
+  currency: string
+  idempotencyKey: string
+  metadata?: Record<string, string>
+}
+
+/**
+ * How a saved-card charge ended. `card_refused`: the provider said no to the card (a decline, an expired card, an
+ * authentication it asks for, or a card set-up it cannot use). `key_refused`: it refused the key (401, 403).
+ * `provider_unreachable`: no answer, a server error, or an intent still processing, whose id is then given.
+ */
+export type SavedCardOutcome =
+  | { status: 'captured'; paymentId: string; amountMinor: number; currency: string }
+  | { status: 'card_refused'; detail: string }
+  | { status: 'key_refused'; detail: string }
+  | { status: 'provider_unreachable'; detail: string; paymentId?: string }
+
 export interface PaymentCapture {
   paymentId: string
   capturedAmountMinor: number

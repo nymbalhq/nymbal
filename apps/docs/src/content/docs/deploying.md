@@ -121,3 +121,33 @@ CDN, `--real-ip-from <ranges>` and `--real-ip-header <name>` let the web server 
 On a Cloudflare store the config admits only Cloudflare's published ranges, judged on the connection's own address, and
 reads `CF-Connecting-IP` from them; the steps name the snapshot's date, and `nymbal security:drift` notes when
 Cloudflare's ranges have changed since, so the file needs writing again with an updated adapter.
+
+## Heartbeat
+
+`nymbal heartbeat` checks, once per run, that the store can take an order and that your payments provider can take
+money. Turn on `features.heartbeat` and set `heartbeat.store.email` (an address no shopper uses) and
+`heartbeat.store.address`, then restart the store: the server reads the config when it starts. A checkout with that
+exact address is placed and cancelled at once, never charged, takes no stock, and is left out of the admin's orders,
+dashboard and search (`?source=synthetic` lists them).
+
+With `heartbeat.card.customer` and `heartbeat.card.paymentMethod` set, each run also charges that saved card
+`heartbeat.card.amountMinor` (100 by default, in the store's currency) and refunds it in full. On Stripe, use a card
+kept for this: create a customer, attach the card to it, and copy the `cus_…` and `pm_…` ids from the dashboard.
+
+Run it on the store's host, from the project directory, with the server's environment (its `.env` or your host's
+variables), so it reaches the API on `127.0.0.1` and charges with the server's keys. Run it once by hand first:
+
+```sh
+npx nymbal heartbeat
+```
+
+Then run it hourly from cron:
+
+```
+0 * * * * cd /srv/shop && npx nymbal heartbeat
+```
+
+Each check prints one line, on stderr when it failed, so cron mails you the failures. The exit status is 0 when every
+check passed, 1 when one failed (the line names the step, or a declined card, a refused key or an unreachable
+provider), and 2 when the heartbeat is misconfigured, or the store did not recognise the heartbeat address and placed a
+real order: the line names that order, for you to cancel or refund in the admin.

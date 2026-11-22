@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import type { PaymentsAdapter, ProviderRefund } from '@nymbalhq/types'
 import { CASE_MS, healthAndDowntime, type Build, type ContractOptions } from './common.js'
@@ -6,7 +7,35 @@ import { CASE_MS, healthAndDowntime, type Build, type ContractOptions } from './
 export interface PaymentsContractOptions extends ContractOptions<PaymentsAdapter> {
   /** One webhook as the provider would deliver it, signed. Given, the suite parses it twice and compares. */
   signedWebhook?: () => { rawBody: string | Buffer; signature: string }
+  /**
+   * A saved card the provider charges in full: a customer and a payment method of its own. Given, the suite checks the
+   * `saved-card` capability: the charge, its refund, and one refund under a repeated key.
+   */
+  savedCard?: () => { customerRef: string; paymentMethodRef: string }
 }
+
+/** A charge of a saved card, as the heartbeat's card check asks it. */
+interface SavedCardRequest {
+  customerRef: string
+  paymentMethodRef: string
+  amountMinor: number
+  currency: string
+  idempotencyKey: string
+  metadata?: Record<string, string>
+}
+
+type SavedCardAnswer =
+  | { status: 'captured'; paymentId: string; amountMinor: number; currency: string }
+  | { status: 'card_refused' | 'key_refused'; detail: string }
+  | { status: 'provider_unreachable'; detail: string; paymentId?: string }
+
+/** An adapter as this suite reaches its saved-card charge: the optional method behind the capability. */
+type SavedCardAdapter = PaymentsAdapter & {
+  chargeSavedCard?: (charge: SavedCardRequest) => Promise<SavedCardAnswer>
+}
+
+/** Currencies with two, zero and three-letter-only minor units, upper-cased as the kernel names them. */
+const SAVED_CARD_CURRENCIES = ['GBP', 'USD', 'EUR', 'JPY', 'SEK', 'CHF'] as const
 
 /** The intent amount of the refund idempotency case: odd, so its two halves differ. */
 const TOTAL = 1999
@@ -188,6 +217,61 @@ export function runPaymentsContract(
           expect(second).toEqual(first)
         },
         CASE_MS,
+      )
+    }
+
+    const savedCard = options.savedCard
+    if (savedCard !== undefined) {
+      // Kills: a charge that is not captured, an amount or currency that moves on the way, a refund of a saved-card
+      // charge that is refused or partial, and a repeated refund key that refunds twice.
+      it(
+        'saved card: property: the adapter declares saved-card; chargeSavedCard captures exactly the amount and currency asked, a refund of it under key K returns that amount, and the same refund again under K is the same refund, the only one listed',
+        async () => {
+          const adapter = (await build()) as SavedCardAdapter
+          expect(adapter.capabilities()).toContain('saved-card')
+          await fc.assert(
+            fc.asyncProperty(
+              fc.integer({ min: 50, max: 500_000 }),
+              fc.constantFrom(...SAVED_CARD_CURRENCIES),
+              async (amountMinor, currency) => {
+                const charged = await adapter.chargeSavedCard!({
+                  ...savedCard(),
+                  amountMinor,
+                  currency,
+                  idempotencyKey: `contract-charge-${randomUUID()}`,
+                  metadata: { contract: 'saved-card' },
+                })
+                expect(charged.status, JSON.stringify(charged)).toBe('captured')
+                if (charged.status !== 'captured') return
+                expect(charged.amountMinor).toBe(amountMinor)
+                expect(charged.currency).toBe(currency)
+
+                const key = `contract-saved-refund-${randomUUID()}`
+                const refund = await adapter.refund(
+                  charged.paymentId,
+                  charged.amountMinor,
+                  'requested_by_customer',
+                  { idempotencyKey: key, currency },
+                )
+                expect(refund.amountMinor).toBe(charged.amountMinor)
+                expect(refund.status).not.toBe('failed')
+                const again = await adapter.refund(
+                  charged.paymentId,
+                  charged.amountMinor,
+                  'requested_by_customer',
+                  { idempotencyKey: key, currency },
+                )
+                expect(again.refundId).toBe(refund.refundId)
+                const listed = await refundsListed(adapter, charged.paymentId)
+                expect(listed.map((r) => [r.refundId, r.amountMinor])).toEqual([
+                  [refund.refundId, charged.amountMinor],
+                ])
+              },
+            ),
+            { numRuns: 12 },
+          )
+        },
+        CASE_MS * 2,
       )
     }
 
