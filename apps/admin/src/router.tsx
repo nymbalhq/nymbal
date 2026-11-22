@@ -12,6 +12,7 @@ import { InventoryPage, inventoryHandle } from '@/pages/InventoryPage'
 import { CustomersListPage, customersListHandle } from '@/pages/CustomersListPage'
 import { CustomerDetailPage, customerDetailHandle } from '@/pages/CustomerDetailPage'
 import { SettingsPage, settingsHandle } from '@/pages/SettingsPage'
+import { ReportsPage, reportsHandle } from '@/pages/ReportsPage'
 import { ActivityPage, activityHandle } from '@/pages/ActivityPage'
 import { InboxPage, inboxHandle } from '@/pages/InboxPage'
 import { NotFoundPage } from '@/pages/NotFoundPage'
@@ -101,6 +102,11 @@ export const router: ReturnType<typeof createBrowserRouter> = createBrowserRoute
               handle: customerDetailHandle,
             },
           ],
+        },
+        {
+          path: 'reports',
+          element: <ReportsPage />,
+          handle: reportsHandle,
         },
         {
           path: 'activity',

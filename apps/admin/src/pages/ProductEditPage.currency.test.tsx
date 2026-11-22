@@ -114,7 +114,7 @@ function renderEditor(slug: string) {
     <Routes>
       <Route path="/products/:slug" element={<ProductEditPage />} />
     </Routes>,
-    { initialPath: `/products/${slug}` },
+    { initialPath: `/products/${slug}`, dataRouter: true },
   )
 }
 

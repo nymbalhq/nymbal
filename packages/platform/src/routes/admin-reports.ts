@@ -1,7 +1,12 @@
-import { ValidationError, type HttpAdapter, type RequestContext } from '@nymbalhq/types'
+import {
+  ValidationError,
+  type HttpAdapter,
+  type ReportGrain,
+  type RequestContext,
+} from '@nymbalhq/types'
 import type { NymbalConfig } from '@nymbalhq/config'
 import type { Repositories } from '../repositories/index.js'
-import { readReport, type ReportGrain } from '../reports/report.js'
+import { readReport } from '../reports/report.js'
 import { ok, renderError } from './envelope.js'
 import { requireRole } from './role-middleware.js'
 

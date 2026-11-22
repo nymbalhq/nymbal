@@ -1,3 +1,5 @@
+import type { ReportDefinitions } from '@nymbalhq/types'
+
 // What every figure in a report counts, stated so a model reading it cannot misstate it, and the rules for a rate.
 
 export const DEFINITIONS = {
@@ -31,7 +33,7 @@ export const DEFINITIONS = {
   partial:
     'True when the row or total holds today, a store day still open, so its figures may still change (a refund lowers them).',
   rate: 'A ratio computed for this response and never stored; quote it with its basis.',
-} as const
+} as const satisfies ReportDefinitions
 
 export const RATE_FLOORS = { viewers: 20, checkoutsStarted: 5, cartsWithItems: 5 } as const
 

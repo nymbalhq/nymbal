@@ -1,4 +1,5 @@
 import { sql, type SQL } from 'drizzle-orm'
+import type { ReportFunnelCounts } from '@nymbalhq/types'
 import {
   postgresDb,
   sqliteDb,
@@ -23,14 +24,7 @@ export interface SalesHourReadRow extends SalesTotalRow {
   timezone: string
 }
 
-export interface FunnelCounts {
-  viewers: number
-  cartsWithItems: number
-  checkoutsStarted: number
-  paymentsFailed: number
-}
-
-export interface FunnelTotalRow extends FunnelCounts {
+export interface FunnelTotalRow extends ReportFunnelCounts {
   source: string
 }
 

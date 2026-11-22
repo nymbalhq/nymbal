@@ -1,6 +1,7 @@
 import fc from 'fast-check'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { readReport, type DefaultReport } from '../../src/reports/report.js'
+import type { ReportSummary } from '@nymbalhq/types'
+import { readReport } from '../../src/reports/report.js'
 import { createKernel, seedVariant, type Kernel } from '../support/kernel.js'
 import {
   DATA_DAY,
@@ -95,7 +96,7 @@ describe('AC-3: stock runway fixture', () => {
     const report = (await readReport(
       { store: k.store, repo: k.repos.reportRollup, timeZone: ZONE, now: () => NOW },
       { limit: 50 },
-    )) as DefaultReport
+    )) as ReportSummary
     const item = report.stockRunway.items.find((i) => i.variantId === a.variantId)!
     expect(rows[0]!.facts).toEqual({
       productName: item.productName,

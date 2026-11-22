@@ -38,6 +38,7 @@ const GO_LETTERS: Record<string, string> = {
   'go-products': 'p',
   'go-inventory': 'i',
   'go-customers': 'c',
+  'go-reports': 'r',
   'go-activity': 'a',
   'go-inbox': 'n',
   'go-settings': 's',

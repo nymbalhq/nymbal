@@ -15,6 +15,7 @@ const GO_TO: Array<[letter: string, path: string]> = [
   ['p', '/products'],
   ['i', '/inventory'],
   ['c', '/customers'],
+  ['r', '/reports'],
   ['a', '/activity'],
   ['n', '/inbox'],
   ['s', '/settings'],
@@ -52,7 +53,7 @@ afterEach(() => {
 
 describe('go-to shortcuts', () => {
   // Kills: a pair missing or pointing at another page; the dispatcher not mounted in the layout.
-  it('AC-3: g then each of the eight letters navigates to its page', async () => {
+  it('AC-3: g then each of the nine letters navigates to its page', async () => {
     seed()
     const user = userEvent.setup()
     const shell = renderAdminShell('/settings')
@@ -183,12 +184,16 @@ describe('the shortcut help', () => {
 
     await user.keyboard('?')
     const dialog = await screen.findByRole('dialog', { name: 'Keyboard shortcuts' })
-    const missing = SHORTCUTS.filter((s: Shortcut) => within(dialog).queryAllByText(s.label).length === 0)
+    const missing = SHORTCUTS.filter(
+      (s: Shortcut) => within(dialog).queryAllByText(s.label).length === 0,
+    )
     expect(
       missing.map((s: Shortcut) => s.label),
       'labels not shown',
     ).toEqual([])
-    const escapeEntries = SHORTCUTS.filter((s: Shortcut) => !s.command && s.keys.some((k: string) => /^esc/i.test(k)))
+    const escapeEntries = SHORTCUTS.filter(
+      (s: Shortcut) => !s.command && s.keys.some((k: string) => /^esc/i.test(k)),
+    )
     expect(escapeEntries.length, 'Escape (leave the search field) is listed').toBe(1)
     expect(dialog.contains(document.activeElement), 'focus inside the help').toBe(true)
 

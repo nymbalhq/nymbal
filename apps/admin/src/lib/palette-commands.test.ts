@@ -155,6 +155,16 @@ function reference(query: string, commands: readonly PaletteCommand[]): PaletteC
   return commands.filter((c) => terms.every((t) => c.label.toLowerCase().includes(t)))
 }
 
+describe('NAVIGATION_COMMANDS', () => {
+  it('AC-9: Go to Reports is one navigation command and it goes to /reports', () => {
+    expect(
+      NAVIGATION_COMMANDS.filter((c: NavigationCommand) => c.to === '/reports').map(
+        (c: NavigationCommand) => c.label,
+      ),
+    ).toEqual(['Go to Reports'])
+  })
+})
+
 describe('matchCommands', () => {
   it('AC-2: returns exactly the commands whose label holds every whitespace-separated term of the query, case-insensitively, in input order', () => {
     fc.assert(

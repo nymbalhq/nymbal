@@ -1,6 +1,6 @@
-import type { Page } from '@playwright/test'
+import { request as playwrightRequest, type Page } from '@playwright/test'
 import { expect, test } from '../../support/fixtures'
-import { ADMIN_EMAIL, ADMIN_PASSWORD } from '../../support/admin'
+import { ADMIN_EMAIL, ADMIN_PASSWORD, placeOrder } from '../../support/admin'
 import { adminToken } from '../../support/checkout'
 import { API_URL } from '../../support/csrf'
 import { phoneWidths } from '../../support/phone-width'
@@ -145,5 +145,84 @@ test.describe('Admin at a phone’s width @phone-width', () => {
         .soft(right, `${testId}: right edge ${right}, viewport ${viewport}`)
         .toBeLessThanOrEqual(viewport + 1)
     }
+  })
+
+  test('AC-11: the Reports page, with a currency section and its daily table rendered, is no wider than the viewport, the section ends inside it, and a table wider than its card scrolls inside the card', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(120_000)
+    const token = await adminToken(request)
+    const guest = await playwrightRequest.newContext()
+    let orderNumber: string
+    try {
+      orderNumber = (
+        await placeOrder(
+          guest,
+          `e2e-reports-phone-${Date.now()}-${Math.floor(Math.random() * 1e6)}@nymbal.dev`,
+        )
+      ).orderNumber
+    } finally {
+      await guest.dispose()
+    }
+    const auth = { headers: { authorization: `Bearer ${token}` } }
+    const order = await request.get(
+      `${API_URL}/api/admin/orders/${encodeURIComponent(orderNumber)}`,
+      auth,
+    )
+    expect(order.status(), await order.text()).toBe(200)
+    const currency = ((await order.json()) as { data: { currency: string } }).data.currency
+    const series = await request.get(`${API_URL}/api/admin/reports?grain=day`, auth)
+    expect(series.status(), await series.text()).toBe(200)
+    const today = ((await series.json()) as { data: { window: { to: string } } }).data.window.to
+    const section = `admin-reports-currency-${currency}`
+    const todayRow = `admin-reports-day-${currency}-${today}`
+
+    await page.goto('login')
+    await page.getByTestId('admin-login-email').fill(ADMIN_EMAIL)
+    await page.getByTestId('admin-login-password').fill(ADMIN_PASSWORD)
+    await page.getByTestId('admin-login-submit').click()
+    await page.waitForURL((url) => !url.pathname.replace(/\/$/, '').endsWith('/login'), {
+      timeout: 15_000,
+    })
+    // The order reaches the report once the relay delivers it.
+    await expect(async () => {
+      await page.goto('reports')
+      await expect(page.getByTestId(todayRow)).toHaveAttribute('data-partial', 'true', {
+        timeout: 5_000,
+      })
+    }).toPass({ timeout: 60_000 })
+    await expect(page.locator('main .animate-pulse')).toHaveCount(0, { timeout: 10_000 })
+
+    await expectPhoneWidth(page, 'reports')
+    const { right, viewport } = await rightEdge(page, section)
+    expect
+      .soft(right, `${section}: right edge ${right}, viewport ${viewport}`)
+      .toBeLessThanOrEqual(viewport + 1)
+
+    // The daily table fits its card, or an element between them scrolls it; a card that hides the overflow clips it.
+    const table = await page.getByTestId(todayRow).evaluate((row, sectionId) => {
+      const card = row.closest(`[data-testid="${sectionId}"]`)
+      const body = row.closest('table') ?? row.parentElement
+      if (card === null || body === null) return { width: -1, card: -1, scroller: false }
+      let scroller = false
+      for (
+        let el = body.parentElement;
+        el !== null && el !== card.parentElement;
+        el = el.parentElement
+      ) {
+        const overflow = getComputedStyle(el).overflowX
+        if ((overflow === 'auto' || overflow === 'scroll') && el.clientWidth <= card.clientWidth) {
+          scroller = true
+          break
+        }
+      }
+      return { width: body.scrollWidth, card: card.clientWidth, scroller }
+    }, section)
+    expect(table.card, `the day row inside ${section}`).toBeGreaterThan(0)
+    expect(
+      table.width <= table.card || table.scroller,
+      `daily table ${table.width} px in a ${table.card} px card, scrolls inside it: ${table.scroller}`,
+    ).toBe(true)
   })
 })

@@ -251,6 +251,7 @@ export function renderAdminShell(initialPath: string, { productPage = false }: S
           { path: 'inventory', element: <InventoryPage /> },
           { path: 'customers', element: <CustomersListPage /> },
           { path: 'customers/:id', element: <Stand name="Customer" /> },
+          { path: 'reports', element: <Stand name="Reports" /> },
           { path: 'activity', element: <Stand name="Activity" /> },
           { path: 'inbox', element: <Stand name="Inbox" /> },
           { path: 'settings', element: <Stand name="Settings" /> },

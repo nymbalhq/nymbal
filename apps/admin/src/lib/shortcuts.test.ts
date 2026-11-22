@@ -1,6 +1,13 @@
 import fc from 'fast-check'
 import { afterEach, describe, expect, it } from 'vitest'
-import { isTypingTarget, readKey, type KeyInput, type ShortcutCommand } from './shortcuts'
+import {
+  SHORTCUTS,
+  isTypingTarget,
+  readKey,
+  type KeyInput,
+  type Shortcut,
+  type ShortcutCommand,
+} from './shortcuts'
 
 // The key reader is judged against this file's own copy of the key map, not the module's table, so a table that
 // drifts from the map fails here; the typing-field test is judged on elements built the way the admin renders them.
@@ -15,6 +22,7 @@ const GO: Record<string, string> = {
   a: '/activity',
   n: '/inbox',
   s: '/settings',
+  r: '/reports',
 }
 const SINGLE: Record<string, ShortcutCommand> = {
   '?': { type: 'help' },
@@ -118,6 +126,21 @@ const sequence = fc.array(
   ),
   { maxLength: 40 },
 )
+
+describe('the Reports shortcut', () => {
+  // Kills: Reports reachable from the sidebar only; a `g r` the help (built from SHORTCUTS) does not list.
+  it('AC-9: g then r goes to /reports, and the shortcut table the help lists holds it under g r', () => {
+    const afterG = readKey(null, plainKey('g'))
+    expect(readKey(afterG.pending, plainKey('r'))).toEqual({
+      command: { type: 'go', to: '/reports' },
+      pending: null,
+    })
+    const listed = SHORTCUTS.filter(
+      (s: Shortcut) => s.command?.type === 'go' && s.command.to === '/reports',
+    ).map((s: Shortcut) => ({ keys: [...s.keys], label: s.label }))
+    expect(listed).toEqual([{ keys: ['g', 'r'], label: 'Go to Reports' }])
+  })
+})
 
 describe('readKey', () => {
   // Kills: Ctrl-K, Cmd-C or an IME keystroke read as a shortcut; `g x` selecting a row; a binding missing, moved or
