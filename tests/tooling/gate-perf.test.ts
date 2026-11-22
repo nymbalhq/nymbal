@@ -109,13 +109,20 @@ describe('AC-8: the timing-bound tests run apart, under the quiet lock', () => {
     expect([PERF_FILE, PERF_POSTGRES_FILE].filter((file) => sentinelSuite.has(file))).toEqual([])
   })
 
-  it('AC-8 (c): a plain plan runs a perf step when search-service.ts changed, and none when only README.md did', () => {
-    const search = plan({ ...BASE, changed: ['packages/platform/src/services/search-service.ts'] })
-    expect(running(search.steps)).toContain('perf')
-    expect(holdOf(search.steps.find((s) => s.name === 'perf')!)).toBe('exclusive')
-    const readme = plan({ ...BASE, changed: ['README.md'] })
-    expect(running(readme.steps)).not.toContain('perf')
+  it('AC-8 (c): the plain gate leaves perf to gate:full, even when search-service.ts changed, and its tests step still leaves the timing-bound file out', () => {
+    const changed = ['packages/platform/src/services/search-service.ts']
+    const search = plan({ ...BASE, changed })
+    const perf = search.steps.find((s) => s.name === 'perf')!
+    // Still a row, skipped: the Stop hook's plain-gate check reads every plain step's name in the record.
+    expect(perf.skip).toMatch(/gate:full/)
+    expect(running(search.steps)).not.toContain('perf')
+    expect(search.steps.find((s) => s.name === 'tests')!.command).toContain(`--exclude ${PERF_FILE}`)
     // The plain gate never starts Postgres, so it never runs perf-postgres.
     expect(running(search.steps)).not.toContain('perf-postgres')
+    const full = plan({ ...BASE, full: true, changed, mutated: changed })
+    expect(running(full.steps)).toContain('perf')
+    expect(holdOf(full.steps.find((s) => s.name === 'perf')!)).toBe('exclusive')
+    const readme = plan({ ...BASE, full: true, changed: ['README.md'] })
+    expect(running(readme.steps)).toContain('perf')
   })
 })

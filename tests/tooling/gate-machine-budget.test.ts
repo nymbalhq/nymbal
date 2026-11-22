@@ -11,7 +11,7 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { E2E_TIMEOUT_ENV, run, type StepSpec } from '../../scripts/gate'
+import { E2E_TIMEOUT_ENV, run, type StepSpec, TIMEOUT_SCALE_ENV } from '../../scripts/gate'
 import {
   BACKGROUND_VAR,
   CAP_VARS,
@@ -43,6 +43,7 @@ function cleanEnv(extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
     ...Object.values(CAP_VARS),
     BACKGROUND_VAR,
     E2E_TIMEOUT_ENV,
+    TIMEOUT_SCALE_ENV,
     'CI',
     'GITHUB_ACTIONS',
   ])
@@ -53,7 +54,8 @@ function cleanEnv(extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
 
 const held = async (): Promise<Hold> => Object.assign(async () => {}, { waitedMs: 0, quiet: true })
 
-type Seen = Record<Tool, string>
+/** The caps, and the test timeout scale (`scale`), a step's process saw; `unset` for one it was not given. */
+type Seen = Record<Tool | 'scale', string>
 
 /** The caps each named step's process saw, and the gate's log, at `load` on `cpus` cores. */
 async function capsSeen(
@@ -61,12 +63,12 @@ async function capsSeen(
   opts: { env?: NodeJS.ProcessEnv; load?: number; cpus?: number } = {},
 ): Promise<{ seen: Record<string, Seen>; log: string }> {
   const cwd = scratch()
-  const print = Object.values(CAP_VARS)
+  const print = [...Object.values(CAP_VARS), TIMEOUT_SCALE_ENV]
     .map((name) => `"\${${name}-unset}"`)
     .join(' ')
   const steps: StepSpec[] = names.map((name, i) => ({
     name,
-    command: `printf '%s %s %s' ${print} > '${join(cwd, `${i}.caps`)}'`,
+    command: `printf '%s %s %s %s' ${print} > '${join(cwd, `${i}.caps`)}'`,
   }))
   let log = ''
   const result = await run(steps, {
@@ -84,11 +86,11 @@ async function capsSeen(
   expect(result.exitCode).toBe(0)
   const seen = Object.fromEntries(
     names.map((name, i) => {
-      const [vitest = '', playwright = '', stryker = ''] = readFileSync(
+      const [vitest = '', playwright = '', stryker = '', scale = ''] = readFileSync(
         join(cwd, `${i}.caps`),
         'utf8',
       ).split(' ')
-      return [name, { vitest, playwright, stryker }]
+      return [name, { vitest, playwright, stryker, scale }]
     }),
   )
   return { seen, log }
@@ -102,7 +104,12 @@ describe("each step runs under its tool's cap", () => {
     expect(seen['tests']?.vitest).toBe(String(LOCAL_DEFAULTS.vitest))
     expect(seen['e2e astro']?.playwright).toBe(String(LOCAL_DEFAULTS.playwright))
     expect(seen['stryker']?.stryker).toBe(String(LOCAL_DEFAULTS.stryker))
-    expect(seen['lint']).toEqual({ vitest: 'unset', playwright: 'unset', stryker: 'unset' })
+    expect(seen['lint']).toEqual({
+      vitest: 'unset',
+      playwright: 'unset',
+      stryker: 'unset',
+      scale: 'unset',
+    })
   })
 
   it("the machine file's numbers reach the steps in place of the defaults", async () => {
@@ -117,7 +124,12 @@ describe("each step runs under its tool's cap", () => {
   it('under CI no step is given a cap, so each tool keeps its own sizing', async () => {
     const { seen } = await capsSeen(STEPS, { env: { CI: 'true' }, load: 99 })
     for (const name of STEPS) {
-      expect(seen[name]).toEqual({ vitest: 'unset', playwright: 'unset', stryker: 'unset' })
+      expect(seen[name]).toEqual({
+        vitest: 'unset',
+        playwright: 'unset',
+        stryker: 'unset',
+        scale: 'unset',
+      })
     }
   })
 })
@@ -144,6 +156,29 @@ describe('a loaded machine halves the caps at the start of a step', () => {
     expect(seen['tests']?.vitest).toBe(String(LOCAL_DEFAULTS.vitest))
     expect(seen['e2e astro']?.playwright).toBe(String(LOCAL_DEFAULTS.playwright))
     expect(log).not.toContain('halved')
+  })
+})
+
+describe("a halved Vitest step's tests get longer timeouts", () => {
+  // Fewer workers on a loaded machine keep each test's 5 s bound: a property test that passes alone timed out at load
+  // 382. vitest.config.ts multiplies every project's timeouts by the scale.
+  it('above the core count a Vitest step is given scale 3; the E2E and Stryker steps beside it, and lint, none', async () => {
+    const { seen } = await capsSeen([...STEPS, 'sentinels'], { load: 13, cpus: 12 })
+    expect(seen['tests']?.scale).toBe('3')
+    expect(seen['sentinels']?.scale).toBe('3')
+    expect(seen['e2e astro']?.scale).toBe('unset')
+    expect(seen['stryker']?.scale).toBe('unset')
+    expect(seen['lint']?.scale).toBe('unset')
+  })
+
+  it('at or below the core count no step is given a scale', async () => {
+    const { seen } = await capsSeen(STEPS, { load: 12, cpus: 12 })
+    expect(seen['tests']?.scale).toBe('unset')
+  })
+
+  it('a scale the caller set is passed through unchanged, halved or not', async () => {
+    const loaded = await capsSeen(['tests'], { env: { [TIMEOUT_SCALE_ENV]: '5' }, load: 13 })
+    expect(loaded.seen['tests']?.scale).toBe('5')
   })
 })
 

@@ -14,6 +14,7 @@ import {
 } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { gateSlots } from './machine-budget'
 
 // A stack slot per checkout, so that two worktrees on one machine run the gate, the E2E suite and a walk at once
 // without sharing containers or ports. The main checkout is slot 0, today's compose project and ports, which CI sees;
@@ -298,6 +299,9 @@ export function resolveSlot(cwd: string, env: NodeJS.ProcessEnv = process.env): 
 
 // The quiet lock. Parallel stacks share the machine's CPU, so a timing-bound step (the exclusive hold) waits until no
 // other worktree runs a CPU-heavy step (a shared hold), and new shared holds from other worktrees wait while it runs.
+// A shared hold also waits while NYMBAL_GATE_SLOTS other worktrees (two by default) hold shared ones: each gate's
+// workers are already at the floor, so a third gate's tests only slow every one of them. That wait has no bound; past
+// a minute it names the holders once a minute.
 // Holds live under `<git-common-dir>/nymbal-stacks/heavy/`: a shared hold is `shared-<pid>-<label>`, the exclusive
 // one is `quiet`; each names its pid and worktree, and a hold whose pid is dead is removed and blocks nothing. A
 // worktree never waits on its own holds: its gate runs one step at a time.
@@ -308,7 +312,14 @@ export type Hold = Release & { waitedMs: number; quiet: boolean }
 /** How long a hold waits before it runs anyway, and says so. */
 export const QUIET_MAX_WAIT_MS = 600_000
 
-type HoldFile = { path: string; pid: number; worktree: string; text: string }
+/** How long a shared hold waits before it names what it waits for, and how often after that. */
+export const WAIT_NOTE_MS = 60_000
+
+/** Who holds a hold another is waiting on. */
+export type Holder = { pid: number; worktree: string; label: string }
+
+/** A hold on disk; `at` is when it was written (0 for one written without it, which is then the earliest). */
+type HoldFile = Holder & { path: string; text: string; at: number }
 
 function heavyDir(cwd: string): { dir: string; worktree: string } | undefined {
   const here = checkout(cwd)
@@ -332,8 +343,8 @@ function isAlive(pid: number): boolean {
 function readHold(path: string): HoldFile | undefined {
   const text = readOrUndefined(path)
   if (text === undefined) return undefined
-  const [pid = '', worktree = ''] = text.split('\n')
-  return { path, pid: Number(pid), worktree, text }
+  const [pid = '', worktree = '', label = '', , at = ''] = text.split('\n')
+  return { path, pid: Number(pid), worktree, label, text, at: Number(at) || 0 }
 }
 
 // Hold files appear whole, never half written: a reader that saw an empty one would take it for a dead holder's.
@@ -372,25 +383,44 @@ function liveQuiet(dir: string): HoldFile | undefined {
   return undefined
 }
 
-/** Whether another worktree holds the quiet. */
-const quietElsewhere = (dir: string, worktree: string): boolean => {
+/** Another worktree's live quiet. */
+const quietOf = (dir: string, worktree: string): HoldFile | undefined => {
   const hold = liveQuiet(dir)
-  return hold !== undefined && hold.worktree !== worktree
+  return hold !== undefined && hold.worktree !== worktree ? hold : undefined
 }
 
-/** Whether another worktree has a live shared hold; a dead holder's is removed (its name holds its pid). */
-function sharedElsewhere(dir: string, worktree: string): boolean {
+/** Whether another worktree holds the quiet. */
+const quietElsewhere = (dir: string, worktree: string): boolean =>
+  quietOf(dir, worktree) !== undefined
+
+/** Other worktrees' live shared holds; a dead holder's is removed (its name holds its pid). */
+function sharedOfOthers(dir: string, worktree: string): HoldFile[] {
   return readdirSync(dir)
     .filter((name) => name.startsWith('shared-'))
-    .some((name) => {
+    .flatMap((name) => {
       const hold = readHold(join(dir, name))
-      if (hold === undefined) return false
+      if (hold === undefined) return []
       if (!isAlive(hold.pid)) {
         removeFile(hold.path)
-        return false
+        return []
       }
-      return hold.worktree !== worktree
+      return hold.worktree === worktree ? [] : [hold]
     })
+}
+
+/** Whether another worktree has a live shared hold. */
+const sharedElsewhere = (dir: string, worktree: string): boolean =>
+  sharedOfOthers(dir, worktree).length > 0
+
+/** How many other worktrees have a live shared hold, of those written before `mine` when it is given. */
+function worktreesHolding(dir: string, worktree: string, mine?: HoldFile): number {
+  const before = (hold: HoldFile): boolean =>
+    mine === undefined || hold.at < mine.at || (hold.at === mine.at && hold.path < mine.path)
+  return new Set(
+    sharedOfOthers(dir, worktree)
+      .filter(before)
+      .map((hold) => hold.worktree),
+  ).size
 }
 
 /**
@@ -411,7 +441,7 @@ export function liveHolders(cwd: string): number {
 }
 
 const holdText = (worktree: string, label: string): string =>
-  `${process.pid}\n${worktree}\n${label}\n${randomUUID()}\n`
+  `${process.pid}\n${worktree}\n${label}\n${randomUUID()}\n${Date.now()}\n`
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -434,32 +464,66 @@ async function waitFor(
 const done = (release: Release, waitedMs: number, quiet: boolean): Hold =>
   Object.assign(release, { waitedMs, quiet })
 
-/** A shared hold for a CPU-heavy step: it waits while another worktree's timing step holds the quiet. */
+/**
+ * A shared hold for a CPU-heavy step. It waits while `slots` other worktrees hold shared ones, for as long as they
+ * live; and, with a slot free, while another worktree's timing step holds the quiet, up to `maxWaitMs` counted from
+ * when it first found a slot free and the quiet held, then runs anyway (`quiet` false). Past `WAIT_NOTE_MS`,
+ * `onWait` hears once a minute what it waits for.
+ */
 export async function acquireShared(
   cwd: string,
   label: string,
-  { maxWaitMs = QUIET_MAX_WAIT_MS }: { maxWaitMs?: number } = {},
+  {
+    maxWaitMs = QUIET_MAX_WAIT_MS,
+    slots = gateSlots(process.env, cwd),
+    onWait,
+  }: {
+    maxWaitMs?: number
+    slots?: number
+    onWait?: (waitedMs: number, waitingFor: 'a slot' | 'the quiet', holders: Holder[]) => void
+  } = {},
 ): Promise<Hold> {
   const startedMs = Date.now()
   const heavy = heavyDir(cwd)
   if (heavy === undefined) return done(async () => {}, 0, true)
   const { dir, worktree } = heavy
   const path = join(dir, `shared-${process.pid}-${label.replace(/[^A-Za-z0-9_.-]/g, '_')}`)
-  const text = holdText(worktree, label)
+  let quiet = true
+  // A wait for a slot is not a wait for the quiet: its bound starts only once a slot is free.
+  let quietSinceMs: number | undefined
+  let noteAtMs = startedMs + WAIT_NOTE_MS
+  const blocked = (waitingFor: 'a slot' | 'the quiet', holders: HoldFile[]): false => {
+    const now = Date.now()
+    if (onWait !== undefined && now >= noteAtMs) {
+      noteAtMs = now + WAIT_NOTE_MS
+      onWait(now - startedMs, waitingFor, holders)
+    }
+    return false
+  }
   // Written, then checked again: an exclusive taker creates `quiet` before it reads the shared holds, so either it
-  // sees this hold or this check sees its `quiet`.
-  const quiet = await waitFor(
+  // sees this hold or this check sees its `quiet`; of two that both took the last slot, the later one backs off.
+  await waitFor(
     () => {
-      if (quietElsewhere(dir, worktree)) return false
-      writeWhole(dir, path, text)
-      if (!quietElsewhere(dir, worktree)) return true
+      const others = sharedOfOthers(dir, worktree)
+      if (new Set(others.map((hold) => hold.worktree)).size >= slots)
+        return blocked('a slot', others)
+      const quietHold = quietOf(dir, worktree)
+      quietSinceMs = quietHold === undefined ? undefined : (quietSinceMs ?? Date.now())
+      const pastBound = quietSinceMs !== undefined && Date.now() - quietSinceMs >= maxWaitMs
+      if (quietHold !== undefined && !pastBound) return blocked('the quiet', [quietHold])
+      writeWhole(dir, path, holdText(worktree, label))
+      const mine = readHold(path)
+      const quietNow = quietElsewhere(dir, worktree)
+      if ((pastBound || !quietNow) && worktreesHolding(dir, worktree, mine) < slots) {
+        quiet = !quietNow
+        return true
+      }
       removeFile(path)
       return false
     },
     startedMs,
-    maxWaitMs,
+    Number.POSITIVE_INFINITY,
   )
-  if (!quiet) writeWhole(dir, path, text)
   return done(async () => removeFile(path), Date.now() - startedMs, quiet)
 }
 

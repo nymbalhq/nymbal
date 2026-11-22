@@ -133,8 +133,9 @@ const nightly = process.env['NYMBAL_NIGHTLY']
 // sets it lower for a step when other worktrees' gates or a loaded machine share the CPUs (scripts/gate.ts).
 const maxWorkers = machineBudget().vitest
 
-// Set by the sentinel runs (scripts/sentinels.ts), which run nearly the whole suite at once under load: each
-// project's own timeouts, or Vitest's defaults where it sets none, are multiplied. A CLI --testTimeout would replace
+// Set by the sentinel runs (scripts/sentinels.ts), which run nearly the whole suite at once under load, and by the
+// gate for a Vitest step it runs on fewer workers or beside another gate's (scripts/gate.ts): each project's own
+// timeouts, or Vitest's defaults where it sets none, are multiplied. A CLI --testTimeout would replace
 // the longer budgets some projects set instead.
 const timeoutScale = Number(process.env['NYMBAL_TEST_TIMEOUT_SCALE'] ?? 1)
 if (!Number.isInteger(timeoutScale) || timeoutScale < 1) {

@@ -20,8 +20,10 @@ import {
   type Budget,
   CAP_VARS,
   e2eGlobalTimeoutMs,
+  gateSlots,
   machineBudget,
   type Tool,
+  underCI,
 } from './machine-budget'
 import { loadSentinels } from './sentinels'
 import {
@@ -29,6 +31,7 @@ import {
   acquireShared,
   composePorts,
   type Hold,
+  type Holder,
   liveHolders,
   QUIET_MAX_WAIT_MS,
   type StackBlock,
@@ -57,7 +60,8 @@ import { type Manifest, type WorkspaceMember, workspaceMembers } from './workspa
 // Stryker runs under the machine budget's cap for it (scripts/machine-budget.ts, which owns the defaults and the
 // per-machine file), set in the step's environment: a Vitest step's cap is divided between the worktrees whose gates
 // hold the CPU at once (never above the cap), and when the one-minute load average at a step's start is above the
-// core count, the step's caps halve (never below one) and the gate says so in one line. An E2E step is handed the
+// core count, the step's caps halve (never below one) and the gate says so in one line. A Vitest step that runs halved
+// or shared gets its tests' timeouts tripled (TIMEOUT_SCALE_ENV), except under CI. An E2E step is handed the
 // whole-run bound for the workers it got (E2E_TIMEOUT_ENV), since fewer workers take longer over the same tests. With
 // NYMBAL_BACKGROUND=1 on macOS the CPU-heavy steps (those taking a shared hold of the quiet lock) run at background
 // priority (`taskpolicy -b`), so the rest of the machine is served first; the timing-bound ones (the exclusive hold)
@@ -66,7 +70,18 @@ import { type Manifest, type WorkspaceMember, workspaceMembers } from './workspa
 
 export type StepStatus = 'ok' | 'red' | 'skipped'
 
-export type Step = { name: string; status: StepStatus; ms: number; detail?: string }
+export type Step = {
+  name: string
+  status: StepStatus
+  ms: number
+  detail?: string
+  /** How long it waited for its hold of the quiet lock, not in `ms`; only a step that took one. */
+  waitMs?: number
+  /** The one-minute load average when it started; only a step that ran. */
+  load?: number
+  /** The caps it ran under (scripts/machine-budget.ts), when it was given any. */
+  caps?: Partial<Record<Tool, number>>
+}
 
 /** A step to run. `skip` names the reason to leave it out; `needs` skips it unless every named step is ok. */
 export type StepSpec = {
@@ -163,6 +178,13 @@ const describeCaps = (caps: Partial<Record<Tool, number>>): string =>
   Object.entries(caps)
     .map(([tool, cap]) => `${TOOL_NAMES[tool as Tool]} ${cap}`)
     .join(', ')
+
+/**
+ * The variable vitest.config.ts multiplies every project's test and hook timeouts by. The gate sets it to
+ * TIMEOUT_SCALE for a Vitest step that runs halved or shares the CPUs, never under CI; set by hand, the gate leaves it.
+ */
+export const TIMEOUT_SCALE_ENV = 'NYMBAL_TEST_TIMEOUT_SCALE'
+export const TIMEOUT_SCALE = 3
 
 /** The variable tests/e2e/playwright.config.ts reads as the whole-run bound; set by hand, the gate leaves it. */
 export const E2E_TIMEOUT_ENV = 'NYMBAL_E2E_GLOBAL_TIMEOUT_MS'
@@ -582,14 +604,30 @@ function holdNote(mode: 'shared' | 'exclusive', hold: Hold): string | undefined 
 export async function run(steps: StepSpec[], opts: RunOptions): Promise<RunResult> {
   const results: Step[] = []
   const log = opts.log ?? ((): void => {})
+  const baseEnv = opts.env ?? process.env
+  // Read before the first step, so a bad value fails the run before any step has run.
+  const budget = machineBudget(baseEnv, opts.cwd)
+  const slots = gateSlots(baseEnv, opts.cwd)
+  const waiting = (
+    label: string,
+    waitedMs: number,
+    waitingFor: string,
+    holders: Holder[],
+  ): void => {
+    const held = holders.map((h) => `pid ${h.pid} (${h.worktree}, ${h.label})`).join(', ')
+    log(`${label}: waiting ${seconds(waitedMs)} s for ${waitingFor}, held by ${held}\n`)
+  }
   const acquire =
     opts.acquire ??
     ((mode: 'shared' | 'exclusive', label: string): Promise<Hold> =>
       mode === 'exclusive'
         ? acquireExclusive(opts.cwd, label, { maxWaitMs: QUIET_MAX_WAIT_MS })
-        : acquireShared(opts.cwd, label, { maxWaitMs: QUIET_MAX_WAIT_MS }))
-  const baseEnv = opts.env ?? process.env
-  const budget = machineBudget(baseEnv, opts.cwd)
+        : acquireShared(opts.cwd, label, {
+            maxWaitMs: QUIET_MAX_WAIT_MS,
+            slots,
+            onWait: (waitedMs, waitingFor, holders) =>
+              waiting(label, waitedMs, waitingFor, holders),
+          }))
   const cpus = opts.cpus ?? availableParallelism()
   const policy = opts.taskpolicy ?? TASKPOLICY
   const background =
@@ -615,15 +653,19 @@ export async function run(steps: StepSpec[], opts: RunOptions): Promise<RunResul
     const hold = mode === undefined ? undefined : await acquire(mode, spec.name)
     const quiet = mode === undefined || hold === undefined ? undefined : holdNote(mode, hold)
     if (quiet !== undefined) log(`${spec.name}: ${quiet}\n`)
+    else if (mode === 'shared' && hold !== undefined && hold.waitedMs >= 1_000) {
+      log(
+        `${spec.name}: started after a ${seconds(hold.waitedMs)} s wait for other worktrees' heavy steps\n`,
+      )
+    }
     log(`running ${spec.name}: ${spec.command}\n`)
     const started = performance.now()
     let code: number
     let output: string
     let holders = 1
     let caps = stepCaps(spec.name, budget, cpus, () => (holders = liveHolders(opts.cwd)))
-    const load =
-      Object.keys(caps).length === 0 ? 0 : (opts.loadAverage ?? (() => loadavg()[0] ?? 0))()
-    const halved = underLoad(caps, load, cpus)
+    const load = (opts.loadAverage ?? (() => loadavg()[0] ?? 0))()
+    const halved = Object.keys(caps).length === 0 ? undefined : underLoad(caps, load, cpus)
     if (halved !== undefined) {
       caps = halved
       log(
@@ -637,6 +679,12 @@ export async function run(steps: StepSpec[], opts: RunOptions): Promise<RunResul
       e2e && caps.playwright !== undefined && !baseEnv[E2E_TIMEOUT_ENV]
         ? { [E2E_TIMEOUT_ENV]: String(e2eGlobalTimeoutMs(baseEnv, caps.playwright, cpus)) }
         : {}
+    // Fewer workers, or workers beside another gate's, keep each test's bound: a test that passes alone times out.
+    const slowed =
+      VITEST_STEPS.has(spec.name) &&
+      (halved !== undefined || holders > 1) &&
+      !underCI(baseEnv) &&
+      !baseEnv[TIMEOUT_SCALE_ENV]
     const env =
       Object.keys(caps).length === 0
         ? opts.env
@@ -646,6 +694,7 @@ export async function run(steps: StepSpec[], opts: RunOptions): Promise<RunResul
               Object.entries(caps).map(([tool, cap]) => [CAP_VARS[tool as Tool], String(cap)]),
             ),
             ...bound,
+            ...(slowed ? { [TIMEOUT_SCALE_ENV]: String(TIMEOUT_SCALE) } : {}),
           }
     const yielding = background && mode === 'shared' && !e2e
     if (yielding && !backgroundSaid) {
@@ -667,7 +716,12 @@ export async function run(steps: StepSpec[], opts: RunOptions): Promise<RunResul
       ...(code === 0 ? [] : [`exit ${code}`]),
       ...(quiet === undefined ? [] : [quiet]),
     ]
-    const detail = details.length === 0 ? {} : { detail: details.join('; ') }
+    const detail = {
+      ...(details.length === 0 ? {} : { detail: details.join('; ') }),
+      ...(hold === undefined ? {} : { waitMs: hold.waitedMs }),
+      load: Math.round(load * 100) / 100,
+      ...(Object.keys(caps).length === 0 ? {} : { caps }),
+    }
     if (code === 0) {
       results.push({ name: spec.name, status: 'ok', ms, ...detail })
       // A green step's `warning:` lines are for the reader (the ratchet's measured-file-without-a-test-change).
@@ -1315,8 +1369,6 @@ export type PlanInput = {
   artefactPresent?: boolean | undefined
   /** `packages/<dir>` of the proof kit and what it imports (`workspaceClosure`); the kit alone when not given. */
   proofKitPackages?: string[] | undefined
-  /** `packages/<dir>` of the kernel and what it imports, which the timing-bound tests load; the kernel when not given. */
-  perfPackages?: string[] | undefined
   /**
    * The sentinels gate:full runs: every one, the ids given, or `none` (as is an empty set), which leaves them to dev
    * CI and the release run. Every one when not given.
@@ -1382,12 +1434,19 @@ function checkedShard(shard: Shard): Shard {
   return shard
 }
 
-/** What every gate run writes: each step's status and milliseconds, in plan order, and the first red step. */
+/**
+ * What every gate run writes: each step's status and milliseconds, in plan order, and the first red step; and, for
+ * the steps that ran, the wait for each hold (`waitsMs`, not in `stepsMs`), the one-minute load at each start and
+ * the caps each ran under.
+ */
 export type LastRun = {
   sha: string
   steps: Record<string, StepStatus>
   stepsMs: Record<string, number>
   redStep: string | null
+  waitsMs: Record<string, number>
+  loads: Record<string, number>
+  caps: Record<string, Partial<Record<Tool, number>>>
 }
 
 const LAST_RUN = 'reports/last-run.json'
@@ -1633,21 +1692,12 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
     [...new Set([...(input.relatedPaths ?? changed), ...files])].sort().map(shellWord).join(' ')
   const related = relatedTo(readers)
   const harnessRelatedPaths = relatedTo(toolingReaders)
-  const perfPackages = input.perfPackages ?? ['packages/platform']
-  const perfReached =
-    selection.mode === 'all' ||
-    (selection.mode === 'changed' &&
-      changed.some(
-        (path) => !isDocumentation(path) && perfPackages.some((dir) => path.startsWith(`${dir}/`)),
-      ))
-  const perf: StepSpec = perfReached
+  // The plain gate leaves the timing-bound tests to gate:full, the nightly and dev CI: its exclusive hold waited for
+  // other worktrees' heavy steps and held theirs back, for a step that went red once, and its tests step still leaves
+  // the file out (`perfApart`), as a loaded machine is no place for it.
+  const perf: StepSpec = full
     ? { name: 'perf', command: 'pnpm exec vitest run --project perf', ...buildNeeds }
-    : {
-        name: 'perf',
-        command: 'true',
-        skip: 'no change reaches the timing-bound tests',
-        idle: true,
-      }
+    : { name: 'perf', command: 'true', skip: 'left to gate:full and dev CI' }
   const tests: StepSpec =
     selection.mode === 'none'
       ? { name: 'tests', command: 'true', skip: selection.reason, idle: true }
@@ -2092,13 +2142,25 @@ export function releaseInUse(root: string, stopHolder = true): InUse | undefined
 // The last run
 // ---------------------------------------------------------------------------------------------------------------
 
-/** reports/last-run.json's record; the Stop hook reads its `stepsMs` and `redStep` (.claude/hooks/lib.sh). */
+/**
+ * reports/last-run.json's record; the Stop hook reads its `sha`, `steps`, `stepsMs` and `redStep`
+ * (.claude/hooks/lib.sh). The rest is for the reader of a slow run.
+ */
 export function lastRunRecord(sha: string, steps: Step[]): LastRun {
   return {
     sha,
     steps: Object.fromEntries(steps.map((s) => [s.name, s.status])),
     stepsMs: Object.fromEntries(steps.map((s) => [s.name, s.ms])),
     redStep: steps.find((s) => s.status === 'red')?.name ?? null,
+    waitsMs: Object.fromEntries(
+      steps.flatMap((s) => (s.waitMs === undefined ? [] : [[s.name, s.waitMs]])),
+    ),
+    loads: Object.fromEntries(
+      steps.flatMap((s) => (s.load === undefined ? [] : [[s.name, s.load]])),
+    ),
+    caps: Object.fromEntries(
+      steps.flatMap((s) => (s.caps === undefined ? [] : [[s.name, s.caps]])),
+    ),
   }
 }
 
@@ -2354,7 +2416,6 @@ async function main(argv: string[]): Promise<number> {
     noBuild: values['no-build'],
     artefactPresent: values['no-build'] && artefactPresent(root),
     proofKitPackages: workspaceClosure(root, 'packages/proof-kit'),
-    perfPackages: workspaceClosure(root, 'packages/platform'),
     sentinels,
     stryker: strykerMode,
     perfBytes,

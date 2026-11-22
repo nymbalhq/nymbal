@@ -5,7 +5,7 @@ import { availableParallelism, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
-import { run, VITEST_WORKERS_ENV, vitestWorkers } from '../../scripts/gate'
+import { run, TIMEOUT_SCALE_ENV, VITEST_WORKERS_ENV, vitestWorkers } from '../../scripts/gate'
 import {
   BACKGROUND_VAR,
   CAP_VARS,
@@ -34,7 +34,13 @@ function cleanEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env }
   for (const name of Object.keys(env)) if (name.startsWith('GIT_')) delete env[name]
   delete env.NYMBAL_STACK_SLOT
-  for (const name of [...Object.values(CAP_VARS), BACKGROUND_VAR, 'CI', 'GITHUB_ACTIONS'])
+  for (const name of [
+    ...Object.values(CAP_VARS),
+    BACKGROUND_VAR,
+    TIMEOUT_SCALE_ENV,
+    'CI',
+    'GITHUB_ACTIONS',
+  ])
     delete env[name]
   // No machine file: the defaults, whatever this machine sets.
   env[MACHINE_ENV_FILE_VAR] = join(tmpdir(), 'nymbal-no-machine-file.env')
@@ -113,18 +119,19 @@ async function kill(child: ChildProcessWithoutNullStreams): Promise<void> {
 const sharedHolds = (root: string): string[] =>
   readdirSync(join(root, 'main/.git/nymbal-stacks/heavy')).filter((n) => n.startsWith('shared-'))
 
-/** What `NYMBAL_VITEST_MAX_WORKERS` a gate step named `name` saw, run in `cwd` under a shared hold. */
+/** What `NYMBAL_VITEST_MAX_WORKERS` (or `variable`) a gate step named `name` saw, run in `cwd` under a shared hold. */
 async function workersSeenBy(
   cwd: string,
   name: string,
   extra: NodeJS.ProcessEnv = {},
+  variable: string = VITEST_WORKERS_ENV,
 ): Promise<string> {
   const out = join(cwd, `${name}.workers`)
   const result = await run(
     [
       {
         name,
-        command: `printf '%s' "\${${VITEST_WORKERS_ENV}-unset}" > '${out}'`,
+        command: `printf '%s' "\${${variable}-unset}" > '${out}'`,
         hold: 'shared',
       },
     ],
@@ -171,6 +178,15 @@ describe('Vitest steps share the CPUs between worktrees', () => {
     await holder(two)
     const half = String(Math.max(1, Math.floor(availableParallelism() / 2)))
     expect(await workersSeenBy(one, 'tests', { CI: '1' })).toBe(half)
+  })
+
+  it('a Vitest step that shares the CPUs is given test timeout scale 3, none alone, and none under CI', async () => {
+    const { one, two } = twoWorktrees()
+    expect(await workersSeenBy(one, 'tests', {}, TIMEOUT_SCALE_ENV)).toBe('unset')
+    await holder(two)
+    expect(await workersSeenBy(one, 'tests', {}, TIMEOUT_SCALE_ENV)).toBe('3')
+    expect(await workersSeenBy(one, 'tests', { CI: '1' }, TIMEOUT_SCALE_ENV)).toBe('unset')
+    expect(await workersSeenBy(one, 'lint', {}, TIMEOUT_SCALE_ENV)).toBe('unset')
   })
 
   it('vitestWorkers is the floor of the share of the cap, never above it nor below one', () => {

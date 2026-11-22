@@ -25,6 +25,9 @@ function cleanEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env }
   for (const name of Object.keys(env)) if (name.startsWith('GIT_')) delete env[name]
   delete env.NYMBAL_STACK_SLOT
+  delete env.NYMBAL_GATE_SLOTS
+  // No machine file: the default slots, whatever this machine sets.
+  env.NYMBAL_MACHINE_ENV_FILE = join(tmpdir(), 'nymbal-no-machine-file.env')
   return env
 }
 
@@ -32,8 +35,8 @@ function git(cwd: string, ...args: string[]): string {
   return execFileSync('git', args, { cwd, env: cleanEnv(), encoding: 'utf8' }).trim()
 }
 
-/** A repository with one empty commit and two linked worktrees beside it. */
-function twoWorktrees(): { one: string; two: string } {
+/** A repository with one empty commit and a linked worktree beside it for each name. */
+function worktrees<N extends string>(...names: N[]): Record<N, string> {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'nymbal-locks-')))
   created.push(root)
   const main = join(root, 'main')
@@ -53,10 +56,11 @@ function twoWorktrees(): { one: string; two: string } {
     '-m',
     'init',
   )
-  for (const name of ['one', 'two'])
-    git(main, 'worktree', 'add', '-q', '-b', name, join(root, name))
-  return { one: join(root, 'one'), two: join(root, 'two') }
+  for (const name of names) git(main, 'worktree', 'add', '-q', '-b', name, join(root, name))
+  return Object.fromEntries(names.map((name) => [name, join(root, name)])) as Record<N, string>
 }
+
+const twoWorktrees = (): { one: string; two: string } => worktrees('one', 'two')
 
 // A holder: takes a shared or an exclusive hold in its working directory and reports each event as a JSON line,
 // written synchronously so the time is the event's. On `release` it releases and exits; on `die` it is killed with
@@ -70,7 +74,7 @@ const say = (o) => fs.writeSync(1, JSON.stringify({ ...o, at: Date.now() }) + '\
   say({ event: 'calling' })
   const release = mode === 'exclusive'
     ? await m.acquireExclusive(process.cwd(), label, { maxWaitMs: Number(process.env.NYMBAL_TEST_MAX_WAIT) })
-    : await m.acquireShared(process.cwd(), label)
+    : await m.acquireShared(process.cwd(), label, { maxWaitMs: Number(process.env.NYMBAL_TEST_MAX_WAIT) })
   say({ event: 'held', waitedMs: release.waitedMs, quiet: release.quiet })
   let input = ''
   process.stdin.on('data', async (chunk) => {
@@ -107,6 +111,7 @@ function hold(
   mode: 'shared' | 'exclusive',
   label: string,
   maxWaitMs = 10_000,
+  env: NodeJS.ProcessEnv = {},
 ): Holder {
   const child = spawn(TSX, ['--eval', HOLDER], {
     cwd,
@@ -116,6 +121,7 @@ function hold(
       NYMBAL_TEST_HOLD: mode,
       NYMBAL_TEST_LABEL: label,
       NYMBAL_TEST_MAX_WAIT: String(maxWaitMs),
+      ...env,
     },
     stdio: ['pipe', 'pipe', 'pipe'],
   })
@@ -278,5 +284,111 @@ describe('AC-7: the quiet lock across worktrees', () => {
     expect(shared.seen('releasing')).toBeUndefined()
     await exclusive.release()
     await shared.release()
+  })
+})
+
+describe('AC-7: at most two worktrees run CPU-heavy steps at once', () => {
+  it('AC-7 (f): a third shared hold waits while two other worktrees hold, past its quiet bound, until one releases', async () => {
+    const { one, two, three } = worktrees('one', 'two', 'three')
+    const first = hold(one, 'shared', 'tests')
+    await first.next('held')
+    const second = hold(two, 'shared', 'e2e astro')
+    await second.next('held')
+    // A 200 ms bound is for waiting on another worktree's quiet; a full machine is waited for while its holders live.
+    const third = hold(three, 'shared', 'tests', 200)
+    const calling = await third.next('calling')
+    await pause(HELD_MS + 200)
+    expect(third.seen('held')).toBeUndefined()
+    const releasing = await second.release()
+    const held = await third.next('held')
+    expect(held.at).toBeGreaterThanOrEqual(releasing.at)
+    expect(held.quiet).toBe(true)
+    expect(held.waitedMs).toBeGreaterThanOrEqual(releasing.at - calling.at - 50)
+    await third.release()
+    await first.release()
+  })
+
+  it('AC-7 (g): a shared hold whose holder died takes no slot', async () => {
+    const { one, two, three } = worktrees('one', 'two', 'three')
+    const first = hold(one, 'shared', 'tests')
+    await first.next('held')
+    const dead = hold(two, 'shared', 'tests')
+    await dead.next('held')
+    await dead.die()
+    const third = hold(three, 'shared', 'tests')
+    const calling = await third.next('calling')
+    const held = await third.next('held')
+    expect(held.at - calling.at).toBeLessThan(5_000)
+    await third.release()
+    await first.release()
+  })
+
+  it('AC-7 (h): two arriving at once for the last slot: one holds, the other waits until it releases', async () => {
+    const { one, two, three } = worktrees('one', 'two', 'three')
+    const first = hold(one, 'shared', 'tests')
+    await first.next('held')
+    const a = hold(two, 'shared', 'tests')
+    const b = hold(three, 'shared', 'tests')
+    await Promise.all([a.next('calling'), b.next('calling')])
+    const winner = await Promise.race([a.next('held'), b.next('held')]).then(() =>
+      a.seen('held') !== undefined ? a : b,
+    )
+    const loser = winner === a ? b : a
+    await pause(HELD_MS)
+    expect(loser.seen('held')).toBeUndefined()
+    const releasing = await winner.release()
+    const held = await loser.next('held')
+    expect(held.at).toBeGreaterThanOrEqual(releasing.at)
+    await loser.release()
+    await first.release()
+  })
+
+  it('AC-7 (i): NYMBAL_GATE_SLOTS sets the slots: at 3 a third worktree holds at once, at 1 a second waits', async () => {
+    const { one, two, three } = worktrees('one', 'two', 'three')
+    const slots3 = { NYMBAL_GATE_SLOTS: '3' }
+    const first = hold(one, 'shared', 'tests', 10_000, slots3)
+    await first.next('held')
+    const second = hold(two, 'shared', 'tests', 10_000, slots3)
+    await second.next('held')
+    const third = hold(three, 'shared', 'tests', 10_000, slots3)
+    await third.next('held')
+    await Promise.all([second.release(), third.release()])
+    const alone = hold(two, 'shared', 'tests', 10_000, { NYMBAL_GATE_SLOTS: '1' })
+    await alone.next('calling')
+    await pause(HELD_MS)
+    expect(alone.seen('held')).toBeUndefined()
+    const releasing = await first.release()
+    expect((await alone.next('held')).at).toBeGreaterThanOrEqual(releasing.at)
+    await alone.release()
+  })
+
+  it("AC-7 (j): time spent waiting for a slot does not use up the quiet bound: the waiter still waits out another worktree's quiet", async () => {
+    const { one, two, three, four } = worktrees('one', 'two', 'three', 'four')
+    const first = hold(one, 'shared', 'tests')
+    await first.next('held')
+    const second = hold(two, 'shared', 'e2e astro')
+    await second.next('held')
+    // The waiter's quiet bound passes while the machine is full; the bound is wide enough that, counted from when a
+    // slot frees, it outlasts the quiet below on a loaded machine.
+    const bound = 3_000
+    const third = hold(three, 'shared', 'tests', bound)
+    await third.next('calling')
+    await pause(bound + HELD_MS)
+    expect(third.seen('held')).toBeUndefined()
+    const exclusive = hold(four, 'exclusive', 'perf', 10_000)
+    await exclusive.next('calling')
+    // Its quiet is created at once; it then waits for the two shared holds.
+    await pause(HELD_MS)
+    expect(exclusive.seen('held')).toBeUndefined()
+    await Promise.all([first.release(), second.release()])
+    const quiet = await exclusive.next('held')
+    expect(quiet.quiet).toBe(true)
+    await pause(HELD_MS)
+    expect(third.seen('held')).toBeUndefined()
+    const releasing = await exclusive.release()
+    const held = await third.next('held')
+    expect(held.at).toBeGreaterThanOrEqual(releasing.at)
+    expect(held.quiet).toBe(true)
+    await third.release()
   })
 })

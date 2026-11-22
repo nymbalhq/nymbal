@@ -14,6 +14,8 @@ import { fileURLToPath } from 'node:url'
 //   NYMBAL_BACKGROUND            0; 1 runs the gate's CPU-heavy steps at background priority on macOS (scripts/gate.ts).
 //                                Off by default: on a loaded machine a background step is starved into timeouts
 //                                (a plain gate's tests step took 50 minutes, 27 tests red, beside three other gates)
+//   NYMBAL_GATE_SLOTS            2; how many worktrees' gates run CPU-heavy steps at once: a third one's step waits for
+//                                a slot while the holders live (scripts/stack.ts acquireShared)
 //
 // A machine sets its own in `.nymbal-machine.env` at the root of the main checkout (gitignored; every linked worktree
 // reads the main checkout's), one `NAME=value` per line, `#` comments; NYMBAL_MACHINE_ENV_FILE names another file. A
@@ -38,11 +40,15 @@ export const LOCAL_DEFAULTS: Record<Tool, number> = { vitest: 4, playwright: 2, 
 
 export const BACKGROUND_VAR = 'NYMBAL_BACKGROUND'
 
+export const SLOTS_VAR = 'NYMBAL_GATE_SLOTS'
+
+export const DEFAULT_GATE_SLOTS = 2
+
 export const MACHINE_ENV_FILE = '.nymbal-machine.env'
 
 export const MACHINE_ENV_FILE_VAR = 'NYMBAL_MACHINE_ENV_FILE'
 
-const KNOWN = new Set<string>([...Object.values(CAP_VARS), BACKGROUND_VAR])
+const KNOWN = new Set<string>([...Object.values(CAP_VARS), BACKGROUND_VAR, SLOTS_VAR])
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -103,7 +109,8 @@ export function machineSettings(
   return settings
 }
 
-const underCI = (env: NodeJS.ProcessEnv): boolean =>
+/** Whether `CI` is set (and not `false`): a CI runner, which keeps each tool's own sizing. */
+export const underCI = (env: NodeJS.ProcessEnv): boolean =>
   env['CI'] !== undefined && env['CI'] !== '' && env['CI'] !== 'false'
 
 /** Each tool's cap: the variable as set, else the local default, else (under CI) none, leaving the tool's own. */
@@ -119,6 +126,15 @@ export function machineBudget(env: NodeJS.ProcessEnv = process.env, checkout = R
     return Number(value)
   }
   return { vitest: cap('vitest'), playwright: cap('playwright'), stryker: cap('stryker') }
+}
+
+/** How many worktrees may hold the CPU-heavy slots at once: NYMBAL_GATE_SLOTS as set, else two (CI too). */
+export function gateSlots(env: NodeJS.ProcessEnv = process.env, checkout = REPO): number {
+  const value = machineSettings(env, checkout)[SLOTS_VAR]
+  if (value === undefined) return DEFAULT_GATE_SLOTS
+  if (!/^[1-9]\d*$/.test(value))
+    throw new Error(`${SLOTS_VAR} must be a positive integer; got "${value}"`)
+  return Number(value)
 }
 
 /** Whether the gate runs its CPU-heavy steps at background priority: only when NYMBAL_BACKGROUND is 1, never under CI. */
