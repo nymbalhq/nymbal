@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { flushSync } from 'react-dom'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { Save, ArrowLeft, Loader2, Package } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -19,6 +20,7 @@ import { MediaUploader } from '@/components/products/MediaUploader'
 import { SeoPreview } from '@/components/products/SeoPreview'
 import { AiEnrichButton } from '@/components/products/AiEnrichButton'
 import { HistoryTab } from '@/components/history/HistoryTab'
+import { UnsavedChangesGuard } from '@/components/common/UnsavedChangesGuard'
 import { useProduct, useCreateProduct, useUpdateProduct } from '@/hooks/useProducts'
 import { useIntentKey } from '@/hooks/useIntentKey'
 import { tid } from '@/lib/testid'
@@ -94,7 +96,8 @@ export function ProductEditPage() {
     renewSaveKey()
     if (isNew) {
       const created = await createProduct.mutateAsync({ product: form, idempotencyKey })
-      setIsDirty(false)
+      // Rendered now, so the unsaved-changes guard already sees a clean form when the navigation reaches it.
+      flushSync(() => setIsDirty(false))
       navigate(`/products/${created.slug}`)
     } else if (existingProduct) {
       // The update keeps each own variant's prices and nothing else of it.
@@ -139,6 +142,7 @@ export function ProductEditPage() {
 
   return (
     <div className="space-y-4">
+      <UnsavedChangesGuard when={isDirty} />
       {/* Header */}
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">

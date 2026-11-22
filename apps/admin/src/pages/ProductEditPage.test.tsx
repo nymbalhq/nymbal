@@ -118,7 +118,7 @@ describe('Product save', () => {
       <Routes>
         <Route path="/products/:slug" element={<ProductEditPage />} />
       </Routes>,
-      { initialPath: `/products/${PRODUCT.slug}` },
+      { initialPath: `/products/${PRODUCT.slug}`, dataRouter: true },
     )
     expect(await screen.findByTestId('admin-product-name')).toHaveValue(PRODUCT.name)
 
@@ -186,7 +186,7 @@ describe('Product save', () => {
       <Routes>
         <Route path="/products/:slug" element={<ProductEditPage />} />
       </Routes>,
-      { initialPath: '/products/new' },
+      { initialPath: '/products/new', dataRouter: true },
     )
     fireEvent.change(await screen.findByTestId('admin-product-name'), {
       target: { value: 'Wool Scarf' },
