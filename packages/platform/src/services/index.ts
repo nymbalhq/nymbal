@@ -40,6 +40,7 @@ import {
 } from './proposal-service.js'
 import { createImportRemovalService, type ImportRemovalService } from './import-removal-service.js'
 import { legacyUntilOf } from './legacy-passwords.js'
+import { createTaxDocuments, type TaxDocuments } from './tax-documents.js'
 
 export * from './product-service.js'
 export * from './category-service.js'
@@ -56,6 +57,7 @@ export * from './alert-service.js'
 export * from './review-service.js'
 export * from './proposal-service.js'
 export * from './import-removal-service.js'
+export * from './tax-documents.js'
 export {
   acceptLegacyHash,
   IMPORTED_NO_PASSWORD,
@@ -103,6 +105,7 @@ export interface ServiceRegistry {
   review: ReviewService
   proposals: ProposalService
   importRemoval: ImportRemovalService
+  taxDocuments: TaxDocuments
 }
 
 export interface BuildServicesDeps {
@@ -285,6 +288,12 @@ export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
       repos,
       publisher,
       logger: logger.child({ service: 'import-removal' }),
+    }),
+    taxDocuments: createTaxDocuments({
+      store,
+      repos,
+      tax,
+      logger: logger.child({ service: 'tax-documents' }),
     }),
   }
 }

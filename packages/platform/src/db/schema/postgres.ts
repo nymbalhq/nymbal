@@ -286,6 +286,32 @@ export const orderRefunds = pgTable(
   }),
 )
 
+/** What an order owes the tax provider that quoted it: its filed document and the refunds filed against it. */
+export const orderTaxDocuments = pgTable(
+  'order_tax_documents',
+  {
+    orderId: text('order_id').primaryKey(),
+    provider: text('provider').notNull(),
+    status: text('status', { enum: ['pending', 'committed'] })
+      .notNull()
+      .default('pending'),
+    documentId: text('document_id'),
+    committedAt: timestamp('committed_at', { withTimezone: true }),
+    refundedMinor: integer('refunded_minor').notNull().default(0),
+    /** The `order_refunds.id`s filed, in filing order. */
+    filedRefundIds: jsonb('filed_refund_ids').$type<string[]>().notNull().default([]),
+    attempts: integer('attempts').notNull().default(0),
+    lastError: text('last_error'),
+    /** Since when the record has owed the provider a commit or a refund; null when nothing is owed. */
+    dueSince: timestamp('due_since', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    dueIdx: index('order_tax_documents_due_since_idx').on(t.dueSince),
+  }),
+)
+
 export const orderSequences = pgTable('order_sequences', {
   id: integer('id').primaryKey(),
   nextValue: integer('next_value').notNull(),

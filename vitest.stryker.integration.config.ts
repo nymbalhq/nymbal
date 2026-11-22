@@ -3,10 +3,10 @@ import { defineConfig } from 'vitest/config'
 // Used only by Stryker (stryker.integration.config.mjs): the platform-integration project narrowed to the test families
 // that reach the files that config mutates. Prefix globs take in a new test of a family with no change here; the
 // tests that spawn processes or import from outside the sandbox stay out (adapter-graph, capabilities-route, and
-// audit-actors, audit-entries and report-rollups, which reach the proof kit's dist): Stryker's initial run fails on a
-// test file that cannot load. The unit tests beside the relay and the publisher are in too: they reach what no
-// store-level test can (the outage probe's bounds, start and stop, the bus wrapper, a correlated publisher); so is the
-// proposal service's, for a settle that loses.
+// audit-actors, audit-entries, report-rollups and tax-documents, which reach the proof kit's dist): Stryker's initial
+// run fails on a test file that cannot load. The unit tests beside the relay and the publisher are in too: they reach
+// what no store-level test can (the outage probe's bounds, start and stop, the bus wrapper, a correlated publisher); so
+// is the proposal service's, for a settle that loses.
 export default defineConfig({
   test: {
     name: 'platform-integration',
@@ -34,6 +34,7 @@ export default defineConfig({
       'packages/platform/tests/integration/product-description*.test.ts',
       'packages/platform/tests/integration/audit-headers.test.ts',
       'packages/platform/tests/integration/audit-idempotency.test.ts',
+      'packages/platform/tests/integration/order-tax-documents.test.ts',
       'packages/platform/tests/integration/report-rollups-*.test.ts',
       'packages/platform/tests/integration/admin-reports*.test.ts',
       'packages/platform/tests/integration/night-shift-*.test.ts',

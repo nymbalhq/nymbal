@@ -42,6 +42,7 @@ export default {
     'packages/platform/src/assistant/mask.ts',
     'packages/platform/src/mcp/invoke.ts',
     'packages/platform/src/mcp/withhold.ts',
+    'packages/platform/src/repositories/order-tax-document.ts',
   ],
   ignorePatterns: [
     '/*',

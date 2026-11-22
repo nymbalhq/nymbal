@@ -28,6 +28,8 @@ export default {
     'packages/platform/src/events/publisher.ts',
     // The sunset sweep of imported password hashes, by the unit test beside it.
     'packages/platform/src/sweepers/legacy-password-sweeper.ts',
+    // The sweep that retries filings owed to the tax provider, by the unit test beside it.
+    'packages/platform/src/sweepers/tax-document-sweeper.ts',
     'packages/importers/src/woocommerce/mappers/**/*.ts',
     // No unit test reaches these: stryker.integration.config.mjs measures them, and the services' composition root is
     // wiring every integration test runs through. Here they would score 0 and only cost time.
@@ -40,6 +42,7 @@ export default {
     '!packages/platform/src/repositories/alert-subscription.ts',
     '!packages/platform/src/repositories/email-suppression.ts',
     '!packages/platform/src/repositories/email-verification-token.ts',
+    '!packages/platform/src/repositories/order-tax-document.ts',
     '!packages/platform/src/repositories/password-reset-token.ts',
     '!packages/platform/src/repositories/proposal.ts',
     '!packages/platform/src/repositories/report-rollup.ts',

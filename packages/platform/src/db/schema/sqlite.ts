@@ -277,6 +277,32 @@ export const orderRefunds = sqliteTable(
   }),
 )
 
+/** What an order owes the tax provider that quoted it: its filed document and the refunds filed against it. */
+export const orderTaxDocuments = sqliteTable(
+  'order_tax_documents',
+  {
+    orderId: text('order_id').primaryKey(),
+    provider: text('provider').notNull(),
+    status: text('status', { enum: ['pending', 'committed'] })
+      .notNull()
+      .default('pending'),
+    documentId: text('document_id'),
+    committedAt: text('committed_at'),
+    refundedMinor: integer('refunded_minor').notNull().default(0),
+    /** JSON array of the `order_refunds.id`s filed, in filing order. */
+    filedRefundIds: text('filed_refund_ids').notNull().default('[]'),
+    attempts: integer('attempts').notNull().default(0),
+    lastError: text('last_error'),
+    /** Since when the record has owed the provider a commit or a refund; null when nothing is owed. */
+    dueSince: text('due_since'),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (t) => ({
+    dueIdx: index('order_tax_documents_due_since_idx').on(t.dueSince),
+  }),
+)
+
 export const orderSequences = sqliteTable('order_sequences', {
   id: integer('id').primaryKey(),
   nextValue: integer('next_value').notNull(),

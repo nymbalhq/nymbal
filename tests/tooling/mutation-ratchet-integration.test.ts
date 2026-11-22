@@ -64,12 +64,14 @@ const INTEGRATION_FILES = [
   'packages/platform/src/assistant/mask.ts',
   'packages/platform/src/mcp/invoke.ts',
   'packages/platform/src/mcp/withhold.ts',
+  'packages/platform/src/repositories/order-tax-document.ts',
 ]
 
 /** The files no unit test reaches: the integration config alone mutates them, the unit config leaves them out. */
 const INTEGRATION_ONLY = [
   'packages/platform/src/repositories/alert-subscription.ts',
   'packages/platform/src/repositories/email-suppression.ts',
+  'packages/platform/src/repositories/order-tax-document.ts',
   'packages/platform/src/repositories/password-reset-token.ts',
   'packages/platform/src/repositories/proposal.ts',
   'packages/platform/src/repositories/insight.ts',

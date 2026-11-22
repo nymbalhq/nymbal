@@ -32,7 +32,7 @@ import { createLogger } from './logger.js'
 import { loadBootSettings } from './settings/load.js'
 import { addSecret, scrubbingLogger } from './settings/secret-set.js'
 import { isLoopbackHost, JWT_SECRET_ENV, resolveAuthSecret } from './auth-secret.js'
-import { buildServices, type ServiceRegistry } from './services/index.js'
+import { buildServices, filesTaxDocuments, type ServiceRegistry } from './services/index.js'
 import { legacyUntilOf } from './services/legacy-passwords.js'
 import { createEventPublisher, type EventPublisher } from './events/publisher.js'
 import { createRelay, deliveringBus, type CreateRelayOptions, type Relay } from './events/relay.js'
@@ -47,6 +47,7 @@ import {
   startRefreshTokenSweeper,
   startRefundReconcileSweeper,
   startStuckProposalSweeper,
+  startTaxDocumentSweeper,
   startUnconfirmedAccountSweeper,
   type EventArchiveWriter,
   type SweeperHandle,
@@ -121,6 +122,8 @@ export interface CreateAppOptions extends ResolvePrimitivesOptions {
   proposalSweep?: { intervalMs?: number; stuckAfterMs?: number }
   /** How often accounts never confirmed are looked for; tests shorten it. The 30 days they are kept is fixed. */
   unconfirmedAccountSweep?: { intervalMs?: number }
+  /** How often what is owed to a tax provider that files documents is retried; tests shorten it. */
+  taxDocumentSweep?: { intervalMs?: number }
   /** How often the night shift looks whether its night is due (5 minutes), and its clock, read on every tick. */
   nightShift?: { intervalMs?: number; now?: () => Date }
 }
@@ -423,6 +426,7 @@ export async function createApp(
       alerts: services.alert,
       orders: services.order,
       publisher,
+      taxDocuments: services.taxDocuments,
       logger,
     })
 
@@ -518,6 +522,20 @@ export async function createApp(
         }),
       }),
     ]
+    if (filesTaxDocuments(adapters.tax)) {
+      sweepers.push(
+        startTaxDocumentSweeper({
+          store: platform.commandStore,
+          repo: repos.orderTaxDocument,
+          documents: services.taxDocuments,
+          providerName: adapters.tax.providerName,
+          logger,
+          ...(options.taxDocumentSweep?.intervalMs !== undefined && {
+            intervalMs: options.taxDocumentSweep.intervalMs,
+          }),
+        }),
+      )
+    }
     if (config.nightShift.enabled) {
       sweepers.push(
         startNightShift({

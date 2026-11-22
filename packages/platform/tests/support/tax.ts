@@ -3,6 +3,7 @@ import type {
   Address,
   TaxAdapter,
   TaxCapability,
+  TaxDocument,
   TaxQuote,
   TaxQuoteLine,
   TaxQuoteParams,
@@ -112,33 +113,126 @@ export function taxWithin(amountMinor: number, percent: number): number {
 
 export type Outage = 'throws' | 'bound' | 'invalid'
 
+/**
+ * How a filing call fails: a synchronous throw, a rejection, an answer that never comes, or a document with no id (a
+ * commit; a refund answers as asked).
+ */
+export type FilingOutage = 'throws' | 'rejects' | 'bound' | 'invalid'
+
+export interface CommitCall {
+  quote: TaxQuote
+  ref: { orderId: string; orderNumber: string; currency: string }
+}
+
+export interface RefundFiling {
+  doc: TaxDocument
+  refund: { refundId: string; amountMinor: number; currency: string }
+}
+
+/** A commit held until the test releases it. */
+export interface HeldCommit {
+  /** Resolves once the held commit has been called. */
+  entered: Promise<void>
+  isEntered(): boolean
+  /** Lets the held commit answer its document. */
+  release(): void
+}
+
 export interface ScriptedTax {
   adapter: TaxAdapter
   /** Every request, in order. */
   calls: TaxQuoteParams[]
   /** Every quote answered, in order: a failed call answers none. */
   answers: TaxQuote[]
+  /** Every commit asked for, in order, whether it then failed or not. */
+  commits: CommitCall[]
+  /** Every refund filing asked for, in order, whether it then failed or not. */
+  refunds: RefundFiling[]
+  /** Every refund filing answered, in order: a failed call answers none. */
+  acceptedRefunds: RefundFiling[]
   /** The percent each line is taxed at while the provider is up. */
   percent: number
   /** Fails every call from now on: a rejection, an answer that never comes, or a quote the port refuses. */
   fail(outage: Outage): void
   /** Answers again; a call left hanging is rejected, so nothing waits on it past the test. */
   recover(): void
+  /** Fails every commit and refund from now on, quotes untouched; null files again (a hanging call is rejected). */
+  failFiling(outage: FilingOutage | null): void
+  /** Holds the next commit until `release`, then answers its document. */
+  holdNextCommit(): HeldCommit
 }
+
+/** The document the scripted provider files an order under: one per order, however often it is asked. */
+export const scriptedDocumentId = (orderId: string): string => `scripted-doc-${orderId}`
 
 /**
  * A tax provider for the `custom` slot. While up it answers a valid quote taxing each line `percent` on top or within
- * (by the request's flag), with a quote id and a jurisdiction per line, so a test can tell its whole answer apart.
+ * (by the request's flag), with a quote id and a jurisdiction per line, so a test can tell its whole answer apart; its
+ * quotes name its `providerName`. It has `commit` and `refund` methods (unless `filingMethods` is false), which it
+ * uses only as far as `capabilities` declares them: a commit answers one document per order, a refund is accepted.
  */
 export function scriptedTax(
-  opts: { percent?: number; capabilities?: TaxCapability[]; providerName?: string } = {},
+  opts: {
+    percent?: number
+    capabilities?: TaxCapability[]
+    providerName?: string
+    /** False for an adapter with no `commit` or `refund` method, whatever it declares. */
+    filingMethods?: boolean
+  } = {},
 ): ScriptedTax {
+  const providerName = opts.providerName ?? 'scripted-tax'
   let outage: Outage | null = null
   let hung: Array<(err: Error) => void> = []
+  let filingOutage: FilingOutage | null = null
+  let hungFilings: Array<(err: Error) => void> = []
+  let held: { entered: () => void; gate: Promise<void>; state: { entered: boolean } } | null = null
   let quoted = 0
+
+  /** What a filing call does under the current outage: throw now, or the promise it answers. */
+  function filed<T>(answer: () => T): Promise<T> {
+    if (filingOutage === 'throws') throw new Error('scripted tax filing unreachable')
+    if (filingOutage === 'rejects') {
+      return Promise.reject(new Error('scripted tax filing refused: 503'))
+    }
+    if (filingOutage === 'bound') {
+      return new Promise<T>((_, reject) => {
+        hungFilings.push(reject)
+      })
+    }
+    return Promise.resolve(answer())
+  }
+
+  const filing: Pick<TaxAdapter, 'commit' | 'refund'> = {
+    commit(quote, ref) {
+      state.commits.push({ quote: structuredClone(quote), ref: { ...ref } })
+      const document = (): TaxDocument => ({
+        provider: providerName,
+        documentId: filingOutage === 'invalid' ? '' : scriptedDocumentId(ref.orderId),
+      })
+      if (held !== null) {
+        const hold = held
+        held = null
+        hold.state.entered = true
+        hold.entered()
+        return hold.gate.then(() => document())
+      }
+      return filed(document)
+    },
+    refund(doc, refund) {
+      const call = { doc: { ...doc }, refund: { ...refund } }
+      state.refunds.push(call)
+      return filed(() => {
+        state.acceptedRefunds.push(call)
+      })
+    },
+  }
+
   const state: ScriptedTax = {
     calls: [],
     answers: [],
+    commits: [],
+    refunds: [],
+    acceptedRefunds: [],
     percent: opts.percent ?? 10,
     fail(next) {
       outage = next
@@ -148,9 +242,29 @@ export function scriptedTax(
       for (const reject of hung) reject(new Error('scripted tax provider recovered'))
       hung = []
     },
+    failFiling(next) {
+      filingOutage = next
+      if (next === null) {
+        for (const reject of hungFilings) reject(new Error('scripted tax filing recovered'))
+        hungFilings = []
+      }
+    },
+    holdNextCommit() {
+      let entered!: () => void
+      let release!: () => void
+      const enteredP = new Promise<void>((resolve) => {
+        entered = resolve
+      })
+      const gate = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      const flag = { entered: false }
+      held = { entered, gate, state: flag }
+      return { entered: enteredP, isEntered: () => flag.entered, release }
+    },
     adapter: {
       kind: 'tax',
-      providerName: opts.providerName ?? 'scripted-tax',
+      providerName,
       producesEvents: [],
       consumesEvents: [],
       initialize: async () => undefined,
@@ -183,7 +297,7 @@ export function scriptedTax(
         const total = lines.reduce((sum: number, l: { taxMinor: number }) => sum + l.taxMinor, 0)
         quoted += 1
         const answer: TaxQuote = {
-          provider: 'scripted-tax',
+          provider: providerName,
           inclusive: params.pricesIncludeTax,
           lines,
           shippingTaxMinor: 0,
@@ -194,6 +308,7 @@ export function scriptedTax(
         if (outage !== 'invalid') state.answers.push(structuredClone(answer))
         return answer
       },
+      ...(opts.filingMethods !== false && filing),
     },
   }
   return state

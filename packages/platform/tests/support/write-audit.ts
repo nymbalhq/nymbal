@@ -45,6 +45,8 @@ export const EXEMPT_TABLES: Readonly<Record<string, string>> = {
   report_search_days:
     'a figure the report handler folds from an event it is delivered, in that delivery',
   report_members: 'a digest the report handler writes beside a figure, in that delivery',
+  order_tax_documents:
+    "a handler's own filing record, written in its delivery and by its sweeper; no read model is built from it",
   night_shift_runs:
     "the runner's claim and record of a night's job; no read model is built from it",
 }

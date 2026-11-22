@@ -12,6 +12,10 @@ import { createRefreshTokenRepository, type RefreshTokenRepository } from './ref
 import { createOrderRepository, type OrderRepository } from './order.js'
 import { createOrderHistoryRepository, type OrderHistoryRepository } from './order-history.js'
 import { createOrderRefundRepository, type OrderRefundRepository } from './order-refund.js'
+import {
+  createOrderTaxDocumentRepository,
+  type OrderTaxDocumentRepository,
+} from './order-tax-document.js'
 import { createOrderSequenceRepository, type OrderSequenceRepository } from './order-sequence.js'
 import {
   createOrderAccessKeyRepository,
@@ -62,6 +66,7 @@ export * from './refresh-token.js'
 export * from './order.js'
 export * from './order-history.js'
 export * from './order-refund.js'
+export * from './order-tax-document.js'
 export * from './order-sequence.js'
 export * from './order-access-key.js'
 export * from './inventory-reservation.js'
@@ -91,6 +96,7 @@ export interface Repositories {
   order: OrderRepository
   orderHistory: OrderHistoryRepository
   orderRefund: OrderRefundRepository
+  orderTaxDocument: OrderTaxDocumentRepository
   orderSequence: OrderSequenceRepository
   orderAccessKey: OrderAccessKeyRepository
   passwordResetToken: PasswordResetTokenRepository
@@ -127,6 +133,7 @@ export function buildRepositories(
     order: createOrderRepository(commandStore),
     orderHistory: createOrderHistoryRepository(commandStore),
     orderRefund: createOrderRefundRepository(commandStore),
+    orderTaxDocument: createOrderTaxDocumentRepository(commandStore),
     orderSequence: createOrderSequenceRepository(commandStore),
     orderAccessKey: createOrderAccessKeyRepository(commandStore),
     passwordResetToken: createPasswordResetTokenRepository(commandStore),

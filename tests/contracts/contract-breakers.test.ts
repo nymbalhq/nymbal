@@ -30,8 +30,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 // that answers an empty service fails only the rates shape case, and one that renames its services on each call only
 // the rates stability case.
 // The tax suite runs the same way on an in-memory provider that files documents: one twin answers its first line twice
-// and loses the second, one puts half a unit on a line's tax, one answers a total one more than its lines; each fails
-// only the case named for its defect, and the provider itself passes every case.
+// and loses the second, one puts half a unit on a line's tax, one answers a total one more than its lines, one names
+// another provider in its quotes; each fails only the case named for its defect, and the provider itself passes every
+// case.
 // The reviews suite's submit case runs the same way: an adapter without submit that stores a review anyway, beside the
 // one that refuses it (seeded through `seed`), and a submit adapter that drops the customer and order beside the
 // control; each fails only the submit case.
@@ -66,6 +67,7 @@ const TAX_AMOUNTS = /\bamounts:/
 const TAX_TOTAL = /\btotal:/
 const TAX_SHIPPING_NULL = /\bshipping-null:/
 const TAX_SHIPPING_TAXED = /\bshipping-taxed:/
+const TAX_PROVIDER = /\bprovider:/
 
 interface Outcome {
   passed: string[]
@@ -516,4 +518,17 @@ describe('the published tax suite fails a provider that gets shipping wrong', ()
       expect(run.controlPassed).toBe(run.badTotal)
     },
   )
+})
+
+describe('the published tax suite fails a provider whose quotes name another provider', () => {
+  // Kills: a provider package passing the suite while its quotes name another provider, so the kernel skips every order
+  // it quoted as "not the current adapter's" and never files one.
+  it('AC-12: a tax provider whose quote names another provider fails the provider case and nothing else; the same provider without the defect passes every case', () => {
+    const run = compare('tax-provider-mismatch', 'tax-control', TAX_PROVIDER)
+
+    expect(run.failed.length, run.why).toBeGreaterThan(0)
+    expect(run.offTopic, run.why).toEqual([])
+    expect(run.controlFailed, run.why).toEqual([])
+    expect(run.controlPassed).toBe(run.badTotal)
+  })
 })

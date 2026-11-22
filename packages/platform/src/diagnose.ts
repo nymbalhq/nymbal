@@ -25,6 +25,7 @@ import {
   type ResolvedOriginLock,
   type SecurityNetwork,
   type Slot,
+  type TaxAdapter,
 } from '@nymbalhq/types'
 import {
   declaredSettings,
@@ -55,7 +56,10 @@ import { agentReadiness } from './agents/readiness.js'
 import { createEventLogRepository, retryFloor } from './repositories/event-log.js'
 import { buildRepositories, type SettingRow } from './repositories/index.js'
 import { createCustomerRepository } from './repositories/customer.js'
+import { createOrderRepository } from './repositories/order.js'
+import { createOrderTaxDocumentRepository } from './repositories/order-tax-document.js'
 import { daysUntil, legacyUntilOf, legacyWindowOpen } from './services/legacy-passwords.js'
+import { filesTaxDocuments } from './services/tax-documents.js'
 import { listStoredSettings, settingValues } from './settings/load.js'
 import type { SettingValue } from './settings/resolve.js'
 import { scrub, scrubbingLogger } from './settings/secret-set.js'
@@ -405,6 +409,8 @@ export async function diagnose(
     ),
     injected,
   }
+  // The tax adapter `slot tax` builds: whether the store's sweep retries a record depends on it.
+  let taxAdapter: TaxAdapter | null = null
   for (const slot of COMMERCE_SLOTS) {
     const provider = providers[slot]
     if (provider === 'native' && OVER_THE_COMMAND_STORE.has(slot) && commandStore === undefined) {
@@ -418,6 +424,7 @@ export async function diagnose(
         ? resolvePaymentsAdapter(config, adapterLogger, injected, settings)
         : slotBuilders({ ...builderDeps, settings })[slot]()
     })
+    if (slot === 'tax' && adapter.ok) taxAdapter = adapter.value as TaxAdapter | null
     if (!adapter.ok) {
       slots.push({
         name: `slot ${slot}`,
@@ -489,6 +496,13 @@ export async function diagnose(
         ? { name: 'legacy passwords', status: 'down', detail: notChecked('migrations') }
         : await legacyPasswordsCheck(commandStore, timeoutMs, config.security.auth.legacy?.until)
 
+  const taxDocumentsLine: DiagnosisCheck =
+    commandStore === undefined
+      ? { name: 'tax documents', status: 'down', detail: notChecked('command store') }
+      : migrationsCheck.status !== 'ok'
+        ? { name: 'tax documents', status: 'down', detail: notChecked('migrations') }
+        : await taxDocumentsCheck(commandStore, timeoutMs, taxAdapter)
+
   for (const close of closers) {
     const closed = await within(timeoutMs, close)
     if (!closed.ok) logger.debug({ detail: closed.detail }, 'diagnose: a connection did not close')
@@ -506,6 +520,7 @@ export async function diagnose(
     ...primitives,
     eventsCheck,
     legacyCheck,
+    taxDocumentsLine,
     agentReadiness(config, env),
   ].map((check) => ({
     ...check,
@@ -606,6 +621,50 @@ async function legacyPasswordsCheck(
     name,
     status: 'ok',
     detail: `${held} held; honoured until ${until} (${daysUntil(at, now)} days)`,
+  }
+}
+
+const HOUR_MS = 3_600_000
+
+/**
+ * What the store still owes its tax provider, and whether its sweep will retry the record owed longest (only one of
+ * the provider that `slot tax` builds, when that adapter files documents): read only.
+ */
+async function taxDocumentsCheck(
+  store: CommandStore,
+  timeoutMs: number,
+  tax: TaxAdapter | null,
+): Promise<DiagnosisCheck> {
+  const name = 'tax documents'
+  const records = createOrderTaxDocumentRepository(store)
+  const orders = createOrderRepository(store)
+  const read = await within(timeoutMs, () =>
+    store.read(async (tx) => {
+      const now = Date.now()
+      const due = await records.dueSummary(tx, new Date(now))
+      const overAnHour = await records.dueSummary(tx, new Date(now - HOUR_MS))
+      const order =
+        overAnHour.oldest === null ? null : await orders.findById(tx, overAnHour.oldest.orderId)
+      return { due, overAnHour, orderNumber: order?.orderNumber }
+    }),
+  )
+  if (!read.ok) return { name, status: 'down', detail: read.detail }
+  const { due, overAnHour, orderNumber } = read.value
+  if (due.count === 0) return { name, status: 'ok', detail: 'none due' }
+  const oldest = overAnHour.oldest
+  if (oldest === null) {
+    return { name, status: 'ok', detail: `${due.count} due, none for over an hour` }
+  }
+  const hint =
+    tax === null || tax.providerName !== oldest.provider
+      ? `not retried: ${oldest.provider} is not the store's tax provider`
+      : filesTaxDocuments(tax)
+        ? 'the store retries every 5 minutes'
+        : `not retried: ${oldest.provider} does not file documents`
+  return {
+    name,
+    status: 'degraded',
+    detail: `${overAnHour.count} due for over an hour; oldest ${orderNumber ?? oldest.orderId} (${oldest.provider}): ${oldest.lastError ?? 'not yet tried'}; ${hint}`,
   }
 }
 
