@@ -658,9 +658,35 @@ function shippingBlock() {
       config: z.record(z.string(), z.unknown()).optional(),
       package: packageNameSchema.optional(),
       rates: z.array(shippingRateSchema).default([]),
+      /** What prices checkout's shipping: the rate table (none: one free option), or the adapter's carrier rates. */
+      pricing: z.enum(['table', 'carrier']).default('table'),
+      /** The weight of one unit whose variant has none, for a carrier's parcel. */
+      defaultWeightGrams: z
+        .number()
+        .refine(
+          (grams) => Number.isInteger(grams) && grams > 0,
+          'defaultWeightGrams is a whole number of grams above 0',
+        )
+        .optional(),
     })
     .superRefine((block, ctx) => {
       packageBesideBuiltIn('shipping', block, ctx)
+      if (block.pricing === 'carrier' && block.rates.length > 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['rates'],
+          message:
+            "pricing is 'carrier' and rates has rows: the table and the carrier both price checkout; choose one",
+        })
+      }
+      if (block.pricing === 'carrier' && block.defaultWeightGrams === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['defaultWeightGrams'],
+          message:
+            "pricing 'carrier' needs defaultWeightGrams: the weight of one unit whose variant has none",
+        })
+      }
       const seen = new Set<string>()
       block.rates.forEach((row, i) => {
         if (seen.has(row.id)) {
@@ -1078,6 +1104,13 @@ export const nymbalConfigSchema = z
         code: z.ZodIssueCode.custom,
         path: ['commerce', 'email', 'config', 'transport'],
         message: `the native email provider only prints to the console; for SMTP mail set email.provider to 'smtp' (@nymbalhq/email-smtp)`,
+      })
+    }
+    if (cfg.commerce.shipping.pricing === 'carrier' && cfg.store.shipFrom === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['store', 'shipFrom'],
+        message: `commerce.shipping.pricing is 'carrier', which rates every parcel from store.shipFrom; set the address the store ships from`,
       })
     }
   })

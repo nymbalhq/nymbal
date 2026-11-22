@@ -146,6 +146,7 @@ export class CheckoutError extends NymbalError {
       | 'tax_unavailable'
       | 'no_shipping'
       | 'shipping_option_unavailable'
+      | 'shipping_unavailable'
       | 'synthetic',
     message: string,
     options: { cause?: unknown; context?: ErrorContext } = {},

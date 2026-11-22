@@ -92,6 +92,16 @@ function expectRate(rate: ShippingRate): void {
     true,
   )
   expect(Number.isInteger(rate.amountMinor), `amountMinor not an integer: ${what}`).toBe(true)
+  // The kernel names a checkout option after these two (lower-cased, each run of other characters made `_`): a name
+  // with no letter or digit would name no option.
+  expect(
+    typeof rate.carrier === 'string' && /[A-Za-z0-9]/.test(rate.carrier),
+    `a carrier with no letter or digit (A-Z, a-z, 0-9): ${what}`,
+  ).toBe(true)
+  expect(
+    typeof rate.service === 'string' && /[A-Za-z0-9]/.test(rate.service),
+    `a service with no letter or digit (A-Z, a-z, 0-9): ${what}`,
+  ).toBe(true)
   expect(rate.amountMinor, what).toBeGreaterThanOrEqual(0)
   expect(rate.currency, what).toMatch(/^[A-Z]{3}$/)
   const days = rate.estimatedDays
@@ -164,7 +174,7 @@ export function runShippingContract(
     )
 
     it(
-      'rates: property: over generated parcels, every rate has a non-empty id, an integer amountMinor ≥ 0, a three-letter currency and estimatedDays null or an integer ≥ 0',
+      'rates: property: over generated parcels, every rate has a non-empty id, a carrier and a service each holding a letter or digit, an integer amountMinor ≥ 0, a three-letter currency and estimatedDays null or an integer ≥ 0',
       (ctx) =>
         using(build, async (adapter) => {
           if (!serves(adapter, 'rates')) return ctx.skip()
@@ -175,6 +185,28 @@ export function runShippingContract(
             }),
             { numRuns: 3 },
           )
+        }),
+      CASE_MS,
+    )
+
+    // Kills: a carrier whose services change name from one call to the next, so the option a shopper chose at the
+    // quote is not offered when the checkout rates again. Amounts are not compared: a live carrier may move a price.
+    it(
+      'rates: stability: two rate calls for one parcel answer the same set of (carrier, service) pairs, whatever their ids',
+      (ctx) =>
+        using(build, async (adapter) => {
+          if (!serves(adapter, 'rates')) return ctx.skip()
+          const parcel = options.parcel ?? PARCEL
+          const pairsOf = (rates: readonly ShippingRate[]): string[] =>
+            [...new Set(rates.map((r) => JSON.stringify([r.carrier, r.service])))].sort()
+
+          const first = pairsOf(await ratesOf(adapter, parcel))
+          const second = pairsOf(await ratesOf(adapter, parcel))
+
+          expect(
+            second,
+            'the (carrier, service) pairs of a second call for the same parcel',
+          ).toEqual(first)
         }),
       CASE_MS,
     )

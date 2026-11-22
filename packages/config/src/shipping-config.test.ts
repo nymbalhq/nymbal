@@ -6,9 +6,19 @@ import { nymbalConfigSchema, type NymbalConfigInput } from './schema.js'
 // `commerce.shipping`'s rate table and a tax row's `taxShipping`: what every config written before them parses to,
 // and each refusal named at its path, so a merchant reading the error finds the row and field to fix.
 
-function config(shipping: unknown, tax: unknown = { provider: 'native' }): NymbalConfigInput {
+function config(
+  shipping: unknown,
+  tax: unknown = { provider: 'native' },
+  shipFrom?: unknown,
+): NymbalConfigInput {
   return {
-    store: { name: 'Test', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
+    store: {
+      name: 'Test',
+      currency: 'GBP',
+      locale: 'en-GB',
+      timezone: 'Europe/London',
+      ...(shipFrom !== undefined && { shipFrom }),
+    },
     template: 'astro',
     infrastructure: {
       commandStore: 'sqlite',
@@ -32,8 +42,8 @@ function config(shipping: unknown, tax: unknown = { provider: 'native' }): Nymba
 }
 
 /** The issue paths a refusal names, joined with dots, beside its messages; none when the config parses. */
-function refused(shipping: unknown): { paths: string[]; messages: string } {
-  const result = nymbalConfigSchema.safeParse(config(shipping))
+function refused(shipping: unknown, shipFrom?: unknown): { paths: string[]; messages: string } {
+  const result = nymbalConfigSchema.safeParse(config(shipping, undefined, shipFrom))
   return result.success
     ? { paths: [], messages: '' }
     : {
@@ -63,8 +73,9 @@ const arbRow = fc.record(
 const arbTable = fc.uniqueArray(arbRow, { minLength: 1, maxLength: 6, selector: (row) => row.id })
 
 describe('AC-1: the shipping config', () => {
-  // Kills: a config written before the table stops booting, or reads as anything but "no table".
-  it('AC-1: every commerce.shipping block written before the table parses as written with rates []', () => {
+  // Kills: a config written before the table stops booting, or reads as anything but "no table"; a block with no
+  // pricing read as carrier pricing, so a store that keyed EasyPost for tracking is asked for a carrier it never chose.
+  it('AC-1: every commerce.shipping block written before the table parses as written with rates [] and pricing table, with no defaultWeightGrams', () => {
     for (const block of [
       { provider: 'native' },
       { provider: 'native', config: {} },
@@ -72,7 +83,11 @@ describe('AC-1: the shipping config', () => {
       { provider: 'easypost', config: { apiKey: 'EZTK_x', webhookSecret: 'whsec' } },
     ]) {
       const parsed = nymbalConfigSchema.parse(config(block))
-      expect(parsed.commerce.shipping, JSON.stringify(block)).toEqual({ ...block, rates: [] })
+      expect(parsed.commerce.shipping, JSON.stringify(block)).toEqual({
+        ...block,
+        rates: [],
+        pricing: 'table',
+      })
     }
   })
 
@@ -142,6 +157,93 @@ describe('AC-1: the shipping config', () => {
         rates: [STANDARD, EXPRESS, { ...EXPRESS, id: 'express-fr', countries: ['FR'] }],
       }).paths,
     ).toEqual([])
+  })
+})
+
+const WAREHOUSE = {
+  firstName: 'Nymbal',
+  lastName: 'Warehouse',
+  addressLine1: '1 Dock Road',
+  city: 'Leeds',
+  region: 'West Yorkshire',
+  postalCode: 'LS1 4AP',
+  country: 'GB',
+}
+
+/** A store that prices by its carrier: an EasyPost key, a weight for a unit with none, and an address to ship from. */
+const CARRIER = {
+  provider: 'easypost',
+  config: { apiKey: 'EZTK_x', webhookSecret: 'whsec' },
+  pricing: 'carrier',
+  defaultWeightGrams: 500,
+}
+
+describe('AC-1: the merchant picks table or carrier pricing', () => {
+  // Kills: a carrier store's fields dropped or renamed by the parser, so the kernel never learns it should rate.
+  it('AC-1: property: carrier pricing with a positive whole defaultWeightGrams, no table and a ship-from address parses as written', () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 1, max: 1_000_000 }), (grams) => {
+        const block = { ...CARRIER, defaultWeightGrams: grams }
+        const parsed = nymbalConfigSchema.parse(config(block, undefined, WAREHOUSE))
+        expect(parsed.commerce.shipping).toEqual({ ...block, rates: [] })
+        expect(parsed.store.shipFrom).toEqual(WAREHOUSE)
+      }),
+      { numRuns: 50 },
+    )
+  })
+
+  // Kills: a store that sets a table and a carrier, and cannot tell which one charges the shopper.
+  it('AC-1: carrier pricing beside a table with rows is refused once, under commerce.shipping, saying to choose one', () => {
+    const { paths, messages } = refused(
+      { ...CARRIER, rates: [{ id: 'standard', name: 'Standard', amountMinor: 399 }] },
+      WAREHOUSE,
+    )
+
+    expect(paths.length, messages).toBe(1)
+    expect(paths[0]!.startsWith('commerce.shipping'), paths[0]).toBe(true)
+    expect(messages).toMatch(/choose one/)
+  })
+
+  // Kills: a carrier store with no weight for a unit whose variant has none, so every cart holding one is unratable.
+  it('AC-1: carrier pricing without defaultWeightGrams is refused at commerce.shipping.defaultWeightGrams', () => {
+    const { defaultWeightGrams: _dropped, ...block } = CARRIER
+
+    expect(refused(block, WAREHOUSE).paths).toEqual(['commerce.shipping.defaultWeightGrams'])
+  })
+
+  // Kills: a carrier store with nowhere to rate from.
+  it('AC-1: carrier pricing without store.shipFrom is refused at store.shipFrom, and a table store needs none', () => {
+    expect(refused(CARRIER).paths).toEqual(['store.shipFrom'])
+    expect(refused({ ...CARRIER, pricing: 'table' }).paths).toEqual([])
+  })
+
+  // Kills: a default of 0 g (a parcel EasyPost refuses), a negative weight, or a fractional one the carrier rounds.
+  it('AC-1: property: a defaultWeightGrams of 0, negative or fractional is refused at commerce.shipping.defaultWeightGrams', () => {
+    const notPositiveWhole = fc.oneof(
+      fc.constant(0),
+      fc.integer({ min: -1_000_000, max: -1 }),
+      fc
+        .double({ min: -1_000, max: 1_000, noNaN: true, noDefaultInfinity: true })
+        .filter((n) => !Number.isInteger(n)),
+    )
+    fc.assert(
+      fc.property(notPositiveWhole, (grams) => {
+        expect(
+          refused({ ...CARRIER, defaultWeightGrams: grams }, WAREHOUSE).paths,
+          String(grams),
+        ).toEqual(['commerce.shipping.defaultWeightGrams'])
+      }),
+      { numRuns: 100 },
+    )
+  })
+
+  // Kills: a table store refused for a leftover weight it does not use.
+  it('AC-1: defaultWeightGrams beside table pricing parses, and the store still prices by its table', () => {
+    const parsed = nymbalConfigSchema.parse(
+      config({ provider: 'native', defaultWeightGrams: 250, rates: [] }),
+    )
+
+    expect(parsed.commerce.shipping.pricing).toBe('table')
   })
 })
 

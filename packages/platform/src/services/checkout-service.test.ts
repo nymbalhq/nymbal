@@ -20,6 +20,9 @@ import {
   type PaymentsAdapter,
   type PaymentStatus,
   type PromotionsAdapter,
+  type ShippingAdapter,
+  type ShippingRate as CarrierRate,
+  type ShippingRateParams,
   type TaxQuote,
 } from '@nymbalhq/types'
 import { InMemoryDocumentStore } from '../document-store/in-memory.js'
@@ -35,11 +38,12 @@ import { createOrderService } from './order-service.js'
 import { createCartService } from './cart-service.js'
 import { createCheckoutService } from './checkout-service.js'
 import type { TaxAnswer, TaxQuoter, TaxRequest } from './tax-quote.js'
-import type { ShippingRate } from './shipping-quote.js'
+import { carrierOptions, parcelOf, type ShippingRate } from './shipping-quote.js'
 import { createNativeStubPaymentsAdapter } from '../adapters/payments/native-stub.js'
 import { createLogger } from '../logger.js'
 import { scriptedEngine, type EngineAnswer, type ScriptedEngine } from '../tests/promotions.js'
 import { formatMoney } from '../money.js'
+import { settlesWithin } from '../tests/settles-within.js'
 import { v7 as uuidv7 } from 'uuid'
 
 interface SetupOptions {
@@ -48,6 +52,12 @@ interface SetupOptions {
   tax?: TaxQuoter
   pricesIncludeTax?: boolean
   shippingRates?: readonly ShippingRate[]
+  carrier?: {
+    adapter: ShippingAdapter
+    shipFrom: ReturnType<typeof makeAddr>
+    defaultWeightGrams: number
+    boundMs: number
+  }
 }
 
 async function setup(options: SetupOptions = {}) {
@@ -111,6 +121,7 @@ async function setup(options: SetupOptions = {}) {
     ...(options.tax && { tax: options.tax }),
     ...(options.pricesIncludeTax !== undefined && { pricesIncludeTax: options.pricesIncludeTax }),
     ...(options.shippingRates !== undefined && { shippingRates: options.shippingRates }),
+    ...(options.carrier !== undefined && { carrier: options.carrier }),
   })
   return {
     commandStore,
@@ -2188,6 +2199,450 @@ describe('CheckoutService.beginCheckout: payment outcomes, resubmits, changed ca
       })
       expect(await orderCount(env)).toBe(0)
     })
+  })
+})
+
+describe('AC-16: a carrier that never answers', () => {
+  const BOUND_MS = 50
+  // Room for a loaded machine: a bound that held would answer in tens of milliseconds, a missing one never.
+  const MARGIN_MS = 1_500
+
+  /** A rating carrier whose every rate call stays pending, counted. */
+  function silentCarrier(): { adapter: ShippingAdapter; calls: () => number } {
+    let calls = 0
+    const adapter: ShippingAdapter = {
+      kind: 'shipping',
+      providerName: 'silent-ship',
+      producesEvents: [],
+      consumesEvents: [],
+      initialize: async () => undefined,
+      healthCheck: async () => ({ status: 'healthy' as const }),
+      capabilities: () => ['rates'],
+      rate: () => {
+        calls += 1
+        return new Promise(() => undefined)
+      },
+    }
+    return { adapter, calls: () => calls }
+  }
+
+  async function carrierCart() {
+    const silent = silentCarrier()
+    const env = await setup({
+      carrier: {
+        adapter: silent.adapter,
+        shipFrom: makeAddr(),
+        defaultWeightGrams: 500,
+        boundMs: BOUND_MS,
+      },
+    })
+    const product = await env.product.create({
+      slug: `carrier-${uuidv7().slice(-8)}`,
+      name: 'Parcel',
+      status: 'active',
+      variants: [
+        {
+          sku: `CAR-${uuidv7().slice(-8)}`,
+          name: 'Default',
+          priceMinor: 2_000,
+          stock: 5,
+          lowStockThreshold: 0,
+          options: [],
+        },
+      ],
+    })
+    const variant = product.variants[0]!
+    const cart = await env.cart.getOrCreate()
+    await env.cart.addItem(cart.token, {
+      variantId: variant.id,
+      productId: product.id,
+      productName: product.name,
+      variantName: variant.name,
+      priceMinor: variant.priceMinor,
+      imageUrl: '',
+      qty: 2,
+    })
+    return { env, silent, token: cart.token, variantId: variant.id }
+  }
+
+  /** How a call ended within the bound and its margin: the error it rejected with, or how it stood. */
+  async function outcome(
+    call: Promise<unknown>,
+  ): Promise<{ settled: string; elapsedMs: number; error: unknown }> {
+    const started = performance.now()
+    const caught = call.then(
+      () => undefined,
+      (error: unknown) => error,
+    )
+    const settled = await settlesWithin(call, BOUND_MS + MARGIN_MS)
+    const elapsedMs = performance.now() - started
+    return { settled, elapsedMs, error: settled === 'pending' ? undefined : await caught }
+  }
+
+  // Kills: a hanging carrier holding the shopper's quote for the adapter's own timeout, or forever for a custom one,
+  // or the quote priced some other way when the carrier never answers.
+  it('AC-16: quote rejects checkout.shipping_unavailable within the bound plus a margin, after asking the carrier', async () => {
+    const { env, silent, token } = await carrierCart()
+
+    const quoted = await outcome(
+      env.checkout.quote({ cartToken: token, shippingAddress: makeAddr() }),
+    )
+
+    expect(quoted.settled).toBe('rejected')
+    expect(quoted.error).toMatchObject({ code: 'checkout.shipping_unavailable' })
+    expect(quoted.elapsedMs).toBeLessThan(BOUND_MS + MARGIN_MS)
+    expect(silent.calls()).toBe(1)
+    await env.commandStore.close()
+  })
+
+  // Kills: a place that waits on the carrier without a bound, or writes an order, a reservation or a stock move before
+  // the carrier has priced shipping.
+  it('AC-16: beginCheckout rejects checkout.shipping_unavailable within the bound plus a margin, with no order and no stock moved', async () => {
+    const { env, silent, token, variantId } = await carrierCart()
+    const stock = () =>
+      env.commandStore.read(async (tx) => (await env.repos.variant.findById(tx, variantId))!.stock)
+    const stockBefore = await stock()
+
+    const placed = await outcome(
+      env.checkout.beginCheckout({
+        cartToken: token,
+        email: 'shopper+stub-pending@example.com',
+        billingAddress: makeAddr(),
+        shippingAddress: makeAddr(),
+      }),
+    )
+
+    expect(placed.settled).toBe('rejected')
+    expect(placed.error).toMatchObject({ code: 'checkout.shipping_unavailable' })
+    expect(placed.elapsedMs).toBeLessThan(BOUND_MS + MARGIN_MS)
+    expect(silent.calls()).toBe(1)
+    const orders = await env.commandStore.read(
+      async (tx) => (await env.repos.order.list(tx, { limit: 100 })).length,
+    )
+    expect(orders).toBe(0)
+    expect(await stock()).toBe(stockBefore)
+    await env.commandStore.close()
+  })
+})
+
+describe('A carrier prices checkout', () => {
+  type Env = Awaited<ReturnType<typeof setup>>
+  const DEFAULT_GRAMS = 250
+  const SHIP_FROM = { ...makeAddr(), city: 'Leeds', postalCode: 'LS1 1AA' }
+
+  /** Two services priced by the parcel's started 100 g, with rate ids fresh on every call. */
+  function answerFor(grams: number, call: number): CarrierRate[] {
+    const steps = Math.ceil(grams / 100)
+    return [
+      {
+        id: `rm24-${call}`,
+        carrier: 'Royal Mail',
+        service: 'Tracked 24',
+        amountMinor: 600 + steps * 20,
+        currency: 'GBP',
+        estimatedDays: 1,
+      },
+      {
+        id: `rm48-${call}`,
+        carrier: 'Royal Mail',
+        service: 'Tracked 48',
+        amountMinor: 300 + steps * 10,
+        currency: 'GBP',
+        estimatedDays: 3,
+      },
+    ]
+  }
+
+  /** A rating carrier keeping every call's params; `beforeNext` runs once, inside the next call, before it answers. */
+  function ratingCarrier(answer: (grams: number, call: number) => CarrierRate[] = answerFor) {
+    const calls: ShippingRateParams[] = []
+    let beforeNext: (() => Promise<void>) | undefined
+    const adapter: ShippingAdapter = {
+      kind: 'shipping',
+      providerName: 'parcel-ship',
+      producesEvents: [],
+      consumesEvents: [],
+      initialize: async () => undefined,
+      healthCheck: async () => ({ status: 'healthy' as const }),
+      capabilities: () => ['rates'],
+      rate: async (params) => {
+        calls.push(structuredClone(params))
+        const hook = beforeNext
+        beforeNext = undefined
+        await hook?.()
+        return answer(params.parcel.weightGrams, calls.length)
+      },
+    }
+    return {
+      adapter,
+      calls,
+      onNextCall: (hook: () => Promise<void>) => {
+        beforeNext = hook
+      },
+    }
+  }
+
+  /** Closes the store once the relay has delivered what the test wrote. */
+  async function closed(env: Env) {
+    await env.relay.drain()
+    await env.commandStore.close()
+  }
+
+  const carrierDeps = (adapter: ShippingAdapter) => ({
+    adapter,
+    shipFrom: SHIP_FROM,
+    defaultWeightGrams: DEFAULT_GRAMS,
+    boundMs: 2_000,
+  })
+
+  /** The four public fields of each carrier option the answer offers a GBP store. */
+  const publicOptions = (answer: readonly CarrierRate[]) =>
+    carrierOptions(answer, 'GBP').map(({ id, name, amountMinor, estimatedDays }) => ({
+      id,
+      name,
+      amountMinor,
+      estimatedDays,
+    }))
+
+  async function variantOf(env: Env, priceMinor: number, weightGrams: number | null) {
+    const tag = uuidv7()
+    const product = await env.product.create({
+      slug: `weighed-${tag}`,
+      name: 'Weighed',
+      status: 'active',
+      variants: [
+        {
+          sku: `W-${tag}`,
+          name: 'Default',
+          priceMinor,
+          weightGrams,
+          stock: 20,
+          lowStockThreshold: 0,
+          options: [],
+        },
+      ],
+    })
+    const variant = product.variants[0]!
+    return { productId: product.id, variantId: variant.id, priceMinor, name: product.name }
+  }
+
+  const addLine = (
+    env: Env,
+    token: string,
+    v: Awaited<ReturnType<typeof variantOf>>,
+    qty: number,
+  ) =>
+    env.cart.addItem(token, {
+      variantId: v.variantId,
+      productId: v.productId,
+      productName: v.name,
+      variantName: 'Default',
+      priceMinor: v.priceMinor,
+      imageUrl: '',
+      qty,
+    })
+
+  const begin = (
+    env: Env,
+    cartToken: string,
+    shippingOptionId: string,
+    expectedTotalMinor: number,
+  ) =>
+    env.checkout.beginCheckout({
+      cartToken,
+      email: 'shopper+stub-pending@example.com',
+      billingAddress: makeAddr(),
+      shippingAddress: makeAddr(),
+      shippingOptionId,
+      expectedTotalMinor,
+    })
+
+  // Kills: the parcel weighed without a null weight's default or without quantities, the carrier asked from another
+  // address, carrier options reshaped on the way out, or the tax engine told no shipping was charged because the store
+  // has no table rows.
+  it('AC-6: a quote rates the cart’s weights as one parcel from shipFrom, offers carrierOptions of the answer, and asks the tax engine for shipping less its discount', async () => {
+    const engine = scriptedEngine()
+    engine.answer((session) => ({
+      effects: session.codes.flatMap((code) => [
+        { kind: 'code_accepted' as const, code },
+        { kind: 'shipping' as const, amountMinor: 100, label: code, code },
+      ]),
+    }))
+    const taxRequests: TaxRequest[] = []
+    const tax: TaxQuoter = {
+      async quote(request) {
+        taxRequests.push(structuredClone(request))
+        const lines = request.lines.map((l) => ({
+          id: l.id,
+          taxableMinor: l.amountMinor,
+          taxMinor: 0,
+        }))
+        return {
+          quote: {
+            provider: 'scripted-tax',
+            inclusive: false,
+            lines,
+            shippingTaxMinor: 0,
+            totalTaxMinor: 0,
+          },
+          fallback: false,
+        }
+      },
+    }
+    const carrier = ratingCarrier()
+    const env = await setup({
+      promotions: engine.adapter,
+      tax,
+      carrier: carrierDeps(carrier.adapter),
+    })
+    const lines = [
+      { weightGrams: 300, qty: 2 },
+      { weightGrams: null, qty: 3 },
+    ]
+    const cart = await env.cart.getOrCreate()
+    for (const line of lines) {
+      await addLine(env, cart.token, await variantOf(env, 1_000, line.weightGrams), line.qty)
+    }
+    await env.cart.addCode(cart.token, 'SHIPOFF')
+
+    const quoted = await env.checkout.quote({ cartToken: cart.token, shippingAddress: makeAddr() })
+
+    const parcel = parcelOf(lines, DEFAULT_GRAMS)
+    expect(carrier.calls).toEqual([{ from: SHIP_FROM, to: makeAddr(), parcel }])
+    expect(quoted.options).toEqual(publicOptions(answerFor(parcel.weightGrams, 1)))
+    expect(quoted.totals.shippingTotalMinor).toBe(quoted.options[0]!.amountMinor)
+    expect(quoted.totals.shippingDiscountMinor).toBe(100)
+    expect(taxRequests.at(-1)!.shipping).toEqual({
+      amountMinor: quoted.totals.shippingTotalMinor - quoted.totals.shippingDiscountMinor,
+    })
+    await closed(env)
+  })
+
+  // Kills: a place that rates twice, or records a shipping amount, name or provider other than the option chosen.
+  it('AC-7: beginCheckout at the quote’s option and total rates once and records the carrier option on the order', async () => {
+    const carrier = ratingCarrier()
+    const env = await setup({ carrier: carrierDeps(carrier.adapter) })
+    const cart = await env.cart.getOrCreate()
+    await addLine(env, cart.token, await variantOf(env, 2_500, 400), 1)
+    const first = await env.checkout.quote({ cartToken: cart.token, shippingAddress: makeAddr() })
+    const pricier = first.options.at(-1)!
+    const quoted = await env.checkout.quote({
+      cartToken: cart.token,
+      shippingAddress: makeAddr(),
+      shippingOptionId: pricier.id,
+    })
+    const callsBefore = carrier.calls.length
+
+    const placed = await begin(env, cart.token, pricier.id, quoted.totals.totalMinor)
+
+    const placeCalls = carrier.calls.slice(callsBefore)
+    expect(placeCalls.length).toBe(1)
+    const offered = carrierOptions(
+      answerFor(placeCalls[0]!.parcel.weightGrams, carrier.calls.length),
+      'GBP',
+    )
+    const chosen = offered.find((o) => o.id === pricier.id)!
+    const order = (await env.commandStore.read((tx) =>
+      env.repos.order.findById(tx, placed.orderId),
+    ))!
+    expect(order.metadata['shipping']).toEqual({
+      provider: carrier.adapter.providerName,
+      optionId: chosen.id,
+      name: chosen.name,
+      amountMinor: chosen.amountMinor,
+      estimatedDays: chosen.estimatedDays,
+      carrier: chosen.carrier,
+      service: chosen.service,
+    })
+    expect(order.shippingTotalMinor).toBe(chosen.amountMinor)
+    expect(placed.totalMinor).toBe(quoted.totals.totalMinor)
+    await closed(env)
+  })
+
+  /**
+   * Quotes a 400 g line at the pricier option, then places at that quote while the place's rate call adds a line of
+   * `addedGrams` to the same cart. Answers the place's rate calls, its refusal, the fresh quote and the parcels.
+   */
+  async function placeWhileCartGrows(addedGrams: number) {
+    const carrier = ratingCarrier()
+    const env = await setup({ carrier: carrierDeps(carrier.adapter) })
+    const cart = await env.cart.getOrCreate()
+    await addLine(env, cart.token, await variantOf(env, 2_500, 400), 1)
+    const added = await variantOf(env, 700, addedGrams)
+    const first = await env.checkout.quote({ cartToken: cart.token, shippingAddress: makeAddr() })
+    const optionId = first.options.at(-1)!.id
+    const quoted = await env.checkout.quote({
+      cartToken: cart.token,
+      shippingAddress: makeAddr(),
+      shippingOptionId: optionId,
+    })
+    const callsBefore = carrier.calls.length
+    carrier.onNextCall(async () => {
+      await addLine(env, cart.token, added, 1)
+    })
+
+    const refused = await begin(env, cart.token, optionId, quoted.totals.totalMinor).then(
+      () => undefined,
+      (err: unknown) => err,
+    )
+    const placeCalls = carrier.calls.slice(callsBefore)
+    const fresh = await env.checkout.quote({
+      cartToken: cart.token,
+      shippingAddress: makeAddr(),
+      shippingOptionId: optionId,
+    })
+    const grown = parcelOf(
+      [
+        { weightGrams: 400, qty: 1 },
+        { weightGrams: addedGrams, qty: 1 },
+      ],
+      DEFAULT_GRAMS,
+    )
+    await closed(env)
+    return { refused, placeCalls, quoted, fresh, grown }
+  }
+
+  // Kills: a place that orders lines a cart command added after the rating at the parcel rated before them.
+  it('AC-10: a 100 g line added while the place is rating is rated again at the heavier parcel and refused total_changed at a fresh quote’s total', async () => {
+    const { refused, placeCalls, quoted, fresh, grown } = await placeWhileCartGrows(100)
+
+    expect(placeCalls.map((c) => c.parcel.weightGrams)).toEqual([400, grown.weightGrams])
+    expect(refused).toMatchObject({
+      code: 'checkout.total_changed',
+      context: { quoted: quoted.totals.totalMinor, due: fresh.totals.totalMinor },
+    })
+  })
+
+  // Kills: a place that rates again though the parcel it locked weighs what was rated.
+  it('AC-10: a 0 g line added while the place is rating leaves the parcel as rated, so the place rates once and is refused at a fresh quote’s total', async () => {
+    const { refused, placeCalls, quoted, fresh } = await placeWhileCartGrows(0)
+
+    expect(placeCalls.map((c) => c.parcel.weightGrams)).toEqual([400])
+    expect(refused).toMatchObject({
+      code: 'checkout.total_changed',
+      context: { quoted: quoted.totals.totalMinor, due: fresh.totals.totalMinor },
+    })
+  })
+
+  // Kills: a carrier's rates in another currency charged as the store's, or an empty offer priced as free.
+  it('AC-8: a carrier answering only in USD on a GBP store makes the quote refuse no_shipping', async () => {
+    const carrier = ratingCarrier((grams, call) =>
+      answerFor(grams, call).map((rate) => ({ ...rate, currency: 'USD' })),
+    )
+    const env = await setup({ carrier: carrierDeps(carrier.adapter) })
+    const cart = await env.cart.getOrCreate()
+    await addLine(env, cart.token, await variantOf(env, 2_500, 400), 1)
+
+    const refused = await env.checkout
+      .quote({ cartToken: cart.token, shippingAddress: makeAddr() })
+      .then(
+        () => undefined,
+        (err: unknown) => err,
+      )
+
+    expect(refused).toMatchObject({ code: 'checkout.no_shipping' })
+    expect(carrier.calls.length).toBe(1)
+    await closed(env)
   })
 })
 

@@ -26,7 +26,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 // The shipping suite's words case runs the same way on the kernel's test shipping provider with all three words: each
 // twin declares a word without its method, has a method without its word, declares tracking with no webhook, labels
 // without rates, an unknown word or one twice, and fails only the words case; a twin that buys a new label on a repeated
-// rate id fails only the labels cases; one with no word runs no rates, labels or tracking case at all.
+// rate id fails only the labels cases; one with no word runs no rates, labels or tracking case at all. A rating twin
+// that answers an empty service fails only the rates shape case, and one that renames its services on each call only
+// the rates stability case.
 // The tax suite runs the same way on an in-memory provider that files documents: one twin answers its first line twice
 // and loses the second, one puts half a unit on a line's tax, one answers a total one more than its lines; each fails
 // only the case named for its defect, and the provider itself passes every case.
@@ -56,6 +58,8 @@ const TRACKING_SHAPE = /\bshape:/
 const REVIEW_SUBMIT = /\bsubmit:/
 const SHIPPING_WORDS = /\bwords:/
 const SHIPPING_LABELS = /\blabels:/
+const RATES_SHAPE = /\brates: property:/
+const RATES_STABILITY = /\brates: stability:/
 const REFUND_LIST = /\brefund list:/
 const TAX_LINES = /\blines:/
 const TAX_AMOUNTS = /\bamounts:/
@@ -450,10 +454,30 @@ describe('the published shipping suite fails an adapter whose words and methods 
       'labels',
       'labels',
       'rates',
+      'rates',
       'tracking',
       'words',
     ])
   })
+})
+
+describe('the published shipping suite fails a rating adapter the kernel cannot give stable options', () => {
+  // Kills: a shipping package that passes the suite while the kernel cannot name its options, or names them
+  // differently on each call, so the option a shopper chose at the quote is never found at place.
+  it.each([
+    ['answers a rate with an empty service', 'shipping-rate-no-service', RATES_SHAPE],
+    ['names its services differently on each call', 'shipping-rate-services-vary', RATES_STABILITY],
+  ] as const)(
+    'AC-14: a shipping adapter that %s (%s) fails that rates case and nothing else; the test shipping provider passes every case',
+    (_defect, broken, about) => {
+      const run = shippingRun(broken, about)
+
+      expect(run.failedWords, run.why).toEqual(['rates'])
+      expect(run.offTopic, run.why).toEqual([])
+      expect(run.ranOffControl, run.why).toEqual([])
+      expect(run.controlFailed, run.why).toEqual([])
+    },
+  )
 })
 
 describe('the published tax suite fails a provider whose quote the kernel must refuse', () => {

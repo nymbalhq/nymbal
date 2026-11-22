@@ -49,6 +49,8 @@ export const BUILT_IN_RATE_LIMITS: RateLimitRules = {
   '/api/orders/*': { requests: 10, window: '1h', action: 'block', header: ORDER_EMAIL_HEADER },
   // Every checkout answer can mint an order key.
   '/api/checkout': { requests: 30, window: '1m', action: 'block' },
+  // Each quote may call the tax, promotions and shipping engines. Counted as the checkout is, in buckets of its own.
+  '/api/checkout/quote': { requests: 30, window: '1m', action: 'block' },
   // Each agent request runs a tool, which is also held to its own route's rule.
   '/api/mcp': { requests: 120, window: '1m', action: 'block' },
   // A UCP tool is not a route: each request counts once here, however many routes its tool runs.

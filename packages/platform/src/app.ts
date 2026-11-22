@@ -10,6 +10,7 @@ import {
   type CommerceSlot,
   type HealthReport,
   type PaymentsAdapter,
+  type ShippingAdapter,
   type TaxAdapter,
   type ResolvedNetwork,
 } from '@nymbalhq/types'
@@ -130,6 +131,35 @@ function refuseTaxOnTopOfInclusivePrices(config: NymbalConfig, tax: TaxAdapter):
       "'inclusive', so it would add tax on top of prices that already hold it; set pricesIncludeTax to false or use " +
       'a provider that extracts tax from prices.',
     { code: 'config.tax_not_inclusive', context: { provider } },
+  )
+}
+
+/**
+ * Carrier pricing needs an adapter that rates (one that cannot would refuse every checkout) and a parcel to rate: the
+ * schema asks for both fields, but an embedder may hand createApp a config edited after parsing.
+ */
+function refuseCarrierPricingWithoutRates(config: NymbalConfig, shipping: ShippingAdapter): void {
+  if (config.commerce.shipping.pricing !== 'carrier') return
+  const provider = config.commerce.shipping.provider
+  const missing = [
+    ...(config.store.shipFrom === undefined ? ['store.shipFrom'] : []),
+    ...(config.commerce.shipping.defaultWeightGrams === undefined
+      ? ['commerce.shipping.defaultWeightGrams']
+      : []),
+  ]
+  if (missing.length > 0) {
+    throw new ConfigError(
+      `commerce.shipping.pricing is 'carrier', but ${missing.join(' and ')} ${missing.length > 1 ? 'are' : 'is'} ` +
+        "not set, so no parcel can be rated; set them or set pricing to 'table'.",
+      { code: 'config.shipping_cannot_rate', context: { provider, missing } },
+    )
+  }
+  if (shipping.capabilities().includes('rates') && typeof shipping.rate === 'function') return
+  throw new ConfigError(
+    `commerce.shipping.pricing is 'carrier', but the shipping provider "${provider}" (${shipping.providerName}) does ` +
+      "not declare 'rates', so it cannot price a parcel; set pricing to 'table' or configure a provider that rates " +
+      '(EasyPost with an apiKey).',
+    { code: 'config.shipping_cannot_rate', context: { provider } },
   )
 }
 
@@ -331,6 +361,7 @@ export async function createApp(
       ...(options.adapters !== undefined && { injected: options.adapters }),
     })
     refuseTaxOnTopOfInclusivePrices(config, adapters.tax)
+    refuseCarrierPricingWithoutRates(config, adapters.shipping)
     const relay = createRelay({
       store: platform.commandStore,
       eventLog: repos.eventLog,
@@ -371,6 +402,7 @@ export async function createApp(
       reviews: adapters.reviews,
       promotions: adapters.promotions,
       tax: adapters.tax,
+      shipping: adapters.shipping,
       jwtSecret: jwt.secret,
       executeProposal: (row, auth) => {
         if (mcp === undefined)
@@ -575,6 +607,12 @@ export async function createApp(
               sessions: platform.documentStore,
               checkout: services.checkout,
               shippingRates: config.commerce.shipping.rates,
+              shippingPricing:
+                config.commerce.shipping.pricing === 'carrier'
+                  ? 'carrier'
+                  : config.commerce.shipping.rates.length > 0
+                    ? 'table'
+                    : 'free',
               // The actor names the key that sent the request, which also keeps each key's Idempotency-Keys its own.
               idempotent: (command, { key, hash, keyName }, run) => {
                 const actor: Actor = { kind: 'system', id: `acp:${keyName}` }

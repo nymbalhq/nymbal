@@ -66,6 +66,10 @@ export default defineConfig({
       //   { id: 'world', name: 'International', amountMinor: 1999 },
       // ],
       rates: [],
+      // Or charge what the carrier quotes, with a provider that rates (EasyPost with an apiKey) and no rows above: the
+      // cart is one parcel from store.shipFrom, each unit at its variant's weight or this default.
+      // pricing: 'carrier',
+      // defaultWeightGrams: 500,
     },
     tax: {
       provider: 'native',

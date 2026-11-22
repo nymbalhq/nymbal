@@ -79,8 +79,10 @@ export interface AcpSurfaceDeps {
   }
   sessions: DocumentStoreAdapter
   checkout: Pick<CheckoutService, 'beginCheckout' | 'quote'>
-  /** `commerce.shipping.rates`: which options an address is offered, and whether a session with none shows any. */
+  /** `commerce.shipping.rates`: which options an address is offered on a store that prices by its table. */
   shippingRates: readonly ShippingRate[]
+  /** What prices shipping: no table (one free option), the table, or the carrier's rates. */
+  shippingPricing: 'free' | 'table' | 'carrier'
   idempotent: AcpIdempotent
   payments: { providerName: string; environment: 'test' | 'production' }
   urls: () => AgentSurfaceUrls
@@ -357,14 +359,31 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
   /** What a session shows before it is priced: the free standard option on a store with no table, else none. */
   const unpriced: SessionPricing = {
     kind: 'unpriced',
-    options: deps.shippingRates.length === 0 ? [STANDARD_FULFILLMENT] : [],
+    options: deps.shippingPricing === 'free' ? [STANDARD_FULFILLMENT] : [],
   }
 
-  /** The option ids an address is offered: the ids never depend on the goods, only their amounts do. */
-  function offeredIds(details: StoredSession['fulfillment_details']): string[] {
+  /**
+   * The option ids the session's cart is offered at an address. A table's ids never depend on the goods, only their
+   * amounts do; a carrier's do (a heavier parcel loses services), so they are its quote's. Null when that quote is
+   * refused: the answer renders the refusal as `price()` does.
+   */
+  async function offeredIds(
+    token: string,
+    details: StoredSession['fulfillment_details'],
+  ): Promise<string[] | null> {
     if (details?.address === undefined) return unpriced.options.map((option) => option.id)
     const shipTo = toNymbalAddress(details.address, details.phone_number)
-    return shippingOptions(deps.shippingRates, shipTo, 0).map((option) => option.id)
+    if (deps.shippingPricing !== 'carrier') {
+      return shippingOptions(deps.shippingRates, shipTo, 0).map((option) => option.id)
+    }
+    try {
+      const quote = await deps.checkout.quote({ cartToken: token, shippingAddress: shipTo })
+      return quote.options.map((option) => option.id)
+    } catch (err) {
+      if (err instanceof CheckoutError && err.code === 'checkout.cart_empty') return null
+      if (quoteRefusal(err) === null) throw err
+      return null
+    }
   }
 
   function info(content: string): AcpMessage {
@@ -388,6 +407,10 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
       case 'checkout.promotions_unavailable':
         return info(
           'The discounts for this order could not be worked out just now. Retry this request shortly.',
+        )
+      case 'checkout.shipping_unavailable':
+        return info(
+          'The delivery price for this order could not be worked out just now. Retry this request shortly.',
         )
       case 'checkout.no_shipping':
         return message(
@@ -778,11 +801,11 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
           ? stored.fulfillment_details
           : { ...stored.fulfillment_details, ...data.fulfillment_details }
       // Checked against the address this update leaves, before anything changes.
-      const offered = offeredIds(details)
-      const other = (data.selected_fulfillment_options ?? []).findIndex(
-        (option) => !offered.includes(option.option_id),
-      )
-      if (other >= 0) {
+      const selected = data.selected_fulfillment_options ?? []
+      const offered = selected.length === 0 ? [] : await offeredIds(id, details)
+      const other =
+        offered === null ? -1 : selected.findIndex((option) => !offered.includes(option.option_id))
+      if (offered !== null && other >= 0) {
         return invalid(
           offered.length === 0
             ? 'No fulfillment option is offered until the session has an address the store delivers to'
@@ -933,6 +956,7 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
         return answer(id, 200, { write: true, priceChanged: true })
       case 'checkout.tax_unavailable':
       case 'checkout.promotions_unavailable':
+      case 'checkout.shipping_unavailable':
       case 'checkout.no_shipping':
         // Priced again, the session carries the refusal's message; were the engine back, it is ready to retry.
         return answer(id, 200, { write: true })

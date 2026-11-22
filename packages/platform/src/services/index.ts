@@ -11,9 +11,10 @@ import type { Repositories } from '../repositories/index.js'
 import type { EventPublisher } from '../events/publisher.js'
 import { createProductService, type ProductService } from './product-service.js'
 import { createCategoryService, type CategoryService } from './category-service.js'
-import type { Address, PromotionsAdapter, TaxAdapter } from '@nymbalhq/types'
+import type { Address, PromotionsAdapter, ShippingAdapter, TaxAdapter } from '@nymbalhq/types'
 import { createNativeTaxAdapter } from '../adapters/tax/native-adapter.js'
 import { createTaxQuoter, TAX_BOUND_MS } from './tax-quote.js'
+import { SHIPPING_BOUND_MS } from './shipping-quote.js'
 import { createCartCatalogue, createCartService, type CartService } from './cart-service.js'
 import { createCustomerService, type CustomerService } from './customer-service.js'
 import { createAuthService, parseDurationToMs, type AuthService } from './auth-service.js'
@@ -116,6 +117,7 @@ export interface BuildServicesDeps {
   reviews: ReviewsAdapter
   promotions: PromotionsAdapter
   tax: TaxAdapter
+  shipping: ShippingAdapter
   /** The effective JWT secret (`resolveAuthSecret`), not the config's field. */
   jwtSecret: string
   /** Runs a stored proposal through its route: the tool surface `attachHttp` builds. */
@@ -135,6 +137,7 @@ export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
     reviews,
     promotions,
     tax,
+    shipping,
     jwtSecret,
   } = deps
   const { legacy } = config.security.auth
@@ -163,6 +166,7 @@ export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
     promotions,
   })
   const { shipFrom, pricesIncludeTax } = config.store
+  const { pricing, defaultWeightGrams } = config.commerce.shipping
   const taxLogger = logger.child({ service: 'tax' })
   const checkout = createCheckoutService({
     store,
@@ -183,6 +187,15 @@ export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
     }),
     pricesIncludeTax,
     shippingRates: config.commerce.shipping.rates,
+    // createApp refuses carrier pricing without a ship-from address or a default weight before building services.
+    ...(pricing === 'carrier' && {
+      carrier: {
+        adapter: shipping,
+        shipFrom: shipFrom as Address,
+        defaultWeightGrams: defaultWeightGrams as number,
+        boundMs: SHIPPING_BOUND_MS,
+      },
+    }),
     cart,
     orders,
     inventory,
