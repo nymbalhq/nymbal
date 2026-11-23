@@ -1,6 +1,7 @@
 import { execFileSync, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
+  appendFileSync,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -1027,7 +1028,7 @@ function censusTrendStep(root: string, base: string): number {
   return violations.length === 0 ? 0 : 1
 }
 
-type VitestReport = {
+export type VitestReport = {
   testResults?: Array<{
     name: string
     assertionResults?: Array<{
@@ -1450,6 +1451,16 @@ export type LastRun = {
 }
 
 const LAST_RUN = 'reports/last-run.json'
+/** Every run's record, one line each: last-run.json keeps only the latest, and a run can end while nobody reads it. */
+const RUN_LOG = 'reports/gate-runs.jsonl'
+
+/** A run's record as written: the last-run fields, when it started and ended, whether it was gate:full, and its failed tests. */
+export type RunRecord = LastRun & {
+  startedMs: number
+  endedMs: number
+  full: boolean
+  failed: string[]
+}
 
 const SCRIPT = 'node_modules/.bin/tsx scripts/gate.ts'
 /** The `test` script's filters (package.json), which the plain gate's `vitest related` run repeats. */
@@ -2164,11 +2175,20 @@ export function lastRunRecord(sha: string, steps: Step[]): LastRun {
   }
 }
 
-function writeLastRun(root: string, steps: Step[]): void {
-  const last = lastRunRecord(git(root, ['rev-parse', 'HEAD']).trim(), steps)
+/** The Vitest tests a report saw fail, `<file>::<full name>`, the file relative to the checkout. */
+export function failedTests(root: string, report: VitestReport | undefined): string[] {
+  return (report?.testResults ?? []).flatMap((file) =>
+    (file.assertionResults ?? [])
+      .filter((test) => test.status === 'failed')
+      .map((test) => `${relative(root, file.name)}::${test.fullName ?? test.title ?? ''}`),
+  )
+}
+
+export function writeLastRun(root: string, record: RunRecord): void {
   const target = resolve(root, LAST_RUN)
   mkdirSync(dirname(target), { recursive: true })
-  writeFileSync(target, `${JSON.stringify(last, null, 2)}\n`)
+  writeFileSync(target, `${JSON.stringify(record, null, 2)}\n`)
+  appendFileSync(resolve(root, RUN_LOG), `${JSON.stringify(record)}\n`)
 }
 
 /**
@@ -2445,7 +2465,13 @@ async function main(argv: string[]): Promise<number> {
     process.stderr.write(text)
   }
   const result = await run(steps, { cwd: root, budgetMs, log })
-  writeLastRun(root, result.steps)
+  writeLastRun(root, {
+    ...lastRunRecord(git(root, ['rev-parse', 'HEAD']).trim(), result.steps),
+    startedMs,
+    endedMs: Date.now(),
+    full: values.full,
+    failed: failedTests(root, freshReport<VitestReport>(resolve(root, VITEST_REPORT), startedMs)),
+  })
   // A selected step skipped because a precondition failed (a URL unset, the artefact missing, a need left out)
   // proves nothing: the run is red, and the rows say why. A skip with nothing to do (no changed file to mutate,
   // services or build supplied from outside) is not.

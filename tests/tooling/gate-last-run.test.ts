@@ -1,10 +1,19 @@
 // Reads: nothing
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import fc from 'fast-check'
 import { afterEach, describe, expect, it } from 'vitest'
-import { lastRunRecord, run, type Step, type StepStatus } from '../../scripts/gate'
+import {
+  failedTests,
+  lastRunRecord,
+  run,
+  type RunRecord,
+  type Step,
+  type StepStatus,
+  type VitestReport,
+  writeLastRun,
+} from '../../scripts/gate'
 import { CAP_VARS, LOCAL_DEFAULTS, MACHINE_ENV_FILE_VAR } from '../../scripts/machine-budget'
 import type { Hold } from '../../scripts/stack'
 
@@ -97,5 +106,66 @@ describe('the last-run record says what each step waited for and ran under', () 
     expect(last.caps).toEqual({ tests: { vitest: Math.max(1, Math.floor(LOCAL_DEFAULTS.vitest / 2)) } })
     expect(Object.keys(last.steps)).toEqual(['lint', 'tests', 'perf'])
     expect(log).toContain("tests: started after a 4.3 s wait for other worktrees' heavy steps")
+  })
+})
+
+// A run often ends while nobody is reading (a backgrounded call), and the next run overwrites last-run.json; the run
+// log keeps every run's record, with its time and the tests it saw fail, for whoever reads them later.
+describe('every run leaves its record in the run log', () => {
+  const created: string[] = []
+  afterEach(() => {
+    for (const dir of created.splice(0)) rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('two runs leave two lines in run order, and last-run.json holds the second', () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'nymbal-run-log-')))
+    created.push(root)
+    const record = (sha: string, startedMs: number, status: StepStatus): RunRecord => ({
+      ...lastRunRecord(sha, [{ name: 'tests', status, ms: 1_000 }]),
+      startedMs,
+      endedMs: startedMs + 1_000,
+      full: false,
+      failed: status === 'red' ? ['src/a.test.ts::a holds'] : [],
+    })
+    const first = record('aaa', 1_000_000, 'red')
+    const second = record('bbb', 2_000_000, 'ok')
+    writeLastRun(root, first)
+    writeLastRun(root, second)
+    const lines = readFileSync(join(root, 'reports/gate-runs.jsonl'), 'utf8').trim().split('\n')
+    expect(lines.map((line) => JSON.parse(line) as RunRecord)).toEqual([first, second])
+    expect(JSON.parse(readFileSync(join(root, 'reports/last-run.json'), 'utf8'))).toEqual(second)
+  })
+
+  it('for any Vitest report, the failed tests are its failed assertions, in order, each under its file relative to the checkout', () => {
+    const root = '/repo'
+    const reportArb = fc.array(
+      fc.record({
+        file: fc.stringMatching(/^[a-z]{1,8}\.test\.ts$/),
+        tests: fc.array(
+          fc.record({
+            fullName: fc.stringMatching(/^[a-z ]{1,12}$/),
+            status: fc.constantFrom('passed', 'failed', 'skipped'),
+          }),
+          { maxLength: 5 },
+        ),
+      }),
+      { maxLength: 4 },
+    )
+    fc.assert(
+      fc.property(reportArb, (files) => {
+        const report: VitestReport = {
+          testResults: files.map((f) => ({
+            name: `${root}/src/${f.file}`,
+            assertionResults: f.tests,
+          })),
+        }
+        const expected = files.flatMap((f) =>
+          f.tests.filter((t) => t.status === 'failed').map((t) => `src/${f.file}::${t.fullName}`),
+        )
+        expect(failedTests(root, report)).toEqual(expected)
+      }),
+      { numRuns: 200 },
+    )
+    expect(failedTests(root, undefined)).toEqual([])
   })
 })
