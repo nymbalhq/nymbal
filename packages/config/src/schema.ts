@@ -370,7 +370,43 @@ function calendarDateMs(text: string): number | undefined {
   return !Number.isNaN(at) && new Date(at).toISOString().startsWith(text) ? at : undefined
 }
 
-/** When imported WordPress password hashes stop being honoured, and the costliest bcrypt among them the store accepts. */
+const LEGACY_REMOTE_URL = 'security.auth.legacy.remote.url'
+const LEGACY_REMOTE_TIMEOUT = 'security.auth.legacy.remote.timeoutMs'
+const LEGACY_REMOTE_TIMEOUT_MESSAGE = `${LEGACY_REMOTE_TIMEOUT} must be a whole number of milliseconds from 500 to 10000`
+
+/**
+ * The old platform's endpoint a sign-in asks about an address with no password here. HTTPS only, and never with
+ * credentials in the URL, where an error or a log line printing it would carry them: the shared secret is
+ * NYMBAL_LEGACY_AUTH_SECRET. No message echoes the URL.
+ */
+const legacyRemoteSchema = z.object({
+  url: z
+    .string({ error: `${LEGACY_REMOTE_URL} must be an https:// URL` })
+    .superRefine((url, ctx) => {
+      const parsed = URL.canParse(url) ? new URL(url) : null
+      const problem =
+        parsed === null
+          ? 'must be an https:// URL'
+          : parsed.protocol !== 'https:'
+            ? 'must use https://'
+            : parsed.username !== '' || parsed.password !== ''
+              ? 'must not hold a user name or password; the old platform is sent NYMBAL_LEGACY_AUTH_SECRET as a bearer'
+              : null
+      if (problem !== null)
+        ctx.addIssue({ code: 'custom', message: `${LEGACY_REMOTE_URL} ${problem}` })
+    }),
+  timeoutMs: z
+    .number({ error: LEGACY_REMOTE_TIMEOUT_MESSAGE })
+    .int(LEGACY_REMOTE_TIMEOUT_MESSAGE)
+    .min(500, LEGACY_REMOTE_TIMEOUT_MESSAGE)
+    .max(10_000, LEGACY_REMOTE_TIMEOUT_MESSAGE)
+    .default(5000),
+})
+
+/**
+ * When imported WordPress password hashes stop being honoured, the costliest bcrypt among them the store accepts, and
+ * the old platform asked until then about a shopper with no password here.
+ */
 const legacyPasswordsSchema = z.object({
   until: z
     .string({ error: `${LEGACY_UNTIL} must be a date written YYYY-MM-DD` })
@@ -401,6 +437,7 @@ const legacyPasswordsSchema = z.object({
       error: 'security.auth.legacy.maxCost must be 10, 11 or 12',
     })
     .default(10),
+  remote: legacyRemoteSchema.optional(),
 })
 
 const originLockHeaderSchema = z.string().superRefine((header, ctx) => {

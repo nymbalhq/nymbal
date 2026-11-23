@@ -151,6 +151,7 @@ export { createUcpSurface, type UcpSurfaceDeps } from './agents/ucp-surface.js'
 export { agentReadiness } from './agents/readiness.js'
 export {
   createApp,
+  resolveLegacyRemoteSecret,
   type NymbalApp,
   type CreateAppOptions,
   type AttachHttpOptions,
@@ -159,6 +160,7 @@ export {
   type SlotCapabilities,
 } from './app.js'
 export { isLoopbackHost, resolveAuthSecret, type AuthSecret } from './auth-secret.js'
+export { REMOTE_SECRET_ENV as LEGACY_REMOTE_SECRET_ENV } from './services/legacy-remote.js'
 export { secureCookies } from '@nymbalhq/config'
 export { registerAdminStaticRoute } from './routes/admin-static.js'
 export {

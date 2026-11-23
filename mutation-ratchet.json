@@ -52,6 +52,7 @@
     "packages/platform/src/services/customer-service.ts": 97.01,
     "packages/platform/src/services/inventory-service.ts": 75.63,
     "packages/platform/src/services/legacy-passwords.ts": 83.07,
+    "packages/platform/src/services/legacy-remote.ts": 80.62,
     "packages/platform/src/services/mail-health.ts": 88.52,
     "packages/platform/src/services/order-correlation.ts": 100,
     "packages/platform/src/services/order-service.ts": 68.16,

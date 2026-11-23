@@ -4,6 +4,7 @@ import { delimiter, join } from 'node:path'
 import { defineCommand } from 'citty'
 import pc from 'picocolors'
 import { DEFAULT_JWT_SECRET, ORIGIN_SECRET_ENV, type NymbalConfig } from '@nymbalhq/config'
+import { LEGACY_REMOTE_SECRET_ENV } from '@nymbalhq/platform'
 import { loadProject } from '../utils/project.js'
 import { originHost, webServerCommand } from './deploy-web-server.js'
 
@@ -28,6 +29,8 @@ const FROM_ENV_KEY = /([A-Z][A-Z0-9_]*)=<from \.env>/g
 const MAKE_IT: Readonly<Record<string, string>> = {
   NYMBAL_JWT_SECRET: 'add one made by `openssl rand -base64 32`',
   [ORIGIN_SECRET_ENV]: 'nymbal security:apply creates it once the zone holds its rule',
+  [LEGACY_REMOTE_SECRET_ENV]:
+    "set it to the secret the old platform's endpoint expects, at least 32 characters (`openssl rand -base64 32`)",
 }
 
 /** The platform hosts a Cloudflare store must not be reached at: the origin lock refuses requests to them. */
@@ -84,6 +87,11 @@ function prerequisites(config: NymbalConfig): string[] {
 /** Whether the app signs tokens with NYMBAL_JWT_SECRET: the config names no secret of its own. */
 function jwtFromEnv(config: NymbalConfig): boolean {
   return config.security.auth.jwtSecret === DEFAULT_JWT_SECRET
+}
+
+/** Whether the app checks sign-ins against the old platform, which it refuses to boot without the shared secret. */
+function checksOldPlatform(config: NymbalConfig): boolean {
+  return config.security.auth.legacy?.remote !== undefined
 }
 
 /**
@@ -143,6 +151,9 @@ export function flyRecipe(project: DeployProject): { file: string; toml: string;
     ...(behindCloudflare(config)
       ? [`flyctl secrets set ${ORIGIN_SECRET_ENV}=${FROM_ENV} --app ${name} --stage`]
       : []),
+    ...(checksOldPlatform(config)
+      ? [`flyctl secrets set ${LEGACY_REMOTE_SECRET_ENV}=${FROM_ENV} --app ${name} --stage`]
+      : []),
     `flyctl deploy --app ${name}`,
   ]
   return { file: join(project.root, 'fly.toml'), toml, steps }
@@ -191,6 +202,9 @@ export function railwayRecipe(project: DeployProject): {
       : []),
     ...(behindCloudflare(config)
       ? [`railway variables ${service} --set ${ORIGIN_SECRET_ENV}=${FROM_ENV}`]
+      : []),
+    ...(checksOldPlatform(config)
+      ? [`railway variables ${service} --set ${LEGACY_REMOTE_SECRET_ENV}=${FROM_ENV}`]
       : []),
     `railway variables ${service} --set NYMBAL_TRUSTED_PROXIES=${PLATFORM_PROXIES}`,
     `railway domain ${service}`,

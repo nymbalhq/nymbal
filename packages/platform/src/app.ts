@@ -34,6 +34,7 @@ import { addSecret, scrubbingLogger } from './settings/secret-set.js'
 import { isLoopbackHost, JWT_SECRET_ENV, resolveAuthSecret } from './auth-secret.js'
 import { buildServices, filesTaxDocuments, type ServiceRegistry } from './services/index.js'
 import { legacyUntilOf } from './services/legacy-passwords.js'
+import { REMOTE_SECRET_ENV, REMOTE_SECRET_MIN_LENGTH } from './services/legacy-remote.js'
 import { createEventPublisher, type EventPublisher } from './events/publisher.js'
 import { createRelay, deliveringBus, type CreateRelayOptions, type Relay } from './events/relay.js'
 import { createOutageProbe, type OutageSubject } from './events/outage.js'
@@ -168,6 +169,22 @@ function refuseCarrierPricingWithoutRates(config: NymbalConfig, shipping: Shippi
       "not declare 'rates', so it cannot price a parcel; set pricing to 'table' or configure a provider that rates " +
       '(EasyPost with an apiKey).',
     { code: 'config.shipping_cannot_rate', context: { provider } },
+  )
+}
+
+/** The old platform's shared secret, when `security.auth.legacy.remote` is set: without one the check cannot run. */
+export function resolveLegacyRemoteSecret(
+  config: NymbalConfig,
+  env: NodeJS.ProcessEnv,
+): string | undefined {
+  if (config.security.auth.legacy?.remote === undefined) return undefined
+  const secret = env[REMOTE_SECRET_ENV]
+  if (secret !== undefined && secret.length >= REMOTE_SECRET_MIN_LENGTH) return secret
+  throw new ConfigError(
+    `security.auth.legacy.remote is set, but ${REMOTE_SECRET_ENV} is ${secret === undefined ? 'not set' : 'too short'}; ` +
+      `set it to the secret the old platform's endpoint expects, at least ${REMOTE_SECRET_MIN_LENGTH} characters ` +
+      '(`openssl rand -base64 32`).',
+    { code: 'auth.legacy_remote_secret', context: { variable: REMOTE_SECRET_ENV } },
   )
 }
 
@@ -307,6 +324,8 @@ export async function createApp(
   })
   const jwt = resolveAuthSecret(config, process.env)
   addSecret(jwt.secret)
+  const legacyRemoteSecret = resolveLegacyRemoteSecret(config, process.env)
+  if (legacyRemoteSecret !== undefined) addSecret(legacyRemoteSecret)
   const shadowed = process.env[JWT_SECRET_ENV]
   if (jwt.source === 'config' && shadowed !== undefined && shadowed !== jwt.secret) {
     logger.warn(
@@ -412,6 +431,7 @@ export async function createApp(
       tax: adapters.tax,
       shipping: adapters.shipping,
       jwtSecret: jwt.secret,
+      ...(legacyRemoteSecret !== undefined && { legacyRemoteSecret }),
       executeProposal: (row, auth) => {
         if (mcp === undefined)
           throw new Error('a proposal runs through the routes attachHttp registers')

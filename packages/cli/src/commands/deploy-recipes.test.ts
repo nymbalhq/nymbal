@@ -333,3 +333,63 @@ describe('AC-10: the recipes list the platform proxy', () => {
     )
   })
 })
+
+describe('the old-platform secret', () => {
+  it('with security.auth.legacy.remote set each recipe sets NYMBAL_LEGACY_AUTH_SECRET=<from .env> as a platform secret before its deploy step, and with it unset no step or file names it; the secret from .env is in neither', () => {
+    fc.assert(
+      fc.property(
+        appName,
+        fc.boolean(),
+        fc.stringMatching(/^[A-Za-z0-9+/]{32,48}$/).filter((s) => new Set(s).size >= 8),
+        (name, remote, secret) => {
+          const variant: NymbalConfig = nymbalConfigSchema.parse({
+            ...config,
+            security: {
+              ...config.security,
+              auth: {
+                ...config.security.auth,
+                legacy: {
+                  until: new Date().toISOString().slice(0, 10),
+                  ...(remote && { remote: { url: 'https://old-store.example/nymbal/check' } }),
+                },
+              },
+            },
+          })
+          const root = projectDir(name, { NYMBAL_LEGACY_AUTH_SECRET: secret })
+          const fly = flyRecipe({ name, root, config: variant })
+          const railway = railwayRecipe({ name, root, config: variant })
+          const flyAt = (pattern: RegExp) => fly.steps.findIndex((step) => pattern.test(step))
+          const railwayAt = (pattern: RegExp) =>
+            railway.steps.findIndex((step) => pattern.test(step))
+
+          expect(fly.steps.filter((step) => step.includes('NYMBAL_LEGACY_AUTH_SECRET'))).toEqual(
+            remote
+              ? [`flyctl secrets set NYMBAL_LEGACY_AUTH_SECRET=<from .env> --app ${name} --stage`]
+              : [],
+          )
+          expect(
+            railway.steps.filter((step) => step.includes('NYMBAL_LEGACY_AUTH_SECRET')),
+          ).toEqual(
+            remote
+              ? [`railway variables --service ${name} --set NYMBAL_LEGACY_AUTH_SECRET=<from .env>`]
+              : [],
+          )
+          // With no secret step its index is -1, before any deploy step as well.
+          expect([
+            flyAt(/NYMBAL_LEGACY_AUTH_SECRET/) < flyAt(/^flyctl deploy\b/),
+            railwayAt(/NYMBAL_LEGACY_AUTH_SECRET/) < railwayAt(/^railway up\b/),
+          ]).toEqual([true, true])
+          expect(
+            [fly.toml, railway.json].filter((t) => t.includes('NYMBAL_LEGACY_AUTH_SECRET')),
+          ).toEqual([])
+          expect(
+            [fly.toml, railway.json, ...fly.steps, ...railway.steps].filter((t) =>
+              t.includes(secret),
+            ),
+          ).toEqual([])
+        },
+      ),
+      { numRuns: 40 },
+    )
+  })
+})

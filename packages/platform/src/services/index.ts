@@ -41,6 +41,7 @@ import {
 import { createImportRemovalService, type ImportRemovalService } from './import-removal-service.js'
 import { createInsightService, type InsightService } from './insight-service.js'
 import { legacyUntilOf } from './legacy-passwords.js'
+import { createOldPlatformCheck } from './legacy-remote.js'
 import { createTaxDocuments, type TaxDocuments } from './tax-documents.js'
 
 export * from './product-service.js'
@@ -126,6 +127,8 @@ export interface BuildServicesDeps {
   shipping: ShippingAdapter
   /** The effective JWT secret (`resolveAuthSecret`), not the config's field. */
   jwtSecret: string
+  /** The old platform's shared secret, present exactly when `security.auth.legacy.remote` is set. */
+  legacyRemoteSecret?: string
   /** Runs a stored proposal through its route: the tool surface `attachHttp` builds. */
   executeProposal: ProposalServiceDeps['execute']
   /** The night shift's clock, which a dismissed insight is stamped with. */
@@ -147,8 +150,10 @@ export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
     tax,
     shipping,
     jwtSecret,
+    legacyRemoteSecret,
   } = deps
   const { legacy } = config.security.auth
+  const authLogger = logger.child({ service: 'auth' })
   const inventory = createInventoryService({
     store,
     repos,
@@ -237,13 +242,25 @@ export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
     auth: createAuthService({
       repos,
       publisher,
-      logger: logger.child({ service: 'auth' }),
+      logger: authLogger,
       jwtSecret,
       accessTtl: config.security.auth.accessTtl,
       refreshTtl: config.security.auth.refreshTtl,
       verification: resolveVerification(config.security.auth.verification, emailDelivers(email)),
       ...(legacy !== undefined && {
-        legacy: { until: legacyUntilOf(legacy.until), maxCost: legacy.maxCost },
+        legacy: {
+          until: legacyUntilOf(legacy.until),
+          maxCost: legacy.maxCost,
+          ...(legacy.remote !== undefined &&
+            legacyRemoteSecret !== undefined && {
+              remote: createOldPlatformCheck({
+                url: legacy.remote.url,
+                timeoutMs: legacy.remote.timeoutMs,
+                secret: legacyRemoteSecret,
+                logger: authLogger,
+              }),
+            }),
+        },
       }),
     }),
     order: orders,

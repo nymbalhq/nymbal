@@ -46,6 +46,7 @@ import {
   type LegacyRecipe,
   type LegacyWork,
 } from './legacy-passwords.js'
+import type { OldPlatformCheck, RemoteProfile } from './legacy-remote.js'
 
 export interface AuthTokens {
   accessToken: string
@@ -142,8 +143,13 @@ export interface CreateAuthServiceDeps {
   issuer?: string
   /** `off` when absent. */
   verification?: VerificationPolicy
-  /** Imported password hashes are honoured while `now < until`; none are without an `until`. */
-  legacy?: { until?: Date; maxCost: LegacyMaxCost }
+  /**
+   * Imported password hashes are honoured while `now < until`; none are without an `until`. In that window `remote`
+   * is asked about an address with no customer or no password here.
+   */
+  legacy?: { until?: Date; maxCost: LegacyMaxCost; remote?: OldPlatformCheck }
+  /** How a refusal that asked the old platform nothing waits; a timer when absent. */
+  sleep?: (ms: number) => Promise<void>
 }
 
 export function parseDurationToMs(s: string): number {
@@ -264,6 +270,9 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
   const verification = deps.verification ?? 'off'
   const legacyUntil = deps.legacy?.until
   const maxCost = deps.legacy?.maxCost ?? 10
+  const remote = deps.legacy?.remote
+  const sleep =
+    deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
   const { store } = repos.customer
   const issuer = deps.issuer ?? 'nymbal'
   const secretKey = new TextEncoder().encode(jwtSecret)
@@ -422,12 +431,28 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
   }
 
   /**
-   * A right legacy password becomes a native hash of the password as typed. The write takes only where the row still
-   * holds the value that was checked, so a reset, a sweep or another import since the read wins over it.
+   * Another write took the row first. A native hash there is checked as any sign-in is (a concurrent write of the same
+   * password passes); anything else is refused without a second check.
+   */
+  async function afterLostWrite(
+    now: CustomerWithHash | null,
+    password: string,
+  ): Promise<{ customer: Customer; tokens: AuthTokens }> {
+    if (hasPassword(now) && (await bcryptCompare(bcryptCandidate(password), now.passwordHash))) {
+      return signedIn(now)
+    }
+    throw invalidCredentials()
+  }
+
+  /**
+   * A right legacy password, or one the old platform vouched for, becomes a native hash of the password as typed. The
+   * write takes only where the row still holds the value that was checked, so a reset, a sweep or another import since
+   * the read wins over it.
    */
   async function upgrade(
     customer: CustomerWithHash,
     password: string,
+    command: 'customer.upgradePassword' | 'customer.oldPlatformSignIn',
   ): Promise<{ customer: Customer; tokens: AuthTokens }> {
     const passwordHash = await bcryptHash(password, PASSWORD_HASH_ROUNDS)
     // The conditional write binds the imported hash it replaces, so a failed statement's error leaves without it.
@@ -439,7 +464,7 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
           requiresPasswordReset: false,
         })
         if (!wrote) return null
-        audit.note('customer.upgradePassword', [{ type: 'customer', id: customer.id }])
+        audit.note(command, [{ type: 'customer', id: customer.id }])
         const fresh = (await repos.customer.findById(tx, customer.id))!
         await publisher.publish(EVT_CUSTOMER_UPDATED, {
           customerId: customer.id,
@@ -451,13 +476,56 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
         throw withoutQueryParams(err)
       })
     if (upgraded !== null) return signedIn(upgraded)
-    // Another write took the row first. A native hash there is checked as any sign-in is (a concurrent upgrade of the
-    // same password passes); anything else is refused without a second legacy check.
-    const now = await store.read((tx) => repos.customer.findById(tx, customer.id))
-    if (hasPassword(now) && (await bcryptCompare(bcryptCandidate(password), now.passwordHash))) {
-      return signedIn(now)
+    return afterLostWrite(
+      await store.read((tx) => repos.customer.findById(tx, customer.id)),
+      password,
+    )
+  }
+
+  /**
+   * The old platform vouched for an address with no customer: one is made with the store's hash of the typed password
+   * and is held as an imported customer is (no confirmation asked, no welcome mailed). Of two first sign-ins at once one
+   * makes the row and the other is checked against it.
+   */
+  async function createVouched(
+    email: string,
+    password: string,
+    profile: RemoteProfile,
+  ): Promise<{ customer: Customer; tokens: AuthTokens }> {
+    const passwordHash = await bcryptHash(password, PASSWORD_HASH_ROUNDS)
+    const id = uuidv7()
+    let created: CustomerWithHash | null
+    try {
+      created = await store.transaction(async (tx) => {
+        if ((await repos.customer.findByEmail(tx, email)) !== null) return null
+        audit.note('customer.oldPlatformSignIn', [{ type: 'customer', id }])
+        const now = new Date()
+        await repos.customer.insert(tx, {
+          id,
+          email,
+          passwordHash,
+          ...profile,
+          createdAt: now,
+          updatedAt: now,
+        })
+        const inserted = (await repos.customer.findById(tx, id))!
+        await publisher.publish(EVT_CUSTOMER_CREATED, {
+          customerId: id,
+          email,
+          customer: toCustomerSnapshot(inserted),
+          origin: 'import',
+        })
+        return inserted
+      })
+    } catch (err) {
+      // On Postgres the other sign-in's row can commit between the read and the insert, which then fails on the unique
+      // email; with no row at the address the failure was something else.
+      const winner = await store.read((tx) => repos.customer.findByEmail(tx, email))
+      if (winner === null) throw withoutQueryParams(err)
+      return afterLostWrite(winner, password)
     }
-    throw invalidCredentials()
+    if (created !== null) return signedIn(created)
+    return afterLostWrite(await store.read((tx) => repos.customer.findByEmail(tx, email)), password)
   }
 
   return {
@@ -636,11 +704,28 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
       }
       const input = legacyInput(password)
       const own = await checkOwn(customer, password, input)
+      // Only an address with no password here is asked about: a saved one, native or imported, is never sent anywhere.
+      const answer =
+        remote !== undefined &&
+        (customer === null || customer.passwordHash === IMPORTED_NO_PASSWORD)
+          ? await remote.check(email.toLowerCase(), password)
+          : undefined
+      if (answer?.status === 'ok') {
+        return customer === null
+          ? createVouched(email.toLowerCase(), password, answer.profile)
+          : upgrade(customer, password, 'customer.oldPlatformSignIn')
+      }
       if (customer === null || !own.ok || unconfirmed) {
         await padRefusal(own.work, password, input)
+        // A refusal that sent nothing waits as long as a recent check took, so its time does not say why it was refused.
+        if (remote !== undefined && (answer === undefined || answer.status === 'skipped')) {
+          await sleep(remote.decoyMs())
+        }
         throw invalidCredentials()
       }
-      if (isLegacyPasswordHash(customer.passwordHash)) return upgrade(customer, password)
+      if (isLegacyPasswordHash(customer.passwordHash)) {
+        return upgrade(customer, password, 'customer.upgradePassword')
+      }
       return signedIn(customer)
     },
 

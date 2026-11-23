@@ -26,7 +26,7 @@ export class ConfigError extends NymbalError {
     options: {
       cause?: unknown
       context?: ErrorContext
-      code?: `config.${string}` | `adapter.${string}`
+      code?: `config.${string}` | `adapter.${string}` | `auth.${string}`
     } = {},
   ) {
     super(options.code ?? 'config.invalid', message, options)

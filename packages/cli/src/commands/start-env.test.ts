@@ -346,3 +346,79 @@ describe('AC-9: start and the app agree on the trusted proxy settings', () => {
     expect(Math.min(seen.refused, seen.resolved)).toBeGreaterThanOrEqual(20)
   })
 })
+
+describe('start and the app agree on the old-platform secret', () => {
+  it('over NYMBAL_LEGACY_AUTH_SECRET unset, short or long, with security.auth.legacy.remote set or not and NODE_ENV production or unset, checkStartEnv lists one more line than without the variable, resolveLegacyRemoteSecret’s message, exactly when that throws, and no line holds the secret', async () => {
+    const { resolveLegacyRemoteSecret } = (await import('@nymbalhq/platform')) as unknown as {
+      resolveLegacyRemoteSecret: (config: NymbalConfig, env: NodeJS.ProcessEnv) => unknown
+    }
+    const seen = { refused: 0, resolved: 0 }
+    fc.assert(
+      fc.property(
+        fc.boolean(),
+        fc.option(
+          fc.stringMatching(/^[A-Za-z0-9+/]{8,48}$/).filter((s) => new Set(s).size >= 6),
+          {
+            nil: undefined,
+          },
+        ),
+        fc.constantFrom('unset', 'production'),
+        fc.uint8Array({ minLength: 32, maxLength: 32 }),
+        (remote, secret, nodeEnv, keyBytes) => {
+          const config = nymbalConfigSchema.parse({
+            store: { name: 'Shop', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
+            template: 'astro',
+            infrastructure: {
+              commandStore: 'sqlite',
+              documentStore: { provider: 'in-memory' },
+              eventBus: { provider: 'in-process' },
+            },
+            security: {
+              adapter: 'middleware',
+              auth: {
+                legacy: {
+                  until: new Date().toISOString().slice(0, 10),
+                  ...(remote && { remote: { url: 'https://old-store.example/nymbal/check' } }),
+                },
+              },
+            },
+            commerce: {
+              payments: { provider: 'stripe' },
+              email: { provider: 'native' },
+              reviews: { provider: 'native' },
+              search: { provider: 'native' },
+              analytics: { provider: 'native' },
+              shipping: { provider: 'native' },
+              tax: { provider: 'native' },
+              ai: { provider: 'none' },
+            },
+            http: { adapter: 'fastify' },
+            deployment: { strategy: 'standard' },
+          })
+          const base: NodeJS.ProcessEnv = {
+            NYMBAL_SECRETS_KEY: Buffer.from(keyBytes).toString('base64'),
+            NYMBAL_PUBLIC_URL: 'https://shop.example',
+            NYMBAL_JWT_SECRET: 'start-legacy-jwt-secret-0123456789abcdef',
+            ...(nodeEnv === 'production' && { NODE_ENV: 'production' }),
+          }
+          const env = secret === undefined ? base : { ...base, NYMBAL_LEGACY_AUTH_SECRET: secret }
+          const lines = checkStartEnv(config, env)
+          const without = checkStartEnv(config, {
+            ...base,
+            NYMBAL_LEGACY_AUTH_SECRET: 'x'.repeat(32),
+          })
+          const appRefusal = refusal(() => resolveLegacyRemoteSecret(config, env))
+          seen[appRefusal === null ? 'resolved' : 'refused'] += 1
+
+          expect([...lines].sort()).toEqual(
+            (appRefusal === null ? without : [...without, appRefusal]).sort(),
+          )
+          expect(appRefusal !== null).toBe(remote && (secret === undefined || secret.length < 32))
+          expect(lines.filter((line) => secret !== undefined && line.includes(secret))).toEqual([])
+        },
+      ),
+      { numRuns: 200 },
+    )
+    expect(Math.min(seen.refused, seen.resolved)).toBeGreaterThanOrEqual(20)
+  })
+})

@@ -41,6 +41,12 @@ export default defineConfig({
       xFrameOptions: 'deny',
     },
     csrf: true,
+    // Until a sunset date, a shopper with no password here (never imported, or imported without a hash) signs in with
+    // their old platform's password: the endpoint below is asked once and the store keeps its own hash. The endpoint's
+    // contract is in the importing guide; its bearer is NYMBAL_LEGACY_AUTH_SECRET.
+    // auth: {
+    //   legacy: { until: '2027-06-30', remote: { url: 'https://old-store.example/nymbal/check' } },
+    // },
   },
 
   commerce: {
