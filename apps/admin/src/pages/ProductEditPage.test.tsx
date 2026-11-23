@@ -131,7 +131,8 @@ describe('Product save', () => {
       </Routes>,
       { initialPath: `/products/${PRODUCT.slug}`, dataRouter: true },
     )
-    expect(await screen.findByTestId('admin-product-name')).toHaveValue(PRODUCT.name)
+    // The form renders one commit before the loaded product fills it, so wait for the value, not the input.
+    await waitFor(() => expect(screen.getByTestId('admin-product-name')).toHaveValue(PRODUCT.name))
 
     fireEvent.change(screen.getByPlaceholderText('Describe this product...'), {
       target: { value: 'Loose, light and repriced.' },

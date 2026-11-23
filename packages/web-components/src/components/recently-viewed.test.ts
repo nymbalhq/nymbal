@@ -68,10 +68,12 @@ function fakeClient(answer: Listed[] | 'fail'): Fake {
 
 const listeners: Array<(e: Event) => void> = []
 
-/** Lets the element's update, its record and its read run to the end. */
+/** Lets the element's update, its record and its read run to the end. That path is microtasks only, so a setImmediate
+ * turn drains it: a setTimeout(0) costs a millisecond, and the property's two thousand of them ran past the timeout
+ * under load. */
 async function settle(el: HTMLElement): Promise<void> {
   for (let turn = 0; turn < 10; turn += 1) {
-    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    await new Promise<void>((resolve) => setImmediate(resolve))
     await (el as unknown as { updateComplete?: Promise<unknown> }).updateComplete
   }
 }

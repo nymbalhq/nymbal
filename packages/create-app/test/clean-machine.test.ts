@@ -131,17 +131,23 @@ async function scaffoldInto(template: Template, userAgent?: string): Promise<str
 
 type Run = { cmd: string; args: string[]; cwd: string }
 
+// Each scaffolds a project or spawns npm: well under a second alone, past the 5 s default at a loaded gate's load.
+const LOADED_MS = 60_000
+
 describe('create-nymbal-app main(argv, { run })', () => {
   const argv = (...args: string[]): string[] => ['node', 'create-nymbal-app', ...args]
   const originalCwd = process.cwd()
   const originalUa = process.env['npm_config_user_agent']
   let runs: Run[]
-  const run = async (cmd: string, args: string[], cwd: string): Promise<void> => {
-    runs.push({ cmd, args: [...args], cwd })
-  }
+  let run: (cmd: string, args: string[], cwd: string) => Promise<void>
 
   beforeEach(() => {
-    runs = []
+    // Each test's runner records into its own list: a main() a timed-out test left running cannot add to the next's.
+    const own: Run[] = []
+    runs = own
+    run = async (cmd, args, cwd) => {
+      own.push({ cmd, args: [...args], cwd })
+    }
     clack.asked.length = 0
     clack.installAnswer = false
   })
@@ -169,7 +175,7 @@ describe('create-nymbal-app main(argv, { run })', () => {
       expect(clack.asked[i]?.kind, `prompt ${i}`).toBe(kind)
       expect(clack.asked[i]?.message, `prompt ${i}`).toMatch(message)
     })
-  })
+  }, LOADED_MS)
 
   it('AC-5: --yes runs install with the detected package manager, then nymbal seed, both in the project dir', async () => {
     const userAgents: Array<[string, string]> = [
@@ -178,7 +184,7 @@ describe('create-nymbal-app main(argv, { run })', () => {
       ['yarn', 'yarn/1.22.22 npm/? node/v22.23.3 darwin arm64'],
     ]
     for (const [pm, ua] of userAgents) {
-      runs = []
+      runs.length = 0
       process.env['npm_config_user_agent'] = ua
       const cwd = await tempDir(`yes-${pm}`)
       process.chdir(cwd)
@@ -199,7 +205,7 @@ describe('create-nymbal-app main(argv, { run })', () => {
       expect(existsSync(join(projectDir, 'package.json')), pm).toBe(true)
       expect(clack.asked, `${pm}: --yes must not prompt`).toEqual([])
     }
-  })
+  }, LOADED_MS)
 
   it('AC-5: --no-install, and interactive mode with install declined, run neither install nor seed', async () => {
     expect(parseCliFlags(argv('shop', '--yes', '--no-install')).install).toBe(false)
@@ -218,7 +224,7 @@ describe('create-nymbal-app main(argv, { run })', () => {
     await main(argv(), { run })
     expect(clack.asked.some((p) => /install/i.test(p.message))).toBe(true)
     expect(runs).toEqual([])
-  })
+  }, LOADED_MS)
 })
 
 // ─── AC-2, AC-4, AC-6: what scaffold() writes ────────────────────────────────────────────────────────────────────
@@ -310,7 +316,7 @@ describe('scaffold() output', () => {
     const dir = await scaffoldInto('astro', undefined)
     const pkg = await readJson<Manifest>(join(dir, 'package.json'))
     expect(pkg.packageManager).toBe(`npm@${npm.stdout.trim()}`)
-  })
+  }, LOADED_MS)
 
   for (const template of TEMPLATES) {
     it(`AC-6: ${template}'s generated nymbal.config.ts parses with the config schema and uses native payments`, async () => {

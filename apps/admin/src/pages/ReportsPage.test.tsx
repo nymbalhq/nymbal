@@ -320,10 +320,11 @@ const tid = (...parts: string[]) => ['admin-reports', ...parts].join('-')
 const byId = (...parts: string[]) => screen.getByTestId(tid(...parts))
 const textOf = (...parts: string[]) => byId(...parts).textContent ?? ''
 
-/** The element's text nodes, one per cell or label, joined with a mark no figure holds, so two adjacent cells such as
- * £960.00 and 4 never read as one figure. */
+/** The element's text nodes (the page's, with no parts), one per cell or label, joined with a mark no figure holds,
+ * so two adjacent cells such as £960.00 and 4 never read as one figure. */
 function cellsOf(...parts: string[]): string {
-  const walker = document.createTreeWalker(byId(...parts), NodeFilter.SHOW_TEXT)
+  const root = parts.length === 0 ? document.body : byId(...parts)
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
   const texts: string[] = []
   for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
     texts.push(node.textContent ?? '')
@@ -337,6 +338,13 @@ function reading(want: string): RegExp {
   const escaped = want.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const before = /^\d/.test(want) ? '(?<![\\d.,\\-\u2212])' : '(?<![\\-\u2212])'
   return new RegExp(`${before}${escaped}(?!\\d)`)
+}
+
+/** `want` as a whole figure: no sign or digit before it, and no digit or grouped digits after it, so JP¥100,011 is
+ * not read in JP¥100,011,234. */
+function wholeFigure(want: string): RegExp {
+  const escaped = want.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`(?<![\\d.,\\-\u2212])${escaped}(?![\\d]|[.,]\\d)`)
 }
 
 function expectReads(text: string, want: string, what: string): void {
@@ -485,7 +493,8 @@ describe('money per currency', () => {
             }
           }
 
-          const body = document.body.textContent ?? ''
+          // The page's cells, not its text run together, read for whole figures only.
+          const page = cellsOf()
           for (const field of FIELDS) {
             const sum = summary.money.totals.reduce((n, t) => n + t[field], 0)
             for (const total of summary.money.totals) {
@@ -493,9 +502,9 @@ describe('money per currency', () => {
               const own = [total, ...total.bySource].flatMap((f) => FIELDS.map((k) => f[k]))
               if (own.includes(sum)) continue
               expect(
-                body,
+                page,
                 `the ${field} of every currency summed, in ${total.currency}`,
-              ).not.toContain(formatMoney(sum, total.currency))
+              ).not.toMatch(wholeFigure(formatMoney(sum, total.currency)))
             }
           }
         } finally {
