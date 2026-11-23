@@ -17,6 +17,10 @@ export interface InsightView {
   status: InsightStatus
   createdAt: string
   dismissedAt: string | null
+  /** What an AI model suggests doing about it, shown only once it passed the store's checks. */
+  guidance: string | null
+  /** True when the model's guidance was written and did not pass the store's checks. */
+  guidanceWithheld: boolean
 }
 
 export interface InsightList {

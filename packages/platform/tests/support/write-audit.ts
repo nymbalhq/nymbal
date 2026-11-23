@@ -51,6 +51,15 @@ export const EXEMPT_TABLES: Readonly<Record<string, string>> = {
     "the runner's claim and record of a night's job; no read model is built from it",
 }
 
+/** Columns an update may set without an event, by table: an update that sets no other column is not counted. */
+export const EXEMPT_COLUMNS: Readonly<Record<string, { columns: readonly string[]; why: string }>> =
+  {
+    insights: {
+      columns: ['guidance', 'guidance_status'],
+      why: 'the guidance a pass writes onto a row, read from its own table by the brief, no read model, publishes no event; a night’s insert and a dismiss publish theirs',
+    },
+  }
+
 /** Kernel event types a transaction may insert with no domain change, each because the event is all there is to write. */
 export const NOTIFICATION_ONLY: Readonly<Record<string, string>> = {
   'product.viewed.v1':
@@ -184,14 +193,29 @@ export function auditWrites(store: CommandStore): void {
   const virtual = all.filter((t) => /^CREATE VIRTUAL TABLE/i.test(t.sql ?? '')).map((t) => t.name)
   const tables = all.filter((t) => !virtual.some((v) => t.name === v || t.name.startsWith(`${v}_`)))
   for (const { name } of tables) {
+    const exempt = EXEMPT_COLUMNS[name]?.columns
+    const counted =
+      exempt === undefined
+        ? undefined
+        : (
+            raw.prepare(`SELECT name FROM pragma_table_info(?)`).all(name) as Array<{
+              name: string
+            }>
+          )
+            .map((c) => c.name)
+            .filter((c) => !exempt.includes(c))
     for (const op of OPS) {
+      const event =
+        op === 'update' && counted !== undefined
+          ? `UPDATE OF ${counted.map(quoted).join(', ')}`
+          : op.toUpperCase()
       const extra =
         name === 'events' && op === 'insert'
           ? `INSERT INTO ${EVENTS} (type) VALUES (NEW.type);`
           : ''
       raw.exec(
         `CREATE TEMP TRIGGER IF NOT EXISTS ${quoted(`nymbal_write_audit_${name}_${op}`)} ` +
-          `AFTER ${op.toUpperCase()} ON main.${quoted(name)} FOR EACH ROW BEGIN ` +
+          `AFTER ${event} ON main.${quoted(name)} FOR EACH ROW BEGIN ` +
           `INSERT INTO ${CHANGES} (tbl, op) VALUES ('${name.replace(/'/g, "''")}', '${op}'); ${extra} END`,
       )
     }

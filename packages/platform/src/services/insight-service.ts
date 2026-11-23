@@ -52,8 +52,13 @@ function briefOrder(a: InsightView, b: InsightView): number {
 }
 
 function insightView(row: InsightRecord): InsightView {
-  const { runDay, ...rest } = row
-  return { ...rest, day: runDay }
+  const { runDay, guidance, guidanceStatus, ...rest } = row
+  return {
+    ...rest,
+    day: runDay,
+    guidance: guidanceStatus === 'written' ? guidance : null,
+    guidanceWithheld: guidanceStatus === 'withheld',
+  }
 }
 
 /**

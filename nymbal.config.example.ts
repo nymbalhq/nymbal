@@ -104,8 +104,9 @@ export default defineConfig({
     heartbeat: false,
   },
 
-  // A nightly look at the store's own figures, from `at` store time.
-  nightShift: { enabled: true, at: '03:00' },
+  // A nightly look at the store's own figures, from `at` store time. With commerce.ai set, up to `maxInsightsPerNight`
+  // of its search, order and refund insights get a suggested next step from the model; 0 turns that off.
+  nightShift: { enabled: true, at: '03:00', ai: { maxInsightsPerNight: 5 } },
 
   // A weekly review that asks the AI provider for SEO titles and descriptions where a product's are missing or break
   // the copy rules; each answer waits in the Inbox. Needs commerce.ai and the night shift.

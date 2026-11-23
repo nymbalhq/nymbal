@@ -43,6 +43,7 @@ export default defineConfig({
       'packages/platform/tests/integration/report-rebuild*.test.ts',
       'packages/platform/tests/integration/night-shift-*.test.ts',
       'packages/platform/tests/integration/admin-insights*.test.ts',
+      'packages/platform/tests/integration/insight-guidance*.test.ts',
       'packages/platform/tests/integration/password-*.test.ts',
       'packages/platform/tests/integration/login-account-ceiling.test.ts',
       'packages/platform/src/events/*.test.ts',

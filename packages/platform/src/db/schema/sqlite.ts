@@ -796,6 +796,8 @@ export const insights = sqliteTable(
     facts: text('facts').notNull(),
     createdAt: text('created_at').notNull(),
     dismissedAt: text('dismissed_at'),
+    guidance: text('guidance'),
+    guidanceStatus: text('guidance_status'),
   },
   (t) => ({
     keyUnique: uniqueIndex('insights_key_unique').on(t.job, t.subject, t.runDay),

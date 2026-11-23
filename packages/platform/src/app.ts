@@ -54,6 +54,7 @@ import {
   type SweeperHandle,
 } from './sweepers/index.js'
 import { NIGHT_SHIFT_JOBS } from './night-shift/jobs.js'
+import { guidanceDeps } from './night-shift/guidance.js'
 import { startNightShift } from './night-shift/runner.js'
 import { contentRoleDeps, contentRoleJob } from './roles/content.js'
 import { importAdapterModule, resolveChoice } from './adapters/resolve.js'
@@ -578,6 +579,8 @@ export async function createApp(
               ),
             ]
           : []
+      const ai = adapters.ai
+      const guided = ai !== null && ai.capabilities().includes('tools')
       sweepers.push(
         startNightShift({
           store: platform.commandStore,
@@ -587,6 +590,16 @@ export async function createApp(
           timeZone: config.store.timezone,
           at: config.nightShift.at,
           jobs: [...NIGHT_SHIFT_JOBS, ...roleJobs],
+          ...(guided && {
+            guidance: guidanceDeps({
+              store: platform.commandStore,
+              insights: repos.insight,
+              ai,
+              tools: () => assistantTools,
+              config,
+              logger,
+            }),
+          }),
           ...options.nightShift,
         }),
       )

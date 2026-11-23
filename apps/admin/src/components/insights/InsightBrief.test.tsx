@@ -48,6 +48,8 @@ function insight(
     status: 'open',
     createdAt: AT,
     dismissedAt: null,
+    guidance: null,
+    guidanceWithheld: false,
   }
 }
 
@@ -117,7 +119,7 @@ const brief = () => within(screen.getByTestId('admin-inbox-brief'))
 function cardIds(): string[] {
   return Array.from(document.querySelectorAll<HTMLElement>('[data-testid^="admin-inbox-insight-"]'))
     .map((el) => el.dataset['testid']!.slice('admin-inbox-insight-'.length))
-    .filter((rest) => !rest.startsWith('severity-'))
+    .filter((rest) => !rest.startsWith('severity-') && !rest.startsWith('guidance-'))
 }
 
 const itemArb = fc.record({

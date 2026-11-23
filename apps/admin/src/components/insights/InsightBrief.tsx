@@ -76,6 +76,25 @@ function InsightCard({ insight }: { insight: InsightView }) {
         <span>Night of {formatStoreDay(insight.day)}</span>
       </div>
       <p className="text-sm text-zinc-900 [overflow-wrap:anywhere]">{insight.summary}</p>
+      {insight.guidance !== null && (
+        <div
+          className="space-y-1 rounded-md bg-zinc-50 p-3"
+          data-testid={tid('inbox', 'insight', 'guidance', id)}
+        >
+          <p className="text-xs font-medium text-zinc-500">Suggested next step · written by AI</p>
+          <p className="text-sm text-zinc-800 [overflow-wrap:anywhere] whitespace-pre-line">
+            {insight.guidance}
+          </p>
+        </div>
+      )}
+      {insight.guidanceWithheld && (
+        <p
+          className="text-xs text-zinc-500"
+          data-testid={tid('inbox', 'insight', 'guidance', 'withheld', id)}
+        >
+          AI guidance was withheld: it did not pass the store's checks.
+        </p>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         <Button
           size="sm"

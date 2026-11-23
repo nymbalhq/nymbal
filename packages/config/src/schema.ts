@@ -902,6 +902,11 @@ export const nightShiftSchema = z
         'at must be a store time from "00:00" to "22:59", so the night has an hour to run',
       )
       .default('03:00'),
+    /** Guidance per insight from `commerce.ai`: how many of a night's insights are sent to the model; 0 sends none. */
+    ai: z
+      .object({ maxInsightsPerNight: z.number().int().min(0).max(20).default(5) })
+      .strict()
+      .default({ maxInsightsPerNight: 5 }),
   })
   .strict()
 

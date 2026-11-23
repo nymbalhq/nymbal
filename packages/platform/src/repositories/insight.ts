@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, inArray, lt, or, type SQL } from 'drizzle-orm'
+import { and, asc, count, eq, gte, inArray, isNotNull, isNull, lt, or, type SQL } from 'drizzle-orm'
 import type { InsightFacts, InsightSeverity, InsightStatus } from '@nymbalhq/types'
 import {
   postgresDb,
@@ -25,9 +25,18 @@ export interface InsightRecord {
   facts: InsightFacts
   createdAt: string
   dismissedAt: string | null
+  /** The model's text; null unless its status is `written`. */
+  guidance: string | null
+  /** Null until a night's guidance pass claims the insight. */
+  guidanceStatus: GuidanceStatus | null
 }
 
-export type InsightInsert = Omit<InsightRecord, 'createdAt' | 'dismissedAt'> & {
+export type GuidanceStatus = 'pending' | 'written' | 'withheld' | 'failed'
+
+export type InsightInsert = Omit<
+  InsightRecord,
+  'createdAt' | 'dismissedAt' | 'guidance' | 'guidanceStatus'
+> & {
   createdAt: Date
   dismissedAt: Date | null
 }
@@ -68,6 +77,19 @@ export interface InsightRepository extends StoreRepository {
   /** Oldest run day first, then subject. */
   list(tx: ReadTx, q: InsightQuery): Promise<InsightRecord[]>
   problemRuns(tx: ReadTx, days: string[], staleBefore: Date): Promise<ProblemRun[]>
+  /** The open insights of `runDay` of one of `jobs` that no guidance pass has claimed. */
+  unguided(tx: ReadTx, runDay: string, jobs: readonly string[]): Promise<InsightRecord[]>
+  /** How many insights of `runDay` a guidance pass has claimed. */
+  guidedCount(tx: ReadTx, runDay: string): Promise<number>
+  /** Marks the insight `pending`; false when a pass already claimed it. */
+  claimGuidance(tx: Tx, id: string): Promise<boolean>
+  /** Settles a `pending` insight; `guidance` is stored only when written. */
+  settleGuidance(
+    tx: Tx,
+    id: string,
+    status: Exclude<GuidanceStatus, 'pending'>,
+    guidance: string | null,
+  ): Promise<void>
 }
 
 type InsightTable = typeof sqliteSchema.insights | typeof postgresSchema.insights
@@ -86,7 +108,18 @@ function toRecord(kind: 'sqlite' | 'postgres', row: Record<string, unknown>): In
     facts: parseJson<InsightFacts>(kind, row['facts'], {}),
     createdAt: fromTimestamp(row['createdAt']),
     dismissedAt: row['dismissedAt'] == null ? null : fromTimestamp(row['dismissedAt']),
+    guidance: row['guidance'] == null ? null : String(row['guidance']),
+    guidanceStatus: (row['guidanceStatus'] ?? null) as GuidanceStatus | null,
   }
+}
+
+function unguidedWhere(t: InsightTable, runDay: string, jobs: readonly string[]): SQL | undefined {
+  return and(
+    eq(t.runDay, runDay),
+    eq(t.status, 'open'),
+    inArray(t.job, [...jobs]),
+    isNull(t.guidanceStatus),
+  )
 }
 
 function listWhere(t: InsightTable, q: InsightQuery): SQL | undefined {
@@ -244,6 +277,68 @@ export function createInsightRepository(store: CommandStore): InsightRepository 
               .where(problemWhere(pr, days, staleBefore))
               .orderBy(asc(pr.runDay), asc(pr.job))
       return rows.map((r) => ({ ...r, status: r.status as NightShiftRunStatus }))
+    },
+    async unguided(tx, runDay, jobs) {
+      if (jobs.length === 0) return []
+      if (tx.kind === 'sqlite') {
+        return sqliteDb(tx)
+          .select()
+          .from(si)
+          .where(unguidedWhere(si, runDay, jobs))
+          .orderBy(asc(si.createdAt), asc(si.id))
+          .all()
+          .map((row) => toRecord('sqlite', row))
+      }
+      const rows = await postgresDb(tx)
+        .select()
+        .from(pi)
+        .where(unguidedWhere(pi, runDay, jobs))
+        .orderBy(asc(pi.createdAt), asc(pi.id))
+      return rows.map((row) => toRecord('postgres', row))
+    },
+    async guidedCount(tx, runDay) {
+      const [row] =
+        tx.kind === 'sqlite'
+          ? sqliteDb(tx)
+              .select({ n: count() })
+              .from(si)
+              .where(and(eq(si.runDay, runDay), isNotNull(si.guidanceStatus)))
+              .all()
+          : await postgresDb(tx)
+              .select({ n: count() })
+              .from(pi)
+              .where(and(eq(pi.runDay, runDay), isNotNull(pi.guidanceStatus)))
+      return Number(row?.n ?? 0)
+    },
+    async claimGuidance(tx, id) {
+      if (tx.kind === 'sqlite') {
+        const result = sqliteDb(tx)
+          .update(si)
+          .set({ guidanceStatus: 'pending' })
+          .where(and(eq(si.id, id), isNull(si.guidanceStatus)))
+          .run()
+        return result.changes > 0
+      }
+      const result = await postgresDb(tx)
+        .update(pi)
+        .set({ guidanceStatus: 'pending' })
+        .where(and(eq(pi.id, id), isNull(pi.guidanceStatus)))
+      return (result.rowCount ?? 0) > 0
+    },
+    async settleGuidance(tx, id, status, guidance) {
+      const set = { guidanceStatus: status, guidance: status === 'written' ? guidance : null }
+      if (tx.kind === 'sqlite') {
+        sqliteDb(tx)
+          .update(si)
+          .set(set)
+          .where(and(eq(si.id, id), eq(si.guidanceStatus, 'pending')))
+          .run()
+        return
+      }
+      await postgresDb(tx)
+        .update(pi)
+        .set(set)
+        .where(and(eq(pi.id, id), eq(pi.guidanceStatus, 'pending')))
     },
   }
 }

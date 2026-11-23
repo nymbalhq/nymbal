@@ -43,7 +43,7 @@ export default defineConfig({
 | `agents`                           | MCP and UCP, whether an agent's admin writes apply or wait as proposals, and what crawlers may read. See [Agents](../agents/). |
 | `events`, `deployment`, `features` | Event retention and archiving, the deployment strategy, optional features.                                                     |
 | `heartbeat`                        | What `nymbal heartbeat` checks once `features.heartbeat` is on: the address its store check uses, and the saved card it charges and refunds. See [Deploying](../deploying/#heartbeat). |
-| `nightShift`                       | Whether the nightly look at the store's figures runs (`enabled`, on by default) and from what store time (`at`, `'03:00'`).    |
+| `nightShift`                       | Whether the nightly look at the store's figures runs (`enabled`, on by default), from what store time (`at`, `'03:00'`), and how many insights a night get AI guidance (`ai.maxInsightsPerNight`, 5; 0 turns it off). |
 
 `store.timezone` must be an IANA time zone, such as `Europe/London`, `America/New_York` or `UTC`; a name like
 `London` or `GMT+1` is refused at startup.
@@ -51,8 +51,10 @@ export default defineConfig({
 `nightShift` looks at the store's own figures once a night, from `at` in `store.timezone` until midnight, so the
 latest `at` is `'22:59'`: variants about to run out, new searches that found nothing, a fall in paid orders or
 checkout success, a rise in refunds, and events or proposals that failed. Each finding is kept as an insight with the
-figures behind it. Nothing leaves the store and no AI model is called; the admin's Inbox shows them each morning, and
-a dismissed one stays quiet for 7 days.
+figures behind it. Finding them sends nothing out of the store; the admin's Inbox shows them each morning, and a
+dismissed one stays quiet for 7 days. With an AI provider set (`commerce.ai`), up to `ai.maxInsightsPerNight` of a
+night's search, order and refund insights also get a suggested next step from it: see
+[Night shift guidance](../agents/#night-shift-guidance).
 
 `nymbal add` edits this file for you: `npx nymbal add postgres` sets the command store, `npx nymbal add stripe`
 the payments provider, and each lists the variables it needs in `.env.example`. See [Adapters](../adapters/).

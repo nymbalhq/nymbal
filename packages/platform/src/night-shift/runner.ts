@@ -5,6 +5,7 @@ import { audit, auditedCommand } from '../audit/audit.js'
 import { addDays, localDayOf } from '../reports/time.js'
 import type { InsightRecord } from '../repositories/insight.js'
 import type { SweeperHandle } from '../sweepers/inventory-reservation-sweeper.js'
+import { runGuidance, type GuidanceDeps } from './guidance.js'
 import {
   NIGHT_SHIFT_JOBS,
   SUPPRESS_DAYS,
@@ -104,7 +105,13 @@ function writeDrafts(
             summary: row.summary,
             facts: row.facts,
           })
-          created.push({ ...row, createdAt: ctx.now.toISOString(), dismissedAt: null })
+          created.push({
+            ...row,
+            createdAt: ctx.now.toISOString(),
+            dismissedAt: null,
+            guidance: null,
+            guidanceStatus: null,
+          })
         }
         await repos.insight.finishRun(tx, job.id, ctx.runDay, {
           status: 'done',
@@ -167,6 +174,8 @@ export interface NightShiftRunnerDeps extends NightShiftDeps {
   at: string
   intervalMs?: number
   now?: () => Date
+  /** The guidance pass, run after the night on every due tick, so insights another replica wrote are picked up. */
+  guidance?: GuidanceDeps
 }
 
 /**
@@ -178,13 +187,19 @@ export function startNightShift(deps: NightShiftRunnerDeps): SweeperHandle {
   const now = deps.now ?? (() => new Date())
   const logger = deps.logger.child({ sweeper: 'night-shift' })
   let running = false
+  const stopped = new AbortController()
 
   async function tick(): Promise<void> {
     if (running) return
     running = true
     try {
       const at = now()
-      if (isDue(at, deps.at, deps.timeZone)) await runNightShift(deps, at)
+      if (isDue(at, deps.at, deps.timeZone)) {
+        await runNightShift(deps, at)
+        if (deps.guidance !== undefined) {
+          await runGuidance(deps.guidance, runDayOf(at, deps.timeZone), stopped.signal)
+        }
+      }
     } catch (err) {
       logger.error({ err }, 'night shift failed')
     } finally {
@@ -198,6 +213,7 @@ export function startNightShift(deps: NightShiftRunnerDeps): SweeperHandle {
     tick,
     stop() {
       clearInterval(handle)
+      stopped.abort()
     },
   }
 }

@@ -126,6 +126,8 @@ describe('AC-1: the open list over HTTP', () => {
                 status: 'open',
                 createdAt: '',
                 dismissedAt: null,
+                guidance: null,
+                guidanceWithheld: false,
               })
             }
           }

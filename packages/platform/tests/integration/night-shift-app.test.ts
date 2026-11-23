@@ -1,3 +1,4 @@
+import type { NymbalConfig } from '@nymbalhq/config'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { NIGHT_SHIFT_JOBS, type NightShiftJob } from '../../src/night-shift/jobs.js'
 import { createKernel, type Kernel } from '../support/kernel.js'
@@ -20,7 +21,8 @@ afterEach(async () => {
 async function kernelWith(enabled: boolean, now: () => Date): Promise<Kernel> {
   const k = await createKernel({
     dialect: 'sqlite',
-    configure: (config) => ({ ...config, nightShift: { enabled, at: '03:00' } }),
+    // A config the schema never parsed: no `nightShift.ai`, which reads as its default.
+    configure: (config) => ({ ...config, nightShift: { enabled, at: '03:00' } }) as NymbalConfig,
     appOptions: { nightShift: { intervalMs: INTERVAL_MS, now }, relay: { intervalMs: 3_600_000 } },
   })
   kernels.push(k)

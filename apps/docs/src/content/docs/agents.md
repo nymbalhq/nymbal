@@ -92,6 +92,24 @@ data](../assistant-data/) says what it sends to your AI provider.
 In one message Ask makes at most three deletions, archives, cancellations or refunds, does not carry out such a change
 to many records at once, and is not offered the store's settings.
 
+## Night shift guidance
+
+When the store has an AI provider (`commerce.ai`) whose adapter can call tools, the night shift asks it what you might
+do about each new insight on searches that found nothing, paid orders or checkouts, and refunds. Stock and store health
+insights are never sent. Under the insight's sentence in the Inbox you then see a few sentences headed "Suggested next
+step · written by AI".
+
+The provider is sent the insight's sentence and figures, and what the read tools answer when it asks: the same reads
+Ask makes, without the ones that carry a customer's email, phone or address. It is offered no tool that changes
+anything. Text that quotes a figure the store did not give it, or runs past 600 characters, is not shown: the card
+says the guidance was withheld.
+
+At most `nightShift.ai.maxInsightsPerNight` insights a night are sent, 5 by default, up to 20; 0 turns guidance off.
+
+```ts
+nightShift: { ai: { maxInsightsPerNight: 5 } },
+```
+
 ## Content role
 
 The content role reviews your products' SEO titles and descriptions once a week, on Monday's night shift, and proposes

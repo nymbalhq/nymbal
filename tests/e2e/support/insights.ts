@@ -15,6 +15,9 @@ export interface InsightSeed {
   day: string
   job?: string
   subject?: string
+  /** The AI guidance on the row and its status, as a night's guidance pass leaves them; neither column when absent. */
+  guidance?: string | null
+  guidanceStatus?: 'pending' | 'written' | 'withheld' | 'failed'
 }
 
 type StoreConfig = Parameters<typeof createCommandStore>[0]
@@ -23,6 +26,7 @@ const configFor = (commandStore: 'sqlite' | 'postgres'): StoreConfig =>
 
 const COLUMNS =
   'id, job, subject, run_day, data_day, status, severity, summary, facts, created_at, dismissed_at'
+const GUIDANCE_COLUMNS = ', guidance, guidance_status'
 
 function dayBefore(day: string): string {
   const d = new Date(`${day}T12:00:00.000Z`)
@@ -34,7 +38,9 @@ function dayBefore(day: string): string {
 export async function seedInsight(seed: InsightSeed): Promise<string> {
   const env = apiStoreEnv()
   const id = randomUUID()
-  const row = [
+  const guided = seed.guidance !== undefined || seed.guidanceStatus !== undefined
+  const columns = guided ? `${COLUMNS}${GUIDANCE_COLUMNS}` : COLUMNS
+  const row: unknown[] = [
     id,
     seed.job ?? 'zero-result-term',
     seed.subject ?? `term:e2e-${id}`,
@@ -46,6 +52,7 @@ export async function seedInsight(seed: InsightSeed): Promise<string> {
     '{}',
     new Date(),
     null,
+    ...(guided ? [seed.guidance ?? null, seed.guidanceStatus ?? null] : []),
   ]
   const store =
     env.NYMBAL_COMMAND_STORE === 'postgres'
@@ -55,11 +62,11 @@ export async function seedInsight(seed: InsightSeed): Promise<string> {
     const clients = rawClients(store)
     if (clients.kind === 'postgres') {
       const placeholders = row.map((_, i) => `$${i + 1}`).join(', ')
-      await clients.pool.query(`INSERT INTO insights (${COLUMNS}) VALUES (${placeholders})`, row)
+      await clients.pool.query(`INSERT INTO insights (${columns}) VALUES (${placeholders})`, row)
     } else {
       const placeholders = row.map(() => '?').join(', ')
       clients.raw
-        .prepare(`INSERT INTO insights (${COLUMNS}) VALUES (${placeholders})`)
+        .prepare(`INSERT INTO insights (${columns}) VALUES (${placeholders})`)
         .run(...row.map((value) => (value instanceof Date ? value.toISOString() : value)))
     }
   } finally {

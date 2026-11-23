@@ -809,6 +809,8 @@ export const insights = pgTable(
     facts: jsonb('facts').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     dismissedAt: timestamp('dismissed_at', { withTimezone: true }),
+    guidance: text('guidance'),
+    guidanceStatus: text('guidance_status'),
   },
   (t) => ({
     keyUnique: uniqueIndex('insights_key_unique').on(t.job, t.subject, t.runDay),
