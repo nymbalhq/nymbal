@@ -58,8 +58,11 @@ const CASES = [
 const slow = Boolean(process.env['NYMBAL_SLOW_CASES'])
 const runs = (c: (typeof CASES)[number]): boolean => slow || c.slot === 'payments'
 
+// The copy's run shares the machine with the other cases' copies, so a test that walks every source file (the
+// architecture project's) can outlast the default 5 s there. 20 s clears that load and stays well inside this test's
+// own minute, so a scaffold whose test hangs is still reported as that test's row.
 const PROJECTS =
-  '--project adapters --project contracts-native --project architecture --project tooling'
+  '--project adapters --project contracts-native --project architecture --project tooling --testTimeout=20000'
 /** The architecture project, and the tooling tests that read registry/adapters.json. */
 const SHARED = 'tests/architecture/ tests/tooling/registry-'
 
