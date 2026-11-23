@@ -126,12 +126,13 @@ jobs:
         run: pnpm perf:budgets --bytes
       # A dispatch (the release's) also runs the Lighthouse suite. It runs `pnpm perf:budgets` twice: with a 300 KB
       # script added to Astro's home page (it must fail), then as committed (it must pass, and writes the report).
-      # Each metric is the median of five Lighthouse runs a page: of three, one slow run on a shared runner was enough
-      # to cross a budget.
+      # Seven Lighthouse runs a page: LCP is judged on their lower quartile (the second fastest), every other metric on
+      # the median. LCP falls in a fast or a slow mode about 400 ms apart on the same build, so a median crossed a
+      # budget whenever most runs were slow.
       - name: perf:budgets (tests/perf)
         if: github.event_name == 'workflow_dispatch'
         env:
-          NYMBAL_PERF_BUDGETS_ARGS: --runs 5
+          NYMBAL_PERF_BUDGETS_ARGS: --runs 7
         run: pnpm exec vitest run --config tests/perf/vitest.config.ts
       # Each page loads only its own elements, seen only in a production build (the dev-server E2E jobs cannot): both
       # templates built for this slot's API, then the journeys in tests/e2e/prod.

@@ -1262,7 +1262,9 @@ function perfCalls(workflow: Workflow, github: Ctx): PerfCall[] {
   return calls
 }
 
-describe('perf:budgets takes the median of at least five Lighthouse runs a page', () => {
+// LCP is judged on the lower quartile of a page's runs: of five, the second fastest of five fails by chance when four
+// are slow; seven need six, so a page whose runs are slow two times in five fails a release about one time in fifty.
+describe('perf:budgets judges at least seven Lighthouse runs a page', () => {
   it('the tests/perf suite passes NYMBAL_PERF_BUDGETS_ARGS to every perf:budgets it spawns', () => {
     const source = readFileSync(PERF_SUITE, 'utf8')
     const spawns = [...source.matchAll(/spawn\('pnpm', \[([^\]]*)\]/g)].map((m) => m[1])
@@ -1288,14 +1290,14 @@ describe('perf:budgets takes the median of at least five Lighthouse runs a page'
       lighthouse: true,
     })),
   ])(
-    'AC-3: $label, every perf:budgets call but a --bytes one passes --runs 5 or more',
+    'AC-3: $label, every perf:budgets call but a --bytes one passes --runs 7 or more',
     ({ file, github, lighthouse }) => {
       const calls = perfCalls(loadWorkflow(file), github)
       expect(calls.length, 'perf:budgets calls that run').toBeGreaterThan(0)
       const timed = calls.filter((c) => !isBytes(c))
       expect(timed.length > 0, 'any Lighthouse call runs').toBe(lighthouse)
       const short = timed
-        .filter((c) => !(Number(flag(c.args, '--runs')) >= 5))
+        .filter((c) => !(Number(flag(c.args, '--runs')) >= 7))
         .map((c) => `${c.where}: perf:budgets ${c.args.join(' ')}`.trim())
       expect(short).toEqual([])
     },

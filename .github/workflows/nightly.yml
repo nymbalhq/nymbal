@@ -23,8 +23,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       # Seeds an API with the store's own images, builds and serves both templates, and holds every page to
-      # perf-budgets.json, as the pull request job does, on the median of five runs a page.
-      - run: pnpm perf:budgets --runs 5
+      # perf-budgets.json, as the release dispatch does, on seven runs a page (LCP's lower quartile, the other medians).
+      - run: pnpm perf:budgets --runs 7
       - name: Upload the budget report
         if: always()
         uses: actions/upload-artifact@v7
