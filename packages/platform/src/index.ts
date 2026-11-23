@@ -218,6 +218,14 @@ export {
   type RebuildReportEntry,
 } from './read-models/index.js'
 export { openReadModels, type OpenReadModelsOptions } from './read-models/open.js'
+export {
+  heldFrom,
+  rebuildReports,
+  type RebuildReportsDeps,
+  type ReportRebuild,
+  type ReportTableName,
+  type ReportTableRebuild,
+} from './reports/rebuild.js'
 export { seedCategories, seedProducts, type SeedCategory, type SeedProduct } from './seed/data.js'
 export {
   createLocalFsMediaStorage,

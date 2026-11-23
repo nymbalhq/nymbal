@@ -315,11 +315,11 @@ Print audit entries as NDJSON, oldest first: ids only, no event payloads or cust
 
 ## `nymbal replay`
 
-Rebuild a derived read model from the command store and swap it in: catalogue, orders, customers, search, recently-viewed or all
+Rebuild a derived read model from the command store and swap it in: catalogue, orders, customers, search, recently-viewed or all. --to reports rebuilds the report figures of the days the event log still holds whole (all leaves them); on SQLite it holds the write lock while it reads the log, so run it with the server stopped or idle; on Postgres writes that count in reports (add to cart, a product view, checkout) wait until it ends
 
 | Argument | Type | Description | Default |
 | --- | --- | --- | --- |
-| `--to` | string | The read model: catalogue, orders, customers, search, recently-viewed or all |  |
+| `--to` | string | The read model: catalogue, orders, customers, search, recently-viewed, reports or all |  |
 | `--dry-run` | boolean | Rebuild into memory and count what differs from the live read model; exits 1 if anything does | `false` |
 
 ## `nymbal mcp`

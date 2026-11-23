@@ -31,7 +31,7 @@ async function lookupFor(
 /**
  * `report-rollups`: one delivery, one transaction. The claim and the counters commit or roll back together, so the
  * relay's delivery after the command's own (it is derived, so reports count an order straight after the answer) adds
- * nothing.
+ * nothing. The lock it shares first keeps it out of a rebuild's window, which would erase what it commits.
  */
 export async function registerReportRollupProjection(
   deps: RegisterReportRollupProjectionDeps,
@@ -40,6 +40,7 @@ export async function registerReportRollupProjection(
   const { store } = repos.processedEvent
   const handle: EventHandler = async (event) => {
     await store.transaction(async (tx) => {
+      await repos.reportRollup.holdForDelivery(tx)
       const claimed = await repos.processedEvent.claim(tx, NAME, event.id, new Date())
       if (!claimed) return
       const deltas = foldEvent(event, await lookupFor(tx, repos, event), timeZone)

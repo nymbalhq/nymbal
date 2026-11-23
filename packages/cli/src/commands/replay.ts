@@ -7,10 +7,12 @@ import {
   openReadModels,
   READ_MODEL_NAMES,
   rebuild,
+  rebuildReports,
   sqliteFile,
   type ReadModelDiff,
   type ReadModelName,
   type RebuildReport,
+  type ReportRebuild,
 } from '@nymbalhq/platform'
 import { errorText } from '@nymbalhq/types'
 import { loadProject } from '../utils/project.js'
@@ -18,10 +20,14 @@ import { loadProject } from '../utils/project.js'
 /** A bad flag, a missing store or a refused model, said in the user's terms. */
 class ReplayError extends Error {}
 
-function modelsOf(to: string | undefined): readonly ReadModelName[] {
-  const choices = `${READ_MODEL_NAMES.join(', ')} or all`
+/** The report tables are not a read model: they live in the command store and are rebuilt only when asked for. */
+const REPORTS = 'reports'
+
+function modelsOf(to: string | undefined): readonly ReadModelName[] | typeof REPORTS {
+  const choices = `${READ_MODEL_NAMES.join(', ')}, ${REPORTS} or all`
   if (to === undefined || to === '') throw new ReplayError(`--to <model> is required: ${choices}`)
   if (to === 'all') return READ_MODEL_NAMES
+  if (to === REPORTS) return REPORTS
   const name = READ_MODEL_NAMES.find((n) => n === to)
   if (name === undefined) throw new ReplayError(`--to must be ${choices}, got "${to}"`)
   return [name]
@@ -62,6 +68,24 @@ export function formatDiff(diffs: ReadModelDiff[]): string {
   return lines.join('\n')
 }
 
+/** The days rebuilt and each report table's rows; a dry run, what each table would gain, change and lose. */
+export function formatReportRebuild(report: ReportRebuild, dryRun: boolean): string {
+  if (report.heldFrom === null) return 'reports: the event log holds no whole day to rebuild'
+  const days = `${report.heldFrom} to ${report.heldTo}`
+  if (dryRun) {
+    return [
+      `reports (dry run, nothing written): ${days}`,
+      ...report.tables.map(
+        (t) => `  ${t.name}: ${t.added} added, ${t.changed} changed, ${t.removed} removed`,
+      ),
+    ].join('\n')
+  }
+  return [
+    `reports: rebuilt ${days} from ${plural(report.events, 'event')} in ${report.ms} ms`,
+    ...report.tables.map((t) => `  ${t.name} ${t.rows}`),
+  ].join('\n')
+}
+
 const differs = (diffs: ReadModelDiff[]) =>
   diffs.some((d) => d.collections.some((c) => c.added + c.changed + c.removed > 0))
 
@@ -69,16 +93,57 @@ function write(stream: NodeJS.WriteStream, text: string): Promise<void> {
   return new Promise((done) => stream.write(`${text}\n`, () => done()))
 }
 
+type Project = Awaited<ReturnType<typeof loadProject>>
+
+async function open(config: Project['config'], adapters: Project['adapters']) {
+  if (config.infrastructure.commandStore === 'sqlite' && !existsSync(resolve(sqliteFile()))) {
+    throw new ReplayError(`no database at ${sqliteFile()}: run \`nymbal migrate\``)
+  }
+  return openReadModels(config, {
+    // The report says what happened; log lines would repeat it.
+    logger: createLogger({ level: 'silent', pretty: false }),
+    ...(adapters !== undefined && { adapters }),
+  })
+}
+
+async function replayReports(
+  config: Project['config'],
+  adapters: Project['adapters'],
+  dryRun: boolean,
+): Promise<void> {
+  const { deps, close } = await open(config, adapters)
+  try {
+    const report = await rebuildReports(
+      {
+        store: deps.store,
+        repos: deps.repos,
+        timeZone: config.store.timezone,
+        retentionDays: config.events.retentionDays,
+      },
+      { dryRun },
+    )
+    await write(process.stdout, formatReportRebuild(report, dryRun))
+    const changes = report.tables.reduce((n, t) => n + t.added + t.changed + t.removed, 0)
+    process.exitCode = dryRun && changes > 0 ? 1 : 0
+  } finally {
+    await close()
+  }
+}
+
 export const replayCommand = defineCommand({
   meta: {
     name: 'replay',
     description:
-      'Rebuild a derived read model from the command store and swap it in: catalogue, orders, customers, search, recently-viewed or all',
+      'Rebuild a derived read model from the command store and swap it in: catalogue, orders, customers, search, recently-viewed or all. ' +
+      '--to reports rebuilds the report figures of the days the event log still holds whole (all leaves them); ' +
+      'on SQLite it holds the write lock while it reads the log, so run it with the server stopped or idle; ' +
+      'on Postgres writes that count in reports (add to cart, a product view, checkout) wait until it ends',
   },
   args: {
     to: {
       type: 'string',
-      description: 'The read model: catalogue, orders, customers, search, recently-viewed or all',
+      description:
+        'The read model: catalogue, orders, customers, search, recently-viewed, reports or all',
     },
     'dry-run': {
       type: 'boolean',
@@ -89,8 +154,13 @@ export const replayCommand = defineCommand({
   },
   async run({ args }) {
     try {
-      const names = modelsOf(args.to)
+      const target = modelsOf(args.to)
       const { config, adapters } = await loadProject()
+      if (target === REPORTS) {
+        await replayReports(config, adapters, args['dry-run'])
+        return
+      }
+      const names = target
       const shared = names.filter((n) => n !== 'search')
       if (config.infrastructure.documentStore.provider === 'in-memory' && shared.length > 0) {
         throw new ReplayError(
@@ -100,14 +170,7 @@ export const replayCommand = defineCommand({
             'place. --to search works here: the native index lives in the command store.',
         )
       }
-      if (config.infrastructure.commandStore === 'sqlite' && !existsSync(resolve(sqliteFile()))) {
-        throw new ReplayError(`no database at ${sqliteFile()}: run \`nymbal migrate\``)
-      }
-      const { deps, close } = await openReadModels(config, {
-        // The report says what happened; log lines would repeat it.
-        logger: createLogger({ level: 'silent', pretty: false }),
-        ...(adapters !== undefined && { adapters }),
-      })
+      const { deps, close } = await open(config, adapters)
       try {
         if (args['dry-run']) {
           const diffs: ReadModelDiff[] = []

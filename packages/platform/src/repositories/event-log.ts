@@ -120,10 +120,12 @@ export interface EventLogRepository extends StoreRepository {
   listAfter(
     tx: ReadTx,
     seq: number,
-    filter: Pick<EventLogFilter, 'types' | 'limit'>,
+    filter: Pick<EventLogFilter, 'types' | 'since' | 'limit'>,
   ): Promise<LoggedEvent[]>
   /** The highest `seq` in the log, or 0 when it is empty. */
   maxSeq(tx: ReadTx): Promise<number>
+  /** When the oldest event still in the log was appended, in any state; null when the log is empty. */
+  oldestCreatedAt(tx: ReadTx): Promise<Date | null>
   /**
    * What a read-model rebuild re-applies after its swap: every event that is not dead and was delivered at or after
    * `since`, or not yet delivered, by `seq`. `afterSeq` and `limit` page through them.
@@ -510,6 +512,23 @@ export function createEventLogRepository(store: CommandStore): EventLogRepositor
         .select({ max: sql<string | null>`max(${p.seq})` })
         .from(p)
       return Number(row?.max ?? 0)
+    },
+    async oldestCreatedAt(tx) {
+      if (tx.kind === 'sqlite') {
+        const row = sqliteDb(tx)
+          .select({ createdAt: s.createdAt })
+          .from(s)
+          .orderBy(asc(s.createdAt))
+          .limit(1)
+          .get()
+        return toDate(row?.createdAt)
+      }
+      const [row] = await postgresDb(tx)
+        .select({ createdAt: p.createdAt })
+        .from(p)
+        .orderBy(asc(p.createdAt))
+        .limit(1)
+      return toDate(row?.createdAt)
     },
     // Only the columns a LoggedEvent maps: a boot rebuild runs this on a store not yet migrated past 0007.
     async listForCatchUp(tx, since, page = {}) {

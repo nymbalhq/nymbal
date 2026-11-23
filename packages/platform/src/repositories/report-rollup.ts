@@ -8,7 +8,7 @@ import {
   type StoreRepository,
   type Tx,
 } from '../db/command-store.js'
-import type { RollupDelta } from '../reports/fold.js'
+import type { RollupDelta, RollupMember, RollupRows } from '../reports/fold.js'
 
 export interface SalesTotalRow {
   currency: string
@@ -60,6 +60,20 @@ export interface SearchTermRow {
 export interface ReportRollupRepository extends StoreRepository {
   /** Applies one delta by conditional upsert; a distinct counter moves only when its member is new. */
   apply(tx: Tx, delta: RollupDelta, at: Date): Promise<void>
+  /**
+   * Shuts deliveries out until the transaction ends, so a delivery cannot commit between a rebuild's read of the log
+   * and its replace. Postgres only: on SQLite every write transaction already runs alone.
+   */
+  holdForRebuild(tx: Tx): Promise<void>
+  /** A delivery's share of the same lock, taken before its claim: deliveries run side by side, never inside a rebuild. */
+  holdForDelivery(tx: Tx): Promise<void>
+  /** Every row and member of `fromDay` and later. */
+  rowsFrom(tx: ReadTx, fromDay: string): Promise<RollupRows>
+  /**
+   * Replaces the rows and members of `fromDay` and later with `rows`. A member already stored keeps its `created_at`,
+   * since retention deletes members by it; a new one gets `at`.
+   */
+  replaceFrom(tx: Tx, fromDay: string, rows: RollupRows, at: Date): Promise<void>
   /** Deletes the day-scoped digests written before `at`, with the event log they were deduplicating; no figure goes. */
   deleteMembersBefore(tx: Tx, at: Date): Promise<number>
   /** The earliest day with a row in any figure table, or null when there is none. */
@@ -100,6 +114,26 @@ async function rows(tx: ReadTx, query: SQL): Promise<Array<Record<string, unknow
 
 const text = (value: unknown) => String(value)
 const num = (value: unknown) => Number(value)
+
+// Outside the int4 range, so it never meets the `hashtext(...)` keys other advisory locks take.
+const REBUILD_LOCK_KEY = '7809646233498521600'
+
+// Rows a multi-row insert carries: eleven columns a product row keep a chunk well under SQLite's parameter limit.
+const INSERT_CHUNK = 100
+
+async function insertChunked<T>(
+  tx: Tx,
+  rows: readonly T[],
+  into: SQL,
+  value: (row: T) => SQL,
+): Promise<void> {
+  for (let i = 0; i < rows.length; i += INSERT_CHUNK) {
+    const chunk = rows.slice(i, i + INSERT_CHUNK)
+    await run(tx, sql`${into} VALUES ${sql.join(chunk.map(value), sql`, `)}`)
+  }
+}
+
+const memberKey = (m: RollupMember) => `${m.kind}|${m.localDay}|${m.member}`
 
 export function createReportRollupRepository(store: CommandStore): ReportRollupRepository {
   return {
@@ -186,6 +220,155 @@ export function createReportRollupRepository(store: CommandStore): ReportRollupR
           )
           return
       }
+    },
+
+    async holdForRebuild(tx) {
+      if (tx.kind === 'postgres')
+        await run(tx, sql`SELECT pg_advisory_xact_lock(${REBUILD_LOCK_KEY}::bigint)`)
+    },
+
+    async holdForDelivery(tx) {
+      if (tx.kind === 'postgres') {
+        await run(tx, sql`SELECT pg_advisory_xact_lock_shared(${REBUILD_LOCK_KEY}::bigint)`)
+      }
+    },
+
+    async rowsFrom(tx, fromDay) {
+      const [sales, funnel, product, search, members] = [
+        await rows(
+          tx,
+          sql`SELECT hour_start, local_day, timezone, currency, source, captured_minor, refunded_minor, paid_orders
+              FROM report_sales_hours WHERE local_day >= ${fromDay}`,
+        ),
+        await rows(
+          tx,
+          sql`SELECT local_day, source, timezone, viewers, carts_with_items, checkouts_started, payments_failed
+              FROM report_funnel_days WHERE local_day >= ${fromDay}`,
+        ),
+        await rows(
+          tx,
+          sql`SELECT local_day, variant_id, currency, source, timezone, product_id, product_name, variant_name, sku,
+                     units, line_subtotal_minor
+              FROM report_product_days WHERE local_day >= ${fromDay}`,
+        ),
+        await rows(
+          tx,
+          sql`SELECT local_day, term, timezone, searches FROM report_search_days WHERE local_day >= ${fromDay}`,
+        ),
+        await rows(
+          tx,
+          sql`SELECT kind, local_day, member FROM report_members WHERE local_day >= ${fromDay}`,
+        ),
+      ]
+      return {
+        salesHours: sales.map((r) => ({
+          hourStart: new Date(text(r['hour_start'])),
+          localDay: text(r['local_day']),
+          timezone: text(r['timezone']),
+          currency: text(r['currency']),
+          source: text(r['source']),
+          capturedMinor: num(r['captured_minor']),
+          refundedMinor: num(r['refunded_minor']),
+          paidOrders: num(r['paid_orders']),
+        })),
+        funnelDays: funnel.map((r) => ({
+          localDay: text(r['local_day']),
+          source: text(r['source']),
+          timezone: text(r['timezone']),
+          viewers: num(r['viewers']),
+          cartsWithItems: num(r['carts_with_items']),
+          checkoutsStarted: num(r['checkouts_started']),
+          paymentsFailed: num(r['payments_failed']),
+        })),
+        productDays: product.map((r) => ({
+          localDay: text(r['local_day']),
+          variantId: text(r['variant_id']),
+          currency: text(r['currency']),
+          source: text(r['source']),
+          timezone: text(r['timezone']),
+          productId: text(r['product_id']),
+          productName: text(r['product_name']),
+          variantName: text(r['variant_name']),
+          sku: text(r['sku']),
+          units: num(r['units']),
+          lineSubtotalMinor: num(r['line_subtotal_minor']),
+        })),
+        searchDays: search.map((r) => ({
+          localDay: text(r['local_day']),
+          term: text(r['term']),
+          timezone: text(r['timezone']),
+          searches: num(r['searches']),
+        })),
+        members: members.map((r) => ({
+          kind: text(r['kind']) as RollupMember['kind'],
+          localDay: text(r['local_day']),
+          member: text(r['member']),
+        })),
+      }
+    },
+
+    async replaceFrom(tx, fromDay, next, at) {
+      const stored = new Map<string, string>()
+      for (const r of await rows(
+        tx,
+        sql`SELECT kind, local_day, member, created_at FROM report_members WHERE local_day >= ${fromDay}`,
+      )) {
+        const createdAt = r['created_at']
+        stored.set(
+          `${text(r['kind'])}|${text(r['local_day'])}|${text(r['member'])}`,
+          createdAt instanceof Date ? createdAt.toISOString() : text(createdAt),
+        )
+      }
+      for (const table of [
+        'report_sales_hours',
+        'report_funnel_days',
+        'report_product_days',
+        'report_search_days',
+        'report_members',
+      ]) {
+        await run(tx, sql`DELETE FROM ${sql.raw(table)} WHERE local_day >= ${fromDay}`)
+      }
+      await insertChunked(
+        tx,
+        next.salesHours,
+        sql`INSERT INTO report_sales_hours
+              (hour_start, local_day, timezone, currency, source, captured_minor, refunded_minor, paid_orders)`,
+        (r) =>
+          sql`(${r.hourStart.toISOString()}, ${r.localDay}, ${r.timezone}, ${r.currency}, ${r.source},
+               ${r.capturedMinor}, ${r.refundedMinor}, ${r.paidOrders})`,
+      )
+      await insertChunked(
+        tx,
+        next.funnelDays,
+        sql`INSERT INTO report_funnel_days
+              (local_day, source, timezone, viewers, carts_with_items, checkouts_started, payments_failed)`,
+        (r) =>
+          sql`(${r.localDay}, ${r.source}, ${r.timezone}, ${r.viewers}, ${r.cartsWithItems}, ${r.checkoutsStarted},
+               ${r.paymentsFailed})`,
+      )
+      await insertChunked(
+        tx,
+        next.productDays,
+        sql`INSERT INTO report_product_days
+              (local_day, variant_id, currency, source, timezone, product_id, product_name, variant_name, sku, units,
+               line_subtotal_minor)`,
+        (r) =>
+          sql`(${r.localDay}, ${r.variantId}, ${r.currency}, ${r.source}, ${r.timezone}, ${r.productId},
+               ${r.productName}, ${r.variantName}, ${r.sku}, ${r.units}, ${r.lineSubtotalMinor})`,
+      )
+      await insertChunked(
+        tx,
+        next.searchDays,
+        sql`INSERT INTO report_search_days (local_day, term, timezone, searches)`,
+        (r) => sql`(${r.localDay}, ${r.term}, ${r.timezone}, ${r.searches})`,
+      )
+      await insertChunked(
+        tx,
+        next.members,
+        sql`INSERT INTO report_members (kind, local_day, member, created_at)`,
+        (m) =>
+          sql`(${m.kind}, ${m.localDay}, ${m.member}, ${stored.get(memberKey(m)) ?? at.toISOString()})`,
+      )
     },
 
     deleteMembersBefore(tx, at) {
