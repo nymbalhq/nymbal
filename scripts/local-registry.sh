@@ -15,7 +15,7 @@ snapshot=""
 registry_free_port() { node -e 'const s=require("net").createServer().listen(0,()=>{console.log(s.address().port);s.close()})'; }
 
 registry_cleanup() {
-  [ -n "$registry_container" ] && docker rm -f "$registry_container" >/dev/null 2>&1
+  [ -n "$registry_container" ] && docker rm -fv "$registry_container" >/dev/null 2>&1
   if [ "$registry_restore" -eq 1 ]; then tar -xf "$work/backup.tar" -C "$root"; fi
   return 0
 }
