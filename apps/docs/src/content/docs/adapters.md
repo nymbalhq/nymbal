@@ -35,6 +35,7 @@ suite on every change:
 | email          | Mailgun, Resend, Amazon SES, SMTP                       |
 | search         | Algolia                                                 |
 | shipping       | EasyPost, AfterShip                                     |
+| promotions     | Talon.One                                               |
 | document store | Postgres (JSONB), Redis                                 |
 | event bus      | Redis Streams                                           |
 | media          | S3 and S3-compatible storage                            |

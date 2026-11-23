@@ -71,6 +71,7 @@
     "@nymbalhq/event-bus-redis-streams": "workspace:*",
     "@nymbalhq/media-s3": "workspace:*",
     "@nymbalhq/payments-stripe": "workspace:*",
+    "@nymbalhq/promotions-talon-one": "workspace:*",
     "@nymbalhq/search-algolia": "workspace:*",
     "@nymbalhq/security-cloudflare": "workspace:*",
     "@nymbalhq/shipping-aftership": "workspace:*",

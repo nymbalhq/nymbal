@@ -78,6 +78,13 @@
       "source": { "dir": "packages/adapters/payments/stripe" }
     },
     {
+      "package": "@nymbalhq/promotions-talon-one",
+      "slot": "promotions",
+      "provider": "talon-one",
+      "tier": "first-party",
+      "source": { "dir": "packages/adapters/promotions/talon-one" }
+    },
+    {
       "package": "@nymbalhq/search-algolia",
       "slot": "search",
       "provider": "algolia",

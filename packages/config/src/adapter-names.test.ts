@@ -38,7 +38,7 @@ const KNOWN_BEFORE: Record<(typeof COMMERCE)[number], readonly string[]> = {
   analytics: ['native'],
   shipping: ['native', 'easypost', 'aftership'],
   tax: ['native'],
-  promotions: ['native'],
+  promotions: ['native', 'talon-one'],
 }
 
 /** The kernel's own provider of each slot. */

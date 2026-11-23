@@ -22,6 +22,7 @@ import { registerEmailFeedbackHandler } from './side-effects/email-feedback-hand
 import { registerShippingTrackingHandler } from './side-effects/shipping-tracking-handler.js'
 import { registerShippingStartTrackingHandler } from './side-effects/shipping-start-tracking-handler.js'
 import { registerTaxDocumentsHandler } from './side-effects/tax-documents-handler.js'
+import { registerPromotionsHandler } from './side-effects/promotions-handler.js'
 
 export interface RegisterHandlersDeps {
   config: NymbalConfig
@@ -142,6 +143,13 @@ export async function registerHandlers(deps: RegisterHandlersDeps): Promise<void
     tax: adapters.tax,
     documents: deps.taxDocuments,
     logger: handlerLogger.child({ handler: 'tax-documents' }),
+  })
+  await registerPromotionsHandler({
+    eventBus,
+    promotions: adapters.promotions,
+    processedEventRepo: repos.processedEvent,
+    repos,
+    logger: handlerLogger.child({ handler: 'promotions' }),
   })
   await registerSearchHandler({
     eventBus,

@@ -3313,6 +3313,21 @@
               }
             },
             {
+              "package": "@nymbalhq/promotions-talon-one",
+              "slot": "promotions",
+              "provider": "talon-one",
+              "tier": "first-party",
+              "source": {
+                "dir": "packages/adapters/promotions/talon-one"
+              },
+              "history": {
+                "status": "first-party",
+                "failingSince": null,
+                "lastRun": "2026-11-05T00:40:00.000Z",
+                "line": ""
+              }
+            },
+            {
               "package": "@nymbalhq/search-algolia",
               "slot": "search",
               "provider": "algolia",
