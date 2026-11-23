@@ -320,7 +320,7 @@ export const startCommand = defineCommand({
       ...(loaded.adapters !== undefined && { adapters: loaded.adapters }),
     }).catch((error: unknown) => {
       if (!(error instanceof ConfigError)) throw error
-      return fail([error.message])
+      return fail([`${error.message} [${error.code}]`])
     })
     const { platform } = app
 

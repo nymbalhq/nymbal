@@ -41,6 +41,8 @@ export interface WooStore {
   coupons?: ProbeAnswer
   taxes?: ProbeAnswer
   shippingZones?: ProbeAnswer
+  /** `/settings/general` instead of a GBP store's; `currencySettings` builds one in another currency. */
+  generalSettings?: ProbeAnswer
 }
 
 /** A list endpoint's answer to a `per_page=1` request: the total is in the header. */
@@ -134,6 +136,11 @@ function sellable(item: Rec, product: boolean): Rec {
 const settingsGroup = (values: Record<string, string>): Rec[] =>
   Object.entries(values).map(([id, value]) => ({ id, value }))
 
+/** The `/settings/general` answer of a store that prices in `currency`. */
+export function currencySettings(currency: string): ProbeAnswer {
+  return { status: 200, body: settingsGroup({ woocommerce_currency: currency }) }
+}
+
 /**
  * fetch over `store` at WC_URL. Images under `/img/` answer a few JPEG bytes; any other host answers 404. `onRequest`
  * runs as each request arrives, before it is answered (a test's virtual clock advances there).
@@ -173,7 +180,11 @@ export function wooStoreFetch(store: WooStore, opts: { onRequest?: () => void } 
     if (path === '/system_status') return json({ environment: {} }, 200)
     if (path === '/products/categories') return list(store.categories)
     // A store in the currency and units the import runs with, as a key that can read the settings sees it.
-    if (path === '/settings/general') return json(settingsGroup({ woocommerce_currency: 'GBP' }), 200)
+    if (path === '/settings/general') {
+      return store.generalSettings === undefined
+        ? json(settingsGroup({ woocommerce_currency: 'GBP' }), 200)
+        : probe(store.generalSettings)
+    }
     if (path === '/settings/products') {
       return json(
         settingsGroup({

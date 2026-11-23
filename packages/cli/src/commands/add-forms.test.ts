@@ -35,6 +35,7 @@ const UNSET = [
   'STRIPE_WEBHOOK_SECRET',
   'STRIPE_PUBLISHABLE_KEY',
   'ANTHROPIC_API_KEY',
+  'OPENAI_API_KEY',
   'ACME_SEARCH_KEY',
   'ACME_SEARCH_REGION',
 ]
@@ -353,6 +354,36 @@ describe(
     })
   },
 )
+
+describe('AC-4: nymbal add ai openai says the model must be set', { timeout: 30_000 }, () => {
+  it("AC-4: `add ai openai --no-install` with the package present sets commerce.ai to { provider: 'openai' }, appends one OPENAI_API_KEY line to .env.example, and its Next: names commerce.ai.config.model as needed before the store starts", async () => {
+    const dir = projectFrom('ai-openai')
+    const at = join(dir, 'node_modules', '@nymbalhq', 'ai-openai')
+    mkdirSync(join(at, '..'), { recursive: true })
+    symlinkSync(join(REPO, 'packages/adapters/ai/openai'), at, 'dir')
+    const before = listing(dir)
+    const exampleBefore = read(dir, '.env.example')
+    const commerceBefore = await commerceOf(dir)
+
+    const run = await nymbalAdd(dir, ['ai', 'openai'], { install: false })
+
+    expect(run.code, run.out).toBe(0)
+    expect(changedPaths(before, listing(dir))).toEqual(['.env.example', 'nymbal.config.ts'])
+    const commerceAfter = await commerceOf(dir)
+    expect(commerceAfter['ai']).toEqual({ provider: 'openai' })
+    expect(othersThan(commerceAfter, 'ai')).toEqual(othersThan(commerceBefore, 'ai'))
+    expect(
+      appended(exampleBefore, read(dir, '.env.example')).filter((l) =>
+        /^(#\s*)?OPENAI_API_KEY=/.test(l),
+      ),
+    ).toHaveLength(1)
+    const lines = run.out.split('\n')
+    const next = lines.slice(lines.findIndex((l) => l.trim() === 'Next:') + 1)
+    const model = next.filter((l) => l.includes('commerce.ai.config.model'))
+    expect(model, run.out).toHaveLength(1)
+    expect(model[0], run.out).toMatch(/\b(start|boot)/i)
+  })
+})
 
 describe('AC-4: nymbal add <package> for a third-party adapter', { timeout: 30_000 }, () => {
   it("AC-4: `add @acme/nymbal-search-x --no-install` sets commerce.search to its provider and package, appends ACME_SEARCH_KEY and a commented-out ACME_SEARCH_REGION, says to set the key in .env or the admin's Settings, and the config loads", async () => {

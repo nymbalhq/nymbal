@@ -124,7 +124,7 @@ export function devListenHost(config: NymbalConfig, env: NodeJS.ProcessEnv): str
 /** A config mistake is the store developer's to fix: its message says how, a stack would bury it. */
 function exitOnConfigError(error: unknown): never {
   if (!(error instanceof ConfigError)) throw error
-  process.stderr.write(`${pc.red(error.message)}\n`)
+  process.stderr.write(`${pc.red(`${error.message} [${error.code}]`)}\n`)
   process.exit(1)
 }
 

@@ -509,3 +509,132 @@ describe('AC-9: enriched products in a delta', () => {
     }
   }, 300_000)
 })
+
+// ── AC-1 (product warnings in a delta) ────────────────────────────────────────────────────────────────────────────
+
+/** The lines about stock, which a delta does not touch: untracked stock, a shared pool and negative stock. */
+const STOCK_LINE =
+  /stock not tracked in WooCommerce|sell from one stock pool|\(backorders owed\): imported as 0/
+
+const omit = (r: Rec, key: string): Rec =>
+  Object.fromEntries(Object.entries(r).filter(([k]) => k !== key))
+
+/**
+ * Seven products imported with nothing to warn about (stock counted, priced, no sale), then re-listed: 1 lost its
+ * price, 2 went on a sale with an end date, 3 lost one variation's price, 4 was only renamed, 5 stopped tracking stock,
+ * 6 went into negative stock, 7 moved its variations onto one stock pool.
+ */
+function warningSources(): { a: WooStore; b: WooStore } {
+  const counted = (wcId: number, over: Rec = {}) =>
+    simpleProduct(wcId, { stock_quantity: 5, ...over })
+  const own = (wcId: number) => [0, 1].map((n) => variation(vid(wcId, n)))
+  const a = empty(
+    [
+      counted(1),
+      counted(2),
+      variableProduct(3, [vid(3, 0), vid(3, 1)]),
+      counted(4),
+      counted(5),
+      counted(6),
+      variableProduct(7, [vid(7, 0), vid(7, 1)]),
+    ],
+    { 3: own(3), 7: own(7) },
+  )
+  const changed = { date_modified_gmt: CHANGED_AT }
+  const b = empty(
+    [
+      counted(1, { ...changed, regular_price: '' }),
+      counted(2, { ...changed, sale_price: '8.00', date_on_sale_to: '2099-06-30T23:59:59' }),
+      variableProduct(3, [vid(3, 0), vid(3, 1)], changed),
+      counted(4, { ...changed, name: 'product 4 renamed' }),
+      omit(counted(5, changed), 'stock_quantity'),
+      counted(6, { ...changed, stock_quantity: -3 }),
+      variableProduct(7, [vid(7, 0), vid(7, 1)], { ...changed, stock_quantity: 10 }),
+    ],
+    {
+      3: [variation(vid(3, 0)), variation(vid(3, 1), { regular_price: '' })],
+      7: own(7).map((v) => ({ ...omit(v, 'stock_quantity'), manage_stock: 'parent' })),
+    },
+  )
+  return { a, b }
+}
+
+const WARNED = [1, 2, 3, 4, 5, 6, 7]
+
+/** Each product's `products` warnings, by WooCommerce id, in the order the report lists them. */
+const productLines = (warnings: Warning[]): Record<number, string[]> =>
+  Object.fromEntries(
+    WARNED.map((wcId) => [
+      wcId,
+      warnings.filter((w) => w.phase === 'products' && w.id === String(wcId)).map((w) => w.message),
+    ]),
+  )
+
+describe("AC-1: a delta reports a re-listed product's own warnings", () => {
+  it("AC-1: re-listed products that now carry an unsellable reason, a sale or an unpriced variation report those lines as products warnings, equal to a first import's lines for them less the stock lines, an unpriced variation kept at its stored price; one with none and ones whose only warnings are about stock add none", async () => {
+    const { a, b } = warningSources()
+    const fresh = await openStoreApp()
+    let firstOfB: Record<number, string[]>
+    try {
+      firstOfB = productLines(
+        (await runOver(fresh, { store: b, entities: PRODUCTS })).report!.warnings ?? [],
+      )
+    } finally {
+      await fresh.close()
+    }
+    const kind = (lines: string[]) =>
+      lines.length === 0
+        ? 'none'
+        : lines.every((l) => STOCK_LINE.test(l))
+          ? 'stock only'
+          : 'not stock'
+    // What a first import of the re-listed source says: the cases are what they claim to be.
+    expect(WARNED.map((wcId) => [wcId, kind(firstOfB[wcId]!)])).toEqual([
+      [1, 'not stock'],
+      [2, 'not stock'],
+      [3, 'not stock'],
+      [4, 'none'],
+      [5, 'stock only'],
+      [6, 'stock only'],
+      [7, 'stock only'],
+    ])
+
+    const env = await openStoreApp()
+    try {
+      const imported = (await runOver(env, { store: a, entities: PRODUCTS })).report!
+      expect(productLines(imported.warnings ?? [])).toEqual(
+        Object.fromEntries(WARNED.map((wcId) => [wcId, []])),
+      )
+      const pricesOf3 = async () =>
+        (await productOf(env, 3)).variants.map((v) => [v.sku, v.priceMinor, v.status])
+      const before3 = await pricesOf3()
+      expect(before3.every(([, priceMinor]) => (priceMinor as number) > 0)).toBe(true)
+
+      const { report } = await runOver(env, {
+        store: b,
+        entities: PRODUCTS,
+        since: sinceForAll(SINCE),
+      })
+
+      expect(report!.errors.slice(imported.errors.length)).toEqual([])
+      // A first import makes an unpriced variation inactive; a delta keeps its stored price and says so.
+      const asDelta = (l: string) =>
+        l.replace(
+          /^(variation \d+): no price: imported inactive$/,
+          '$1: no price in WooCommerce: kept at its stored price',
+        )
+      expect(firstOfB[3]).toEqual([`variation ${vid(3, 1)}: no price: imported inactive`])
+      expect(productLines(report!.warnings ?? [])).toEqual(
+        Object.fromEntries(
+          WARNED.map((wcId) => [
+            wcId,
+            firstOfB[wcId]!.filter((l) => !STOCK_LINE.test(l)).map(asDelta),
+          ]),
+        ),
+      )
+      expect(await pricesOf3()).toEqual(before3)
+    } finally {
+      await env.close()
+    }
+  }, 120_000)
+})

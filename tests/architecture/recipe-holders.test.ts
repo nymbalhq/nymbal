@@ -5,6 +5,8 @@ import { join, relative } from 'node:path'
 import { promisify } from 'node:util'
 import fc from 'fast-check'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { ADAPTER_CATALOGUE, conventionPackage } from '../../packages/config/src/adapter-names'
+import type { Slot } from '../../packages/types/src/index'
 import {
   RECIPE_HOLDERS as HOLDERS,
   readRecipe as read,
@@ -132,9 +134,23 @@ describe('AC-1: recipe holders', () => {
     expect(RECIPE_HOLDERS).toEqual(SPEC_HOLDERS)
   })
 
-  it('AC-1: the recipes the workspace packages ship are exactly RECIPE_HOLDERS, each in its holder', () => {
+  // A provider package may ship `recipes/<provider>.json` for `nymbal add <slot> <provider>` alone, with no short name.
+  it('AC-1: the recipes the workspace packages ship are RECIPE_HOLDERS, each in its holder, and the rest are each a catalogued provider’s recipe in its convention package', () => {
     const holders = Object.entries(RECIPE_HOLDERS).sort(([a], [b]) => a.localeCompare(b))
-    expect(shippedRecipes()).toEqual(holders)
+    const shipped = shippedRecipes()
+    const providerRecipes = new Set(
+      (Object.keys(ADAPTER_CATALOGUE) as Slot[]).flatMap((slot) =>
+        Object.keys(ADAPTER_CATALOGUE[slot]).map((p) => `${p} ${conventionPackage(slot, p)}`),
+      ),
+    )
+
+    expect(shipped.filter(([name]) => Object.hasOwn(RECIPE_HOLDERS, name))).toEqual(holders)
+    expect(
+      shipped.filter(
+        ([name, pkg]) =>
+          !Object.hasOwn(RECIPE_HOLDERS, name) && !providerRecipes.has(`${name} ${pkg}`),
+      ),
+    ).toEqual([])
   })
 
   it('AC-1: the CLI holds no recipe file', () => {

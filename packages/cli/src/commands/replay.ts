@@ -1,9 +1,12 @@
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { defineCommand } from 'citty'
 import {
+  createCommandStore,
   createLogger,
   diffReadModel,
+  migrationState,
   openReadModels,
   READ_MODEL_NAMES,
   rebuild,
@@ -16,6 +19,7 @@ import {
 } from '@nymbalhq/platform'
 import { errorText } from '@nymbalhq/types'
 import { loadProject } from '../utils/project.js'
+import { resolveMigrations } from './migrate.js'
 
 /** A bad flag, a missing store or a refused model, said in the user's terms. */
 class ReplayError extends Error {}
@@ -95,10 +99,34 @@ function write(stream: NodeJS.WriteStream, text: string): Promise<void> {
 
 type Project = Awaited<ReturnType<typeof loadProject>>
 
-async function open(config: Project['config'], adapters: Project['adapters']) {
+/** The migrations `nymbal migrate` applies here, else those of the platform whose queries this CLI makes. */
+function migrationsRoot(projectRoot: string): string {
+  const root = resolveMigrations(projectRoot)
+  if (existsSync(root)) return root
+  return fileURLToPath(new URL('../migrations', import.meta.resolve('@nymbalhq/platform')))
+}
+
+/** A schema behind this build fails the rebuild's queries on columns it does not have yet. */
+async function refusePendingMigrations(project: Project): Promise<void> {
+  const store = createCommandStore(project.config, { readOnly: true })
+  try {
+    const { pending } = await migrationState(store, {
+      migrationsRoot: migrationsRoot(project.projectRoot),
+    })
+    if (pending > 0) {
+      throw new ReplayError(`${plural(pending, 'migration')} pending: run \`nymbal migrate\``)
+    }
+  } finally {
+    await store.close()
+  }
+}
+
+async function open(project: Project) {
+  const { config, adapters } = project
   if (config.infrastructure.commandStore === 'sqlite' && !existsSync(resolve(sqliteFile()))) {
     throw new ReplayError(`no database at ${sqliteFile()}: run \`nymbal migrate\``)
   }
+  await refusePendingMigrations(project)
   return openReadModels(config, {
     // The report says what happened; log lines would repeat it.
     logger: createLogger({ level: 'silent', pretty: false }),
@@ -106,12 +134,9 @@ async function open(config: Project['config'], adapters: Project['adapters']) {
   })
 }
 
-async function replayReports(
-  config: Project['config'],
-  adapters: Project['adapters'],
-  dryRun: boolean,
-): Promise<void> {
-  const { deps, close } = await open(config, adapters)
+async function replayReports(project: Project, dryRun: boolean): Promise<void> {
+  const { config } = project
+  const { deps, close } = await open(project)
   try {
     const report = await rebuildReports(
       {
@@ -155,9 +180,10 @@ export const replayCommand = defineCommand({
   async run({ args }) {
     try {
       const target = modelsOf(args.to)
-      const { config, adapters } = await loadProject()
+      const project = await loadProject()
+      const { config } = project
       if (target === REPORTS) {
-        await replayReports(config, adapters, args['dry-run'])
+        await replayReports(project, args['dry-run'])
         return
       }
       const names = target
@@ -170,7 +196,7 @@ export const replayCommand = defineCommand({
             'place. --to search works here: the native index lives in the command store.',
         )
       }
-      const { deps, close } = await open(config, adapters)
+      const { deps, close } = await open(project)
       try {
         if (args['dry-run']) {
           const diffs: ReadModelDiff[] = []

@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import fc from 'fast-check'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  currencyRefusal,
   planWooCommerceImport,
   runWooCommerceImport,
   writePlan,
@@ -18,6 +19,7 @@ import type { MediaStorage } from '@nymbalhq/types'
 import { buildImportEnv, WC_URL } from './support/import-env.js'
 import {
   arbStore,
+  currencySettings,
   fixtureStore,
   isApiRequest,
   statusAnswer,
@@ -853,6 +855,69 @@ describe('AC-9: no personal data in the plan files', () => {
         },
       ),
       { numRuns: 25 },
+    )
+  }, 120_000)
+})
+
+describe('AC-2: the plan refuses the currency the import refuses', () => {
+  const CODES = ['GBP', 'USD', 'EUR', 'JPY']
+  /** `code` with each letter in either case: the platform reads a currency case-insensitively. */
+  const anyCase = fc
+    .constantFrom(...CODES)
+    .chain((code) =>
+      fc
+        .array(fc.boolean(), { minLength: code.length, maxLength: code.length })
+        .map((lower) => [...code].map((c, i) => (lower[i] ? c.toLowerCase() : c)).join('')),
+    )
+  /** A request for a record of any entity: categories, products, variations, customers, orders or reviews. */
+  const RECORD = /^\/wp-json\/wc\/v3\/(products|customers|orders)(\/|$)/
+
+  async function attempt(store: WooStore, opts: PlanOpts) {
+    const mock = wooStoreFetch(store)
+    vi.stubGlobal('fetch', mock.fetch)
+    try {
+      const outcome = await planWooCommerceImport(opts, { existing: null }).then(
+        (plan) => ({ planned: plan.counts.products.source }),
+        (error: unknown) => ({ refused: error instanceof Error ? error.message : String(error) }),
+      )
+      return { outcome, records: mock.requests.filter((r) => RECORD.test(r.path)).length }
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  }
+
+  it("AC-2: a source in another currency than the store's is refused with currencyRefusal(source, store) before any record is requested; a currency differing only in case, and settings that cannot be read, still plan", async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.option(anyCase, { nil: null }),
+        anyCase,
+        async (source, storeCurrency) => {
+          const store = fixtureStore({
+            generalSettings: source === null ? statusAnswer(401) : currencySettings(source),
+          })
+          const refuses = source !== null && source.toUpperCase() !== storeCurrency.toUpperCase()
+
+          const { outcome, records } = await attempt(
+            store,
+            planOptions({ currency: storeCurrency }),
+          )
+
+          expect({ outcome, records: refuses ? records : 0 }).toEqual({
+            outcome: refuses
+              ? { refused: currencyRefusal(source!, storeCurrency) }
+              : { planned: store.products.length },
+            records: 0,
+          })
+        },
+      ),
+      {
+        numRuns: 40,
+        examples: [
+          ['USD', 'GBP'],
+          ['gbp', 'GBP'],
+          [null, 'GBP'],
+        ],
+      },
     )
   }, 120_000)
 })

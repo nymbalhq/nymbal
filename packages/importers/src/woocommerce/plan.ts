@@ -12,7 +12,7 @@ import { WooCommerceClient, WooCommerceApiError } from './client.js'
 import type { WcCategory, WcCustomer, WcOrder, WcProduct, WcReview, WcVariation } from './client.js'
 import { mapCategory } from './mappers/category.js'
 import { mapProduct } from './mappers/product.js'
-import { DEFAULT_UNTRACKED_STOCK, storeContextFor } from './importer.js'
+import { currencyRefusal, DEFAULT_UNTRACKED_STOCK, storeContextFor } from './importer.js'
 import { mapCustomer } from './mappers/customer.js'
 import { mapOrder } from './mappers/order.js'
 import { mapReview } from './mappers/review.js'
@@ -263,11 +263,12 @@ export async function planWooCommerceImport(
     if (err instanceof WooCommerceApiError) throw err
     throw new Error(`Cannot connect to ${opts.credentials.url}: ${String(err)}`)
   }
-  const store = storeContextFor(
-    await client.getStoreSettings(),
-    opts.currency,
-    DEFAULT_UNTRACKED_STOCK,
-  )
+  // The import's own refusal, so a dry run does not answer "ready" for a store the import will not write to.
+  const settings = await client.getStoreSettings()
+  if (settings !== null && settings.currency.toUpperCase() !== opts.currency.toUpperCase()) {
+    throw new Error(currencyRefusal(settings.currency, opts.currency))
+  }
+  const store = storeContextFor(settings, opts.currency, DEFAULT_UNTRACKED_STOCK)
 
   // WooCommerce id → the id the import would give the record; a placeholder, since nothing is written.
   const categoryIds = new Map<number, string>()

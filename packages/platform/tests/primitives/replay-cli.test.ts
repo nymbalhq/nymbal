@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { NymbalConfig } from '@nymbalhq/config'
 import { EVT_ORDER_PLACED, type DocumentStoreAdapter } from '@nymbalhq/types'
 import { createRedisDocumentStore } from '../../../adapters/document-store/redis/src/index.js'
-import { cliEnv, runCli, type CliRun } from '../../../../tests/support/doctor'
+import { cliEnv, runCli, stripAnsi, type CliRun } from '../../../../tests/support/doctor'
 import { deleteUnder, keysUnder, redis, redisServerUrl } from '../../../../tests/support/redis'
 import { createNativeSearchAdapter } from '../../src/adapters/search/native-adapter.js'
 import { createCommandStore, rawClients } from '../../src/db/command-store.js'
@@ -16,6 +16,7 @@ import { createLogger } from '../../src/logger.js'
 import { address, createKernel, kernelConfig } from '../support/kernel.js'
 import { withInfrastructure } from '../support/primitive-graph.js'
 import { install, workspace } from '../../../../tests/support/project.js'
+import { migrateAllBut } from '../../../../tests/support/start.js'
 import { ALL_MODELS, DOCUMENT_COLLECTIONS, collectionOf } from '../support/read-model-shapes.js'
 
 // AC-5: `nymbal replay`, the built CLI against a SQLite command store whose read models are on the composed Redis (a
@@ -317,4 +318,51 @@ describe('AC-5: nymbal replay on an in-memory document store', () => {
     expect(run.code, run.out).toBe(0)
     for (const p of products) expect(await searchIds(p.word), p.word).toContain(p.id)
   })
+})
+
+describe('AC-6: nymbal replay on a store with a migration pending', () => {
+  const pendingDb = join(dir, 'pending.sqlite')
+
+  beforeAll(async () => {
+    await migrateAllBut('sqlite', pendingDb, 1)
+  }, 60_000)
+
+  /** Every row of every table the file holds, read on a read-only connection of the test's own. */
+  function rowsOf(path: string): Record<string, unknown[]> {
+    const db = new Database(path, { readonly: true, fileMustExist: true })
+    try {
+      const tables = db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND sql NOT LIKE 'CREATE VIRTUAL%' ORDER BY name",
+        )
+        .all() as Array<{ name: string }>
+      return Object.fromEntries(
+        tables.map(({ name }) => [name, db.prepare(`SELECT * FROM "${name}"`).all()]),
+      )
+    } finally {
+      db.close()
+    }
+  }
+
+  it.each([
+    { label: '--to search', args: ['--to', 'search'] },
+    { label: '--to all --dry-run', args: ['--to', 'all', '--dry-run'] },
+  ])(
+    'AC-6: `replay $label` exits 2 with a stderr line naming the one pending migration and `nymbal migrate`, and leaves every table and the read models as they were',
+    async ({ args }) => {
+      const before = { tables: rowsOf(pendingDb), docs: await keyspace() }
+
+      const run = await runCli(['replay', ...args], {
+        cwd: redisProject,
+        env: cliEnv({ NYMBAL_SQLITE_PATH: pendingDb }),
+      })
+
+      expect(run.code, run.out).toBe(2)
+      const said = stripAnsi(run.stderr)
+        .split('\n')
+        .filter((line) => token('1').test(line) && line.includes('nymbal migrate'))
+      expect(said, run.out).toHaveLength(1)
+      expect({ tables: rowsOf(pendingDb), docs: await keyspace() }).toEqual(before)
+    },
+  )
 })

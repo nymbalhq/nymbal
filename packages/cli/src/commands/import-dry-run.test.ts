@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { NymbalConfig } from '@nymbalhq/config'
+import { currencyRefusal } from '@nymbalhq/importers'
 import { createCommandStore, rawClients } from '@nymbalhq/platform'
 import {
   cliEnv,
@@ -385,5 +386,40 @@ describe('a dry-run with an unknown entity', () => {
     ).toEqual([])
     expect([PLAN_JSON, PLAN_MD].filter((f) => existsSync(join(dir, f)))).toEqual([])
     expect(woo.requests.length).toBe(requestsBefore)
+  }, 180_000)
+})
+
+describe('a dry-run of a source in another currency', () => {
+  it('AC-3: a GBP project planning a JPY store exits non-zero with the currency refusal on stderr, writes neither plan file and requests no product', async () => {
+    const jpy = await startWooCommerceServer({ recorded: 'store-b-jpy' })
+    try {
+      const dir = project()
+      const run = await runCli(
+        [
+          'import',
+          '--dry-run',
+          '--source',
+          'woocommerce',
+          '--url',
+          jpy.url,
+          '--key',
+          KEY,
+          '--secret',
+          SECRET,
+        ],
+        {
+          cwd: dir,
+          env: cliEnv({ NYMBAL_SQLITE_PATH: join(dir, 'nymbal.db') }),
+          timeoutMs: 120_000,
+        },
+      )
+
+      expect(run.code, run.out.slice(-3000)).not.toBe(0)
+      expect(stripAnsi(run.stderr), run.out.slice(-3000)).toContain(currencyRefusal('JPY', 'GBP'))
+      expect([PLAN_JSON, PLAN_MD].filter((f) => existsSync(join(dir, f)))).toEqual([])
+      expect(jpy.requests.filter((r) => r.path.startsWith('/wp-json/wc/v3/products'))).toEqual([])
+    } finally {
+      await jpy.close()
+    }
   }, 180_000)
 })
