@@ -586,10 +586,17 @@ export const routeSchemas: Record<string, RouteSchema> = {
     description:
       'Sales, conversion, top products, zero-result searches and stock runway over store days. Money totals run through `to` (today by default) and include today so far, marked partial. Rates, the funnel, top products, zero-result searches (unless `to` is named) and stock runway count closed days only; each section’s window gives its days. Quote the basis with a rate; never divide fields yourself. Money is in minor units of the row’s currency. Ask with grain=day for a series; for a long range or a busy store, narrow the range.',
     query: z.object({
-      from: z.iso.date().optional().describe('First store day, YYYY-MM-DD; 30 days before `to` by default, 6 with grain=hour.'),
+      from: z.iso
+        .date()
+        .optional()
+        .describe(
+          'First store day, YYYY-MM-DD; 30 days before `to` by default, 6 with grain=hour.',
+        ),
       to: z.iso.date().optional().describe('Last store day, YYYY-MM-DD; today by default.'),
       grain: z.enum(['day', 'hour']).optional().describe('Asks for a series by day or hour.'),
-      limit: queryValue.describe('How many of each list to answer: 10 by default, at most 50; a large limit on a busy store may be cut.'),
+      limit: queryValue.describe(
+        'How many of each list to answer: 10 by default, at most 50; a large limit on a busy store may be cut.',
+      ),
     }),
   },
   'GET /api/admin/search': {
@@ -1013,7 +1020,15 @@ export const routeSchemas: Record<string, RouteSchema> = {
   'GET /api/admin/reviews': {
     name: 'admin.reviews.pending',
     description:
-      "List reviews awaiting moderation, each with its product's name and slug (null when the product was deleted), the rating, title and body.",
+      "List the reviews of one moderation status, newest first, at most 100, each with its product's name and slug (null when the product was deleted), the rating, title and body.",
+    query: z.object({
+      status: z
+        .enum(['pending', 'approved', 'rejected'])
+        .optional()
+        .describe(
+          'The moderation status to list: pending (the reviews awaiting moderation) by default.',
+        ),
+    }),
   },
   'POST /api/admin/reviews/:id/moderate': {
     name: 'admin.reviews.moderate',

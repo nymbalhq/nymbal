@@ -14,6 +14,12 @@ export interface Review {
   moderatedBy: string | null
 }
 
+/** A review as the admin lists it, with its product as it is now; both null when the product was deleted. */
+export interface AdminReview extends Review {
+  productName: string | null
+  productSlug: string | null
+}
+
 /** A review as the public list publishes it: no customer or order id, only whether a purchase verified it. */
 export interface PublicReview {
   id: string
