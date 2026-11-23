@@ -61,6 +61,14 @@ export default defineConfig({
       'packages/platform/src/mcp/invoke*.test.ts',
       'packages/platform/src/mcp/withhold.test.ts',
       'packages/platform/src/repositories/email-suppression.test.ts',
+      // The read models: their rebuild, catch-up and swap, the reprojection that settles, and the documents they build.
+      // storefront-listed and order-timeline stay out: they reach the E2E fixtures and the proof kit's dist.
+      'packages/platform/tests/integration/read-model-settle.test.ts',
+      'packages/platform/tests/integration/rebuild-swap.test.ts',
+      'packages/platform/tests/integration/replay-*.test.ts',
+      'packages/platform/tests/integration/categories-all.test.ts',
+      'packages/platform/tests/integration/warm-up-derived.test.ts',
+      'packages/platform/src/read-models/*.test.ts',
     ],
     testTimeout: 30000,
   },

@@ -45,6 +45,16 @@ export default {
     'packages/platform/src/mcp/withhold.ts',
     'packages/platform/src/roles/content.ts',
     'packages/platform/src/repositories/order-tax-document.ts',
+    // The read models' rebuild and the reprojection every projection settles through. The builders stay with the unit
+    // run: here each surviving mutant reruns some fifty integration tests, about half an hour a run for twelve points.
+    'packages/platform/src/read-models/index.ts',
+    'packages/platform/src/read-models/catalogue.ts',
+    'packages/platform/src/read-models/customers.ts',
+    'packages/platform/src/read-models/orders.ts',
+    'packages/platform/src/read-models/search.ts',
+    'packages/platform/src/read-models/model.ts',
+    'packages/platform/src/read-models/settle.ts',
+    'packages/platform/src/read-models/sources.ts',
   ],
   ignorePatterns: [
     '/*',

@@ -35,6 +35,10 @@ export default {
     'packages/platform/src/sweepers/tax-document-sweeper.ts',
     // Secret scrubbing for logs and error answers, by the unit test beside it.
     'packages/platform/src/settings/secret-set.ts',
+    // The read models' document builders, the order timeline and the recently-viewed list, by the unit tests beside
+    // them and the projections'. The reprojection (settle) and the projections' row reads (sources) are measured by the
+    // integration run too.
+    'packages/platform/src/read-models/**/*.ts',
     'packages/importers/src/woocommerce/mappers/**/*.ts',
     // No unit test reaches these: stryker.integration.config.mjs measures them, and the services' composition root is
     // wiring every integration test runs through. Here they would score 0 and only cost time.
@@ -54,6 +58,16 @@ export default {
     '!packages/platform/src/repositories/report-rollup.ts',
     '!packages/platform/src/repositories/insight.ts',
     '!packages/platform/src/repositories/review.ts',
+    // The rebuilders run only at boot and in a replay, which no unit test reaches.
+    '!packages/platform/src/read-models/index.ts',
+    '!packages/platform/src/read-models/catalogue.ts',
+    '!packages/platform/src/read-models/customers.ts',
+    '!packages/platform/src/read-models/orders.ts',
+    '!packages/platform/src/read-models/search.ts',
+    '!packages/platform/src/read-models/model.ts',
+    // Only the CLI's replay opens the read models this way, and no platform test does: every mutant here survives,
+    // each against the whole suite, in either run.
+    '!packages/platform/src/read-models/open.ts',
     '!**/*.test.ts',
     // Test vectors and the helpers the tests derive from them, beside the code they test.
     '!packages/platform/src/services/fixtures/**',

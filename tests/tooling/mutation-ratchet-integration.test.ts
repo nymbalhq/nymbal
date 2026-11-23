@@ -67,6 +67,14 @@ const INTEGRATION_FILES = [
   'packages/platform/src/mcp/withhold.ts',
   'packages/platform/src/roles/content.ts',
   'packages/platform/src/repositories/order-tax-document.ts',
+  'packages/platform/src/read-models/index.ts',
+  'packages/platform/src/read-models/catalogue.ts',
+  'packages/platform/src/read-models/customers.ts',
+  'packages/platform/src/read-models/orders.ts',
+  'packages/platform/src/read-models/search.ts',
+  'packages/platform/src/read-models/model.ts',
+  'packages/platform/src/read-models/settle.ts',
+  'packages/platform/src/read-models/sources.ts',
 ]
 
 /** The files no unit test reaches: the integration config alone mutates them, the unit config leaves them out. */
@@ -90,10 +98,22 @@ const INTEGRATION_ONLY = [
   'packages/platform/src/mcp/invoke.ts',
   'packages/platform/src/mcp/withhold.ts',
   'packages/platform/src/roles/content.ts',
+  'packages/platform/src/read-models/index.ts',
+  'packages/platform/src/read-models/catalogue.ts',
+  'packages/platform/src/read-models/customers.ts',
+  'packages/platform/src/read-models/orders.ts',
+  'packages/platform/src/read-models/search.ts',
+  'packages/platform/src/read-models/model.ts',
 ]
 
 /** Integration tests that fail in Stryker's sandbox, or import from outside it. */
-const SANDBOX_UNSAFE = ['adapter-graph', 'security-adapter-selection', 'capabilities-route']
+const SANDBOX_UNSAFE = [
+  'adapter-graph',
+  'security-adapter-selection',
+  'capabilities-route',
+  'storefront-listed',
+  'integration/order-timeline.test',
+]
 
 type StrykerConfig = {
   mutate: string[]
