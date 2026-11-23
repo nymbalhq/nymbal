@@ -1,5 +1,6 @@
 // Reads: tests/e2e/playwright*.config.ts, tests/e2e/fixtures/*/nymbal.config.ts
 import { execFile } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
@@ -512,47 +513,14 @@ describe('AC-5: each E2E store config takes its CORS origins from NYMBAL_CORS_OR
 const PLAYWRIGHT = join(E2E_DIR, 'node_modules/.bin/playwright')
 const CUSTOM_OF: Record<string, string> = { astro: 'astro-custom', nextjs: 'nextjs-custom' }
 
-/** The tagged journeys, as `<file> <criterion>`; payment-step's AC-5 and bounce-stops-alerts' AC-6 have two tests each. */
-const CAPABILITY_JOURNEYS = [
-  'alert-links.spec.ts AC-1',
-  'alert-links.spec.ts AC-2',
-  'alert-links.spec.ts AC-3',
-  'alert-links.spec.ts AC-4',
-  'alerts.spec.ts AC-6',
-  'alerts.spec.ts AC-7',
-  'alerts.spec.ts AC-9',
-  'alerts.spec.ts AC-10',
-  'alerts.spec.ts AC-10',
-  'alerts.spec.ts AC-11',
-  'bounce-stops-alerts.spec.ts AC-6',
-  'bounce-stops-alerts.spec.ts AC-6',
-  'carrier-delivers.spec.ts AC-6',
-  'browse-sort.spec.ts AC-4',
-  'browse.spec.ts AC-3',
-  'heartbeat-hidden.spec.ts AC-6',
-  'order-key-expiry.spec.ts AC-3',
-  'order-key-expiry.spec.ts AC-4',
-  'order-key-expiry.spec.ts AC-7',
-  'order-key-expiry.spec.ts AC-9',
-  'payment-step.spec.ts AC-5',
-  'payment-step.spec.ts AC-5',
-  'password-reset.spec.ts AC-24',
-  'register-verification.spec.ts AC-18',
-  'register-verification.spec.ts AC-19',
-  'register-verification.spec.ts AC-20',
-  'resend-confirmation.spec.ts AC-10',
-  'resend-confirmation.spec.ts AC-11',
-  'search-pages.spec.ts AC-8',
-  'search.spec.ts AC-3',
-  'shipped-email.spec.ts AC-10',
-  'shipping-options.spec.ts AC-25',
-  'tax-included.spec.ts AC-22',
-  'verification-rescue.spec.ts AC-24',
-]
-
-type Listed = { file: string; title: string; tags: string[]; project: string }
+type Listed = { file: string; line: number; title: string; tags: string[]; project: string }
 type Suite = { file?: string; specs?: Spec[]; suites?: Suite[] }
-type Spec = { title: string; tags?: string[]; tests?: Array<{ projectName: string }> }
+type Spec = {
+  title: string
+  line?: number
+  tags?: string[]
+  tests?: Array<{ projectName: string }>
+}
 
 /** `playwright test --list` over the named projects, one row per test per project. */
 async function listTests(projects: string[]): Promise<Listed[]> {
@@ -573,6 +541,7 @@ async function listTests(projects: string[]): Promise<Listed[]> {
       for (const test of spec.tests ?? []) {
         rows.push({
           file: own ?? '?',
+          line: spec.line ?? 0,
           title: spec.title,
           tags: spec.tags ?? [],
           project: test.projectName,
@@ -588,6 +557,49 @@ async function listTests(projects: string[]): Promise<Listed[]> {
 const journeyKey = (row: Listed): string =>
   `${row.file} ${/^AC-\d+/.exec(row.title)?.[0] ?? row.title}`
 
+const CUSTOM_BRANCH = /\bisCustomProject\(/
+/** A line at column 0 that does not close a block: the next declaration or statement of the file. */
+const TOP_LEVEL = /^[^\s})\]]/
+const DECLARATION = /^(?:export\s+)?(?:(?:async\s+)?function\s+(\w+)|const\s+(\w+)\s*=)/
+
+/**
+ * The listed journeys that branch on being the custom store: the test's own lines (to the next test or top-level
+ * declaration of its file) call isCustomProject, or call a function declared in the same file that does. Without the
+ * tag their custom branch never runs.
+ */
+function branchingOnCustom(rows: Listed[]): Listed[] {
+  const byFile = new Map<string, Listed[]>()
+  for (const row of rows) byFile.set(row.file, [...(byFile.get(row.file) ?? []), row])
+  return [...byFile].flatMap(([file, tests]) => {
+    const lines = readFileSync(join(E2E_DIR, 'journeys', file), 'utf8').split('\n')
+    const starts = new Set(tests.map((test) => test.line))
+    const block = (line: number): string => {
+      let end = line
+      while (end < lines.length && !starts.has(end + 1) && !TOP_LEVEL.test(lines[end] ?? ''))
+        end += 1
+      return lines.slice(line - 1, end).join('\n')
+    }
+    const helpers = lines.flatMap((text, i) => {
+      const m = DECLARATION.exec(text)
+      return m ? [{ name: (m[1] ?? m[2])!, body: block(i + 1) }] : []
+    })
+    const branching = new Set<string>()
+    const reaches = (body: string): boolean =>
+      CUSTOM_BRANCH.test(body) ||
+      [...branching].some((name) => new RegExp(`\\b${name}\\(`).test(body))
+    for (let grew = true; grew; ) {
+      grew = false
+      for (const helper of helpers) {
+        if (!branching.has(helper.name) && reaches(helper.body)) {
+          branching.add(helper.name)
+          grew = true
+        }
+      }
+    }
+    return tests.filter((test) => reaches(block(test.line)))
+  })
+}
+
 describe('the custom-store projects run only the journeys tagged @capabilities', () => {
   const listed = new Map<string, Listed[]>()
 
@@ -598,21 +610,28 @@ describe('the custom-store projects run only the journeys tagged @capabilities',
     }
   }, 60_000)
 
-  it.each(Object.values(CUSTOM_OF))('%s lists exactly the tagged journeys', (project) => {
-    const rows = listed.get(project) ?? []
-    expect(rows.map(journeyKey).sort()).toEqual([...CAPABILITY_JOURNEYS].sort())
-    expect(rows.filter((row) => !row.tags.includes('capabilities'))).toEqual([])
-  })
-
   it.each(Object.keys(CUSTOM_OF))(
-    '%s still lists every tagged journey, among the untagged ones',
+    '%s and its custom project list the same tagged journeys, the custom one nothing untagged and the native one the untagged ones too',
     (project) => {
       const rows = listed.get(project) ?? []
+      const custom = listed.get(CUSTOM_OF[project]!) ?? []
       const tagged = rows.filter((row) => row.tags.includes('capabilities'))
-      expect(tagged.map(journeyKey).sort()).toEqual(
-        (listed.get(CUSTOM_OF[project]!) ?? []).map(journeyKey).sort(),
-      )
+      expect(tagged.map(journeyKey).sort()).toEqual(custom.map(journeyKey).sort())
+      expect(custom.filter((row) => !row.tags.includes('capabilities'))).toEqual([])
       expect(rows.length).toBeGreaterThan(tagged.length)
+    },
+  )
+
+  it.each(Object.keys(CUSTOM_OF))(
+    '%s: every journey that branches on the custom store is tagged @capabilities',
+    (project) => {
+      const rows = listed.get(project) ?? []
+      const branching = branchingOnCustom(rows)
+      // The reading finds today's journeys (28 tests), so a rename of the helper cannot pass this with nothing found.
+      expect(branching.length).toBeGreaterThanOrEqual(20)
+      expect(branching.filter((row) => !row.tags.includes('capabilities')).map(journeyKey)).toEqual(
+        [],
+      )
     },
   )
 })
