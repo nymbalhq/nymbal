@@ -8,8 +8,9 @@ import ts from 'typescript'
 // Assertion census. Classifies every `expect(...).matcher(...)` in the test files by the strength of what it checks:
 //   C1 presence or sanity (toBeDefined, toBeTruthy, toThrow() ...)
 //   C2 a property-based assertion (inside fc.property, fc.asyncProperty, test.prop, it.prop)
-//   C3 relational or computed (toBeGreaterThan, toBe(before - qty), toBe(sumOf(lines)) ...)
-//   C4 exact against a literal or a plain reference (toBe(3), toEqual({ ... }), toThrow('boom') ...)
+//   C3 relational or computed (toBeGreaterThan, toBe(before - qty), toBe(sumOf(lines)), toBe(before) ...)
+//   C4 exact against a written-out value (toBe(3), toEqual({ ... }), toBe(EXPECTED) for a const literal,
+//      a table test's parameter, an imported constant or enum member, toThrow('boom'), toThrow(AuthError) ...)
 //   other: a matcher this script does not know (listed by name in otherMatchers)
 // A file with no assertion at all delegates (to a shared suite, say) and is counted as delegating, not as weak;
 // `--include <glob>` adds such suites' source files so their assertions are counted too.
@@ -269,25 +270,199 @@ function isExpectNamespaceCall(call: ts.CallExpression): boolean {
   )
 }
 
-/** True when an argument computes its expectation: an arithmetic or comparison operator, or a call other than `expect.*`. */
-function computesExpectation(node: ts.Node): boolean {
-  if (ts.isBinaryExpression(node) && COMPUTE_OPERATORS.has(node.operatorToken.kind)) return true
-  if (ts.isCallExpression(node) && !isExpectNamespaceCall(node)) return true
-  return ts.forEachChild(node, (child) => (computesExpectation(child) ? true : undefined)) === true
+function bindingNames(name: ts.BindingName, into: string[]): string[] {
+  if (ts.isIdentifier(name)) into.push(name.text)
+  else for (const el of name.elements) if (!ts.isOmittedExpression(el)) bindingNames(el.name, into)
+  return into
 }
 
-function classifyMatcher(call: ts.CallExpression, name: string): keyof Counts {
+/** The callback of `it.each(rows)(name, fn)`, `test.each`, `describe.each`: its parameters are a table's literals. */
+function isTableCallback(fn: ts.Node): boolean {
+  const call = fn.parent
+  if (!ts.isCallExpression(call) || !call.arguments.some((a) => a === fn)) return false
+  let callee: ts.Expression = call.expression
+  while (ts.isCallExpression(callee) || ts.isPropertyAccessExpression(callee)) {
+    if (ts.isPropertyAccessExpression(callee) && callee.name.text === 'each') return true
+    callee = callee.expression
+  }
+  return false
+}
+
+/** The callback of `[[2, 4], [3, 6]].forEach(fn)` or `.map(fn)`: a table written as an array literal. */
+function isLiteralLoopCallback(fn: ts.Node): boolean {
+  const call = fn.parent
+  if (!ts.isCallExpression(call) || call.arguments[0] !== fn) return false
+  const callee = call.expression
+  return (
+    ts.isPropertyAccessExpression(callee) &&
+    (callee.name.text === 'forEach' || callee.name.text === 'map') &&
+    ts.isArrayLiteralExpression(unwrap(callee.expression)) &&
+    isLiteral(callee.expression)
+  )
+}
+
+/** A name stands for a written-out value, for another binding, or for a `const` whose initializer decides. */
+type Binding = 'constant' | 'other' | ts.Expression
+
+function isScope(node: ts.Node): boolean {
+  return (
+    ts.isSourceFile(node) ||
+    ts.isBlock(node) ||
+    ts.isModuleBlock(node) ||
+    ts.isCaseBlock(node) ||
+    ts.isCatchClause(node) ||
+    ts.isForStatement(node) ||
+    ts.isForInStatement(node) ||
+    ts.isForOfStatement(node) ||
+    ts.isFunctionLike(node)
+  )
+}
+
+/** The names `scope` itself declares; a nested scope's declarations are its own. */
+function declarationsIn(scope: ts.Node): Map<string, Binding> {
+  const names = new Map<string, Binding>()
+  const add = (name: string, binding: Binding): void => {
+    names.set(name, names.has(name) ? 'other' : binding)
+  }
+  if (ts.isFunctionLike(scope)) {
+    const table = isTableCallback(scope) || isLiteralLoopCallback(scope)
+    for (const p of scope.parameters) {
+      for (const n of bindingNames(p.name, [])) add(n, table ? 'constant' : 'other')
+    }
+  }
+  const loopOverLiterals =
+    ts.isForOfStatement(scope) &&
+    ts.isArrayLiteralExpression(unwrap(scope.expression)) &&
+    isLiteral(scope.expression)
+  const visit = (node: ts.Node): void => {
+    if (ts.isVariableDeclaration(node)) {
+      const constant = (node.parent.flags & ts.NodeFlags.Const) !== 0
+      if (constant && loopOverLiterals && node.parent.parent === scope) {
+        for (const n of bindingNames(node.name, [])) add(n, 'constant')
+      } else if (constant && ts.isIdentifier(node.name) && node.initializer !== undefined) {
+        add(node.name.text, node.initializer)
+      } else {
+        for (const n of bindingNames(node.name, [])) add(n, 'other')
+      }
+    } else if (
+      ts.isImportClause(node) ||
+      ts.isNamespaceImport(node) ||
+      ts.isImportSpecifier(node) ||
+      ts.isImportEqualsDeclaration(node) ||
+      ts.isEnumDeclaration(node)
+    ) {
+      if (node.name !== undefined) add(node.name.text, 'constant')
+    } else if (ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node)) {
+      if (node.name !== undefined) add(node.name.text, 'other')
+    }
+    if (isScope(node) || ts.isClassLike(node) || ts.isEnumDeclaration(node)) return
+    ts.forEachChild(node, visit)
+  }
+  ts.forEachChild(scope, visit)
+  return names
+}
+
+/**
+ * Whether a name, resolved to its nearest enclosing declaration, stands for a written-out value: a `const` bound to a
+ * literal (spreads of such names included), a parameter of a table test's callback or of a loop over a literal array,
+ * an imported name or an enum. An imported constant or enum member is still a value written out in another file.
+ */
+function constantResolver(): (id: ts.Identifier) => boolean {
+  const scopes = new Map<ts.Node, Map<string, Binding>>()
+  const resolve = (id: ts.Identifier): Binding | undefined => {
+    for (let node: ts.Node | undefined = id.parent; node !== undefined; node = node.parent) {
+      if (!isScope(node)) continue
+      let names = scopes.get(node)
+      if (names === undefined) {
+        names = declarationsIn(node)
+        scopes.set(node, names)
+      }
+      const binding = names.get(id.text)
+      if (binding !== undefined) return binding
+    }
+    return undefined
+  }
+  const isConstant = (id: ts.Identifier, seen: Set<ts.Node>): boolean => {
+    const binding = resolve(id)
+    if (binding === undefined || binding === 'other') return false
+    if (binding === 'constant') return true
+    if (seen.has(binding)) return false
+    seen.add(binding)
+    return writtenOut(binding, seen)
+  }
+  const spreadOfConstant = (expr: ts.Expression, seen: Set<ts.Node>): boolean =>
+    ts.isIdentifier(expr) && isConstant(expr, seen)
+  const writtenOut = (node: ts.Expression, seen: Set<ts.Node>): boolean => {
+    if (isLiteral(node)) return true
+    const e = unwrap(node)
+    if (ts.isArrayLiteralExpression(e)) {
+      return e.elements.every((el) =>
+        ts.isSpreadElement(el) ? spreadOfConstant(el.expression, seen) : writtenOut(el, seen),
+      )
+    }
+    if (ts.isObjectLiteralExpression(e)) {
+      return e.properties.every((p) =>
+        ts.isSpreadAssignment(p)
+          ? spreadOfConstant(p.expression, seen)
+          : ts.isPropertyAssignment(p) && writtenOut(p.initializer, seen),
+      )
+    }
+    return false
+  }
+  return (id) => isConstant(id, new Set())
+}
+
+/**
+ * True when an argument computes its expectation: an arithmetic or comparison operator, a call other than `expect.*`,
+ * or a read of a binding that is not a written-out constant (`before`, `b.title`, `${n} | N`). Property names, types,
+ * a constructor's name and the class `expect.any(X)` takes are not reads. `toThrow` passes `bindings: false`: its
+ * class or error reference names what is thrown rather than relating two values.
+ */
+function computesExpectation(
+  node: ts.Node,
+  isConstant: (id: ts.Identifier) => boolean,
+  bindings = true,
+): boolean {
+  const recurse = (child: ts.Node | undefined): true | undefined =>
+    child !== undefined && computesExpectation(child, isConstant, bindings) ? true : undefined
+  if (ts.isBinaryExpression(node) && COMPUTE_OPERATORS.has(node.operatorToken.kind)) return true
+  if (ts.isCallExpression(node)) {
+    if (!isExpectNamespaceCall(node)) return true
+    const name = (node.expression as ts.PropertyAccessExpression).name.text
+    if (name === 'any' || name === 'anything') return false
+    return node.arguments.some((a) => recurse(a) === true)
+  }
+  if (ts.isTypeNode(node)) return false
+  if (ts.isIdentifier(node)) return bindings && !isLiteral(node) && !isConstant(node)
+  if (ts.isPropertyAccessExpression(node)) return recurse(node.expression) === true
+  if (ts.isPropertyAssignment(node)) {
+    return (
+      (ts.isComputedPropertyName(node.name) && recurse(node.name) === true) ||
+      recurse(node.initializer) === true
+    )
+  }
+  if (ts.isNewExpression(node)) return node.arguments?.some((a) => recurse(a) === true) === true
+  return ts.forEachChild(node, recurse) === true
+}
+
+function classifyMatcher(
+  call: ts.CallExpression,
+  name: string,
+  isConstant: (id: ts.Identifier) => boolean,
+): keyof Counts {
   if (C1_MATCHERS.has(name)) return 'C1'
   if (RELATIONAL_MATCHERS.has(name)) return 'C3'
   if (EXACT_MATCHERS.has(name)) {
     if (name === 'toThrow' && call.arguments.length === 0) return 'C1'
-    return call.arguments.some(computesExpectation) ? 'C3' : 'C4'
+    const bindings = name !== 'toThrow'
+    return call.arguments.some((a) => computesExpectation(a, isConstant, bindings)) ? 'C3' : 'C4'
   }
   return 'other'
 }
 
 export function classifySource(source: string, path: string): FileCensus {
   const sourceFile = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true)
+  const constants = constantResolver()
   const assertions = emptyCounts()
   const otherMatchers = new Set<string>()
   let tests = 0
@@ -320,10 +495,10 @@ export function classifySource(source: string, path: string): FileCensus {
 
     const matcher = matcherOf(node)
     if (matcher !== undefined) {
-      const kind = propertyDepth > 0 ? 'C2' : classifyMatcher(node, matcher)
+      const kind = propertyDepth > 0 ? 'C2' : classifyMatcher(node, matcher, constants)
       assertions[kind] += 1
       assertionTotal += 1
-      if (classifyMatcher(node, matcher) === 'other') otherMatchers.add(matcher)
+      if (classifyMatcher(node, matcher, constants) === 'other') otherMatchers.add(matcher)
     }
 
     const inProperty = isPropertyBuilder(node) || site?.property === true
@@ -530,6 +705,7 @@ export function journeyViolations(source: string, path: string, root?: string): 
   const sourceFile = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true)
   const helpers =
     root === undefined ? new Map<string, Unit>() : supportHelpers(sourceFile, path, root)
+  const constants = constantResolver()
   const violations: string[] = []
   const called = new Set<Unit>()
 
@@ -546,7 +722,7 @@ export function journeyViolations(source: string, path: string, root?: string): 
         const collect = (child: ts.Node, follow: boolean): void => {
           if (ts.isCallExpression(child)) {
             const name = matcherOf(child)
-            if (name !== undefined) kinds.push(classifyMatcher(child, name))
+            if (name !== undefined) kinds.push(classifyMatcher(child, name, constants))
             const helper = follow ? helperOf(child) : undefined
             if (helper !== undefined) {
               called.add(helper)
