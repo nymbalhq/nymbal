@@ -11,6 +11,7 @@ import {
   parseDurationToMs,
   type AuthService,
   type AuthTokens,
+  type ClientInfo,
 } from '../services/auth-service.js'
 import { ok, fail, renderError } from './envelope.js'
 import { expiredVisitorCookie } from './recently-viewed.js'
@@ -77,6 +78,17 @@ function expiredCookies(secure: boolean): ResponseCookie[] {
   ]
 }
 
+/** What a sign-in records of the browser it was made in: the device label is made from its user agent. */
+function clientOf(ctx: RequestContext): ClientInfo {
+  const header = ctx.headers['user-agent']
+  const userAgent = Array.isArray(header) ? header[0] : header
+  return userAgent === undefined ? {} : { userAgent }
+}
+
+function sessionNotFound(): ResponseEnvelope {
+  return fail('auth.session_not_found', 'No such session is signed in.', 404) as ResponseEnvelope
+}
+
 /** Each hook in order; one that throws is logged and skipped, and the sign-in stands. */
 async function runAfterSignIn(
   hooks: readonly AfterSignIn[],
@@ -128,7 +140,7 @@ export function registerAuthRoutes(
           202,
         ) as ResponseEnvelope
       }
-      const result = await auth.register(registerInput)
+      const result = await auth.register(registerInput, clientOf(ctx))
       const envelope = ok(
         {
           customer: result.customer,
@@ -171,7 +183,7 @@ export function registerAuthRoutes(
       if (!body?.email || !body.password) {
         return fail('auth.invalid_input', 'email and password are required', 400)
       }
-      const result = await auth.login(body.email, body.password)
+      const result = await auth.login(body.email, body.password, clientOf(ctx))
       const envelope = ok({
         customer: result.customer,
         accessToken: result.tokens.accessToken,
@@ -213,7 +225,7 @@ export function registerAuthRoutes(
 
   adapter.registerRoute('POST', '/api/auth/verify-email', async (ctx) => {
     try {
-      const result = await auth.verifyEmail((ctx.body as VerifyBody).token)
+      const result = await auth.verifyEmail((ctx.body as VerifyBody).token, clientOf(ctx))
       return signedIn(result, await runAfterSignIn(afterSignIn, ctx, result.customer.id))
     } catch (err) {
       return renderError(err, ctx.logger)
@@ -233,7 +245,7 @@ export function registerAuthRoutes(
   adapter.registerRoute('POST', '/api/auth/reset-password', async (ctx) => {
     try {
       const body = ctx.body as ResetBody
-      const result = await auth.resetPassword(body.token, body.password)
+      const result = await auth.resetPassword(body.token, body.password, clientOf(ctx))
       return signedIn(result, await runAfterSignIn(afterSignIn, ctx, result.customer.id))
     } catch (err) {
       return renderError(err, ctx.logger)
@@ -247,8 +259,59 @@ export function registerAuthRoutes(
       try {
         const body = ctx.body as ChangeBody
         return signedIn(
-          await auth.changePassword(ctx.auth!.userId!, body.currentPassword, body.newPassword),
+          await auth.changePassword(
+            ctx.auth!.userId!,
+            body.currentPassword,
+            body.newPassword,
+            clientOf(ctx),
+          ),
         )
+      } catch (err) {
+        return renderError(err, ctx.logger)
+      }
+    }),
+  )
+
+  adapter.registerRoute(
+    'GET',
+    '/api/customers/me/sessions',
+    requireAuth(async (ctx) => {
+      try {
+        const sessions = await auth.listSessions(ctx.auth!.userId!, ctx.auth!.sessionId)
+        return ok({ sessions }) as ResponseEnvelope
+      } catch (err) {
+        return renderError(err, ctx.logger)
+      }
+    }),
+  )
+
+  // An unknown id, another customer's and one already ended answer alike.
+  adapter.registerRoute(
+    'DELETE',
+    '/api/customers/me/sessions/:id',
+    requireAuth(async (ctx) => {
+      try {
+        const id = (ctx.params as { id: string }).id
+        if (!(await auth.endSession(ctx.auth!.userId!, id))) return sessionNotFound()
+        const current = id === ctx.auth!.sessionId
+        const envelope = ok({ ended: true, current })
+        if (current) envelope.cookies = expiredCookies(secure())
+        return envelope as ResponseEnvelope
+      } catch (err) {
+        return renderError(err, ctx.logger)
+      }
+    }),
+  )
+
+  adapter.registerRoute(
+    'DELETE',
+    '/api/customers/me/sessions',
+    requireAuth(async (ctx) => {
+      try {
+        await auth.endAllSessions(ctx.auth!.userId!)
+        const envelope = ok({ ended: 'all' })
+        envelope.cookies = expiredCookies(secure())
+        return envelope as ResponseEnvelope
       } catch (err) {
         return renderError(err, ctx.logger)
       }

@@ -5,6 +5,7 @@ import {
   type CheckoutQuote,
   type Customer,
   type CustomerAddress,
+  type CustomerSession,
   type Order,
   type PublicReviewsResult,
   type ReviewResult,
@@ -167,6 +168,23 @@ export function createNymbalApiAdapter(fetchClient: FetchClient): CommerceAdapte
       },
       async logout() {
         await fetchClient.request<{ ok: boolean }>('POST', '/api/auth/logout')
+      },
+      async listSessions() {
+        return (
+          await fetchClient.request<{ sessions: CustomerSession[] }>(
+            'GET',
+            '/api/customers/me/sessions',
+          )
+        ).sessions
+      },
+      endSession(id: string) {
+        return fetchClient.request<{ ended: true; current: boolean }>(
+          'DELETE',
+          `/api/customers/me/sessions/${encodeURIComponent(id)}`,
+        )
+      },
+      async endAllSessions() {
+        await fetchClient.request<{ ended: 'all' }>('DELETE', '/api/customers/me/sessions')
       },
       refresh() {
         return fetchClient.request<{ accessToken: string; expiresIn: number }>(

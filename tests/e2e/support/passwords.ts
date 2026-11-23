@@ -24,7 +24,10 @@ export function newShopper(label: string): Shopper {
   return { email: `${label}-${tag}@e2e.test`, password: `Correct-${tag}-Horse` }
 }
 
-/** Registers `shopper` through the API, on a request context of its own. */
+/**
+ * Registers `shopper` through the API, on a request context of its own, and signs that session out: registering signs
+ * in, and the account's sessions are then only the browsers' that a journey signs in.
+ */
 export async function registerThroughApi(shopper: Shopper): Promise<void> {
   const context = await playwrightRequest.newContext()
   try {
@@ -38,6 +41,8 @@ export async function registerThroughApi(shopper: Shopper): Promise<void> {
       },
     })
     expect(res.ok(), `POST /api/auth/register: ${await res.text()}`).toBe(true)
+    const out = await context.post(`${API_URL}/api/auth/logout`, { headers: await csrf(context) })
+    expect(out.ok(), `POST /api/auth/logout: ${await out.text()}`).toBe(true)
   } finally {
     await context.dispose()
   }

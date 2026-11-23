@@ -223,8 +223,8 @@ async function withPostgres(
 
 const TABLE = '"refresh_tokens"'
 const ROTATABLE = `(${TABLE}."revoked_at" is null or ${TABLE}."replaced_by_jti" is not null)`
-const INSERT = `insert into ${TABLE} ("id", "customer_id", "token_hash", "revoked_at", "replaced_by_jti", "expires_at", "created_at") values ($1, $2, $3, $4, $5, $6, $7)`
-const ROTATE = `update ${TABLE} set "revoked_at" = COALESCE(${TABLE}."revoked_at", $1), "replaced_by_jti" = $2 where (${TABLE}."id" = $3 and ${ROTATABLE})`
+const INSERT = `insert into ${TABLE} ("id", "customer_id", "token_hash", "revoked_at", "replaced_by_jti", "expires_at", "created_at", "session_id", "session_started_at", "device") values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
+const ROTATE = `update ${TABLE} set "revoked_at" = COALESCE(${TABLE}."revoked_at", $1), "replaced_by_jti" = $2 where (${TABLE}."id" = $3 and ${ROTATABLE}) returning "session_id", "session_started_at", "device", "created_at"`
 
 const insertedValues = (t: RefreshTokenInsert) => [
   t.id,
@@ -234,6 +234,9 @@ const insertedValues = (t: RefreshTokenInsert) => [
   null,
   t.expiresAt.toISOString(),
   t.createdAt.toISOString(),
+  t.sessionId ?? null,
+  t.sessionStartedAt?.toISOString() ?? null,
+  t.device ?? null,
 ]
 
 describe('RefreshTokenRepository on Postgres', () => {
@@ -259,6 +262,9 @@ describe('RefreshTokenRepository on Postgres', () => {
       null,
       t.expiresAt.toISOString(),
       t.createdAt.toISOString(),
+      null,
+      null,
+      null,
     ]
     let found: unknown
     let absent: unknown
@@ -282,6 +288,9 @@ describe('RefreshTokenRepository on Postgres', () => {
       replacedByJti: null,
       expiresAt: t.expiresAt.toISOString(),
       createdAt: t.createdAt.toISOString(),
+      sessionId: t.id,
+      sessionStartedAt: t.createdAt.toISOString(),
+      device: 'Unknown device',
     })
     expect(absent).toBeNull()
   })
@@ -291,9 +300,11 @@ describe('RefreshTokenRepository on Postgres', () => {
   it('rotate of a changed row sends the conditional update, then the successor, and answers true', async () => {
     vi.useFakeTimers({ toFake: ['Date'], now: LATER })
     const next = token('c')
+    const started = new Date('2026-10-01T09:00:00.000Z')
+    const old = ['session-1', started.toISOString(), 'Firefox on Windows', started.toISOString()]
     let did: boolean | undefined
 
-    const sent = await withPostgres({ rowCount: 1 }, (repo, store) =>
+    const sent = await withPostgres({ rowCount: 1, rows: [old] }, (repo, store) =>
       store.transaction(async (tx) => {
         did = await repo.rotate(tx, 'old-jti', next)
       }),
@@ -302,7 +313,15 @@ describe('RefreshTokenRepository on Postgres', () => {
     expect(did).toBe(true)
     expect(sent).toEqual([
       { text: ROTATE, values: [LATER, next.id, 'old-jti'] },
-      { text: INSERT, values: insertedValues(next) },
+      {
+        text: INSERT,
+        values: insertedValues({
+          ...next,
+          sessionId: 'session-1',
+          sessionStartedAt: started,
+          device: 'Firefox on Windows',
+        }),
+      },
     ])
   })
 

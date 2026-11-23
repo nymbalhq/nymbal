@@ -146,6 +146,10 @@ export const refreshTokens = sqliteTable(
     replacedByJti: text('replaced_by_jti'),
     expiresAt: text('expires_at').notNull(),
     createdAt: text('created_at').notNull(),
+    // The sign-in a row descends from; null on a row written before sessions, read as a session of its own.
+    sessionId: text('session_id'),
+    sessionStartedAt: text('session_started_at'),
+    device: text('device'),
   },
   (t) => ({
     customerIdx: index('refresh_tokens_customer_idx').on(t.customerId),

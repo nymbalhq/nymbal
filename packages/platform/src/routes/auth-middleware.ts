@@ -23,6 +23,7 @@ export function createAuthMiddleware(auth: AuthService): MiddlewareHandler {
         userId: payload.sub,
         roles: payload.roles,
         token,
+        ...(payload.sid !== undefined && { sessionId: payload.sid }),
       }
     } catch {
       // silently ignore — endpoints may still succeed for anonymous users

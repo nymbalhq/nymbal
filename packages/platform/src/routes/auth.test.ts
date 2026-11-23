@@ -123,6 +123,9 @@ function makeAuthService(overrides?: Partial<AuthService>): AuthService {
     sendVerification: vi.fn().mockResolvedValue(undefined),
     markVerified: vi.fn().mockResolvedValue(testCustomer),
     importLegacyPassword: vi.fn().mockResolvedValue('unmatched'),
+    listSessions: vi.fn().mockResolvedValue([]),
+    endSession: vi.fn().mockResolvedValue(false),
+    endAllSessions: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   }
 }
@@ -176,7 +179,7 @@ describe('POST /api/auth/login', () => {
     }
     expect(body.data.customer.email).toBe('test@example.com')
     expect(body.data.accessToken).toBe('access-tok')
-    expect(service.login).toHaveBeenCalledWith('test@example.com', 'pass123')
+    expect(service.login).toHaveBeenCalledWith('test@example.com', 'pass123', {})
   })
 
   it('sets refresh token cookie on login', async () => {

@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-11-22T10:16:01.267Z",
-  "sourceHash": "e2bad645d7b35bae",
+  "generatedAt": "2026-11-23T13:13:12.741Z",
+  "sourceHash": "fc60ca1ae59b4089",
   "components": [
     "AddToCart",
     "AddressBook",
@@ -32,6 +32,7 @@
     "ReviewList",
     "SearchBar",
     "SearchResults",
+    "SessionList",
     "SiteFooter",
     "SiteHeader",
     "SortDropdown",

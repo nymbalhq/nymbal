@@ -310,6 +310,27 @@ export const routeSchemas: Record<string, RouteSchema> = {
     description: "Change the signed-in customer's password, ending every other session.",
     body: z.object({ currentPassword: z.string().min(1), newPassword: z.string().min(1) }),
   },
+  'GET /api/customers/me/sessions': {
+    name: 'customers.sessions',
+    tool: false,
+    description:
+      "List the devices the signed-in customer is signed in on: each one's device, sign-in time and last activity, and which is this one.",
+  },
+  'DELETE /api/customers/me/sessions/:id': {
+    name: 'customers.endSession',
+    tool: false,
+    command: 'customer.endSession',
+    description:
+      "Sign one of the signed-in customer's devices out; ending this device's own session also clears its cookies.",
+    params: idParams,
+  },
+  'DELETE /api/customers/me/sessions': {
+    name: 'customers.endAllSessions',
+    tool: false,
+    command: 'customer.endAllSessions',
+    description:
+      "Sign the signed-in customer out on every device, this one included, and clear this one's cookies.",
+  },
 
   // Store
   'GET /api/capabilities': {

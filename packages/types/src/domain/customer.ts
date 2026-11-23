@@ -25,6 +25,18 @@ export interface Customer {
   updatedAt: string
 }
 
+/** A device the customer is signed in on: one sign-in, carried by its renewals. */
+export interface CustomerSession {
+  id: string
+  /** Made on the server from the sign-in's `User-Agent`, from fixed words: "Chrome on macOS", "Unknown device". */
+  device: string
+  signedInAt: string
+  /** The latest renewal, or the sign-in when there has been none. */
+  lastActiveAt: string
+  /** The session of the access token that asked. */
+  current: boolean
+}
+
 export interface CustomerProfile {
   customerId: string
   orderCount: number

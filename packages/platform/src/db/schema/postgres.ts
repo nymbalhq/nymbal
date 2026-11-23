@@ -149,6 +149,10 @@ export const refreshTokens = pgTable(
     replacedByJti: text('replaced_by_jti'),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    // The sign-in a row descends from; null on a row written before sessions, read as a session of its own.
+    sessionId: text('session_id'),
+    sessionStartedAt: timestamp('session_started_at', { withTimezone: true }),
+    device: text('device'),
   },
   (t) => ({
     customerIdx: index('refresh_tokens_customer_idx').on(t.customerId),

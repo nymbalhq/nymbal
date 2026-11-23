@@ -14,8 +14,9 @@ import { timelineEntries } from './__fixtures__/server-data.js'
 // driven per element are its render branches (empty and filled store, loading, open, error), seeded through the mock
 // client's stores.
 //
-// The views (cart page, product card, search results, the four account forms and the address book) add the signed-in
-// customer's addresses, and a form submitted once with its SDK call held, refused or answered.
+// The views (cart page, product card, search results, the four account forms, the address book and the session list)
+// add the signed-in customer's addresses and devices, a form submitted once with its SDK call held, refused or
+// answered, and a device signed out with its call held, refused or answered.
 //
 // `nymbal-checkout`'s states are its steps (contact, shipping, payment with billing the same or not), a place-order
 // held, refused and answered, a payment element in error, and a cart in its summary; each is reached by walking the
@@ -55,6 +56,7 @@ const TAGS = [
   'nymbal-reset-password-form',
   'nymbal-change-password-form',
   'nymbal-verify-email',
+  'nymbal-session-list',
   // Checkout
   'nymbal-checkout',
   // Catalogue and page elements
@@ -105,6 +107,10 @@ interface State {
   codeRefused?: boolean
   /** The cart store's `addItem` refuses, as the store does: `error` and `errorCode` set, the rest kept. */
   addRefused?: boolean
+  /** What the auth store's `sessions()` answers: the signed-in customer's devices. */
+  sessions?: unknown[]
+  /** What the auth store's `endSession` and `signOutEverywhere` do: never answer, refuse, or end the session. */
+  endSession?: Phase
 }
 
 const state = (partial: Partial<State> = {}): State => ({
@@ -181,6 +187,20 @@ function installAccount(client: Record<string, unknown>, s: State): void {
       },
     },
   }
+}
+
+/** The auth store's devices calls, the list answering `s.sessions` and each end as `s.endSession` says. */
+function installSessions(client: Record<string, unknown>, s: State): void {
+  const auth = client['auth'] as Record<string, unknown>
+  const end = (): Promise<void> =>
+    s.endSession === 'pending'
+      ? new Promise<void>(() => undefined)
+      : s.endSession === 'failed'
+        ? Promise.reject(new Error('Refused by the AC-1 fake.'))
+        : Promise.resolve()
+  auth['sessions'] = async () => s.sessions ?? []
+  auth['endSession'] = () => end()
+  auth['signOutEverywhere'] = () => end()
 }
 
 /**
@@ -363,6 +383,7 @@ async function mount(
   installReviews(client as unknown as Record<string, unknown>, s)
   installCheckout(client as unknown as Record<string, unknown>, s.placeOrder ?? 'succeeded')
   installRecentlyViewed(client as unknown as Record<string, unknown>, s)
+  installSessions(client as unknown as Record<string, unknown>, s)
   if (s.codeRefused === true) {
     const cart = client.cart as unknown as Record<string, unknown>
     cart['addCode'] = async () => {
@@ -637,6 +658,34 @@ function formStates(base: Partial<State> = {}): State[] {
 }
 
 const signedIn = { stores: { auth: { customer: CUSTOMER, isAuthenticated: true } } }
+
+/** The signed-in customer's devices: this one and a phone. */
+const SESSIONS = [
+  {
+    id: 'ses-this',
+    device: 'Firefox on Windows',
+    signedInAt: '2026-11-01T09:00:00.000Z',
+    lastActiveAt: '2026-11-22T10:15:00.000Z',
+    current: true,
+  },
+  {
+    id: 'ses-phone',
+    device: 'Safari on iPhone',
+    signedInAt: '2026-10-12T18:30:00.000Z',
+    lastActiveAt: '2026-11-21T07:45:00.000Z',
+    current: false,
+  },
+]
+
+/** Presses Sign out on the first row not marked this device, once its list has loaded. */
+async function endOtherSession(el: HTMLElement): Promise<void> {
+  await readSettled(el)
+  const other = [...(el.shadowRoot?.querySelectorAll('[data-testid="session-row"]') ?? [])].find(
+    (row) => row.getAttribute('data-current') !== 'true',
+  )
+  ;(other?.querySelector('[data-testid="session-end"]') as HTMLElement | null)?.click()
+  await readSettled(el)
+}
 
 /** Lets a signed-out element's profile load settle and its next render land. */
 async function settleProfile(el: HTMLElement): Promise<void> {
@@ -966,6 +1015,14 @@ const FIXED: Record<Tag, State[]> = {
   'nymbal-change-password-form': formStates(signedIn),
   // Opened with no token (the resend form) and with one (the button), each submitted once in each phase.
   'nymbal-verify-email': [...formStates(), ...formStates({ hash: VERIFY_HASH })],
+  // Signed out (nothing loaded), signed in with two devices, and the other device signed out held, refused, answered.
+  'nymbal-session-list': [
+    state(),
+    state({ ...signedIn, sessions: SESSIONS, walk: readSettled }),
+    ...PHASES.map((endSession) =>
+      state({ ...signedIn, sessions: SESSIONS, endSession, walk: endOtherSession }),
+    ),
+  ],
   'nymbal-checkout': [
     ...checkoutStates(),
     ...checkoutStates({
@@ -1361,6 +1418,19 @@ const ARBITRARY: Record<Tag, fc.Arbitrary<State>> = {
   'nymbal-verify-email': fc
     .record({ phase: fc.option(fc.constantFrom(...PHASES)), withToken: fc.boolean() })
     .map(({ phase, withToken }) => state({ phase, ...(withToken && { hash: VERIFY_HASH }) })),
+  'nymbal-session-list': fc
+    .record({
+      signed: fc.boolean(),
+      count: fc.integer({ min: 0, max: SESSIONS.length }),
+      endSession: fc.option(fc.constantFrom(...PHASES), { nil: undefined }),
+    })
+    .map(({ signed, count, endSession }) =>
+      state({
+        ...(signed && signedIn),
+        sessions: SESSIONS.slice(0, count),
+        ...(endSession !== undefined && { endSession, walk: endOtherSession }),
+      }),
+    ),
   'nymbal-checkout': fc
     .record({
       items: fc.array(cartItem, { maxLength: 3 }),
@@ -1756,6 +1826,12 @@ const INTERFACE: Array<{
     tag: 'nymbal-verify-email',
     reactName: 'VerifyEmail',
     events: [{ name: 'nymbal:auth:signed-in', prop: 'onSignedIn' }],
+  },
+  {
+    tag: 'nymbal-session-list',
+    reactName: 'SessionList',
+    events: [{ name: 'nymbal:sessions:signed-out', prop: 'onSignedOut' }],
+    attributes: [],
   },
   // Catalogue and page elements
   {

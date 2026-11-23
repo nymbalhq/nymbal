@@ -253,6 +253,13 @@
       "when": 1795425804851,
       "tag": "0036_insight_guidance",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1795447120337,
+      "tag": "0037_refresh_token_sessions",
+      "breakpoints": true
     }
   ]
 }

@@ -20,6 +20,7 @@ import { NymbalForgotPasswordForm } from './components/forgot-password-form.js'
 import { NymbalResetPasswordForm } from './components/reset-password-form.js'
 import { NymbalChangePasswordForm } from './components/change-password-form.js'
 import { NymbalVerifyEmail } from './components/verify-email.js'
+import { NymbalSessionList } from './components/session-list.js'
 import { NymbalAddressForm } from './components/address-form.js'
 import { NymbalAddressBook } from './components/address-book.js'
 import { NymbalCheckout } from './components/checkout.js'
@@ -60,6 +61,7 @@ export const ELEMENTS = [
   NymbalResetPasswordForm,
   NymbalChangePasswordForm,
   NymbalVerifyEmail,
+  NymbalSessionList,
   NymbalAddressForm,
   NymbalAddressBook,
   NymbalCheckout,

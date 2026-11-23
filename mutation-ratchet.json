@@ -50,6 +50,7 @@
     "packages/platform/src/services/category-service.ts": 86.89,
     "packages/platform/src/services/checkout-service.ts": 78.32,
     "packages/platform/src/services/customer-service.ts": 97.01,
+    "packages/platform/src/services/device-label.ts": 94.12,
     "packages/platform/src/services/inventory-service.ts": 75.63,
     "packages/platform/src/services/legacy-passwords.ts": 83.07,
     "packages/platform/src/services/legacy-remote.ts": 80.62,

@@ -208,3 +208,47 @@ describe('refresh rotation waits for, and re-checks, the write holding its row',
     expect((await liveOf(customerId)).sort()).toEqual([r1.id, r1Prime.id].sort())
   }, 30_000)
 })
+
+/** A renewal of one session written by hand in the holder's transaction: the successor takes the old row's session. */
+async function holdSessionRotation(
+  holder: pg.Client,
+  oldJti: string,
+  next: RefreshTokenInsert,
+): Promise<void> {
+  await holder.query(
+    `UPDATE refresh_tokens SET replaced_by_jti = $1, revoked_at = COALESCE(revoked_at, now()) WHERE id = $2`,
+    [next.id, oldJti],
+  )
+  await holder.query(
+    `INSERT INTO refresh_tokens (id, customer_id, token_hash, expires_at, created_at, session_id, session_started_at, device)
+     SELECT $1, $2, $3, $4, $5, session_id, session_started_at, device FROM refresh_tokens WHERE id = $6`,
+    [next.id, next.customerId, next.tokenHash, next.expiresAt, next.createdAt, oldJti],
+  )
+}
+
+describe('ending one session waits for, and re-checks, the renewal holding its row', () => {
+  // Defect: revokeSession updates without locking first: it waits on R0 and re-checks only R0, and R1 was never in its
+  // snapshot, so a renewal in flight carries the session across its own end.
+  it('AC-5: with a renewal R0 → R1 of the session uncommitted, revokeSession waits; after COMMIT it answers true, R1 is revoked and R0’s pointer is null', async () => {
+    const customerId = uuidv7()
+    const sessionId = uuidv7()
+    const r0 = {
+      ...tokenOf(customerId),
+      sessionId,
+      sessionStartedAt: new Date(),
+      device: 'Firefox on Windows',
+    }
+    await store.transaction((tx) => repos.refreshToken.insert(tx, r0))
+    const r1 = tokenOf(customerId)
+
+    const { answer } = await behindHolder(
+      (holder) => holdSessionRotation(holder, r0.id, r1),
+      () =>
+        store.transaction((tx) => repos.refreshToken.revokeSession(tx, customerId, sessionId)),
+    )
+
+    expect(answer).toBe(true)
+    expect(await liveOf(customerId), 'neither R0 nor R1 is live').toEqual([])
+    expect((await rowOf(r0.id)).replaced_by_jti).toBeNull()
+  }, 30_000)
+})

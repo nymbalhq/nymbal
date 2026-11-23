@@ -37,6 +37,9 @@ const EXCLUDED = [
   'auth.verifyEmail',
   'auth.resendVerification',
   'customers.changePassword',
+  'customers.sessions',
+  'customers.endSession',
+  'customers.endAllSessions',
   'admin.events.ticket',
   'admin.events.stream',
   'admin.activity.export',
@@ -230,7 +233,7 @@ describe('AC-1: one tool per registry entry', () => {
     }
   })
 
-  it('AC-13: the entries marked tool: false are exactly the fourteen kept from agents plus proposal approve, proposal reject, the insight dismiss, settings put and delete, the assistant’s turn and stream, the admin-promotion routes, the admin-category routes, the three password routes and the two confirmation routes, and every stream route is among them', () => {
+  it('AC-13: the entries marked tool: false are exactly the fourteen kept from agents plus proposal approve, proposal reject, the insight dismiss, settings put and delete, the assistant’s turn and stream, the admin-promotion routes, the admin-category routes, the three password routes, the two confirmation routes and the three devices routes, and every stream route is among them', () => {
     const marked = Object.values(routeSchemas)
       .filter((entry) => entry.tool === false)
       .map((entry) => entry.name)
