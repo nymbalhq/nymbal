@@ -238,3 +238,174 @@ describe('audit entries', () => {
     await store.close()
   })
 })
+
+function insert(
+  id: string,
+  minute: number,
+  over: Partial<AuditEntryInsert> = {},
+): AuditEntryInsert {
+  return {
+    id,
+    at: new Date(T0 + minute * 60_000),
+    actor: { kind: 'admin', id: 'a1' },
+    command: 'order.refund',
+    subjects: [{ type: 'order', id: 'o1' }],
+    correlationId: null,
+    idempotencyKey: null,
+    requestHash: null,
+    outcome: 'applied',
+    responseStatus: 200,
+    responseBody: undefined,
+    ...over,
+  }
+}
+
+/** What a listing answers for an appended entry: no request hash and never the stored body. */
+const listedAs = (e: AuditEntryInsert) => ({
+  id: e.id,
+  at: e.at.toISOString(),
+  actor: e.actor,
+  command: e.command,
+  subjects: e.subjects,
+  correlationId: e.correlationId,
+  idempotencyKey: e.idempotencyKey,
+  outcome: e.outcome,
+  responseStatus: e.responseStatus,
+})
+
+async function withEntries(entries: AuditEntryInsert[]) {
+  const { store, repo } = await setup()
+  await store.transaction(async (tx) => {
+    for (const e of entries) await repo.append(tx, e)
+  })
+  return { store, repo }
+}
+
+describe('audit entries by id', () => {
+  it('answers each named entry with its own actor, command, correlation and key, and nothing for no ids', async () => {
+    const written = [
+      insert('e1', 0, { correlationId: 'c1', idempotencyKey: 'k1', responseBody: { ok: 1 } }),
+      insert('e2', 1, { actor: { kind: 'system', id: 'stripe' }, command: 'payment.capture' }),
+      insert('e3', 2, {
+        actor: { kind: 'customer', id: 'u7' },
+        command: 'checkout.complete',
+        correlationId: 'c3',
+        idempotencyKey: 'k3',
+        outcome: 'refused',
+        responseStatus: 409,
+      }),
+    ]
+    const { store, repo } = await withEntries(written)
+    // Defect: the ids are ignored (every entry answers), or correlation and key read back as null.
+    const found = await store.read((tx) => repo.byIds(tx, ['e3', 'e1', 'missing']))
+    expect([...found].sort((a, b) => a.id.localeCompare(b.id))).toEqual(
+      [written[0]!, written[2]!].map(listedAs),
+    )
+    // Defect: no ids reads the table, or answers a placeholder.
+    expect(await store.read((tx) => repo.byIds(tx, []))).toEqual([])
+    await store.close()
+  })
+})
+
+describe('the applied entry under a key', () => {
+  it('is the applied one of that actor, command and key, with its hash, subjects, status and body', async () => {
+    const subjects = [{ type: 'order', id: 'o9' }]
+    const { store, repo } = await withEntries([
+      // Same actor, command and key, but refused: never what a replay answers.
+      insert('e0', 0, {
+        idempotencyKey: 'k1',
+        requestHash: 'h0',
+        outcome: 'refused',
+        responseStatus: 409,
+      }),
+      insert('e1', 1, {
+        idempotencyKey: 'k1',
+        requestHash: 'h1',
+        subjects,
+        responseStatus: 201,
+        responseBody: { refundId: 'r1' },
+      }),
+      insert('e2', 2, {
+        actor: { kind: 'admin', id: 'a2' },
+        idempotencyKey: 'k1',
+        responseBody: { refundId: 'r2' },
+      }),
+      insert('e3', 3, {
+        command: 'order.cancel',
+        idempotencyKey: 'k1',
+        responseBody: { cancelled: true },
+      }),
+      insert('e4', 4, { idempotencyKey: 'k2', responseStatus: 204 }),
+    ])
+    const find = (actorId: string, command: string, key: string) =>
+      store.read((tx) => repo.findAppliedByKey(tx, actorId, command, key))
+    // Defect: the match is dropped or ignores the outcome, so the refused entry (or another's) is replayed; or the
+    // hash or body read back as null.
+    expect(await find('a1', 'order.refund', 'k1')).toEqual({
+      requestHash: 'h1',
+      subjects,
+      responseStatus: 201,
+      responseBody: { refundId: 'r1' },
+    })
+    // Defect: one actor's or command's stored answer replays for another's request under the same key.
+    expect((await find('a2', 'order.refund', 'k1'))?.responseBody).toEqual({ refundId: 'r2' })
+    expect((await find('a1', 'order.cancel', 'k1'))?.responseBody).toEqual({ cancelled: true })
+    // Defect: an entry appended with no body reads back a body.
+    expect(await find('a1', 'order.refund', 'k2')).toEqual({
+      requestHash: null,
+      subjects: [{ type: 'order', id: 'o1' }],
+      responseStatus: 204,
+      responseBody: null,
+    })
+    // Defect: an unused key answers an entry, or throws instead of answering none.
+    expect(await find('a1', 'order.refund', 'k9')).toBeNull()
+    await store.close()
+  })
+})
+
+describe('audit listings', () => {
+  it('newest first, a page from a cursor holds the entries older than it', async () => {
+    const { store, repo } = await withEntries([0, 1, 2, 3].map((m) => insert(`e${m}`, m)))
+    const list = (q: Omit<AuditQuery, 'order'>) =>
+      store.read((tx) => repo.list(tx, { ...q, order: 'desc' }))
+    const all = await list({ limit: 10 })
+    // Defect: `desc` lists oldest first.
+    expect(all.map((e) => e.id)).toEqual(['e3', 'e2', 'e1', 'e0'])
+    const first = await list({ limit: 2 })
+    const last = first[first.length - 1]!
+    // Defect: a newest-first cursor reads the entries newer than it.
+    const next = await list({ limit: 2, cursor: { at: last.at, id: last.id } })
+    expect([...first, ...next]).toEqual(all)
+    await store.close()
+  })
+
+  it('an outcome filter keeps only that outcome', async () => {
+    const written = [
+      insert('e0', 0),
+      insert('e1', 1, { outcome: 'refused', responseStatus: 409 }),
+      insert('e2', 2, { outcome: 'replayed' }),
+    ]
+    const { store, repo } = await withEntries(written)
+    // Defect: the outcome filter is dropped and every entry answers.
+    const refused = await store.read((tx) =>
+      repo.list(tx, { outcome: 'refused', order: 'asc', limit: 10 }),
+    )
+    expect(refused).toEqual(written.filter((w) => w.outcome === 'refused').map(listedAs))
+    await store.close()
+  })
+
+  it('an actor id with no colon that begins with a kind name is matched as an id, whatever its kind', async () => {
+    const written = [
+      insert('e0', 0, { actor: { kind: 'customer', id: 'admin1' } }),
+      insert('e1', 1, { actor: { kind: 'admin', id: 'admin1' } }),
+      insert('e2', 2, { actor: { kind: 'admin', id: 'a1' } }),
+    ]
+    const { store, repo } = await withEntries(written)
+    // Defect: an id with no colon is split as if one ended its kind, so only the admin's entry answers.
+    const byActor = await store.read((tx) =>
+      repo.list(tx, { actor: 'admin1', order: 'asc', limit: 10 }),
+    )
+    expect(byActor).toEqual(written.filter((w) => w.actor.id === 'admin1').map(listedAs))
+    await store.close()
+  })
+})

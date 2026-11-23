@@ -19,7 +19,7 @@
     "packages/platform/src/read-models/recently-viewed.ts": 61.27,
     "packages/platform/src/read-models/settle.ts": 43.59,
     "packages/platform/src/read-models/sources.ts": 61.11,
-    "packages/platform/src/repositories/audit-entry.ts": 59.83,
+    "packages/platform/src/repositories/audit-entry.ts": 85.82,
     "packages/platform/src/repositories/cart.ts": 66.94,
     "packages/platform/src/repositories/category.ts": 69.05,
     "packages/platform/src/repositories/customer.ts": 58.8,
