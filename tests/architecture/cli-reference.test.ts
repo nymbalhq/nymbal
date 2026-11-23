@@ -1,6 +1,6 @@
 // Reads: apps/docs/src/content/docs/reference/cli.md
 import { readFileSync } from 'node:fs'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import {
   CLI_REFERENCE,
   commandTree,
@@ -25,6 +25,10 @@ function sections(page: string): Map<string, string> {
 }
 
 describe('AC-5: the committed CLI reference is the one the CLI generates', () => {
+  // The first walk of the tree imports every CLI command module (seconds on a loaded runner); walk it here, not
+  // inside a test's 5 s. Later walks reuse the loaded modules.
+  beforeAll(() => commandTree(root), 60_000)
+
   it('AC-5: the committed page equals what cli-reference renders from the CLI’s command tree', async () => {
     expect(committed).toBe(await renderCliReference(root))
   })

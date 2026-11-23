@@ -1,7 +1,7 @@
 // Reads: packages/adapters/**, registry/README.md, README.md, package.json
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import { FIRST_PARTY_ADAPTERS, ROOT } from './adapter-table'
 import {
   cliTree,
@@ -83,6 +83,10 @@ async function commandProblem(line: string): Promise<string | undefined> {
 }
 
 describe('AC-6: the guide and the skill name only what exists', () => {
+  // The command tree loads every CLI command module once (seconds on a loaded runner); load it here, not inside a
+  // test's 5 s, so a test's time is its own checks.
+  beforeAll(() => cliTree(), 60_000)
+
   it("AC-6: the guide and the skill exist, and the skill's frontmatter names it after its directory and describes it", () => {
     const front = frontmatter(read(SKILL))
 
