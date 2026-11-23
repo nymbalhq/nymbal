@@ -10,6 +10,7 @@ import {
   type ScriptView,
 } from '../../../../tests/support/ai-stand-in.js'
 import { cliEnv, migratedSqlite, runCli, type CliRun } from '../../../../tests/support/doctor.js'
+import { runInProcess } from './fixtures/in-process.js'
 import { project, workspace } from '../../../../tests/support/project.js'
 import { CONTENT_CASES } from '../../../platform/src/roles/content-eval.js'
 import { settingsConfigInput } from '../../../platform/tests/support/settings.js'
@@ -17,8 +18,9 @@ import { settingsConfigInput } from '../../../platform/tests/support/settings.js
 // `nymbal eval content` in a store project whose `ai` block points at an Anthropic stand-in in `script` mode. The
 // script recognises each case by its product's name in the request and answers it: with copy that meets the rules and
 // claims nothing the product does not state (every case should pass), or hostile (claims the products do not state,
-// fields outside the role's, an id, the injected title echoed: no case that expects a proposal may pass). Spawns the
-// built CLI (`pnpm build` first). No live provider is ever called here.
+// fields outside the role's, an id, the injected title echoed: no case that expects a proposal may pass). The first
+// case spawns the built CLI (`pnpm build` first), the others run in this process (fixtures/in-process.ts). No live
+// provider is ever called here.
 
 const SUMMARY = /^content eval: (\d+)\/(\d+) passed \(threshold (\d+)\)$/m
 const TOKENS =
@@ -121,16 +123,19 @@ const keyed = () => ({
   config: { baseUrl: anthropic.url, apiKey: `sk-ant-eval-${randomBytes(12).toString('hex')}` },
 })
 
-function evalContent(p: Project, args: string[] = []): Promise<CliRun> {
-  return runCli(['eval', 'content', ...args], {
-    cwd: p.dir,
-    env: cliEnv({
-      NYMBAL_SQLITE_PATH: p.db,
-      ANTHROPIC_API_KEY: undefined,
-      OPENAI_API_KEY: undefined,
-    }),
-    timeoutMs: 180_000,
+function evalContent(
+  p: Project,
+  args: string[] = [],
+  how: 'in-process' | 'spawned' = 'in-process',
+): Promise<CliRun> {
+  const env = cliEnv({
+    NYMBAL_SQLITE_PATH: p.db,
+    ANTHROPIC_API_KEY: undefined,
+    OPENAI_API_KEY: undefined,
   })
+  return how === 'spawned'
+    ? runCli(['eval', 'content', ...args], { cwd: p.dir, env, timeoutMs: 180_000 })
+    : runInProcess(['eval', 'content', ...args], { cwd: p.dir, env })
 }
 
 const verdicts = (out: string, verdict: 'PASS' | 'FAIL') =>
@@ -161,7 +166,7 @@ describe('AC-20: nymbal eval content against the scripted stand-in', () => {
     anthropic.script = goodScript
     anthropic.reset()
 
-    const run = await evalContent(p)
+    const run = await evalContent(p, [], 'spawned')
 
     expect(run.code, run.out).toBe(0)
     expect(CASES.length).toBe(9)

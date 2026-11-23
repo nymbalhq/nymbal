@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { freshState, loadState, type FinishedPass, type ImportEntity } from '@nymbalhq/importers'
-import { cliEnv, MIGRATIONS_ROOT, runCli, type CliRun } from '../../../../tests/support/doctor.js'
+import { cliEnv, MIGRATIONS_ROOT, type CliRun } from '../../../../tests/support/doctor.js'
+import { runInProcess } from './fixtures/in-process.js'
 import { readRows } from '../../../../tests/support/store-tables.js'
 import {
   fixture,
@@ -12,7 +13,7 @@ import {
   type WooCommerceServer,
 } from '../../../../tests/support/woocommerce-server.js'
 
-// `nymbal import --since` through the built CLI (`pnpm build` first), against the WooCommerce fixture server on a
+// `nymbal import --since` run in this process (fixtures/in-process.ts), against the WooCommerce fixture server on a
 // SQLite project: what it refuses before it opens the store or asks WooCommerce anything, and a delta after an import
 // as the merchant sees it in the outro and the migration report.
 
@@ -87,7 +88,7 @@ function project(): Project {
 }
 
 function nymbal(p: Project, args: string[]): Promise<CliRun> {
-  return runCli(args, { cwd: p.dir, env: p.env, timeoutMs: 120_000 })
+  return runInProcess(args, { cwd: p.dir, env: p.env })
 }
 
 function importArgs(at: WooCommerceServer, ...extra: string[]): string[] {
@@ -159,7 +160,12 @@ describe('AC-4: what nymbal import --since refuses', () => {
       extra: ['--since', 'last'],
       names: ['nymbal import'],
     },
-    { name: 'no state', state: null, extra: ['--since', '2026-10-01'], names: [/no-state|\.nymbal-migration\.json/] },
+    {
+      name: 'no state',
+      state: null,
+      extra: ['--since', '2026-10-01'],
+      names: [/no-state|\.nymbal-migration\.json/],
+    },
     {
       name: 'a date on an unfinished pass',
       state: unfinishedState(),
@@ -206,7 +212,10 @@ describe('AC-10: a delta through the CLI', () => {
     const p = project()
     const migrated = await nymbal(p, ['migrate'])
     const imported = await nymbal(p, importArgs(source))
-    expect([migrated.code, imported.code], migrated.out.slice(-2000) + imported.out.slice(-3000)).toEqual([0, 0])
+    expect(
+      [migrated.code, imported.code],
+      migrated.out.slice(-2000) + imported.out.slice(-3000),
+    ).toEqual([0, 0])
     const afterImport = (await loadState(p.statePath)) as { runs: FinishedPass[] }
     const newPriceMinor = 3150
     const at = source.source.products.findIndex((r) => r['id'] === 100)
@@ -256,7 +265,8 @@ describe('AC-10: a delta through the CLI', () => {
     // The delta's pass is recorded, and each entity's since is the start of the pass before it, to the second.
     const afterDelta = (await loadState(p.statePath)) as { runs: FinishedPass[] }
     expect(afterDelta.runs.length).toBe(afterImport.runs.length + 1)
-    const importStartSecond = Math.floor(Date.parse(afterImport.runs.at(-1)!.startedAt) / 1000) * 1000
+    const importStartSecond =
+      Math.floor(Date.parse(afterImport.runs.at(-1)!.startedAt) / 1000) * 1000
     const sinceByEntity = afterDelta.runs.at(-1)!.since ?? {}
     expect(DEFAULT_ENTITIES.map((e) => Date.parse(sinceByEntity[e] ?? ''))).toEqual(
       DEFAULT_ENTITIES.map(() => importStartSecond),

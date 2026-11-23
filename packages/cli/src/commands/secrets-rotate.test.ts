@@ -21,12 +21,13 @@ import {
   type StoredSetting,
   openReader,
 } from '../../../platform/tests/support/settings.js'
-import { cliEnv, runCli } from '../../../../tests/support/doctor.js'
+import { cliEnv } from '../../../../tests/support/doctor.js'
+import { runInProcess } from './fixtures/in-process.js'
 import { install, workspace } from '../../../../tests/support/project.js'
 
 // AC-7: `nymbal secrets rotate` with NYMBAL_SECRETS_KEY_OLD and NYMBAL_SECRETS_KEY re-encrypts every secret row under
 // the new key and leaves plain rows untouched; one row that fails under the old key exits 2 and changes nothing.
-// Spawns the built CLI (`pnpm build` first).
+// Runs the command in this process (fixtures/in-process.ts).
 
 const COMMERCE = { payments: { provider: 'stripe' }, ai: { provider: 'anthropic' } }
 const SECRET_FIELDS = [
@@ -54,7 +55,7 @@ function project(run: ReturnType<typeof cleanups>): { dir: string; db: string } 
 }
 
 const rotate = (dir: string, db: string, oldKey: string, newKey: string) =>
-  runCli(['secrets', 'rotate'], {
+  runInProcess(['secrets', 'rotate'], {
     cwd: dir,
     env: cliEnv({
       NYMBAL_SQLITE_PATH: db,

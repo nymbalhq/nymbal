@@ -10,7 +10,8 @@ import {
   type ScriptView,
 } from '../../../../tests/support/ai-stand-in.js'
 import { GOLDEN_ROWS, goldenScript, rowOf } from '../../../../tests/support/assistant-golden.js'
-import { cliEnv, migratedSqlite, runCli, type CliRun } from '../../../../tests/support/doctor.js'
+import { cliEnv, migratedSqlite, type CliRun } from '../../../../tests/support/doctor.js'
+import { runInProcess } from './fixtures/in-process.js'
 import { project, workspace } from '../../../../tests/support/project.js'
 import { currentAssistantEvalHash } from '../../../platform/tests/support/eval-hash.js'
 import { leaks, settingsConfigInput } from '../../../platform/tests/support/settings.js'
@@ -19,7 +20,7 @@ import { leaks, settingsConfigInput } from '../../../platform/tests/support/sett
 // AC-18: `nymbal eval assistant` in a store project whose `ai` block points at a provider stand-in in `script` mode
 // (tests/support/assistant-golden.ts, the scripted model of the golden set). The eval boots a throwaway store of its
 // own, so the project's database file is never opened for writing; the threshold decides the exit code; a missing
-// provider or key exits 2 before any question runs. Spawns the built CLI (`pnpm build` first).
+// provider or key exits 2 before any question runs. Runs the command in this process (fixtures/in-process.ts).
 // AC-9, AC-11, AC-12, AC-14: `--verbose` prints each call with its arguments and outcome; `--runs <n>` asks the set n
 // times, each on a fresh throwaway store, and judges each question by majority; a bad `--runs` and a permanent provider
 // error exit 2 before any summary.
@@ -77,14 +78,13 @@ const block = (wire: AiWire, standIn: AiStandIn, apiKey?: string) => ({
 })
 
 function evalAssistant(p: Project, args: string[] = []): Promise<CliRun> {
-  return runCli(['eval', 'assistant', ...args], {
+  return runInProcess(['eval', 'assistant', ...args], {
     cwd: p.dir,
     env: cliEnv({
       NYMBAL_SQLITE_PATH: p.db,
       ANTHROPIC_API_KEY: undefined,
       OPENAI_API_KEY: undefined,
     }),
-    timeoutMs: 180_000,
   })
 }
 
@@ -232,7 +232,7 @@ describe('nymbal eval assistant --stamp', () => {
     expect(run.code, run.out).toBe(0)
     expect(
       (JSON.parse(run.stdout) as { hash: string }).hash,
-      'the built CLI hashes what the platform source sends: rebuild',
+      'the command hashes what the platform source sends: rebuild',
     ).toBe(current)
   }, 120_000)
 })

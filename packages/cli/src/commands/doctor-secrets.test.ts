@@ -6,7 +6,8 @@ import { afterAll, describe, expect, it } from 'vitest'
 import type { NymbalConfig } from '@nymbalhq/config'
 import repoConfig from '../../../../nymbal.config.js'
 import { formatDoctorReport } from './doctor-report.js'
-import { cliEnv, closedPort, doctorLines, runCli } from '../../../../tests/support/doctor.js'
+import { cliEnv, closedPort, doctorLines } from '../../../../tests/support/doctor.js'
+import { runInProcess } from './fixtures/in-process.js'
 import { install, workspace } from '../../../../tests/support/project.js'
 
 // AC-6 (b): no secret is ever printed, by the text or the `--json` formatting, while every check is named and each
@@ -166,8 +167,8 @@ describe('AC-6 (b): doctor prints no secret', () => {
     )
     writeFileSync(join(project, 'nymbal.config.ts'), source)
 
-    const text = await runCli(['doctor'], { cwd: project, env: cliEnv() })
-    const json = await runCli(['doctor', '--json'], { cwd: project, env: cliEnv() })
+    const text = await runInProcess(['doctor'], { cwd: project, env: cliEnv() })
+    const json = await runInProcess(['doctor', '--json'], { cwd: project, env: cliEnv() })
 
     for (const secret of [pgPassword, pgQuery, redisPassword, stripeKey]) {
       expect(text.out).not.toContain(secret)

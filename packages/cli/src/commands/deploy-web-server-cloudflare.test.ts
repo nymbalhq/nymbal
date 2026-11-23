@@ -1,7 +1,8 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { cliEnv, runCli } from '../../../../tests/support/doctor.js'
+import { cliEnv } from '../../../../tests/support/doctor.js'
+import { runInProcess } from './fixtures/in-process.js'
 import { storeConfig, storeProject } from '../../../../tests/support/start.js'
 import { workspace } from '../../../../tests/support/project.js'
 import { CLOUDFLARE_IPS } from '../../../adapters/security/cloudflare/src/ips.js'
@@ -9,8 +10,8 @@ import { webServerRecipe, type WebServerOptions } from './deploy-web-server.js'
 
 // On a Cloudflare store, `nymbal deploy nginx|apache|caddy` admits only Cloudflare's published ranges (the snapshot
 // the adapter ships), judged on the connection's own address, and reads the shopper from CF-Connecting-IP sent by
-// them; its steps say which snapshot. A store cannot widen either by flag there. Spawns the built CLI (`pnpm build`
-// first).
+// them; its steps say which snapshot. A store cannot widen either by flag there. Runs the command in this
+// process (fixtures/in-process.ts).
 
 const SERVERS = ['nginx', 'apache', 'caddy'] as const
 type WebServer = (typeof SERVERS)[number]
@@ -53,7 +54,7 @@ function project(adapter: 'cloudflare' | 'middleware') {
       return existsSync(path) ? readFileSync(path, 'utf8') : null
     },
     deploy: (server: WebServer, ...flags: string[]) =>
-      runCli(['deploy', server, ...flags], { cwd: p.dir, env }),
+      runInProcess(['deploy', server, ...flags], { cwd: p.dir, env }),
   }
 }
 

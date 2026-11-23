@@ -10,15 +10,15 @@ import {
   cliEnv,
   doctorJson,
   migratedSqlite,
-  runCli,
   type CliRun,
 } from '../../../../tests/support/doctor.js'
+import { runInProcess } from './fixtures/in-process.js'
 import { install } from '../../../../tests/support/project.js'
 
 // A security adapter may offer the trusted proxy list and the client-address header at boot, below what the store
 // sets and above the default. doctor reads that offer from the adapter it already builds for `slot security` and says
 // where each value in effect came from; an offer it cannot read is unknown, never assumed empty. The adapter here is a
-// test package installed into each project. Spawns the built CLI (`pnpm build` first).
+// test package installed into each project. Runs the command in this process (fixtures/in-process.ts).
 
 const LIST_VAR = 'NYMBAL_TRUSTED_PROXIES'
 const PACKAGE = '@acme/nymbal-security-edge'
@@ -75,7 +75,7 @@ async function doctor(c: Case): Promise<CliRun> {
     NYMBAL_TRUST_PROXY_HOPS: undefined,
     ...c.env,
   })
-  return runCli(['doctor', '--json'], { cwd: project, env })
+  return runInProcess(['doctor', '--json'], { cwd: project, env })
 }
 
 const check = (run: CliRun, name: string) =>

@@ -13,6 +13,7 @@ import {
   runCli,
   type CliRun,
 } from '../../../../tests/support/doctor.js'
+import { runInProcess } from './fixtures/in-process.js'
 import { parseLine, sqliteProject, stdoutLines } from '../../../../tests/support/events-cli.js'
 import { createEventBuilder } from '../../../platform/src/events/builder.js'
 import { TEST_BUILDER_CONTEXT } from '../../../platform/src/tests/publisher.js'
@@ -20,9 +21,10 @@ import { createKernel } from '../../../platform/tests/support/kernel.js'
 import { eventRows, failPublishFor, maxSeq } from '../../../platform/tests/support/outbox.js'
 import { openRaw } from '../../../platform/tests/support/raw.js'
 
-// `nymbal events retry` and the doctor's line for dead events, through the built CLI against SQLite stores whose log
-// is seeded row by row, ages and states included. Each fixture is a rollback-journal copy of one migrated store, so a
-// command that writes changes the file's bytes or leaves a -wal/-shm beside it. Needs `pnpm build`.
+// `nymbal events retry` and the doctor's line for dead events, run in this process (fixtures/in-process.ts) against
+// SQLite stores whose log is seeded row by row, ages and states included. Each fixture is a rollback-journal copy of
+// one migrated store, so a command that writes changes the file's bytes or leaves a -wal/-shm beside it. The case
+// beside a running store spawns the built CLI (`pnpm build` first).
 
 const require = createRequire(join(REPO_ROOT, 'packages', 'platform', 'package.json'))
 const BetterSqlite3 = require('better-sqlite3') as new (
@@ -174,7 +176,7 @@ function unchanged(path: string, before: string, run: CliRun): void {
 }
 
 const retryRun = (f: { project: ReturnType<typeof sqliteProject> }, args: string[]) =>
-  runCli(['events', 'retry', ...args], { cwd: f.project.dir, env: f.project.env })
+  runInProcess(['events', 'retry', ...args], { cwd: f.project.dir, env: f.project.env })
 
 const deadOf = (rows: Stored[]) => rows.filter((r) => r.deadAt !== null)
 const deadSeqs = (path: string) => deadOf(storedRows(path)).map((r) => r.seq)
@@ -375,7 +377,7 @@ describe('nymbal events retry', { timeout: 60_000 }, () => {
     expect(dry.code, dry.out.slice(-1000)).toBe(0)
     expect(hashOf(f.path)).toBe(before)
 
-    const real = await runCli(['events', 'retry', '--type', 'category.*'], {
+    const real = await runInProcess(['events', 'retry', '--type', 'category.*'], {
       cwd: sqliteProject(twin).dir,
       env: sqliteProject(twin).env,
     })
@@ -519,7 +521,10 @@ describe('nymbal events retry', { timeout: 60_000 }, () => {
     const project = sqliteProject(missing)
     dirs.push(project.dir)
 
-    const run = await runCli(['events', 'retry', '--all'], { cwd: project.dir, env: project.env })
+    const run = await runInProcess(['events', 'retry', '--all'], {
+      cwd: project.dir,
+      env: project.env,
+    })
 
     expect(run.stderr.trim(), run.out.slice(-1000)).toMatch(/^nymbal events: \S/)
     expect(run.code).toBe(2)
@@ -541,7 +546,10 @@ describe('nymbal events retry', { timeout: 60_000 }, () => {
     const rows = storedRows(path)
     const old = rows.find((r) => r.type === 'order.placed.v1')!
 
-    const run = await runCli(['events', 'retry', '--all'], { cwd: project.dir, env: project.env })
+    const run = await runInProcess(['events', 'retry', '--all'], {
+      cwd: project.dir,
+      env: project.env,
+    })
 
     expect(deadSeqs(path), `dead rows after --all\n${run.out.slice(-1000)}`).toEqual([old.seq])
     expect(summaryOf(run)).toBe('retried 1; 1 still dead')
@@ -565,7 +573,7 @@ describe('nymbal events retry', { timeout: 60_000 }, () => {
     const [row] = storedRows(path)
     const before = hashOf(path)
 
-    const run = await runCli(['events', 'retry', String(row!.seq)], {
+    const run = await runInProcess(['events', 'retry', String(row!.seq)], {
       cwd: project.dir,
       env: project.env,
     })
@@ -674,7 +682,7 @@ describe('nymbal events retry', { timeout: 60_000 }, () => {
 
   describe('doctor', () => {
     const doctor = (f: { project: ReturnType<typeof sqliteProject> }, args: string[] = []) =>
-      runCli(['doctor', ...args], { cwd: f.project.dir, env: f.project.env })
+      runInProcess(['doctor', ...args], { cwd: f.project.dir, env: f.project.env })
     const eventsLine = (run: CliRun) => doctorLines(run.out).find((l) => l.name === 'events')
     const eventsCheck = (run: CliRun) =>
       doctorJson(run.stdout).checks.find((c) => c.name === 'events')

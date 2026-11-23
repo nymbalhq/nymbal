@@ -5,14 +5,16 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { REPO_ROOT, runCli } from '../../../../tests/support/doctor.js'
+import { runInProcess } from './fixtures/in-process.js'
 import { parseLine, sqliteProject, stdoutLines } from '../../../../tests/support/events-cli.js'
 import { serveKernel } from '../../../platform/tests/support/http.js'
 import { address, createKernel, seedVariant } from '../../../platform/tests/support/kernel.js'
 import { stubPaymentWebhook } from '../../../platform/tests/support/proof-kit.js'
 import { shopper } from '../../../platform/tests/support/shopper.js'
 
-// AC-6: `nymbal events query`, the built CLI against a SQLite store holding one completed checkout plus noise. The
-// store is switched to a rollback journal so a command that writes leaves a trace. Needs `pnpm build`.
+// AC-6: `nymbal events query`, run in this process (fixtures/in-process.ts), against a SQLite store holding one
+// completed checkout plus noise. The store is switched to a rollback journal so a command that writes leaves a trace.
+// The missing store case spawns the built CLI (`pnpm build` first).
 
 const require = createRequire(join(REPO_ROOT, 'packages', 'platform', 'package.json'))
 const BetterSqlite3 = require('better-sqlite3') as new (
@@ -145,10 +147,10 @@ afterAll(() => {
 const subject = () => rows.filter((r) => r.envelope.correlationId === checkoutId)
 
 function query(args: string[]) {
-  return runCli(['events', 'query', ...args], { cwd: project.dir, env: project.env })
+  return runInProcess(['events', 'query', ...args], { cwd: project.dir, env: project.env })
 }
 
-// The built CLI opens the store afresh per run: 5 s was hit under load (2026-10-22).
+// Each run opens the store afresh: 5 s was hit under load (2026-10-22).
 describe('AC-6: nymbal events query', { timeout: 30_000 }, () => {
   it('AC-6: --correlation <the checkout’s id> prints exactly that checkout’s events, one line each, in seq order, and exits 0', async () => {
     const run = await query(['--correlation', checkoutId])

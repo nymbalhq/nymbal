@@ -5,17 +5,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import repoConfig from '../../../../nymbal.config.js'
-import {
-  cliEnv,
-  doctorLines,
-  migratedSqlite,
-  REPO_ROOT,
-  runCli,
-} from '../../../../tests/support/doctor.js'
+import { cliEnv, doctorLines, migratedSqlite, REPO_ROOT } from '../../../../tests/support/doctor.js'
+import { runInProcess } from './fixtures/in-process.js'
 
 // AC-6 (a), SQLite: `nymbal doctor` leaves the database file, `.env` and nymbal.config.ts byte for byte as they were,
 // in WAL mode and in rollback mode (whose header a `journal_mode = WAL` pragma would rewrite). The Postgres and Redis
-// half is packages/platform/tests/primitives/doctor-read-only.test.ts. Spawns the built CLI.
+// half is packages/platform/tests/primitives/doctor-read-only.test.ts. Runs the command in this process.
 
 const require = createRequire(join(REPO_ROOT, 'packages', 'platform', 'package.json'))
 const BetterSqlite3 = require('better-sqlite3') as new (path: string) => {
@@ -64,7 +59,7 @@ describe.each(['wal', 'delete'] as const)(
       const files = [dbPath, join(project, '.env'), join(project, 'nymbal.config.ts')]
       const before = files.map(hashOf)
 
-      const run = await runCli(['doctor'], { cwd: project, env: cliEnv() })
+      const run = await runInProcess(['doctor'], { cwd: project, env: cliEnv() })
       const lines = doctorLines(run.out)
       const status = (name: string) => lines.find((l) => l.name === name)?.status
 

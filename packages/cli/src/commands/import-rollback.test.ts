@@ -12,7 +12,8 @@ import {
   createNativeReviewsAdapter,
   InMemoryDocumentStore,
 } from '@nymbalhq/platform'
-import { cliEnv, MIGRATIONS_ROOT, runCli, type CliRun } from '../../../../tests/support/doctor.js'
+import { cliEnv, MIGRATIONS_ROOT, type CliRun } from '../../../../tests/support/doctor.js'
+import { runInProcess } from './fixtures/in-process.js'
 import {
   fixture,
   startWooCommerceServer,
@@ -25,7 +26,7 @@ import {
   type TableSnapshot,
 } from '../../../../tests/support/store-tables.js'
 
-// `nymbal import --rollback` through the built CLI (`pnpm build` first), against the WooCommerce fixture server on a
+// `nymbal import --rollback` run in this process (fixtures/in-process.ts), against the WooCommerce fixture server on a
 // SQLite project, the database read afterwards by a second connection: the import taken back out, what the rollback
 // refuses, and the flags it will not combine with.
 
@@ -104,7 +105,7 @@ function project(): Project {
 }
 
 function nymbal(p: Project, args: string[]): Promise<CliRun> {
-  return runCli(args, { cwd: p.dir, env: p.env, timeoutMs: 120_000 })
+  return runInProcess(args, { cwd: p.dir, env: p.env })
 }
 
 function importArgs(...extra: string[]): string[] {

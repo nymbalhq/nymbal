@@ -14,12 +14,14 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { NymbalConfig } from '@nymbalhq/config'
 import { buildRepositories, createCommandStore, InMemoryDocumentStore } from '@nymbalhq/platform'
 import { cliEnv, MIGRATIONS_ROOT, runCli, type CliRun } from '../../../../tests/support/doctor.js'
+import { runInProcess } from './fixtures/in-process.js'
 import { readRows } from '../../../../tests/support/store-tables.js'
 
-// `nymbal import --source woocommerce --password-hashes <file>` through the built CLI (`pnpm build` first) on a SQLite
-// project: a WP-CLI export of emails and WordPress password hashes attached to the imported customers who still have no
-// password, with counts only on the terminal, never a hash or an email, and nothing stored without a sunset date.
-// The database is read afterwards by a second connection.
+// `nymbal import --source woocommerce --password-hashes <file>` on a SQLite project: a WP-CLI export of emails and
+// WordPress password hashes attached to the imported customers who still have no password, with counts only on the
+// terminal, never a hash or an email, and nothing stored without a sunset date. The runs whose output is searched for
+// a leak go through the built CLI (`pnpm build` first), whose stdout and stderr hold the store logger's lines too; the
+// refusals run in this process. The database is read afterwards by a second connection.
 
 const IMPORTED_NO_PASSWORD = 'IMPORTED_NO_PASSWORD'
 const NATIVE = '$2a$04$abcdefghijklmnopqrstuuJ8m1XbHbpb2wZpWmbzQ0OdD3Pq3HY7e'
@@ -113,7 +115,7 @@ async function project(legacy: Record<string, unknown> | undefined): Promise<Pro
     WOOCOMMERCE_KEY: undefined,
     WOOCOMMERCE_SECRET: undefined,
   })
-  const migrated = await runCli(['migrate'], { cwd: dir, env, timeoutMs: 120_000 })
+  const migrated = await runInProcess(['migrate'], { cwd: dir, env })
   expect(migrated.code, migrated.out.slice(-2000)).toBe(0)
 
   const run = randomUUID().slice(0, 6)
@@ -207,6 +209,17 @@ function holding(dbPath: string): Map<string, string> {
 }
 
 function nymbal(p: Project, ...extra: string[]): Promise<CliRun> {
+  return runInProcess(
+    ['import', '--source', 'woocommerce', '--password-hashes', p.file, ...extra],
+    {
+      cwd: p.dir,
+      env: p.env,
+    },
+  )
+}
+
+/** The same run through the built CLI, whose stdout and stderr hold what the store's logger writes too. */
+function spawned(p: Project, ...extra: string[]): Promise<CliRun> {
   return runCli(['import', '--source', 'woocommerce', '--password-hashes', p.file, ...extra], {
     cwd: p.dir,
     env: p.env,
@@ -256,9 +269,9 @@ describe('nymbal import --password-hashes, with a sunset date set', () => {
 
   beforeAll(async () => {
     p = await project({ until: dateIn(90) })
-    dry = await nymbal(p, '--dry-run')
+    dry = await spawned(p, '--dry-run')
     afterDry = holding(p.dbPath)
-    real = await nymbal(p)
+    real = await spawned(p)
   }, 300_000)
 
   it('AC-10: it exits 0 and prints each count under its label: 6 stored, 5 no customer, 4 already have a password, 3 format, 2 cost, 1 listed more than once, and a closing line telling the operator to delete the file', () => {

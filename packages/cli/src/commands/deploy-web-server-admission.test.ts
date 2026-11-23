@@ -1,14 +1,15 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { cliEnv, runCli } from '../../../../tests/support/doctor.js'
+import { cliEnv } from '../../../../tests/support/doctor.js'
+import { runInProcess } from './fixtures/in-process.js'
 import { storeConfig, storeProject } from '../../../../tests/support/start.js'
 import { workspace } from '../../../../tests/support/project.js'
 import { webServerRecipe, type WebServerOptions } from './deploy-web-server.js'
 
 // `nymbal deploy nginx|apache|caddy` writes an admission list (only connections from listed addresses reach the API)
 // on a Cloudflare store alone: elsewhere the file has none. A --real-ip-from entry that holds every IPv4 address in
-// IPv4-mapped form is refused as /0 is. Spawns the built CLI (`pnpm build` first).
+// IPv4-mapped form is refused as /0 is. Runs the command in this process (fixtures/in-process.ts).
 
 const SERVERS = ['nginx', 'apache', 'caddy'] as const
 type WebServer = (typeof SERVERS)[number]
@@ -50,7 +51,7 @@ function project(adapter: 'cloudflare' | 'middleware') {
       return existsSync(path) ? readFileSync(path, 'utf8') : null
     },
     deploy: (server: WebServer, ...flags: string[]) =>
-      runCli(['deploy', server, ...flags], { cwd: p.dir, env }),
+      runInProcess(['deploy', server, ...flags], { cwd: p.dir, env }),
   }
 }
 

@@ -6,11 +6,12 @@ import { dirname, join } from 'node:path'
 import { gzipSync } from 'node:zlib'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cliEnv, closedPort, runCli, stripAnsi } from '../../../../tests/support/doctor.js'
+import { runInProcess } from './fixtures/in-process.js'
 
-// `nymbal update-check` run for real (the built CLI, `pnpm build` first) in a fixture store: a git repository whose
-// base commit and head commit differ as a Renovate pull request would, a fake node_modules for the head's install, a
-// fake compatibility matrix over NYMBAL_MATRIX_URL and a fake npm registry over npm_config_registry serving the
-// published @nymbalhq/platform tarballs. Nothing real is fetched.
+// `nymbal update-check` run for real (in this process; one case through the built CLI, `pnpm build` first) in a fixture
+// store: a git repository whose base commit and head commit differ as a Renovate pull request would, a fake
+// node_modules for the head's install, a fake compatibility matrix over NYMBAL_MATRIX_URL and a fake npm registry over
+// npm_config_registry serving the published @nymbalhq/platform tarballs. Nothing real is fetched.
 
 vi.setConfig({ testTimeout: 30_000 })
 
@@ -282,8 +283,9 @@ async function updateCheck(
   cwd: string,
   urls: { matrix: string; registry: string },
   args: string[] = [],
+  how: 'in-process' | 'spawned' = 'in-process',
 ) {
-  const run = await runCli(['update-check', ...args], {
+  const run = await (how === 'spawned' ? runCli : runInProcess)(['update-check', ...args], {
     cwd,
     env: cliEnv({
       NYMBAL_MATRIX_URL: urls.matrix,
@@ -343,7 +345,12 @@ describe('AC-9: the base is the commit before, and the journals compared are its
     const dir = store()
     const before = checkoutState(dir)
 
-    const run = await updateCheck(dir, { matrix: matrix.url, registry: registry.url })
+    const run = await updateCheck(
+      dir,
+      { matrix: matrix.url, registry: registry.url },
+      [],
+      'spawned',
+    )
 
     expect(run.code, run.out).toBe(0)
     expect(run.printed).toContain('update-check: may merge')

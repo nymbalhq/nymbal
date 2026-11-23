@@ -4,7 +4,8 @@ import fc from 'fast-check'
 import { parse as parseToml } from 'smol-toml'
 import { afterEach, describe, expect, it } from 'vitest'
 import { nymbalConfigSchema, type NymbalConfig } from '@nymbalhq/config'
-import { cliEnv, runCli } from '../../../../tests/support/doctor.js'
+import { cliEnv } from '../../../../tests/support/doctor.js'
+import { runInProcess } from './fixtures/in-process.js'
 import { storeConfig, storeProject } from '../../../../tests/support/start.js'
 import { flyRecipe, railwayRecipe, type DeployProject } from './deploy.js'
 
@@ -12,7 +13,7 @@ import { flyRecipe, railwayRecipe, type DeployProject } from './deploy.js'
 // at its own domain (NYMBAL_PUBLIC_URL from .env) and set NYMBAL_ORIGIN_SECRET from .env before the deploy step. A
 // missing or platform-host public URL stops the command before anything is written; every `<from .env>` a live run
 // needs is checked before the platform's CLI is first called, in one message. A `middleware` store's recipes are as
-// they were. The CLI cases spawn the built CLI (`pnpm build` first).
+// they were. The CLI cases run the command in this process (fixtures/in-process.ts).
 
 const VAR = 'NYMBAL_ORIGIN_SECRET'
 
@@ -132,7 +133,7 @@ function cloudflareProject(
   return {
     dir: p.dir,
     calls: () => (existsSync(calls) ? readFileSync(calls, 'utf8') : ''),
-    deploy: (...args: string[]) => runCli(['deploy', ...args], { cwd: p.dir, env }),
+    deploy: (...args: string[]) => runInProcess(['deploy', ...args], { cwd: p.dir, env }),
   }
 }
 

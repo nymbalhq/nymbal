@@ -37,12 +37,14 @@ import {
   type WooCommerceServer,
   type WooCommerceServerOptions,
 } from '../../../../tests/support/woocommerce-server.js'
+import { runInProcess } from './fixtures/in-process.js'
 
-// `nymbal preview --lighthouse` through the built CLI (`pnpm build` first). The project has the Lighthouse stand-in
-// (tests/support/lighthouse-stand-in.mjs) as node_modules/lighthouse, the storefront is the `nymbal start` stand-in
-// through NYMBAL_STOREFRONT_ENTRY, Chrome is this Node (CHROME_PATH), and the source is the WooCommerce fixture server
-// answering its pages. What the stand-in measured, in what order and with what arguments, is read from its log; what
-// each page should show is worked out here from that log and the redirect map the preview wrote.
+// `nymbal preview --lighthouse` through the built CLI (`pnpm build` first); most AC-7 refusals run in this process. The
+// project has the Lighthouse stand-in (tests/support/lighthouse-stand-in.mjs) as node_modules/lighthouse, the
+// storefront is the `nymbal start` stand-in through NYMBAL_STOREFRONT_ENTRY, Chrome is this Node (CHROME_PATH), and the
+// source is the WooCommerce fixture server answering its pages. What the stand-in measured, in what order and with what
+// arguments, is read from its log; what each page should show is worked out here from that log and the redirect map the
+// preview wrote.
 
 const KEY = 'ck_lighthouse_3a9d1f7e25b0c4'
 const SECRET = 'cs_lighthouse_8e1b6d0a4f2c97'
@@ -302,6 +304,38 @@ async function preview(
     dirsWhenSignalled,
     dirsAfter: previewDirs(tmp),
     signalled,
+  }
+}
+
+/**
+ * The same run in this process, for a run that ends before Preview ready: its exit, its streams and the
+ * `nymbal-preview-*` names seen in its TMPDIR while it ran and left after it.
+ */
+async function previewInProcess(
+  args: string[],
+  opts: { cwd: string; env: Record<string, string | undefined> },
+): Promise<
+  Pick<PreviewRun, 'code' | 'stdout' | 'stderr' | 'out' | 'ready' | 'dirsSeen' | 'dirsAfter'>
+> {
+  const tmp = scratchDir('preview-lighthouse-tmpdir-')
+  const seen = new Set<string>()
+  const watcher = watch(tmp, (_, name) => {
+    if (typeof name === 'string' && name.startsWith('nymbal-preview-')) seen.add(name)
+  })
+  const port = args.includes('--port') ? [] : ['--port', String(await freePort())]
+  const run = await runInProcess(['preview', ...args, ...port], {
+    cwd: opts.cwd,
+    env: cliEnv({ TMPDIR: tmp, ...opts.env }),
+  })
+  watcher.close()
+  return {
+    code: run.code,
+    stdout: stripAnsi(run.stdout),
+    stderr: stripAnsi(run.stderr),
+    out: run.out,
+    ready: /Preview ready/.test(run.out),
+    dirsSeen: [...seen].sort(),
+    dirsAfter: previewDirs(tmp),
   }
 }
 
@@ -829,13 +863,17 @@ describe('AC-7: refusals before the source is read', () => {
     dir: string,
     env: Record<string, string | undefined>,
     named: string[],
+    how: 'in-process' | 'spawned' = 'in-process',
   ) {
     const from = server.requests.length
-    const run = await preview([...source(server.url), ...args], {
-      cwd: dir,
-      env,
-      timeoutMs: 60_000,
-    })
+    const run = await (how === 'spawned' ? preview : previewInProcess)(
+      [...source(server.url), ...args],
+      {
+        cwd: dir,
+        env,
+        timeoutMs: 60_000,
+      },
+    )
     return {
       run,
       outcome: {
@@ -854,9 +892,13 @@ describe('AC-7: refusals before the source is read', () => {
     const { dir, env } = setUp(null)
     writeFileSync(join(dir, 'pnpm-lock.yaml'), "lockfileVersion: '9.0'\n")
 
-    const { run, outcome } = await refusal(['--lighthouse'], dir, env, [
-      'pnpm add -D lighthouse@^12',
-    ])
+    const { run, outcome } = await refusal(
+      ['--lighthouse'],
+      dir,
+      env,
+      ['pnpm add -D lighthouse@^12'],
+      'spawned',
+    )
 
     expect(outcome, run.out.slice(-3000)).toEqual(REFUSED)
     expect(run.stderr).toContain('NYMBAL_LIGHTHOUSE_CLI')

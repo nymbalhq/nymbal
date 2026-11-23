@@ -11,9 +11,9 @@ import {
   expectedCheckNames,
   migratedSqlite,
   REPO_ROOT,
-  runCli,
   type CliRun,
 } from '../../../../tests/support/doctor.js'
+import { runInProcess } from './fixtures/in-process.js'
 import { INSTALL_VERB } from '../../../../tests/support/module-hooks.js'
 import { install, workspace } from '../../../../tests/support/project.js'
 
@@ -21,7 +21,7 @@ import { install, workspace } from '../../../../tests/support/project.js'
 // convention provider and for a `package:` one; a typo is down with the suggestion and no install verb; a missing
 // catalogue package is down with the install line. The infrastructure slots and security report the same way. Each
 // project's node_modules holds what its case installs: a workspace adapter, or a third party's fixture package; a
-// missing package is one it does not hold (tests/support/project.ts). Spawns the built CLI (`pnpm build` first).
+// missing package is one it does not hold (tests/support/project.ts). Runs the command in this process.
 
 const SEARCH_FIXTURE = join(REPO_ROOT, 'tests', 'fixtures', 'third-party-search')
 const MEDIA_FIXTURE = join(REPO_ROOT, 'tests', 'fixtures', 'third-party-media')
@@ -66,7 +66,7 @@ async function doctor(
     NYMBAL_SQLITE_PATH: sqlitePath,
     npm_config_user_agent: undefined,
   })
-  return { ...(await runCli(['doctor'], { cwd: project, env })), project, env, raw }
+  return { ...(await runInProcess(['doctor'], { cwd: project, env })), project, env, raw }
 }
 
 const line = (run: CliRun, name: string) => doctorLines(run.out).find((l) => l.name === name)

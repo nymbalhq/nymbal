@@ -16,11 +16,12 @@ import {
   startStub,
   stripeBlock,
 } from '../../../platform/tests/support/settings.js'
-import { cliEnv, doctorJson, doctorLines, runCli } from '../../../../tests/support/doctor.js'
+import { cliEnv, doctorJson, doctorLines } from '../../../../tests/support/doctor.js'
+import { runInProcess } from './fixtures/in-process.js'
 import { install, workspace } from '../../../../tests/support/project.js'
 
 // AC-4: with a Stripe secretKey held only in Settings, `nymbal doctor` (and `--json`) reports payments healthy and
-// prints neither the value nor its base64. Needs `pnpm build`. The in-process half is
+// prints neither the value nor its base64, run in this process (fixtures/in-process.ts). The kernel's half is
 // packages/platform/tests/integration/settings-write-only.test.ts.
 
 describe('AC-4: doctor on a store whose key is held in Settings', () => {
@@ -64,8 +65,8 @@ describe('AC-4: doctor on a store whose key is held in Settings', () => {
             STRIPE_WEBHOOK_SECRET: undefined,
             STRIPE_PUBLISHABLE_KEY: undefined,
           })
-          const text = await runCli(['doctor'], { cwd: dir, env })
-          const json = await runCli(['doctor', '--json'], { cwd: dir, env })
+          const text = await runInProcess(['doctor'], { cwd: dir, env })
+          const json = await runInProcess(['doctor', '--json'], { cwd: dir, env })
 
           expect(stub.credentials().filter((c) => c === secret).length).toBeGreaterThan(0)
           expect(

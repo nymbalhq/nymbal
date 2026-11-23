@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import repoConfig from '../../../../nymbal.config.js'
-import { cliEnv, closedPort, runCli, type CliRun } from '../../../../tests/support/doctor.js'
+import { cliEnv, closedPort, type CliRun } from '../../../../tests/support/doctor.js'
+import { runInProcess } from './fixtures/in-process.js'
 import { install, workspace } from '../../../../tests/support/project.js'
 import {
   startFakeCloudflare,
@@ -14,7 +15,7 @@ import type { SpecPlan } from '../../../adapters/security/cloudflare/src/tests/s
 
 // AC-7: `nymbal security:plan [--json]`, `security:apply`, `security:drift [--json]` and `security:inspect` against a
 // fake Cloudflare API: exit 0 done or in sync, 1 drift, 2 a config, credential or API error (and on a `middleware`
-// store), and the token never in the output. Spawns the built CLI (`pnpm build` first).
+// store), and the token never in the output. Runs the command in this process (fixtures/in-process.ts).
 
 const COMMANDS = [
   ['security:plan'],
@@ -92,7 +93,7 @@ function zone(plan: Plan, token: string): string {
 }
 
 const cli = (p: Project, args: readonly string[]): Promise<CliRun> =>
-  runCli([...args], { cwd: p.dir, env: p.env })
+  runInProcess([...args], { cwd: p.dir, env: p.env })
 
 function parsePlan(stdout: string): SpecPlan {
   return JSON.parse(stdout) as SpecPlan

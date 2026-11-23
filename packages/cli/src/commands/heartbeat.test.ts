@@ -12,17 +12,18 @@ import {
   stripAnsi,
   type CliRun,
 } from '../../../../tests/support/doctor.js'
+import { runInProcess } from './fixtures/in-process.js'
 import { workspace } from '../../../../tests/support/project.js'
 import { storeConfig, storeProject, type StoreProject } from '../../../../tests/support/start.js'
 import { startStripeFake, type StripeFake } from '../../../../tests/fixtures/stripe-api/server.mjs'
 import { shopper } from '../../../platform/tests/support/shopper.js'
 
-// `nymbal heartbeat` through the built CLI (`pnpm build` first), one run per call, as cron runs it. The store is
-// `nymbal dev --api-only` in a project of its own with the heartbeat on (native stub payments), on a port its config
-// names, so the command's default API URL reaches it. Other projects share that store's heartbeat block and API and
-// differ in what a case needs: no card, a card on an adapter that records being used, a heartbeat address the store does
-// not know, a misconfiguration, or Stripe pointed at the offline fake. Each run is read by its exit status, its two
-// streams and what the store holds afterwards.
+// `nymbal heartbeat`, one run per call, as cron runs it: in this process, and through the built CLI (`pnpm build`
+// first) for the two outage cases. The store is `nymbal dev --api-only` in a project of its own with the heartbeat on
+// (native stub payments), on a port its config names, so the command's default API URL reaches it. Other projects share
+// that store's heartbeat block and API and differ in what a case needs: no card, a card on an adapter that records
+// being used, a heartbeat address the store does not know, a misconfiguration, or Stripe pointed at the offline fake.
+// Each run is read by its exit status, its two streams and what the store holds afterwards.
 
 const HEARTBEAT = `heartbeat-${randomUUID().slice(0, 8)}@shop.example`
 const ADMIN = { email: `admin-${randomUUID()}@heartbeat.test`, password: 'heartbeat-correct-horse' }
@@ -91,10 +92,9 @@ function project(
 
 /** The command in `cwd`, against the store's database, as cron runs it from the project directory. */
 function heartbeat(cwd: string): Promise<CliRun> {
-  return runCli(['heartbeat'], {
+  return runInProcess(['heartbeat'], {
     cwd,
     env: cliEnv({ NYMBAL_SQLITE_PATH: storeDb, NODE_ENV: undefined }),
-    timeoutMs: RUN_MS - 5_000,
   })
 }
 
