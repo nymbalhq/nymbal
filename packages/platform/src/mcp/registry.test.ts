@@ -24,7 +24,8 @@ import { RouteTable, recordingAdapter } from './route-table.js'
  * Every entry the registry keeps from the tool list: credentials, streams, provider-signed bytes, files, view history,
  * the AI key; a proposal's decision, so no agent approves its own; an insight's dismissal, so no agent silences what
  * the merchant has not seen; a settings value, so none sits in a proposal, and its clearing, so no agent clears one; the
- * assistant's turn and stream, which spend the AI key, so no agent calls the assistant.
+ * assistant's turn and stream, which spend the AI key, so no agent calls the assistant; the admin promotion and
+ * category routes, which need previews of their own before an agent may change them.
  */
 const EXCLUDED = [
   'auth.register',
@@ -57,6 +58,11 @@ const EXCLUDED = [
   'admin.promotions.create',
   'admin.promotions.update',
   'admin.promotions.delete',
+  'admin.categories.list',
+  'admin.categories.create',
+  'admin.categories.update',
+  'admin.categories.delete',
+  'admin.categories.reorder',
 ].sort()
 
 /** The routes a cookie names the cart of; their tools take it as `cart`. */
@@ -224,7 +230,7 @@ describe('AC-1: one tool per registry entry', () => {
     }
   })
 
-  it('AC-13: the entries marked tool: false are exactly the fourteen kept from agents plus proposal approve, proposal reject, the insight dismiss, settings put and delete, the assistant’s turn and stream, the admin-promotion routes, the three password routes and the two confirmation routes, and every stream route is among them', () => {
+  it('AC-13: the entries marked tool: false are exactly the fourteen kept from agents plus proposal approve, proposal reject, the insight dismiss, settings put and delete, the assistant’s turn and stream, the admin-promotion routes, the admin-category routes, the three password routes and the two confirmation routes, and every stream route is among them', () => {
     const marked = Object.values(routeSchemas)
       .filter((entry) => entry.tool === false)
       .map((entry) => entry.name)

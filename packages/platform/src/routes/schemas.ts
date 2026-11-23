@@ -89,6 +89,24 @@ const promotionPatchBody = z.object({
   kind: z.string().optional(),
   ...promotionFields,
 })
+const categoryFields = {
+  name: z.string().trim().min(1).max(120),
+  description: z.string().max(2000).optional(),
+  parentId: z.string().min(1).nullable().optional(),
+  position: z.number().int().min(0).optional(),
+}
+/** A slug the storefront's URLs can carry; the service refuses only an empty or taken one, as the importer's fit. */
+const categoryCreateBody = z.object({
+  slug: z
+    .string()
+    .max(80)
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+  ...categoryFields,
+})
+/** Strict, so a slug sent to be changed is refused rather than dropped: slugs do not change. */
+const categoryPatchBody = z
+  .object({ ...categoryFields, name: categoryFields.name.optional() })
+  .strict()
 /** A query value as the HTTP layer hands it over: repeated keys arrive as an array. */
 const queryValue = z.union([z.string(), z.array(z.string())]).optional()
 const paging = { limit: queryValue, offset: queryValue }
@@ -943,6 +961,44 @@ export const routeSchemas: Record<string, RouteSchema> = {
     command: 'promotion.delete',
     tool: false,
     description: 'Delete a promotion no order has used.',
+    params: idParams,
+  },
+
+  // Admin: categories
+  'GET /api/admin/categories': {
+    name: 'admin.categories.list',
+    tool: false,
+    description: 'List every category, ordered by position, then name.',
+  },
+  'POST /api/admin/categories': {
+    name: 'admin.categories.create',
+    command: 'category.create',
+    tool: false,
+    description: 'Create a category, optionally under a parent.',
+    body: categoryCreateBody,
+  },
+  'POST /api/admin/categories/reorder': {
+    name: 'admin.categories.reorder',
+    command: 'category.reorder',
+    tool: false,
+    description: "Put one parent's children (parentId null for the top level) in the order of ids.",
+    body: z.object({ parentId: z.string().min(1).nullable(), ids: z.array(z.string().min(1)) }),
+  },
+  'PATCH /api/admin/categories/:id': {
+    name: 'admin.categories.update',
+    command: 'category.update',
+    tool: false,
+    description:
+      "Change a category's name, description, parent or position; its slug does not change.",
+    params: idParams,
+    body: categoryPatchBody,
+  },
+  'DELETE /api/admin/categories/:id': {
+    name: 'admin.categories.delete',
+    command: 'category.delete',
+    tool: false,
+    description:
+      'Delete a category: its products leave it, keeping their other categories, and its children move to its parent.',
     params: idParams,
   },
 

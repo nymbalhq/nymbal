@@ -16,6 +16,7 @@ import { registerAdminMailHealthRoute } from './admin-mail-health.js'
 import { registerAdminSearchRoute } from './admin-search.js'
 import { registerAdminReviewsRoutes } from './admin-reviews.js'
 import { registerAdminPromotionsRoutes } from './admin-promotions.js'
+import { registerAdminCategoriesRoutes } from './admin-categories.js'
 import { registerAdminSettingsRoutes } from './admin-settings.js'
 import { createHistoryReader } from '../history/read.js'
 
@@ -81,6 +82,7 @@ export function registerAdminRoutes(adapter: HttpAdapter, deps: RegisterAdminRou
     productRepo: repos.product,
   })
   registerAdminPromotionsRoutes(adapter, { promotions: repos.promotion })
+  registerAdminCategoriesRoutes(adapter, { category: services.category })
   registerAdminSettingsRoutes(adapter, {
     config,
     slots: deps.settingsSlots,

@@ -83,7 +83,8 @@ export interface CreateProductServiceDeps {
   currency: string
 }
 
-async function snapshot(
+/** A product as `product.*` events carry it: its variants and the ids of its categories. */
+export async function productSnapshot(
   tx: ReadTx,
   repos: Repositories,
   product: Product,
@@ -276,7 +277,7 @@ export function createProductService(deps: CreateProductServiceDeps): ProductSer
             currency,
           })
         }
-        const snap = await snapshot(tx, repos, await requireProduct(tx, product.id))
+        const snap = await productSnapshot(tx, repos, await requireProduct(tx, product.id))
         await publisher.publish(EVT_PRODUCT_UPDATED, { product: snap })
         return snap
       })
@@ -308,7 +309,7 @@ export function createProductService(deps: CreateProductServiceDeps): ProductSer
           slug: product.slug,
         })
         const fresh = await requireProduct(tx, product.id)
-        const snap = await snapshot(tx, repos, fresh)
+        const snap = await productSnapshot(tx, repos, fresh)
         await publisher.publish(EVT_PRODUCT_UPDATED, { product: snap })
       })
     },
@@ -324,20 +325,20 @@ export function createProductService(deps: CreateProductServiceDeps): ProductSer
           slug: product.slug,
         })
         const fresh = await requireProduct(tx, product.id)
-        const snap = await snapshot(tx, repos, fresh)
+        const snap = await productSnapshot(tx, repos, fresh)
         await publisher.publish(EVT_PRODUCT_UPDATED, { product: snap })
       })
     },
 
     async getById(id) {
-      return store.read(async (tx) => snapshot(tx, repos, await requireProduct(tx, id)))
+      return store.read(async (tx) => productSnapshot(tx, repos, await requireProduct(tx, id)))
     },
 
     async getBySlug(slug) {
       return store.read(async (tx) => {
         const product = await repos.product.findBySlug(tx, slug)
         if (!product) throw new NotFoundError('product', slug)
-        return snapshot(tx, repos, product)
+        return productSnapshot(tx, repos, product)
       })
     },
 
@@ -346,7 +347,7 @@ export function createProductService(deps: CreateProductServiceDeps): ProductSer
         const products = await repos.product.list(tx, opts)
         const out: ProductSnapshot[] = []
         for (const p of products) {
-          out.push(await snapshot(tx, repos, p))
+          out.push(await productSnapshot(tx, repos, p))
         }
         return out
       })
