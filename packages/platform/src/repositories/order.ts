@@ -67,6 +67,8 @@ export interface OrderListFilter {
   customer?: string
   /** The orderNumber or the email holds it, case-insensitive, every character literal. */
   q?: string
+  /** The orderNumber equals it, case-insensitive. */
+  number?: string
   /**
    * The shipping postalCode, upper-cased without spaces (U+0020 only), starts with this upper-cased without spaces,
    * every character literal; a missing or empty shipping postalCode matches nothing.
@@ -105,11 +107,14 @@ function listWhere(
   const at = (bound: string) =>
     kind === 'sqlite' ? new Date(bound).toISOString() : new Date(bound)
   const text = (value: string) => sql`cast(${value} as text)`
+  // SQLite's own lower() folds ASCII alone, so that side goes through the store connection's unicode_lower.
+  const fold = (value: SQL) =>
+    kind === 'sqlite' ? sql`unicode_lower(${value})` : sql`lower(${value})`
   // instr and strpos compare characters, so a % or _ in the needle matches only itself.
   const holds = (column: SQL, needle: string) =>
     kind === 'sqlite'
-      ? sql`instr(lower(${column}), lower(${text(needle)})) > 0`
-      : sql`strpos(lower(${column}), lower(${text(needle)})) > 0`
+      ? sql`instr(${fold(column)}, ${fold(text(needle))}) > 0`
+      : sql`strpos(${fold(column)}, ${fold(text(needle))}) > 0`
   const shipped = (key: 'postalCode' | 'country') =>
     kind === 'sqlite'
       ? sql`json_extract(${t.shippingAddress}, ${sql.raw(`'$.${key}'`)})`
@@ -124,6 +129,9 @@ function listWhere(
       ? undefined
       : or(holds(sql`coalesce(${t.customerId}, '')`, f.customer), holds(email, f.customer)),
     f.q === undefined ? undefined : or(holds(sql`${t.orderNumber}`, f.q), holds(email, f.q)),
+    f.number === undefined
+      ? undefined
+      : sql`${fold(sql`${t.orderNumber}`)} = ${fold(text(f.number))}`,
     f.source === 'synthetic' ? eq(t.source, 'synthetic') : ne(t.source, 'synthetic'),
   ]
   if (f.postcode !== undefined) {

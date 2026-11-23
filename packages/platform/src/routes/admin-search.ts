@@ -5,6 +5,9 @@ import type { Repositories } from '../repositories/index.js'
 import { ok, fail, renderError } from './envelope.js'
 import { requireRole } from './role-middleware.js'
 
+/** At most this many of each kind. */
+const LIMIT = 5
+
 export interface RegisterAdminSearchRouteDeps {
   order: OrderService
   product: ProductService
@@ -26,43 +29,23 @@ export function registerAdminSearchRoute(
         if (!qRaw?.trim()) {
           return fail('search.invalid', 'q parameter required', 400)
         }
-        const q = qRaw.toLowerCase()
-
-        // Orders
-        const allOrders = await repos.order.store.read((tx) => repos.order.list(tx, { limit: 100 }))
-        const matchedOrders = allOrders
-          .filter(
-            (o) => o.orderNumber.toLowerCase().includes(q) || o.email.toLowerCase().includes(q),
-          )
-          .slice(0, 5)
-
-        // Products
-        const matchedProducts = await product.list({ q: qRaw, limit: 5 })
-
-        // Customers — discover via orders
-        const customerResults = await repos.order.store.read(async (tx) => {
-          const allOrdersFull = await repos.order.list(tx, { limit: 500 })
-          const customerIdSet = new Set<string>()
-          for (const o of allOrdersFull) {
-            if (o.customerId) customerIdSet.add(o.customerId)
+        // An order whose number is the term comes first: `NYM-1042` is held by NYM-10420..10429, all newer.
+        const { orders, customers } = await repos.order.store.read(async (tx) => {
+          const exact = await repos.order.list(tx, { number: qRaw, limit: LIMIT })
+          const holding = await repos.order.list(tx, { q: qRaw, limit: LIMIT + exact.length })
+          const exactIds = new Set(exact.map((o) => o.id))
+          return {
+            orders: [...exact, ...holding.filter((o) => !exactIds.has(o.id))].slice(0, LIMIT),
+            customers: await repos.customer.search(tx, { q: qRaw, limit: LIMIT }),
           }
-          return Promise.all([...customerIdSet].map((id) => repos.customer.findById(tx, id)))
         })
-        const matchedCustomers = customerResults
-          .filter((c): c is NonNullable<typeof c> => c !== null)
-          .filter(
-            (c) =>
-              c.email.toLowerCase().includes(q) ||
-              c.firstName.toLowerCase().includes(q) ||
-              c.lastName.toLowerCase().includes(q),
-          )
-          .slice(0, 5)
-          .map(({ passwordHash: _pw, ...rest }) => rest)
+
+        const matchedProducts = await product.list({ q: qRaw, limit: LIMIT })
 
         return ok({
-          orders: matchedOrders,
+          orders,
           products: matchedProducts,
-          customers: matchedCustomers,
+          customers: customers.map(({ passwordHash: _pw, ...rest }) => rest),
         })
       } catch (err) {
         return renderError(err, ctx.logger)
