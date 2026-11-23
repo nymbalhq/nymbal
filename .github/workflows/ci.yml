@@ -173,8 +173,8 @@ jobs:
             reports/perf-budgets.json
           if-no-files-found: warn
 
-  # The service-backed gate steps, one a combination so they run side by side; the SQLite integration and contract
-  # projects, which need no service, ride the lightest one.
+  # The service-backed gate steps, one a combination so they run side by side; the service-free integration and
+  # contract projects run in the push's tests shards.
   integration:
     name: Integration — ${{ matrix.step }}
     if: inputs.select != 'lighthouse'
@@ -256,9 +256,6 @@ jobs:
       - name: Proof kit services (Postgres race, Mailpit sink)
         if: matrix.step == 'proof-kit-services'
         run: pnpm exec tsx scripts/gate.ts --full --only proof-kit-services --no-build --services external --base "$GATE_BASE"
-      - name: Platform and importers integration, contracts
-        if: matrix.step == 'proof-kit-services'
-        run: pnpm vitest run --project platform-integration --project importers-integration --project contracts-native
 
   sentinels:
     name: Sentinels and tests-fail-on-base

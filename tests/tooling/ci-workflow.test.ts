@@ -1598,8 +1598,13 @@ const HARNESS = [...new Set([...HARNESS_PROJECTS, ...FULL_GATE_HARNESS_PROJECTS]
 const PRODUCT_CHANGE = 'packages/sdk/src/client.ts'
 const HARNESS_CHANGE = 'scripts/gate.ts'
 
-/** For each gate.ts call that runs the tests step on an event, the harness projects its plan leaves out. */
-function harnessLeftOut(file: string, github: Ctx, changed: string): string[][] {
+/** For each gate.ts call that runs the tests step on an event, the projects of `names` (the harness ones) its plan leaves out. */
+function harnessLeftOut(
+  file: string,
+  github: Ctx,
+  changed: string,
+  names: string[] = HARNESS,
+): string[][] {
   return gateCalls(loadWorkflow(file), github)
     .filter((call) => onlyOf(call.args).includes('tests'))
     .map((call) => {
@@ -1618,7 +1623,7 @@ function harnessLeftOut(file: string, github: Ctx, changed: string): string[][] 
         harness,
         ...(shard === undefined ? {} : { shard: { index: shard[0]!, count: shard[1]! } }),
       }).steps.find((s) => s.name === 'tests')
-      return leftOut(tests?.command ?? '', HARNESS)
+      return leftOut(tests?.command ?? '', names)
     })
 }
 
@@ -1668,11 +1673,15 @@ describe('the harness projects run on a push when a harness path changed, and on
 
 // The integration job's service-backed gate steps each take a combination of their own, so they run side by side.
 const INTEGRATION_STEPS = ['integration-postgres', 'integration-stores', 'proof-kit-services']
-const SERVICE_FREE = /\bvitest\s+run\b[^\n;&|]*--project(?:=|\s+)platform-integration\b/
+// Projects that read no service: the push's tests step runs them, so the integration job does not run them again.
+const SERVICE_FREE_PROJECTS = ['contracts-native', 'importers-integration', 'platform-integration']
+const SERVICE_FREE = new RegExp(
+  `\\bvitest\\s+run\\b[^\\n;&|]*--project(?:=|\\s+)(?:${SERVICE_FREE_PROJECTS.join('|')})\\b`,
+)
 const STARTS_MINIO = /\bdocker\s+run\b[^\n]*--name\s+minio\b/
 
 describe('the integration job runs its service-backed gate steps side by side', () => {
-  it('on a push to dev, each integration combination runs one gate.ts call naming one of those steps, each step once, under --services external; MinIO starts in a combination exactly when its step reads S3, and the service-free projects run in one combination', () => {
+  it('on a push to dev, each integration combination runs one gate.ts call naming one of those steps, each step once, under --services external; MinIO starts in a combination exactly when its step reads S3, and no combination runs the service-free projects, which every tests call of the push runs', () => {
     const ci = loadWorkflow(WORKFLOW)
     const job = ci.jobs.integration
     expect(job, 'ci.yml has an integration job').toBeDefined()
@@ -1719,7 +1728,10 @@ describe('the integration job runs its service-backed gate steps side by side', 
     expect(rows.filter((r) => !r.external)).toEqual([])
     expect(rows.some((r) => r.readsS3)).toBe(true)
     expect(rows.map((r) => r.minio)).toEqual(rows.map((r) => r.readsS3))
-    expect(rows.reduce((n, r) => n + r.serviceFree, 0)).toBe(1)
+    expect(rows.reduce((n, r) => n + r.serviceFree, 0)).toBe(0)
+    const testsCalls = harnessLeftOut(WORKFLOW, DEV_PUSH, PRODUCT_CHANGE, SERVICE_FREE_PROJECTS)
+    expect(testsCalls.length, 'gate.ts calls that run the tests step').toBeGreaterThan(0)
+    expect(testsCalls).toEqual(testsCalls.map(() => []))
   })
 })
 
