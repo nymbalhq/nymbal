@@ -40,9 +40,9 @@ export function useCreateProduct() {
   })
 }
 
-/** The update's body: a variant is its id and prices, the only fields the update writes. */
+/** The update's body: a variant is its id, prices and GTIN, the only fields the update writes. */
 export type ProductPatch = Omit<Partial<ProductSnapshot>, 'variants'> & {
-  variants?: Array<Pick<Variant, 'id' | 'priceMinor' | 'compareAtPriceMinor'>>
+  variants?: Array<Pick<Variant, 'id' | 'priceMinor' | 'compareAtPriceMinor' | 'gtin'>>
 }
 
 export function useUpdateProduct() {

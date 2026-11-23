@@ -214,3 +214,7 @@ are counted as aggregates; no visitor or customer id is stored in a report.
 
 `agents.crawl` sets what `robots.txt`, `llms.txt` and the product feed (`/agents/products.json`) serve, and which AI
 crawlers are allowed.
+A product's brand and each variant's GTIN (the number under its barcode: UPC, EAN or ISBN-13; an ISBN-10 is not one)
+are set in the admin's product form. The product feed and UCP catalogue answers carry the brand as `metadata.brand` and
+the GTIN as the variant's `barcodes`, the ACP feed carries the barcodes alone, and the product page's JSON-LD carries
+the brand and, for a product with one variant, its `gtin`.

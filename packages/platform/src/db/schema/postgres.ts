@@ -56,6 +56,7 @@ export const products = pgTable(
     metadata: jsonb('metadata').notNull().default({}),
     /** What a tax engine taxes the product's variants as, unless a variant has its own; null for the standard rate. */
     taxCode: text('tax_code'),
+    brand: text('brand').notNull().default(''),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   },
@@ -85,6 +86,7 @@ export const variants = pgTable(
       .notNull()
       .default('active'),
     taxCode: text('tax_code'),
+    gtin: text('gtin'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   },

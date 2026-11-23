@@ -38,6 +38,7 @@ export function productJsonLd(product: DenormalisedProduct, baseUrl: string) {
     .filter((url): url is string => url !== null)
 
   const sku = product.variants?.[0]?.sku ?? product.id
+  const gtin = product.variants.length === 1 ? product.variants[0]?.gtin : null
 
   const lowPrice = (product.priceRange?.minMinor ?? product.priceMinor ?? 0) / 100
   const highPrice = (product.priceRange?.maxMinor ?? product.priceMinor ?? 0) / 100
@@ -49,6 +50,9 @@ export function productJsonLd(product: DenormalisedProduct, baseUrl: string) {
     description: descriptionText(product.description),
     image: images,
     sku,
+    ...(product.brand.trim() !== '' && { brand: { '@type': 'Brand', name: product.brand } }),
+    // One page with several variants is several trade items, so only a single variant's GTIN is stated.
+    ...(gtin && { gtin }),
     url: `${baseUrl}/product/${product.slug}`,
     offers: {
       '@type': 'AggregateOffer',

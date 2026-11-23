@@ -34,17 +34,20 @@ export interface ProductCreateInput {
   seoDescription?: string
   media?: Product['media']
   metadata?: Record<string, unknown>
+  brand?: string
   categoryIds?: string[]
   variants?: Array<
     Omit<VariantInsert, 'id' | 'productId' | 'createdAt' | 'updatedAt'> & { id?: string }
   >
 }
 
-/** A variant's prices: `compareAtPriceMinor` omitted keeps the stored one, null clears it. */
+/** A variant's prices and GTIN: `compareAtPriceMinor` or `gtin` omitted keeps the stored one, null clears it (a GTIN
+ *  of '' too). */
 export interface VariantPriceInput {
   id: string
   priceMinor: number
   compareAtPriceMinor?: number | null
+  gtin?: string | null
 }
 
 export interface ProductUpdateInput extends Omit<ProductUpdate, 'updatedAt'> {
@@ -134,6 +137,7 @@ export function createProductService(deps: CreateProductServiceDeps): ProductSer
           ...(input.seoDescription !== undefined && { seoDescription: input.seoDescription }),
           ...(input.media !== undefined && { media: input.media }),
           ...(input.metadata !== undefined && { metadata: input.metadata }),
+          ...(input.brand !== undefined && { brand: input.brand }),
           createdAt: now,
           updatedAt: now,
         }
@@ -143,6 +147,7 @@ export function createProductService(deps: CreateProductServiceDeps): ProductSer
           const id = v.id ?? uuidv7()
           const vi: VariantInsert = {
             ...v,
+            gtin: v.gtin || null,
             id,
             productId,
             createdAt: now,
@@ -193,8 +198,10 @@ export function createProductService(deps: CreateProductServiceDeps): ProductSer
         seoDescription: original.seoDescription,
         media: original.media,
         metadata: original.metadata,
+        brand: original.brand ?? '',
         categoryIds: original.categoryIds,
-        // A copy holds no goods: stock is received into it like any new product.
+        // A copy holds no goods: stock is received into it like any new product. Its GTINs are not copied either: it
+        // is a new trade item until the merchant says otherwise.
         variants: original.variants.map((v) => ({
           sku: `${v.sku}-COPY${suffix}`,
           name: v.name,
@@ -240,6 +247,7 @@ export function createProductService(deps: CreateProductServiceDeps): ProductSer
           ...(input.seoDescription !== undefined && { seoDescription: input.seoDescription }),
           ...(input.media !== undefined && { media: input.media }),
           ...(input.metadata !== undefined && { metadata: input.metadata }),
+          ...(input.brand !== undefined && { brand: input.brand }),
           updatedAt: now,
         }
         await repos.product.update(tx, product.id, updateInput)
@@ -255,18 +263,25 @@ export function createProductService(deps: CreateProductServiceDeps): ProductSer
             item.compareAtPriceMinor === undefined
               ? before.compareAtPriceMinor
               : item.compareAtPriceMinor
-          if (
-            item.priceMinor === before.priceMinor &&
-            compareAtPriceMinor === before.compareAtPriceMinor
-          ) {
-            continue
-          }
+          const storedGtin = before.gtin ?? null
+          const gtin = item.gtin === undefined ? storedGtin : item.gtin || null
+          const repriced =
+            item.priceMinor !== before.priceMinor ||
+            compareAtPriceMinor !== before.compareAtPriceMinor
+          if (!repriced && gtin === storedGtin) continue
           await repos.variant.update(tx, item.id, {
             priceMinor: item.priceMinor,
             compareAtPriceMinor,
+            gtin,
             updatedAt: now,
           })
-          current.set(item.id, { ...before, priceMinor: item.priceMinor, compareAtPriceMinor })
+          current.set(item.id, {
+            ...before,
+            priceMinor: item.priceMinor,
+            compareAtPriceMinor,
+            gtin,
+          })
+          if (!repriced) continue
           await publisher.publish(EVT_PRODUCT_VARIANT_PRICE_CHANGED, {
             productId: product.id,
             variantId: item.id,

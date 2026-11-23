@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import fc from 'fast-check'
+import { describe, expect, it, vi } from 'vitest'
 import {
   EVT_PRODUCT_CREATED,
   EVT_PRODUCT_PUBLISHED,
@@ -634,6 +635,280 @@ describe('ProductService.duplicate', () => {
     const { service, commandStore } = await setup()
     await expect(service.duplicate(uuidv7())).rejects.toThrow(NotFoundError)
     expect(await service.list()).toEqual([])
+    await commandStore.close()
+  })
+})
+
+// A product's brand and each variant's GTIN. A GTIN rides on the variants entry of an update beside its prices: omitted
+// it keeps the stored one, null or '' clears it, and a GTIN change is no price change. A variant is written only when
+// its price or GTIN really changes, which its updatedAt shows (the clock is moved between commands).
+describe('ProductService: brand and GTIN', () => {
+  const GTIN_A = '4006381333931'
+  const GTIN_B = '036000291452'
+  const T0 = Date.parse('2026-11-01T10:00:00.000Z')
+
+  interface Seen {
+    type: string
+    payload: Record<string, unknown>
+  }
+
+  async function withIdentifiers() {
+    const ctx = await setup()
+    const seen: Seen[] = []
+    await ctx.eventBus.subscribe(
+      [EVT_PRODUCT_VARIANT_PRICE_CHANGED, EVT_PRODUCT_UPDATED],
+      (event) => {
+        seen.push({ type: event.type, payload: event.payload as Record<string, unknown> })
+      },
+    )
+    /** The events a step published, once delivered; `seen` is emptied for the next step. */
+    const drained = async (): Promise<Seen[]> => {
+      await ctx.relay.drain()
+      return seen.splice(0)
+    }
+    return { ...ctx, drained }
+  }
+
+  const priceEvents = (events: Seen[]) =>
+    events.filter((e) => e.type === EVT_PRODUCT_VARIANT_PRICE_CHANGED)
+  const updatedSnapshots = (events: Seen[]) =>
+    events
+      .filter((e) => e.type === EVT_PRODUCT_UPDATED)
+      .map((e) => e.payload['product'] as { variants: Variant[]; brand?: string })
+
+  it("AC-2: a create stores the brand and each variant's GTIN, and a variant created with gtin '' answers and stores gtin null", async () => {
+    const { service, commandStore } = await setup()
+    const snap = await service.create({
+      slug: 'branded',
+      name: 'Branded',
+      brand: 'Acme',
+      variants: [
+        { sku: 'B-1', name: 'One', priceMinor: 1000, stock: 1, options: [], gtin: GTIN_A },
+        { sku: 'B-2', name: 'Two', priceMinor: 1000, stock: 1, options: [], gtin: '' },
+      ],
+    })
+    const stored = await service.getById(snap.id)
+    const gtins = (variants: Variant[]) => variants.map((v) => [v.sku, v.gtin])
+
+    expect([snap.brand, stored.brand]).toEqual(['Acme', 'Acme'])
+    expect(gtins(snap.variants)).toEqual([
+      ['B-1', GTIN_A],
+      ['B-2', null],
+    ])
+    expect(gtins(stored.variants)).toEqual(gtins(snap.variants))
+    await commandStore.close()
+  })
+
+  it('AC-2: an entry changing both price and GTIN stores both and publishes exactly one price event, whose prices are the old and new price', async () => {
+    const { service, commandStore, drained } = await withIdentifiers()
+    const created = await service.create({
+      slug: 'both',
+      name: 'Both',
+      variants: [
+        { sku: 'BOTH-1', name: 'One', priceMinor: 1000, stock: 1, options: [], gtin: GTIN_A },
+      ],
+    })
+    const [one] = created.variants as [Variant]
+    await drained()
+
+    await service.update(created.id, { variants: [{ id: one.id, priceMinor: 800, gtin: GTIN_B }] })
+    const stored = (await service.getById(created.id)).variants[0]!
+    const events = await drained()
+
+    expect([stored.priceMinor, stored.gtin]).toEqual([800, GTIN_B])
+    expect(
+      priceEvents(events).map((e) => [
+        e.payload['variantId'],
+        e.payload['previousPriceMinor'],
+        e.payload['priceMinor'],
+      ]),
+    ).toEqual([[one.id, one.priceMinor, 800]])
+    expect(updatedSnapshots(events).map((p) => p.variants.map((v) => v.gtin))).toEqual([[GTIN_B]])
+    await commandStore.close()
+  })
+
+  it('AC-2: property: over sequences of entries (price kept or changed; gtin omitted, null, empty or set), the stored GTIN is the last one set and cleared by null or empty, a variant is written exactly when its price or GTIN changes, one price event is published per price change and none per GTIN change, and the one product.updated carries the stored GTINs', async () => {
+    const { service, commandStore, drained } = await withIdentifiers()
+    let made = 0
+
+    const gtinArb = fc.constantFrom<string | null | undefined>(undefined, null, '', GTIN_A, GTIN_B)
+    const entryArb = fc.record({
+      at: fc.integer({ min: 0, max: 1 }),
+      reprice: fc.boolean(),
+      gtin: gtinArb,
+    })
+    type Entry = { at: number; reprice: boolean; gtin: string | null | undefined }
+
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      await fc.assert(
+        fc.asyncProperty(
+          fc.array(fc.array(entryArb, { minLength: 1, maxLength: 2 }), {
+            minLength: 1,
+            maxLength: 4,
+          }),
+          async (edits: Entry[][]) => {
+            let clock = T0
+            vi.setSystemTime(clock)
+            made += 1
+            const created = await service.create({
+              slug: `seq-${made}`,
+              name: `Sequence ${made}`,
+              variants: [
+                {
+                  sku: `SEQ-${made}-0`,
+                  name: 'Zero',
+                  priceMinor: 1000,
+                  stock: 1,
+                  options: [],
+                  gtin: '',
+                },
+                {
+                  sku: `SEQ-${made}-1`,
+                  name: 'One',
+                  priceMinor: 2000,
+                  stock: 1,
+                  options: [],
+                  gtin: GTIN_A,
+                },
+              ],
+            })
+            const ids = created.variants.map((v) => v.id)
+            let model = created.variants.map((v) => ({
+              priceMinor: v.priceMinor,
+              gtin: v.gtin ?? null,
+              updatedAt: Date.parse(v.updatedAt),
+            }))
+            expect(
+              model.map((m) => m.gtin),
+              'as created',
+            ).toEqual([null, GTIN_A])
+            await drained()
+
+            for (const raw of edits) {
+              const seenAt = new Set<number>()
+              const entries = raw.filter((e) => !seenAt.has(e.at) && seenAt.add(e.at))
+              clock += 60_000
+              vi.setSystemTime(clock)
+              const label = JSON.stringify(entries)
+
+              await service.update(created.id, {
+                variants: entries.map((e) => ({
+                  id: ids[e.at]!,
+                  priceMinor: model[e.at]!.priceMinor + (e.reprice ? 100 : 0),
+                  ...(e.gtin !== undefined && { gtin: e.gtin }),
+                })),
+              })
+
+              const next = model.map((m) => ({ ...m }))
+              const repriced: string[] = []
+              for (const e of entries) {
+                const before = model[e.at]!
+                const gtin = e.gtin === undefined ? before.gtin : e.gtin === '' ? null : e.gtin
+                const priceMinor = before.priceMinor + (e.reprice ? 100 : 0)
+                const written = gtin !== before.gtin || priceMinor !== before.priceMinor
+                next[e.at] = { priceMinor, gtin, updatedAt: written ? clock : before.updatedAt }
+                if (e.reprice) repriced.push(ids[e.at]!)
+              }
+
+              const stored = (await service.getById(created.id)).variants
+              const byId = new Map(stored.map((v) => [v.id, v]))
+              expect(
+                ids.map((id) => {
+                  const v = byId.get(id)!
+                  return {
+                    priceMinor: v.priceMinor,
+                    gtin: v.gtin ?? null,
+                    updatedAt: Date.parse(v.updatedAt),
+                  }
+                }),
+                label,
+              ).toEqual(next)
+
+              const events = await drained()
+              expect(
+                priceEvents(events)
+                  .map((e) => e.payload['variantId'])
+                  .sort(),
+                `${label}: the variants a price event names`,
+              ).toEqual(repriced.sort())
+              const snaps = updatedSnapshots(events)
+              expect(snaps.length, `${label}: product.updated`).toBe(1)
+              expect(
+                ids.map((id) => snaps[0]!.variants.find((v) => v.id === id)?.gtin ?? null),
+                `${label}: the GTINs product.updated carries`,
+              ).toEqual(next.map((m) => m.gtin))
+              model = next
+            }
+          },
+        ),
+        {
+          numRuns: 40,
+          examples: [
+            [[[{ at: 0, reprice: false, gtin: '' }], [{ at: 1, reprice: false, gtin: GTIN_A }]]],
+            [
+              [
+                [{ at: 1, reprice: false, gtin: GTIN_B }],
+                [{ at: 1, reprice: false, gtin: undefined }],
+              ],
+            ],
+            [[[{ at: 1, reprice: true, gtin: GTIN_B }], [{ at: 1, reprice: false, gtin: null }]]],
+            [[[{ at: 1, reprice: true, gtin: undefined }], [{ at: 1, reprice: false, gtin: '' }]]],
+          ],
+        },
+      )
+    } finally {
+      vi.useRealTimers()
+    }
+    await commandStore.close()
+  })
+
+  it('AC-2: an update with brand alone changes the brand, and no variant is written', async () => {
+    const { service, commandStore, drained } = await withIdentifiers()
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(T0)
+      const created = await service.create({
+        slug: 'brand-only',
+        name: 'Brand only',
+        brand: 'Acme',
+        variants: [
+          { sku: 'BO-1', name: 'One', priceMinor: 1000, stock: 1, options: [], gtin: GTIN_A },
+        ],
+      })
+      await drained()
+      vi.setSystemTime(T0 + 60_000)
+      await service.update(created.id, { brand: 'Northwind' })
+      const after = await service.getById(created.id)
+
+      expect([created.brand, after.brand]).toEqual(['Acme', 'Northwind'])
+      expect(after.variants).toEqual(created.variants)
+      expect(priceEvents(await drained())).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
+    await commandStore.close()
+  })
+
+  it('AC-4: a copy keeps the brand and every variant of it has gtin null, in the answer and as stored; the original keeps its GTINs', async () => {
+    const { service, commandStore } = await setup()
+    const original = await service.create({
+      slug: 'scanned',
+      name: 'Scanned',
+      brand: 'Acme',
+      variants: [
+        { sku: 'SC-1', name: 'One', priceMinor: 1000, stock: 3, options: [], gtin: GTIN_A },
+        { sku: 'SC-2', name: 'Two', priceMinor: 1200, stock: 2, options: [], gtin: GTIN_B },
+      ],
+    })
+    const copy = await service.duplicate(original.id)
+    const stored = await service.getById(copy.id)
+    const after = await service.getById(original.id)
+
+    expect([original.brand, copy.brand, stored.brand]).toEqual(['Acme', 'Acme', 'Acme'])
+    expect(copy.variants.map((v) => v.gtin)).toEqual(original.variants.map(() => null))
+    expect(stored.variants.map((v) => v.gtin)).toEqual(original.variants.map(() => null))
+    expect(after.variants.map((v) => v.gtin)).toEqual([GTIN_A, GTIN_B])
     await commandStore.close()
   })
 })

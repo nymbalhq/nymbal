@@ -204,6 +204,7 @@ describe('ProductRepository on SQLite', () => {
       media: [],
       metadata: {},
       taxCode: null,
+      brand: '',
       createdAt: CREATED.toISOString(),
       updatedAt: CREATED.toISOString(),
     })
@@ -212,6 +213,7 @@ describe('ProductRepository on SQLite', () => {
       slug: 'slug-full',
       name: 'Name full',
       ...FULL,
+      brand: '',
       createdAt: CREATED.toISOString(),
       updatedAt: CREATED.toISOString(),
     })
@@ -292,7 +294,7 @@ async function withPostgres(
 }
 
 const COLUMNS =
-  '"id", "slug", "name", "description", "short_description", "status", "type", "seo_title", "seo_description", "media", "metadata", "tax_code", "created_at", "updated_at"'
+  '"id", "slug", "name", "description", "short_description", "status", "type", "seo_title", "seo_description", "media", "metadata", "tax_code", "brand", "created_at", "updated_at"'
 const SELECT = `select ${COLUMNS} from "products"`
 const ORDER = 'order by "products"."created_at" asc, "products"."id" asc'
 
@@ -317,6 +319,7 @@ const ROW = [
   [{ url: 'a.jpg' }],
   { colour: 'red' },
   null,
+  '',
   CREATED.toISOString(),
   UPDATED.toISOString(),
 ]
@@ -333,6 +336,7 @@ const MAPPED = {
   media: [{ url: 'a.jpg' }],
   metadata: { colour: 'red' },
   taxCode: null,
+  brand: '',
   createdAt: CREATED.toISOString(),
   updatedAt: UPDATED.toISOString(),
 }
@@ -442,7 +446,7 @@ describe('ProductRepository on Postgres', () => {
       }),
     )
 
-    const text = `insert into "products" (${COLUMNS}) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`
+    const text = `insert into "products" (${COLUMNS}) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`
     const iso = CREATED.toISOString()
     expect(sent).toEqual([
       {
@@ -460,6 +464,7 @@ describe('ProductRepository on Postgres', () => {
           '[]',
           '{}',
           null,
+          '',
           iso,
           iso,
         ],
@@ -479,6 +484,7 @@ describe('ProductRepository on Postgres', () => {
           JSON.stringify(FULL.media),
           JSON.stringify(FULL.metadata),
           'clothing',
+          '',
           iso,
           iso,
         ],

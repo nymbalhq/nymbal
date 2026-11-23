@@ -34,6 +34,7 @@ export function product(slug: string): DenormalisedProduct {
     shortDescription: '',
     status: 'active',
     type: 'simple',
+    brand: '',
     media: [],
     variantCount: 1,
     inStock: true,

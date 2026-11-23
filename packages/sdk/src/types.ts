@@ -24,6 +24,8 @@ export interface DenormalisedVariant {
   priceMinor: number
   stock: number
   options: VariantOption[]
+  /** The variant's GTIN; null when it has none. */
+  gtin: string | null
 }
 
 export interface DenormalisedProduct {
@@ -37,6 +39,8 @@ export interface DenormalisedProduct {
   /** The product's own page title and meta description; '' when the merchant has set none. */
   seoTitle: string
   seoDescription: string
+  /** '' when the product has none. */
+  brand: string
   media: unknown
   variantCount: number
   inStock: boolean

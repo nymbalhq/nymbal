@@ -12,7 +12,15 @@ export interface ListedProduct {
   media: unknown
   priceRange: { minMinor: number; maxMinor: number } | null
   currency: string | null
-  variants: Array<{ id: string; sku: string; name: string; priceMinor: number; stock: number }>
+  brand?: string
+  variants: Array<{
+    id: string
+    sku: string
+    name: string
+    priceMinor: number
+    stock: number
+    gtin?: string | null
+  }>
 }
 
 export interface UcpLink {
@@ -29,6 +37,17 @@ export interface UcpVariant {
   price: { amount: number; currency: string }
   availability: { available: boolean }
   inputs?: Array<{ id: string; match: 'exact' | 'featured' }>
+  barcodes?: UcpBarcode[]
+}
+
+export interface UcpBarcode {
+  type: 'GTIN'
+  value: string
+}
+
+/** A variant's GTIN as UCP and ACP barcodes, or nothing to spread when it has none. */
+export function barcodesOf(gtin: string | null | undefined): { barcodes?: UcpBarcode[] } {
+  return gtin ? { barcodes: [{ type: 'GTIN', value: gtin }] } : {}
 }
 
 export interface UcpProduct {
@@ -43,6 +62,8 @@ export interface UcpProduct {
   }
   media?: Array<{ type: 'image'; url: string; alt_text?: string }>
   variants: UcpVariant[]
+  /** UCP's product has no brand property; its business-defined `metadata` carries it. */
+  metadata?: { brand: string }
 }
 
 export interface UcpMessage {
@@ -128,7 +149,10 @@ export function ucpProduct(product: ListedProduct, urls: AgentSurfaceUrls): UcpP
       description: { plain: variant.name },
       price: { amount: variant.priceMinor, currency },
       availability: { available: variant.stock > 0 },
+      ...barcodesOf(variant.gtin),
     })),
+    ...(product.brand !== undefined &&
+      product.brand.trim() !== '' && { metadata: { brand: product.brand } }),
   }
 }
 

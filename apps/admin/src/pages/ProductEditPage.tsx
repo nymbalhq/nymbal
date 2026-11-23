@@ -24,6 +24,7 @@ import { UnsavedChangesGuard } from '@/components/common/UnsavedChangesGuard'
 import { useProduct, useCreateProduct, useUpdateProduct } from '@/hooks/useProducts'
 import { useIntentKey } from '@/hooks/useIntentKey'
 import { useStoreCurrency } from '@/hooks/useMe'
+import { ApiError } from '@/lib/api'
 import { tid } from '@/lib/testid'
 import type { ProductSnapshot, ProductStatus, Variant, ProductMedia } from '@nymbalhq/types'
 
@@ -36,10 +37,23 @@ const DEFAULT_PRODUCT: Partial<ProductSnapshot> = {
   type: 'simple',
   seoTitle: '',
   seoDescription: '',
+  brand: '',
   media: [],
   variants: [],
   categoryIds: [],
   metadata: {},
+}
+
+/** Why the server refused a save: each issue's own message when it names them, else the error's. */
+function refusalOf(err: unknown): string {
+  if (!(err instanceof ApiError)) return 'The product was not saved'
+  const issues = err.context?.['issues']
+  const messages = Array.isArray(issues)
+    ? issues.flatMap((issue: { message?: unknown }) =>
+        typeof issue.message === 'string' ? [issue.message] : [],
+      )
+    : []
+  return messages.length > 0 ? messages.join('; ') : err.message
 }
 
 function slugify(text: string): string {
@@ -62,6 +76,7 @@ export function ProductEditPage() {
   const [form, setForm] = useState<Partial<ProductSnapshot>>(DEFAULT_PRODUCT)
   const [isDirty, setIsDirty] = useState(false)
   const [slugManual, setSlugManual] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
   // One save is one intent: a double click on Save sends one key, the next save another.
   const [saveKey, renewSaveKey] = useIntentKey()
 
@@ -71,6 +86,7 @@ export function ProductEditPage() {
     setForm(DEFAULT_PRODUCT)
     setIsDirty(false)
     setSlugManual(false)
+    setSaveError(null)
   }, [slug])
 
   // A new copy (a stream frame refetches the detail) never replaces an unsaved edit; once a save makes the form
@@ -96,22 +112,33 @@ export function ProductEditPage() {
   const handleSave = async () => {
     const idempotencyKey = saveKey
     renewSaveKey()
-    if (isNew) {
-      const created = await createProduct.mutateAsync({ product: form, idempotencyKey })
-      // Rendered now, so the unsaved-changes guard already sees a clean form when the navigation reaches it.
-      flushSync(() => setIsDirty(false))
-      navigate(`/products/${created.slug}`)
-    } else if (existingProduct) {
-      // The update keeps each own variant's prices and nothing else of it.
-      const own = new Set(existingProduct.variants.map((v) => v.id))
-      const variants = (form.variants ?? [])
-        .filter((v) => own.has(v.id))
-        .map(({ id, priceMinor, compareAtPriceMinor }) => ({ id, priceMinor, compareAtPriceMinor }))
-      const data = { ...form, variants }
-      // The update writes its answer into the detail query before it resolves, so the clean form takes the saved
-      // copy, never the one it held off while the merchant typed.
-      await updateProduct.mutateAsync({ id: existingProduct.id, data, idempotencyKey })
-      setIsDirty(false)
+    setSaveError(null)
+    try {
+      if (isNew) {
+        const created = await createProduct.mutateAsync({ product: form, idempotencyKey })
+        // Rendered now, so the unsaved-changes guard already sees a clean form when the navigation reaches it.
+        flushSync(() => setIsDirty(false))
+        navigate(`/products/${created.slug}`)
+      } else if (existingProduct) {
+        // The update keeps each own variant's prices and GTIN and nothing else of it; a cleared GTIN is sent as null.
+        const own = new Set(existingProduct.variants.map((v) => v.id))
+        const variants = (form.variants ?? [])
+          .filter((v) => own.has(v.id))
+          .map(({ id, priceMinor, compareAtPriceMinor, gtin }) => ({
+            id,
+            priceMinor,
+            compareAtPriceMinor,
+            gtin: gtin || null,
+          }))
+        const data = { ...form, variants }
+        // The update writes its answer into the detail query before it resolves, so the clean form takes the saved
+        // copy, never the one it held off while the merchant typed.
+        await updateProduct.mutateAsync({ id: existingProduct.id, data, idempotencyKey })
+        setIsDirty(false)
+      }
+    } catch (err) {
+      // The form keeps what was typed, so the merchant can correct it and save again.
+      setSaveError(refusalOf(err))
     }
   }
 
@@ -183,6 +210,12 @@ export function ProductEditPage() {
           )}
         </Button>
       </div>
+
+      {saveError !== null && (
+        <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+          {saveError}
+        </p>
+      )}
 
       {/* Form */}
       <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
@@ -265,6 +298,17 @@ export function ProductEditPage() {
                     onChange={(e) => update('shortDescription', e.target.value)}
                     placeholder="Brief one-line description..."
                     rows={2}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label>Brand</Label>
+                  <Input
+                    value={form.brand ?? ''}
+                    onChange={(e) => update('brand', e.target.value)}
+                    placeholder="e.g. Acme"
+                    maxLength={120}
+                    data-testid={tid('product', 'brand')}
                   />
                 </div>
               </div>

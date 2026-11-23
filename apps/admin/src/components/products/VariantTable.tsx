@@ -20,8 +20,8 @@ interface VariantTableProps {
   onChange: (variants: Variant[]) => void
   currency: string
   /**
-   * An existing product's save keeps only price: SKU, name, stock and status read as text (stock links to the variant
-   * in Inventory), and rows are neither added nor removed.
+   * An existing product's save keeps only price and GTIN: SKU, name, stock and status read as text (stock links to the
+   * variant in Inventory), and rows are neither added nor removed.
    */
   existing?: boolean
 }
@@ -106,6 +106,9 @@ export function VariantTable({
               <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-zinc-500">
                 Price
               </th>
+              <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-zinc-500">
+                GTIN
+              </th>
               <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-zinc-500">
                 Stock
               </th>
@@ -118,7 +121,7 @@ export function VariantTable({
           <tbody>
             {editing.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-3 py-6 text-center text-sm text-zinc-400">
+                <td colSpan={7} className="px-3 py-6 text-center text-sm text-zinc-400">
                   {existing ? 'No variants.' : 'No variants yet. Add one below.'}
                 </td>
               </tr>
@@ -170,6 +173,16 @@ export function VariantTable({
                       className="h-7 w-20 text-right font-mono text-xs"
                     />
                   </div>
+                </td>
+                <td className="px-3 py-2">
+                  <Input
+                    value={variant.gtin ?? ''}
+                    onChange={(e) => updateVariant(variant.id, 'gtin', e.target.value)}
+                    data-testid={tid('product', 'variant-gtin', variant.id)}
+                    inputMode="numeric"
+                    placeholder="UPC or EAN"
+                    className="h-7 w-32 font-mono text-xs"
+                  />
                 </td>
                 <td className="px-3 py-2 text-right">
                   {existing ? (

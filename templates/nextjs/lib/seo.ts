@@ -28,6 +28,7 @@ export function productJsonLd(
   const url = `${baseUrl}/product/${product.slug}`
   const priceCurrency = product.currency ?? 'GBP'
   const availability = `https://schema.org/${product.inStock ? 'InStock' : 'OutOfStock'}`
+  const gtin = product.variants.length === 1 ? product.variants[0]?.gtin : null
 
   const offers: Record<string, unknown> =
     product.variants.length > 1 && product.priceRange
@@ -54,6 +55,9 @@ export function productJsonLd(
     description: descriptionText(product.description),
     url,
     sku: product.variants[0]?.sku ?? product.id,
+    ...(product.brand.trim() !== '' && { brand: { '@type': 'Brand', name: product.brand } }),
+    // One page with several variants is several trade items, so only a single variant's GTIN is stated.
+    ...(gtin && { gtin }),
     offers,
     ...(product.rating?.count && {
       aggregateRating: {

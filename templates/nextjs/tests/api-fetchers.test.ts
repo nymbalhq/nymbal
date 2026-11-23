@@ -47,6 +47,7 @@ const PRODUCT = {
   name: 'Test Product',
   seoTitle: '',
   seoDescription: '',
+  brand: '',
   variants: [],
 }
 const LIST = { items: [PRODUCT], nextCursor: null }

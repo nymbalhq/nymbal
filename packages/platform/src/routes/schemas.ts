@@ -3,6 +3,7 @@ import { ASSISTANT_MASK_FIELDS } from '@nymbalhq/config'
 import {
   CART_LINE_MAX_QTY,
   isCountryCode,
+  isGtin,
   ORDER_STATUS_TRANSITIONS,
   PRODUCT_SORT_KEYS,
   US_STATES,
@@ -189,6 +190,14 @@ const variantDimensions = z.object({
   widthMm: z.number().optional(),
   heightMm: z.number().optional(),
 })
+/** A variant's GTIN as sent; '' clears it. */
+const gtin = z
+  .string()
+  .trim()
+  .refine(
+    (v) => v === '' || isGtin(v),
+    'a GTIN is 8, 12, 13 or 14 digits ending in its check digit',
+  )
 const productVariant = z.object({
   id: z.string().optional(),
   sku: z.string(),
@@ -201,12 +210,15 @@ const productVariant = z.object({
   lowStockThreshold: z.number().int().optional(),
   options: z.array(z.object({ name: z.string(), value: z.string() })),
   status: z.enum(['active', 'inactive']).optional(),
+  gtin: gtin.nullable().optional(),
 })
-/** A variant's prices in a product update: an omitted compare-at price keeps the stored one, null clears it. */
+/** A variant's prices and GTIN in a product update: an omitted compare-at price or GTIN keeps the stored one, null
+ *  clears it. */
 const variantPrices = z.object({
   id,
   priceMinor: money.min(0),
   compareAtPriceMinor: money.min(0).nullable().optional(),
+  gtin: gtin.nullable().optional(),
 })
 const productFields = {
   description: z.string().optional(),
@@ -217,6 +229,7 @@ const productFields = {
   seoDescription: z.string().optional(),
   media: z.array(productMedia).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
+  brand: z.string().trim().max(120).optional(),
   categoryIds: z.array(z.string()).optional(),
 }
 
@@ -800,7 +813,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
     name: 'admin.products.update',
     command: 'product.update',
     description:
-      "Update a product's fields and its variants' prices; a variant left out keeps its prices, and stock moves only through inventory.",
+      "Update a product's fields and its variants' prices and GTINs; a variant left out keeps both, and stock moves only through inventory.",
     params: idParams,
     body: z.object({
       name: z.string().optional(),

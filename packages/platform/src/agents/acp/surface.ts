@@ -26,7 +26,7 @@ import type { BeginCheckoutResult, CheckoutService } from '../../services/checko
 import { cartCodes, cartTotals } from '../../services/promotions-quote.js'
 import { shippingOptions, type ShippingRate } from '../../services/shipping-quote.js'
 import { formatMoney } from '../../money.js'
-import { ucpProduct, type ListedProduct } from '../catalog.js'
+import { barcodesOf, ucpProduct, type ListedProduct } from '../catalog.js'
 import { toNymbalAddress } from './address.js'
 import {
   ACP_BASE_PATH,
@@ -1175,6 +1175,7 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
               available: variant.stock > 0,
               status: variant.stock > 0 ? 'in_stock' : 'out_of_stock',
             },
+            ...barcodesOf(variant.gtin),
             seller,
           })),
         })

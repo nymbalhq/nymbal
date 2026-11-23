@@ -21,6 +21,11 @@ const unrated = fc.constantFrom<{ rating?: ProductRating | null }>(
   { rating: { average: 0, count: 0 } },
 )
 
+const GTINS = ['96385074', '036000291452', '4006381333931', '9780306406157', '00012345600012']
+/** No brand to mark up: empty or whitespace. */
+const NO_BRAND = ['', ' ', '   ', '\t']
+const BRAND = fc.stringMatching(/^[A-Z][A-Za-z&' -]{0,20}[a-z]$/)
+
 const variant = fc.record({
   id: fc.uuid(),
   sku: fc.stringMatching(/^[A-Z]{2,4}-[0-9]{1,4}$/),
@@ -28,6 +33,7 @@ const variant = fc.record({
   priceMinor: fc.integer({ min: 0, max: 100_000 }),
   stock: fc.nat({ max: 50 }),
   options: fc.constant<DenormalisedProduct['variants'][number]['options']>([]),
+  gtin: fc.option(fc.constantFrom(...GTINS), { nil: null }),
 })
 
 const product = fc.record({
@@ -38,6 +44,7 @@ const product = fc.record({
   shortDescription: fc.constant<string>(''),
   seoTitle: fc.constant<string>(''),
   seoDescription: fc.constant<string>(''),
+  brand: fc.oneof(fc.constantFrom(...NO_BRAND), BRAND),
   status: fc.constant<string>('active'),
   type: fc.constant<string>('simple'),
   media: fc.constant<unknown>([]),
@@ -96,6 +103,92 @@ describe('productJsonLd url (nextjs)', () => {
         expect(JSON.stringify(ld).includes(`${BASE}/products/`)).toBe(false)
       }),
       { numRuns: 40 },
+    )
+  })
+})
+
+describe('productJsonLd brand and gtin (nextjs)', () => {
+  type Ld = Record<string, unknown>
+  /** The product with no identifiers: a blank brand and every variant's gtin null. */
+  const bare = (p: DenormalisedProduct): DenormalisedProduct => ({
+    ...p,
+    brand: '',
+    variants: p.variants.map((v) => ({ ...v, gtin: null })),
+  })
+  /** A variant with no GTIN to mark up: null, the key absent, or empty. */
+  const noGtin = fc.constantFrom<'null' | 'absent' | 'empty'>('null', 'absent', 'empty')
+  const withoutGtin = (
+    v: DenormalisedProduct['variants'][number],
+    how: 'null' | 'absent' | 'empty',
+  ): DenormalisedProduct['variants'][number] => {
+    if (how === 'null') return { ...v, gtin: null }
+    if (how === 'empty') return { ...v, gtin: '' }
+    const { gtin: _gone, ...rest } = v
+    return rest as DenormalisedProduct['variants'][number]
+  }
+
+  // Kills: `brand: { name: '' }` emitted for every product (invalid structured data), or the brand dropped.
+  it("AC-8: property: a non-blank brand gives brand { '@type': 'Brand', name: <brand> }, and an empty or whitespace brand no brand key", () => {
+    fc.assert(
+      fc.property(product, BRAND, fc.constantFrom(...NO_BRAND), (p, brand, blank) => {
+        const branded = productJsonLd({ ...p, brand }, BASE) as Ld
+        const unbranded = productJsonLd({ ...p, brand: blank }, BASE) as Ld
+        expect(branded.brand).toEqual({ '@type': 'Brand', name: brand })
+        expect(['brand' in unbranded, unbranded.brand], JSON.stringify(blank)).toEqual([
+          false,
+          undefined,
+        ])
+      }),
+      { numRuns: 60 },
+    )
+  })
+
+  // Kills: a several-variant page claiming its first variant's GTIN for all of them, or `gtin: null` / `gtin: ''` served.
+  it('AC-8: property: exactly one variant holding a GTIN gives top-level gtin equal to it; one variant with a null, absent or empty gtin, and two or more variants each with a GTIN, give no gtin key', () => {
+    fc.assert(
+      fc.property(
+        product,
+        variant,
+        fc.constantFrom(...GTINS),
+        noGtin,
+        fc.array(fc.tuple(variant, fc.constantFrom(...GTINS)), { minLength: 2, maxLength: 4 }),
+        (p, one, gtin, how, several) => {
+          const single = productJsonLd({ ...p, variants: [{ ...one, gtin }] }, BASE) as Ld
+          const singleWithout = productJsonLd(
+            { ...p, variants: [withoutGtin(one, how)] },
+            BASE,
+          ) as Ld
+          const many = productJsonLd(
+            { ...p, variants: several.map(([v, g]) => ({ ...v, gtin: g })) },
+            BASE,
+          ) as Ld
+          expect(single.gtin).toBe(gtin)
+          expect(['gtin' in singleWithout, singleWithout.gtin], how).toEqual([false, undefined])
+          expect(['gtin' in many, many.gtin], `${several.length} variants`).toEqual([
+            false,
+            undefined,
+          ])
+        },
+      ),
+      { numRuns: 60 },
+    )
+  })
+
+  // Kills: the identifiers changing any other key of the JSON-LD (sku, offers, url, image), or a key added beside them.
+  it('AC-8: property: the JSON-LD of any product is that of the same product with no brand and no GTINs plus exactly its brand (when not blank) and its gtin (when it has one variant holding one)', () => {
+    fc.assert(
+      fc.property(product, fc.option(rated, { nil: undefined }), (p, rating) => {
+        const ld = productJsonLd({ ...p, rating }, BASE) as Ld
+        const plain = productJsonLd({ ...bare(p), rating }, BASE) as Ld
+        const only = p.variants.length === 1 ? p.variants[0]!.gtin : null
+        expect(['brand' in plain, 'gtin' in plain]).toEqual([false, false])
+        expect(ld).toEqual({
+          ...plain,
+          ...(p.brand.trim() !== '' && { brand: { '@type': 'Brand', name: p.brand } }),
+          ...(typeof only === 'string' && only !== '' && { gtin: only }),
+        })
+      }),
+      { numRuns: 80 },
     )
   })
 })

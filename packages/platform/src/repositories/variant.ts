@@ -26,6 +26,7 @@ export interface VariantInsert {
   options: VariantOption[]
   status?: VariantStatus
   taxCode?: string | null
+  gtin?: string | null
   createdAt: Date
   updatedAt: Date
 }
@@ -39,6 +40,7 @@ export interface VariantUpdate {
   lowStockThreshold?: number
   options?: VariantOption[]
   status?: VariantStatus
+  gtin?: string | null
   updatedAt: Date
 }
 
@@ -57,6 +59,7 @@ function rowToVariant(store: CommandStore['kind'], row: Record<string, unknown>)
     options: parseJson<VariantOption[]>(store, row.options, []),
     status: row.status as VariantStatus,
     taxCode: (row.taxCode as string | null) ?? null,
+    gtin: (row.gtin as string | null) ?? null,
     createdAt: fromTimestamp(row.createdAt),
     updatedAt: fromTimestamp(row.updatedAt),
   }
@@ -145,6 +148,7 @@ export function createVariantRepository(store: CommandStore): VariantRepository 
         lowStockThreshold: v.lowStockThreshold ?? 0,
         status: v.status ?? 'active',
         taxCode: v.taxCode ?? null,
+        gtin: v.gtin ?? null,
       }
       if (tx.kind === 'sqlite') {
         sqliteDb(tx)
@@ -179,6 +183,7 @@ export function createVariantRepository(store: CommandStore): VariantRepository 
         'weightGrams',
         'lowStockThreshold',
         'status',
+        'gtin',
       ] as const) {
         if (patch[k] !== undefined) {
           pg[k] = patch[k]

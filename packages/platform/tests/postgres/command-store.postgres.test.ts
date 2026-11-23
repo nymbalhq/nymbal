@@ -109,6 +109,7 @@ describe('AC-8: the command store on Postgres', () => {
       { maxKeys: 4, noNullPrototype: true },
     ),
     taxCode: fc.option(text, { nil: null }),
+    brand: fc.oneof(fc.constant(''), text),
     createdAt: fc.date({
       min: new Date('2000-01-01T00:00:00Z'),
       max: new Date('2099-12-31T00:00:00Z'),

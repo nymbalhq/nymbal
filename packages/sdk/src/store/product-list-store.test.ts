@@ -12,6 +12,7 @@ const emptyItem = {
   type: 'simple' as const,
   seoTitle: '',
   seoDescription: '',
+  brand: '',
   media: [],
   variantCount: 0,
   inStock: false,

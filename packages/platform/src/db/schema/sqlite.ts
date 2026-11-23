@@ -51,6 +51,7 @@ export const products = sqliteTable(
     metadata: text('metadata').notNull().default('{}'),
     /** What a tax engine taxes the product's variants as, unless a variant has its own; null for the standard rate. */
     taxCode: text('tax_code'),
+    brand: text('brand').notNull().default(''),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },
@@ -80,6 +81,7 @@ export const variants = sqliteTable(
       .notNull()
       .default('active'),
     taxCode: text('tax_code'),
+    gtin: text('gtin'),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },

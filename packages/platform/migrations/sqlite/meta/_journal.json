@@ -239,6 +239,13 @@
       "when": 1795386587620,
       "tag": "0034_refund_line",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "6",
+      "when": 1795398309175,
+      "tag": "0035_brand_gtin",
+      "breakpoints": true
     }
   ]
 }
