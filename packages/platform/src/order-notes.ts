@@ -4,14 +4,15 @@ export interface NoteEntry {
   at: string
 }
 
-/** An order's `notes` column as entries. A plain string is the shopper's checkout note, from before any entry joined it. */
-export function parseNotes(rawNotes: string, createdAt: string): NoteEntry[] {
-  if (!rawNotes) return []
-  const checkoutNote = [{ body: rawNotes, actor: 'customer', at: createdAt }]
-  try {
-    const parsed = JSON.parse(rawNotes) as unknown
-    return Array.isArray(parsed) ? (parsed as NoteEntry[]) : checkoutNote
-  } catch {
-    return checkoutNote
-  }
+/**
+ * An order's notes as the admin reads them: the shopper's checkout note first, word for word and never parsed, then
+ * the staff and system notes in the order they were added.
+ */
+export function orderNotes(
+  order: { notes: string; createdAt: string },
+  staffNotes: readonly NoteEntry[],
+): NoteEntry[] {
+  const shopper =
+    order.notes === '' ? [] : [{ body: order.notes, actor: 'customer', at: order.createdAt }]
+  return [...shopper, ...staffNotes]
 }

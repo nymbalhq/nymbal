@@ -45,6 +45,7 @@ export function registerAdminRoutes(adapter: HttpAdapter, deps: RegisterAdminRou
     refund: services.refund,
     repos,
     history,
+    publisher: deps.publisher,
   })
   registerAdminProductsRoutes(adapter, {
     product: services.product,

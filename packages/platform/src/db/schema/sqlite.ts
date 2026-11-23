@@ -207,6 +207,8 @@ export const orders = sqliteTable(
     totalMinor: integer('total_minor').notNull(),
     currency: text('currency').notNull(),
     notes: text('notes').notNull().default(''),
+    /** Staff and system notes, a JSON list of `{ body, actor, at }`; `notes` is the shopper's own text. */
+    staffNotes: text('staff_notes').notNull().default('[]'),
     metadata: text('metadata').notNull().default('{}'),
     paymentIntentId: text('payment_intent_id'),
     /** The cart the order was placed from; null for imported orders. */

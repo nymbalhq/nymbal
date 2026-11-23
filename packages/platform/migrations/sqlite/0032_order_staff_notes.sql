@@ -1,0 +1,1 @@
+ALTER TABLE `orders` ADD `staff_notes` text DEFAULT '[]' NOT NULL;

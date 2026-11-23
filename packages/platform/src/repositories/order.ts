@@ -19,6 +19,7 @@ import {
 } from '../db/command-store.js'
 import * as sqliteSchema from '../db/schema/sqlite.js'
 import * as postgresSchema from '../db/schema/postgres.js'
+import type { NoteEntry } from '../order-notes.js'
 import type { KeysetPage } from './page.js'
 import { parseJson, fromTimestamp } from './json.js'
 
@@ -254,7 +255,10 @@ export interface OrderRepository extends StoreRepository {
   setPaymentIntent(tx: Tx, id: string, paymentIntentId: string, updatedAt: Date): Promise<void>
   recordCapture(tx: Tx, id: string, capture: OrderCapture): Promise<void>
   setRefunded(tx: Tx, id: string, refundedMinor: number, updatedAt: Date): Promise<void>
-  setNotes(tx: Tx, id: string, notes: string, updatedAt: Date): Promise<void>
+  /** The staff and system notes on the order, in the order they were added; empty for an unknown id. */
+  staffNotes(tx: ReadTx, id: string): Promise<NoteEntry[]>
+  /** Appends one staff or system note in a single statement, so two notes added at once both land. */
+  addStaffNote(tx: Tx, id: string, note: NoteEntry, updatedAt: Date): Promise<void>
   /** Deletes the order's row alone: the rows that reference it go first. */
   delete(tx: Tx, id: string): Promise<void>
   /** Ids of the orders created at or after `since`. */
@@ -721,19 +725,40 @@ export function createOrderRepository(store: CommandStore): OrderRepository {
         .set({ refundedMinor, updatedAt })
         .where(eq(postgresSchema.orders.id, id))
     },
-    async setNotes(tx, id, notes, updatedAt) {
+    async staffNotes(tx, id) {
       if (tx.kind === 'sqlite') {
-        sqliteDb(tx)
-          .update(sqliteSchema.orders)
-          .set({ notes, updatedAt: updatedAt.toISOString() })
+        const row = sqliteDb(tx)
+          .select({ staffNotes: sqliteSchema.orders.staffNotes })
+          .from(sqliteSchema.orders)
           .where(eq(sqliteSchema.orders.id, id))
+          .get()
+        return parseJson<NoteEntry[]>('sqlite', row?.staffNotes, [])
+      }
+      const [row] = await postgresDb(tx)
+        .select({ staffNotes: postgresSchema.orders.staffNotes })
+        .from(postgresSchema.orders)
+        .where(eq(postgresSchema.orders.id, id))
+      return parseJson<NoteEntry[]>('postgres', row?.staffNotes, [])
+    },
+    async addStaffNote(tx, id, note, updatedAt) {
+      const entry = JSON.stringify(note)
+      if (tx.kind === 'sqlite') {
+        const s = sqliteSchema.orders
+        sqliteDb(tx)
+          .update(s)
+          .set({
+            staffNotes: sql`json_insert(${s.staffNotes}, '$[#]', json(${entry}))`,
+            updatedAt: updatedAt.toISOString(),
+          })
+          .where(eq(s.id, id))
           .run()
         return
       }
+      const p = postgresSchema.orders
       await postgresDb(tx)
-        .update(postgresSchema.orders)
-        .set({ notes, updatedAt })
-        .where(eq(postgresSchema.orders.id, id))
+        .update(p)
+        .set({ staffNotes: sql`${p.staffNotes} || jsonb_build_array(${entry}::jsonb)`, updatedAt })
+        .where(eq(p.id, id))
     },
     async delete(tx, id) {
       if (tx.kind === 'sqlite') {

@@ -216,6 +216,8 @@ export const orders = pgTable(
     totalMinor: integer('total_minor').notNull(),
     currency: text('currency').notNull(),
     notes: text('notes').notNull().default(''),
+    /** Staff and system notes, a list of `{ body, actor, at }`; `notes` is the shopper's own text. */
+    staffNotes: jsonb('staff_notes').notNull().default([]),
     metadata: jsonb('metadata').notNull().default({}),
     paymentIntentId: text('payment_intent_id'),
     /** The cart the order was placed from; null for imported orders. */
