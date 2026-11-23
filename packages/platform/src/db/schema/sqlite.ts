@@ -441,6 +441,8 @@ export const events = sqliteTable(
     deadAt: text('dead_at'),
     /** A failed event is not handed to the bus again before this. */
     retryAt: text('retry_at'),
+    /** The command whose `applied` audit entry has this id appended the event; null outside any command. */
+    commandId: text('command_id'),
   },
   (t) => ({
     idUnique: uniqueIndex('events_id_unique').on(t.id),

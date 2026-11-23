@@ -23,6 +23,8 @@ import { currentActor, type Actor } from './actor.js'
 
 /** The open command: what its entry will say. */
 export interface CommandScope {
+  /** The id its `applied` entry is written with, and the events it appends carry. */
+  readonly id: string
   command: string | undefined
   /** Whoever is acting when a service first notes: a webhook runs as the system inside its request's guest scope. */
   actor: Actor | undefined
@@ -47,6 +49,7 @@ export function openCommand(
   opts: { owned?: boolean; actor?: Actor; idempotencyKey?: string; requestHash?: string } = {},
 ): CommandScope {
   return {
+    id: uuidv7(),
     command,
     actor: opts.actor,
     correlationId: currentCorrelationId() ?? null,
@@ -74,7 +77,8 @@ export function entryOf(
   response: { status: number | null; body?: unknown; subjects?: AuditSubject[] } = { status: null },
 ): AuditEntryInsert {
   return {
-    id: uuidv7(),
+    // Only the `applied` entry, written at most once, takes the scope's id: it is the one the command's events name.
+    id: outcome === 'applied' ? scope.id : uuidv7(),
     at: new Date(),
     actor: scope.actor,
     command: scope.command,
@@ -146,12 +150,23 @@ export const audit = {
     }
     // No opener: under an actor (an import), each transaction a service notes in is a command of its own. With no
     // actor (seeding, a projection, a test calling a service) nothing is recorded.
-    const tx = openTransaction()
-    if (tx === undefined || currentActor() === undefined) return
-    const own = byTransaction.get(tx) ?? openCommand(undefined)
-    byTransaction.set(tx, own)
-    record(own, command, subjects)
+    const own = transactionCommand()
+    if (own !== undefined) record(own, command, subjects)
   },
+}
+
+/** The command of the transaction open now, when it runs under an actor that no opener scoped. */
+function transactionCommand(): CommandScope | undefined {
+  const tx = openTransaction()
+  if (tx === undefined || currentActor() === undefined) return undefined
+  const own = byTransaction.get(tx) ?? openCommand(undefined)
+  byTransaction.set(tx, own)
+  return own
+}
+
+/** The id of the command open now, which its `applied` entry carries; null outside any command. */
+export function currentCommandId(): string | null {
+  return (scopes.getStore() ?? transactionCommand())?.id ?? null
 }
 
 /** Appends the scope's `refused` entry, in a transaction of its own, when a service ran and nothing was applied. */

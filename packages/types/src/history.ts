@@ -16,7 +16,11 @@ export interface HistoryEntry {
   at: string
   type: string
   correlationId: string
-  /** From the `applied` audit entry of the event's correlation id; null when there is none. */
+  /**
+   * From the `applied` audit entry of the command that appended the event; for an event with none on record (appended
+   * outside a command, or before events recorded their command), the earliest `applied` entry of its correlation id;
+   * null when there is neither.
+   */
   actor: AuditActor | null
   command: string | null
   base: boolean

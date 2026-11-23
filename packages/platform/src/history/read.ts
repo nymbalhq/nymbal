@@ -1,7 +1,7 @@
 import type { AsOfRead, HistoryEntry, HistoryKind, HistoryPage } from '@nymbalhq/types'
 import type { ReadTx } from '../db/command-store.js'
 import type { AuditEntryRepository } from '../repositories/audit-entry.js'
-import type { EventLogRepository, LoggedEvent } from '../repositories/event-log.js'
+import type { EventLogRepository, SubjectEvent } from '../repositories/event-log.js'
 import { diffViews } from './diff.js'
 import { isBaseEvent, isDeleted, startFold, type Folded, type HistoryView } from './fold.js'
 import type { EventSubject } from './subject.js'
@@ -43,8 +43,8 @@ export function createHistoryReader(deps: HistoryReaderDeps): HistoryReader {
   const { eventLog, auditEntries, retentionDays } = deps
   const { store } = eventLog
 
-  async function readAll(tx: ReadTx, subjects: EventSubject[]): Promise<LoggedEvent[]> {
-    const rows: LoggedEvent[] = []
+  async function readAll(tx: ReadTx, subjects: EventSubject[]): Promise<SubjectEvent[]> {
+    const rows: SubjectEvent[] = []
     for (;;) {
       const last = rows[rows.length - 1]
       const page = await eventLog.listBySubjects(tx, subjects, {
@@ -57,7 +57,7 @@ export function createHistoryReader(deps: HistoryReaderDeps): HistoryReader {
   }
 
   /** The subject's rows by seq; a product's include those of every variant its snapshots name. */
-  async function rowsOf(tx: ReadTx, kind: HistoryKind, id: string): Promise<LoggedEvent[]> {
+  async function rowsOf(tx: ReadTx, kind: HistoryKind, id: string): Promise<SubjectEvent[]> {
     const own = await readAll(tx, [{ type: kind, id }])
     if (kind !== 'product') return own
     const variantIds = new Set<string>()
@@ -77,14 +77,41 @@ export function createHistoryReader(deps: HistoryReaderDeps): HistoryReader {
   }
 
   /** The index of the earliest base event at or after the retention horizon, or -1: the log never guesses past it. */
-  function startOf(kind: HistoryKind, rows: LoggedEvent[]): number {
+  function startOf(kind: HistoryKind, rows: SubjectEvent[]): number {
     const horizon = Date.now() - retentionDays * DAY_MS
     return rows.findIndex((row) => isBaseEvent(kind, row) && row.createdAt.getTime() >= horizon)
   }
 
-  async function actorsOf(tx: ReadTx, entries: HistoryEntry[]): Promise<void> {
+  /**
+   * Each entry's actor and command: those of the `applied` entry its event's command id names, else (an event appended
+   * outside a command, or before the log kept the id) of the earliest `applied` entry of its correlation.
+   */
+  async function actorsOf(
+    tx: ReadTx,
+    entries: HistoryEntry[],
+    commandOf: ReadonlyMap<number, string | null>,
+  ): Promise<void> {
+    const ids = new Set<string>()
+    for (const entry of entries) {
+      const id = commandOf.get(entry.seq)
+      if (id != null) ids.add(id)
+    }
+    const byCommand = new Map<string, Pick<HistoryEntry, 'actor' | 'command'>>()
+    for (const found of await auditEntries.byIds(tx, [...ids])) {
+      if (found.outcome === 'applied') {
+        byCommand.set(found.id, { actor: found.actor, command: found.command })
+      }
+    }
+    const unnamed: HistoryEntry[] = []
+    for (const entry of entries) {
+      const id = commandOf.get(entry.seq)
+      const own = id == null ? undefined : byCommand.get(id)
+      if (own === undefined) unnamed.push(entry)
+      else Object.assign(entry, own)
+    }
+
     const byCorrelation = new Map<string, Pick<HistoryEntry, 'actor' | 'command'>>()
-    for (const correlation of new Set(entries.map((e) => e.correlationId))) {
+    for (const correlation of new Set(unnamed.map((e) => e.correlationId))) {
       const [applied] = await auditEntries.list(tx, {
         correlation,
         outcome: 'applied',
@@ -98,7 +125,7 @@ export function createHistoryReader(deps: HistoryReaderDeps): HistoryReader {
           : { actor: applied.actor, command: applied.command },
       )
     }
-    for (const entry of entries) Object.assign(entry, byCorrelation.get(entry.correlationId))
+    for (const entry of unnamed) Object.assign(entry, byCorrelation.get(entry.correlationId))
   }
 
   return {
@@ -155,7 +182,7 @@ export function createHistoryReader(deps: HistoryReaderDeps): HistoryReader {
           .reverse()
           .filter((e) => page.beforeSeq === undefined || e.seq < page.beforeSeq)
         const shown = newest.slice(0, page.limit)
-        await actorsOf(tx, shown)
+        await actorsOf(tx, shown, new Map(rows.map((row) => [row.seq, row.commandId])))
         const last = shown[shown.length - 1]
         return {
           historyStartsAt: rows[start]!.createdAt.toISOString(),

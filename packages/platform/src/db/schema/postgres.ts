@@ -450,6 +450,8 @@ export const events = pgTable(
     deadAt: timestamp('dead_at', { withTimezone: true }),
     /** A failed event is not handed to the bus again before this. */
     retryAt: timestamp('retry_at', { withTimezone: true }),
+    /** The command whose `applied` audit entry has this id appended the event; null outside any command. */
+    commandId: text('command_id'),
   },
   (t) => ({
     idUnique: uniqueIndex('events_id_unique').on(t.id),

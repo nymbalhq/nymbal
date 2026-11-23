@@ -18,8 +18,8 @@ import {
 // AC-3 on SQLite: `GET …/:id/history` for a product, an order and a customer, each made and changed over HTTP by an
 // admin, a guest and the customer. Each lists the base entry and one entry per event that changes the view, newest
 // first; each entry's `changes` equal `diffViews` of the fold before and after its event, and its `actor` and
-// `command` equal the `applied` audit entry with its correlation id. The cursor at limit 1 walks every entry exactly
-// once, and no customer entry holds a password hash.
+// `command` equal the `applied` audit entry its event row's `command_id` names, else the earliest of its correlation.
+// The cursor at limit 1 walks every entry exactly once, and no customer entry holds a password hash.
 
 let k: Kernel
 let served: ServedKernel
@@ -68,7 +68,7 @@ async function allEntries(kind: HistoryKind, id: string): Promise<HistoryEntry[]
 /**
  * The entries `…/history` must list, from the subject's rows: the base, then every later event whose fold changes the
  * view, with `diffViews` of the views either side as its changes; newest first. Then each entry's time, type and
- * correlation id are its row's, and its actor and command the applied audit entry's.
+ * correlation id are its row's, and its actor and command those of the applied audit entry its command_id names.
  */
 async function expectConsistent(
   kind: HistoryKind,
@@ -105,9 +105,18 @@ async function expectConsistent(
       [new Date(entry.at).getTime(), entry.type, entry.correlationId],
       `${kind} entry ${entry.seq}`,
     ).toEqual([row.createdAt.getTime(), row.event.type, row.event.correlationId])
-    const [applied] = await auditRows(raw, "correlation_id = ? AND outcome = 'applied'", [
-      entry.correlationId,
-    ])
+    // The applied entry the event row's command_id names; with none, the earliest of its correlation.
+    const [logged] = await raw.rows<{ command_id: string | null }>(
+      'SELECT command_id FROM events WHERE seq = ?',
+      [entry.seq],
+    )
+    const [own] =
+      logged?.command_id == null
+        ? []
+        : await auditRows(raw, "id = ? AND outcome = 'applied'", [logged.command_id])
+    const applied =
+      own ??
+      (await auditRows(raw, "correlation_id = ? AND outcome = 'applied'", [entry.correlationId]))[0]
     expect(
       { actor: entry.actor, command: entry.command },
       `${kind} entry ${entry.seq}: actor and command`,
