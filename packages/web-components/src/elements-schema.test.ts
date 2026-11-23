@@ -103,6 +103,8 @@ interface State {
   registered?: 'signed-in' | 'verification-sent'
   /** The cart store's `addCode` refuses, as the store does: `error` and `errorCode` set, the rest kept. */
   codeRefused?: boolean
+  /** The cart store's `addItem` refuses, as the store does: `error` and `errorCode` set, the rest kept. */
+  addRefused?: boolean
 }
 
 const state = (partial: Partial<State> = {}): State => ({
@@ -367,6 +369,12 @@ async function mount(
       client.cart.setState({ error: 'a cart holds at most 5 codes', errorCode: 'cart.code_limit' })
     }
   }
+  if (s.addRefused === true) {
+    const cart = client.cart as unknown as Record<string, unknown>
+    cart['addItem'] = async () => {
+      client.cart.setState({ error: 'a cart line holds at most 99', errorCode: 'cart.qty_limit' })
+    }
+  }
   for (const [name, partial] of Object.entries(s.stores)) {
     client[name as StoreName].setState(partial)
   }
@@ -467,6 +475,15 @@ function codedCartOf<T extends { qty: number; priceMinor: number }>(items: T[]) 
       ],
       unavailable: false,
     },
+  }
+}
+
+/** Presses the add-to-cart's button once (the store refuses the add under `addRefused`). */
+async function clickAdd(el: HTMLElement): Promise<void> {
+  ;(el.shadowRoot?.querySelector('[part~="button"]') as HTMLElement | null)?.click()
+  for (let turn = 0; turn < 5; turn += 1) {
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    await settled(el)
   }
 }
 
@@ -746,6 +763,8 @@ const FIXED: Record<Tag, State[]> = {
     state({ attrs: { 'variant-id': 'v1' } }),
     state({ attrs: { 'variant-id': 'v1', disabled: '' } }),
     state({ attrs: { 'variant-id': 'v1' }, stores: { cart: cartOf([], true) } }),
+    // An add the store refuses.
+    state({ attrs: { 'variant-id': 'v1' }, addRefused: true, walk: clickAdd }),
   ],
   'nymbal-cart-drawer': [
     state(),

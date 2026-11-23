@@ -34,11 +34,6 @@ export const FOOTER_COLUMNS = [
   },
   {
     heading: 'About',
-    links: [
-      { href: '/about', label: 'About Us' },
-      { href: '/contact', label: 'Contact' },
-      { href: '/shipping', label: 'Shipping & Returns' },
-      { href: '/privacy', label: 'Privacy Policy' },
-    ],
+    text: 'Nymbal is a modern headless commerce platform built for developers. Fast, flexible, and fully customisable.',
   },
 ]
