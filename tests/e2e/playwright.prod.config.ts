@@ -2,6 +2,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig, devices } from '@playwright/test'
+import { machineBudget } from '../../scripts/machine-budget'
 import { stack } from '../../scripts/stack'
 
 // The journeys in ./prod run against production builds of the templates (Astro `build` then `preview`, Next `build`
@@ -87,9 +88,14 @@ const projects = [
   },
 ].filter((p) => target === undefined || p.name === `${target}-prod`)
 
+// The machine's budget (scripts/machine-budget.ts), as in playwright.config.ts: not half the cores, unless CI sizes its
+// own.
+const workers = machineBudget().playwright
+
 export default defineConfig({
   testDir: './prod',
   fullyParallel: true,
+  ...(workers === undefined ? {} : { workers }),
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? 'github' : 'list',

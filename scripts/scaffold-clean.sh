@@ -4,7 +4,8 @@
 # `npx nymbal dev`, and runs the `scaffold-clean` vitest project against it. Nothing reaches npmjs and no token is
 # needed. Needs Docker (Verdaccio) unless NYMBAL_REGISTRY points at a registry that accepts anonymous publishes.
 #
-# It edits package versions and the generated scaffold in this checkout while it runs, and restores them on exit.
+# It edits package versions and the generated scaffold in this checkout while it runs, and restores them on exit. The
+# server's log stays in reports/scaffold-clean-<template>-dev.log after it: a red is read from the whole log.
 set -euo pipefail
 
 template="${1:-}"
@@ -22,6 +23,8 @@ export PATH
 work="$(mktemp -d)"
 parent="$(mktemp -d)"
 dev_pid=""
+mkdir -p "$root/reports"
+dev_log="$root/reports/scaffold-clean-$template-dev.log"
 # shellcheck source=local-registry.sh
 . "$root/scripts/local-registry.sh"
 registry_allow_given=1
@@ -74,22 +77,22 @@ api_port="$(free_port)"
 while [ "$api_port" = "$store_port" ]; do api_port="$(free_port)"; done
 api_url="http://localhost:$api_port"
 serve_start="$(now_ms)"
-(cd "$project" && exec npx nymbal dev --port "$api_port" --storefront-port "$store_port") >"$work/dev.log" 2>&1 &
+(cd "$project" && exec npx nymbal dev --port "$api_port" --storefront-port "$store_port") >"$dev_log" 2>&1 &
 dev_pid=$!
 
 served=0
 for _ in $(seq 1 600); do
-  kill -0 "$dev_pid" 2>/dev/null || { tail -40 "$work/dev.log" >&2; echo "scaffold-clean: nymbal dev exited" >&2; exit 1; }
+  kill -0 "$dev_pid" 2>/dev/null || { tail -40 "$dev_log" >&2; echo "scaffold-clean: nymbal dev exited" >&2; exit 1; }
   if [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 120 "$store_url/" || true)" = "200" ]; then served=1; break; fi
   sleep 0.5
 done
-[ "$served" -eq 1 ] || { tail -40 "$work/dev.log" >&2; echo "scaffold-clean: no 200 from $store_url" >&2; exit 1; }
+[ "$served" -eq 1 ] || { tail -40 "$dev_log" >&2; echo "scaffold-clean: no 200 from $store_url" >&2; exit 1; }
 serve_seconds="$(seconds_since "$serve_start")"
 
 # ─── the check ───────────────────────────────────────────────────────────────────────────────────────────────────
 if ! (cd "$root" && NYMBAL_SCAFFOLD_DIR="$project" NYMBAL_STORE_URL="$store_url" NYMBAL_API_URL="$api_url" \
   pnpm vitest run --project scaffold-clean); then
-  tail -40 "$work/dev.log" >&2
+  tail -40 "$dev_log" >&2
   exit 1
 fi
 

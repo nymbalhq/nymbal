@@ -21,8 +21,8 @@ const SLOW_TOOLING = [
   'tests/tooling/new-adapter-scaffold.test.ts',
 ]
 
-// Timing-bound: each asserts wall-clock bounds, so each is a project of its own that the gate runs under the quiet lock
-// (scripts/stack.ts), apart from every other suite on the machine.
+// Timing-bound: each asserts wall-clock bounds, so each is a project of its own that the gate runs as a step apart
+// from every other suite in the run.
 const PERF = 'packages/platform/tests/integration/search-performance.test.ts'
 const PERF_POSTGRES = 'packages/platform/tests/postgres/search-performance.postgres.test.ts'
 
@@ -127,12 +127,12 @@ const nightly = process.env['NYMBAL_NIGHTLY']
   : []
 
 // The machine's budget (scripts/machine-budget.ts): a few workers, not one per core, unless CI sizes its own. The gate
-// sets it lower for a step when other worktrees' gates or a loaded machine share the CPUs (scripts/gate.ts).
+// hands each step the same fixed cap (scripts/gate.ts).
 const maxWorkers = machineBudget().vitest
 
 // Set by the sentinel runs (scripts/sentinels.ts), which run nearly the whole suite at once under load, and by the
-// gate for a Vitest step it runs on fewer workers or beside another gate's (scripts/gate.ts): each project's own
-// timeouts, or Vitest's defaults where it sets none, are multiplied. A CLI --testTimeout would replace
+// gate for every Vitest step it runs off CI (scripts/gate.ts), since capped workers may share the cores: each
+// project's own timeouts, or Vitest's defaults where it sets none, are multiplied. A CLI --testTimeout would replace
 // the longer budgets some projects set instead.
 const timeoutScale = Number(process.env['NYMBAL_TEST_TIMEOUT_SCALE'] ?? 1)
 if (!Number.isInteger(timeoutScale) || timeoutScale < 1) {

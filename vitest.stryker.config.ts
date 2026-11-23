@@ -6,6 +6,9 @@ export default defineConfig({
   test: {
     name: 'platform-unit',
     environment: 'node',
+    // One worker, as Stryker's runner sets it: each of its runners is a process of its own, and their number is the
+    // cap (`concurrency` in stryker.config.mjs).
+    maxWorkers: 1,
     // A fixed fast-check seed, so a property test kills the same mutants on every run.
     setupFiles: ['vitest.stryker.setup.ts'],
     include: [

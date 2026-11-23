@@ -15,7 +15,6 @@ import {
   writeLastRun,
 } from '../../scripts/gate'
 import { CAP_VARS, LOCAL_DEFAULTS, MACHINE_ENV_FILE_VAR } from '../../scripts/machine-budget'
-import type { Hold } from '../../scripts/stack'
 
 // The Stop hook reads reports/last-run.json's `stepsMs` (a name=ms pair per step) and `redStep` (the step to name in
 // its message) to judge a gate run, so the record carries a time for every step and names the first red one.
@@ -63,15 +62,15 @@ describe('the last-run record', () => {
   })
 })
 
-// Why a step was slow: how long it waited for its hold, the one-minute load when it started and the caps it ran under,
-// per step, beside the keys the readers above take.
-describe('the last-run record says what each step waited for and ran under', () => {
+// Why a step was slow: the one-minute load when it started and the caps it ran under, per step, beside the keys the
+// readers above take. A step waits for nothing, so the record has no wait.
+describe('the last-run record says what each step ran under', () => {
   const created: string[] = []
   afterEach(() => {
     for (const dir of created.splice(0)) rmSync(dir, { recursive: true, force: true })
   })
 
-  it('a held Vitest step records its wait, its load and its cap; an unheld step its load only; a skipped step nothing', async () => {
+  it('a Vitest step records its load and its whole cap, loaded or not; a plain step its load only; a skipped step nothing', async () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'nymbal-last-run-')))
     created.push(cwd)
     const env: NodeJS.ProcessEnv = { ...process.env }
@@ -82,30 +81,27 @@ describe('the last-run record says what each step waited for and ran under', () 
     const result = await run(
       [
         { name: 'lint', command: 'true' },
-        { name: 'tests', command: 'true', hold: 'shared' },
+        { name: 'tests', command: 'true' },
         { name: 'perf', command: 'true', skip: 'left to gate:full and dev CI' },
       ],
       {
         cwd,
         budgetMs: 60_000,
         env,
-        acquire: async (): Promise<Hold> =>
-          Object.assign(async () => {}, { waitedMs: 4_321, quiet: true }),
         loadAverage: () => loads.shift() ?? 0,
         cpus: 12,
-        platform: 'linux',
         log: (text) => {
           log += text
         },
       },
     )
     const last = lastRunRecord('abc', result.steps)
-    expect(last.waitsMs).toEqual({ tests: 4_321 })
     expect(last.loads).toEqual({ lint: 6.25, tests: 13.5 })
-    // Loaded past the 12 cores: the cap halved.
-    expect(last.caps).toEqual({ tests: { vitest: Math.max(1, Math.floor(LOCAL_DEFAULTS.vitest / 2)) } })
+    // Loaded past the 12 cores: the cap stands.
+    expect(last.caps).toEqual({ tests: { vitest: LOCAL_DEFAULTS.vitest } })
     expect(Object.keys(last.steps)).toEqual(['lint', 'tests', 'perf'])
-    expect(log).toContain("tests: started after a 4.3 s wait for other worktrees' heavy steps")
+    expect(Object.keys(last)).toEqual(['sha', 'steps', 'stepsMs', 'redStep', 'loads', 'caps'])
+    expect(log).not.toMatch(/wait/)
   })
 })
 

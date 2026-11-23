@@ -209,7 +209,7 @@ describe('AC-4: the perf-bytes step of gate:full', () => {
     }
   })
 
-  it('AC-4: on, it runs pnpm perf:budgets --bytes after the build under a shared hold, after every e2e step of each store set; the plain gate has none', () => {
+  it('AC-4: on, it runs pnpm perf:budgets --bytes after the build, after every e2e step of each store set; the plain gate has none', () => {
     for (const stores of STORES) {
       const steps = fullPlan({ perfBytes: true, stores })
       const names = steps.map((s) => s.name)
@@ -217,7 +217,6 @@ describe('AC-4: the perf-bytes step of gate:full', () => {
       expect(s.skip, stores).toBeUndefined()
       expect(s.command, stores).toMatch(COMMAND)
       expect(s.needs ?? [], stores).toContain('build')
-      expect(s.hold, stores).toBe('shared')
       const lastE2e = Math.max(...names.flatMap((n, i) => (n.startsWith('e2e ') ? [i] : [])))
       expect(lastE2e, `${stores} has e2e steps`).toBeGreaterThan(names.indexOf('build'))
       expect(names.indexOf('perf-bytes'), stores).toBeGreaterThan(lastE2e)
