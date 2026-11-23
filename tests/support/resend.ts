@@ -128,11 +128,16 @@ function event(type: string, to: string[], extra: object, opts: EventOptions): R
   }
 }
 
+export interface BounceOptions extends EventOptions {
+  /** `bounce.message`, the receiving server's answer; a sentence with no SMTP status by default. */
+  message?: string
+}
+
 /** A bounce of `bounceType` (`Permanent`, `Transient`, `Undetermined`, …); `null` leaves `bounce.type` out. */
 export const bounced = (
   to: string[],
   bounceType: string | null,
-  opts: EventOptions = {},
+  opts: BounceOptions = {},
 ): ResendEvent =>
   event(
     'email.bounced',
@@ -141,11 +146,19 @@ export const bounced = (
       bounce: {
         ...(bounceType !== null && { type: bounceType }),
         subType: 'General',
-        message: 'The recipient mail server rejected the message.',
+        message: opts.message ?? 'The recipient mail server rejected the message.',
       },
     },
     opts,
   )
+
+/** The recipients' server refusing the store's sending host (a blocklist), which Resend reports as Permanent. */
+export const policyRejected = (to: string[], opts: EventOptions = {}): ResendEvent =>
+  bounced(to, 'Permanent', {
+    ...opts,
+    message:
+      '550 5.7.1 Service unavailable, Client host [203.0.113.7] blocked using Spamhaus. To request removal from this list see https://www.spamhaus.org/query/ip/203.0.113.7',
+  })
 
 /** A spam complaint. */
 export const complained = (to: string[], opts: EventOptions = {}): ResendEvent =>

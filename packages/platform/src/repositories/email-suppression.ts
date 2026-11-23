@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { asc, count, desc, eq, sql } from 'drizzle-orm'
 import {
   postgresDb,
   sqliteDb,
@@ -31,6 +31,13 @@ export interface EmailSuppressionRepository extends StoreRepository {
   find(tx: ReadTx, email: string): Promise<{ reason: string; createdAt: string } | null>
   /** True when this call removed the address's row. */
   clear(tx: Tx, email: string): Promise<boolean>
+  /** At most `limit` suppressed addresses, newest first and ties by address in byte order, with the total of all. */
+  list(tx: ReadTx, opts: { limit: number }): Promise<EmailSuppressionPage>
+}
+
+export interface EmailSuppressionPage {
+  rows: Array<{ email: string; reason: string; createdAt: string }>
+  total: number
 }
 
 export function createEmailSuppressionRepository(store: CommandStore): EmailSuppressionRepository {
@@ -82,6 +89,31 @@ export function createEmailSuppressionRepository(store: CommandStore): EmailSupp
       }
       const result = await postgresDb(tx).delete(p).where(eq(p.email, key))
       return (result.rowCount ?? 0) > 0
+    },
+    async list(tx, { limit }) {
+      if (tx.kind === 'sqlite') {
+        const db = sqliteDb(tx)
+        const rows = db
+          .select({ email: s.email, reason: s.reason, createdAt: s.createdAt })
+          .from(s)
+          .orderBy(desc(s.createdAt), asc(s.email))
+          .limit(limit)
+          .all()
+        const total = db.select({ n: count() }).from(s).get()?.n ?? 0
+        return { rows: rows.map((r) => ({ ...r, createdAt: fromTimestamp(r.createdAt) })), total }
+      }
+      const db = postgresDb(tx)
+      // "C" so ties order by bytes, as SQLite's default collation does, whatever the database's locale.
+      const rows = await db
+        .select({ email: p.email, reason: p.reason, createdAt: p.createdAt })
+        .from(p)
+        .orderBy(desc(p.createdAt), sql`${p.email} collate "C"`)
+        .limit(limit)
+      const [counted] = await db.select({ n: count() }).from(p)
+      return {
+        rows: rows.map((r) => ({ ...r, createdAt: fromTimestamp(r.createdAt) })),
+        total: counted?.n ?? 0,
+      }
     },
   }
 }

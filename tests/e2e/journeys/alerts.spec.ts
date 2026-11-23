@@ -29,6 +29,9 @@ import { upgraded } from '../support/server-rendered'
 // stock adjustment, the admin's product page, and the links in the mail.
 
 const TAG = 'nymbal-notify-me'
+/** What the form says once a subscribe is accepted. */
+const NOTICE =
+  'Check your inbox to confirm. Nothing arrived? Check the address and subscribe again.'
 
 /** Whether the report says the store's email delivers; a report without the field reads as no answer. */
 function delivers(caps: StoreCapabilities): unknown {
@@ -62,9 +65,7 @@ async function subscribeFromPage(page: Page, product: OwnProduct, email: string)
   await hydrated(page)
   await page.locator(TAG).getByTestId('notify-me-email').fill(email)
   await page.locator(TAG).getByTestId('notify-me-submit').click()
-  await expect(page.locator(TAG).getByTestId('notify-me-notice')).toHaveText(
-    'Check your inbox to confirm.',
-  )
+  await expect(page.locator(TAG).getByTestId('notify-me-notice')).toHaveText(NOTICE)
 }
 
 /** The newest confirmation to an address, read from Mailpit once `count` messages have reached it. */
@@ -308,9 +309,7 @@ test.describe('back-in-stock alerts', () => {
     await hydrated(page)
     await page.locator(TAG).getByTestId('notify-me-email').fill(twice)
     await page.locator(TAG).getByTestId('notify-me-submit').dblclick()
-    await expect(page.locator(TAG).getByTestId('notify-me-notice')).toHaveText(
-      'Check your inbox to confirm.',
-    )
+    await expect(page.locator(TAG).getByTestId('notify-me-notice')).toHaveText(NOTICE)
 
     const entered = address('enter', tag)
     await page.goto(`/product/${product.slug}`)
@@ -319,9 +318,7 @@ test.describe('back-in-stock alerts', () => {
     await field.fill(entered)
     await field.press('Enter')
     await page.locator(TAG).getByTestId('notify-me-submit').click({ force: true })
-    await expect(page.locator(TAG).getByTestId('notify-me-notice')).toHaveText(
-      'Check your inbox to confirm.',
-    )
+    await expect(page.locator(TAG).getByTestId('notify-me-notice')).toHaveText(NOTICE)
 
     // A marker's confirmation, sent after both, has arrived: any second confirmation to either would be there too.
     const marker = address('marker', tag)
@@ -339,6 +336,81 @@ test.describe('back-in-stock alerts', () => {
       [twice, entered].map(async (who) => (await mail.messages(who)).filter(isConfirmation).length),
     )
     expect(confirmations).toEqual([1, 1])
+  })
+
+  test('AC-10: on the Mailpit store, a shopper who subscribed a mistyped address corrects it in the same form without a reload and double-clicks submit: one subscribe for the corrected address, and one confirmation for it in Mailpit @capabilities', async ({
+    page,
+    request,
+  }, testInfo) => {
+    test.setTimeout(120_000)
+    const caps = await storeCapabilities(request)
+    const delivering = isCustomProject(testInfo.project.name)
+    expect(delivers(caps), JSON.stringify(caps)).toBe(delivering)
+    const token = await adminToken(request)
+    const product = await ownProduct(request, token, 0)
+
+    if (!delivering) {
+      await page.goto(`/product/${product.slug}`)
+      await hydrated(page)
+      expect(await page.locator(TAG).count()).toBe(0)
+      return
+    }
+
+    const mail = await mailbox()
+    const tag = randomUUID().slice(0, 8)
+    const posted: string[] = []
+    page.on('request', (req) => {
+      if (req.method() === 'POST' && new URL(req.url()).pathname === '/api/alerts/subscribe') {
+        posted.push(String((req.postDataJSON() as { email?: string } | null)?.email ?? ''))
+      }
+    })
+    const mistyped = `alerts-typo-${tag}@nymbal.dvv`
+    const corrected = address('corrected', tag)
+
+    const field = page.locator(TAG).getByTestId('notify-me-email')
+    const submit = page.locator(TAG).getByTestId('notify-me-submit')
+    const notice = page.locator(TAG).getByTestId('notify-me-notice')
+    await page.goto(`/product/${product.slug}`)
+    await hydrated(page)
+    await field.fill(mistyped)
+    await submit.click()
+    // Soft: the notice's words are one defect, a form that refuses the corrected address another.
+    await expect.soft(notice).toHaveText(NOTICE)
+    // A reload would drop this: the correction happens on the same document.
+    await page.evaluate((mark) => {
+      ;(window as unknown as { __sameDocument?: string }).__sameDocument = mark
+    }, tag)
+    await field.fill(corrected)
+    await expect.soft(notice).toHaveText(NOTICE)
+    await expect(submit).toBeEnabled()
+    await submit.dblclick()
+    await expect(notice).toHaveText(NOTICE)
+    await expect(submit).toBeDisabled()
+
+    // A marker's confirmation, asked for after both submits, has arrived: any second confirmation would be there too.
+    const marker = address('corrected-marker', tag)
+    const sub = await subscribeThroughApi(
+      request,
+      storefrontOrigin(testInfo),
+      marker,
+      product.variantId,
+    )
+    expect(sub.status, sub.text).toBe(202)
+    await mail.waitFor(marker, 1)
+
+    const sameDocument = await page.evaluate(
+      () => (window as unknown as { __sameDocument?: string }).__sameDocument ?? null,
+    )
+    const confirmations = await Promise.all(
+      [mistyped, corrected].map(
+        async (who) => (await mail.messages(who)).filter(isConfirmation).length,
+      ),
+    )
+    expect({
+      sameDocument,
+      posted: [mistyped, corrected].map((who) => posted.filter((e) => e === who).length),
+      confirmations,
+    }).toEqual({ sameDocument: tag, posted: [1, 1], confirmations: [1, 1] })
   })
 
   test('AC-10: on the Mailpit store, a second notify-me submit for the same address and variant after a reload, while the first confirmation is new and unconfirmed, puts no second confirmation in Mailpit, and the first one’s confirm link and button still confirm @capabilities', async ({
@@ -370,9 +442,7 @@ test.describe('back-in-stock alerts', () => {
     await hydrated(page)
     await page.locator(TAG).getByTestId('notify-me-email').fill(again)
     await page.locator(TAG).getByTestId('notify-me-submit').click()
-    await expect(page.locator(TAG).getByTestId('notify-me-notice')).toHaveText(
-      'Check your inbox to confirm.',
-    )
+    await expect(page.locator(TAG).getByTestId('notify-me-notice')).toHaveText(NOTICE)
 
     // A marker's confirmation, asked for after the second submit, has arrived: a second one to the address would too.
     const marker = address('again-marker', tag)
@@ -536,9 +606,7 @@ test.describe('price-drop alerts', () => {
     expect(await formsShown(page), 'the in-stock product page').toEqual(['price_drop'])
     await page.locator(TAG).getByTestId('notify-me-email').fill(twice)
     await page.locator(TAG).getByTestId('notify-me-submit').dblclick()
-    await expect(page.locator(TAG).getByTestId('notify-me-notice')).toHaveText(
-      'Check your inbox to confirm.',
-    )
+    await expect(page.locator(TAG).getByTestId('notify-me-notice')).toHaveText(NOTICE)
 
     const entered = address('pd-enter', tag)
     await page.goto(`/product/${product.slug}`)
@@ -547,9 +615,7 @@ test.describe('price-drop alerts', () => {
     await field.fill(entered)
     await field.press('Enter')
     await page.locator(TAG).getByTestId('notify-me-submit').click({ force: true })
-    await expect(page.locator(TAG).getByTestId('notify-me-notice')).toHaveText(
-      'Check your inbox to confirm.',
-    )
+    await expect(page.locator(TAG).getByTestId('notify-me-notice')).toHaveText(NOTICE)
 
     // A marker's confirmation, sent after both, has arrived: any second confirmation to either would be there too.
     const marker = address('pd-marker', tag)

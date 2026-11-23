@@ -3,17 +3,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { EmailAdapter, Logger, WebhookDelivery } from '@nymbalhq/types'
 import {
   changeOneCharacter,
+  deliveryStatus,
   freshToken,
   MAILGUN_TEST_SIGNING_KEY,
   mailgunRequest,
   nowSeconds,
+  permanentFailureWith,
   signedBody,
   signMailgun,
+  type MailgunDeliveryStatus,
   type MailgunEventData,
   type MailgunPostBody,
   type MailgunRequest,
   type MailgunSignature,
 } from '../../../../../tests/support/mailgun'
+import { noStatusText, replyWith, status } from '../../../../../tests/support/smtp-status'
 import { createMailgunEmailAdapter } from './index.js'
 
 // receiveWebhook on Mailgun's posts. Mailgun signs `signature.timestamp` then `signature.token` and nothing else, so
@@ -445,6 +449,156 @@ describe('AC-3: only a correctly signed, fresh Mailgun signature, used for one e
           recipientChanged,
         ])
       }),
+    )
+  })
+})
+
+// --- a refused sender is not a dead address ---------------------------------------------------------------------
+
+/** The `bounce` of the one mailgun.bounced.v1 a signed permanent failure with `status` gives. */
+async function bounceOf(status: MailgunDeliveryStatus | null): Promise<unknown> {
+  const delivery = await post(
+    adapter(),
+    signedBody(permanentFailureWith('shopper@example.test', status)),
+  )
+  expect(delivery.verified).toBe(true)
+  expect(delivery.events.map((e: Draft) => [e.type, e.payload['recipient']])).toEqual([
+    [BOUNCED, 'shopper@example.test'],
+  ])
+  return delivery.events[0]!.payload['bounce']
+}
+
+const BLOCKED = '550 5.7.1 Service unavailable, Client host [203.0.113.7] blocked using Spamhaus'
+const UNKNOWN = '550 5.1.1 The email account that you tried to reach does not exist'
+
+describe("a recipient's server refusing the sender is soft", () => {
+  it('AC-1: a permanent failure whose delivery-status carries enhanced-code 5.7.1, or none, or an empty one, beside a 5.7.1 message is soft; with 5.1.1 in either place, or no delivery-status, it stays hard', async () => {
+    const cases: Array<[string, MailgunDeliveryStatus | null]> = [
+      ["enhanced-code '5.7.1'", deliveryStatus({ 'enhanced-code': '5.7.1', message: BLOCKED })],
+      ['no enhanced-code', deliveryStatus({ 'enhanced-code': undefined, message: BLOCKED })],
+      ["enhanced-code ''", deliveryStatus({ 'enhanced-code': '', message: BLOCKED })],
+      [
+        "enhanced-code '5.7.1', a message with no status",
+        deliveryStatus({ 'enhanced-code': '5.7.1', message: 'Service unavailable' }),
+      ],
+      ["enhanced-code '5.1.1'", deliveryStatus({ 'enhanced-code': '5.1.1', message: UNKNOWN })],
+      [
+        "enhanced-code '', a 5.1.1 message",
+        deliveryStatus({ 'enhanced-code': '', message: UNKNOWN }),
+      ],
+      ['no delivery-status', null],
+    ]
+
+    const got: Array<[string, unknown]> = []
+    for (const [name, deliveryStatusOf] of cases) got.push([name, await bounceOf(deliveryStatusOf)])
+
+    expect(got).toEqual([
+      ["enhanced-code '5.7.1'", 'soft'],
+      ['no enhanced-code', 'soft'],
+      ["enhanced-code ''", 'soft'],
+      ["enhanced-code '5.7.1', a message with no status", 'soft'],
+      ["enhanced-code '5.1.1'", 'hard'],
+      ["enhanced-code '', a 5.1.1 message", 'hard'],
+      ['no delivery-status', 'hard'],
+    ])
+  })
+
+  /** Where Mailgun's status is read from: enhanced-code, else message, else description. */
+  type Place = 'enhanced-code' | 'message' | 'description'
+
+  /** A field the reader passes over: absent, empty, or text with no status in it. */
+  const passedOver = fc.oneof(
+    fc.constant<string | undefined>(undefined),
+    fc.constant(''),
+    noStatusText,
+  )
+
+  /** A delivery-status with the status `code` in `place`, and the fields read before it holding none. */
+  function placed(place: Place, code: string): fc.Arbitrary<MailgunDeliveryStatus> {
+    if (place === 'enhanced-code') {
+      // The fields after it may carry any reply, another status included: enhanced-code is read first.
+      return fc
+        .tuple(
+          fc.oneof(
+            noStatusText,
+            status.chain((other) => replyWith(other.code)),
+          ),
+          passedOver,
+        )
+        .map(([message, description]) =>
+          deliveryStatus({ 'enhanced-code': code, message, description }),
+        )
+    }
+    if (place === 'message') {
+      return fc
+        .tuple(fc.constantFrom<string | undefined>(undefined, ''), replyWith(code), passedOver)
+        .map(([enhanced, message, description]) =>
+          deliveryStatus({ 'enhanced-code': enhanced, message, description }),
+        )
+    }
+    return fc
+      .tuple(fc.constantFrom<string | undefined>(undefined, ''), passedOver, replyWith(code))
+      .map(([enhanced, message, description]) =>
+        deliveryStatus({ 'enhanced-code': enhanced, message, description }),
+      )
+  }
+
+  /** A permanent failure's delivery-status, with what it should give: a status in one of Mailgun's fields, or none
+   * anywhere (words and IPv4 addresses only). */
+  const failure = fc.oneof(
+    status.chain((s) =>
+      fc
+        .constantFrom<Place>('enhanced-code', 'message', 'description')
+        .chain((place) =>
+          placed(place, s.code).map((ds) => ({
+            why: `${s.code} in ${place}`,
+            policy: s.policy,
+            ds,
+          })),
+        ),
+    ),
+    fc
+      .tuple(fc.constantFrom<string | undefined>(undefined, ''), passedOver, passedOver)
+      .map(([enhanced, message, description]) => ({
+        why: 'no status, IPv4 addresses in the text',
+        policy: false,
+        ds: deliveryStatus({ 'enhanced-code': enhanced, message, description }),
+      })),
+  )
+
+  it('AC-4: property: a status 5.S.D placed where Mailgun reports it (enhanced-code, else message, else description) on a permanent failure gives a soft bounce exactly when S is 7; IPv4 addresses in the text (203.0.5.7, 5.7.1.9) are never read as a status', async () => {
+    await fc.assert(
+      fc.asyncProperty(failure, async ({ why, policy, ds }) => {
+        expect(await bounceOf(ds), `${why}: ${JSON.stringify(ds)}`).toBe(policy ? 'soft' : 'hard')
+      }),
+      {
+        numRuns: 200,
+        examples: [
+          [
+            {
+              why: '5.7.26 in description',
+              policy: true,
+              ds: deliveryStatus({
+                description: '550 5.7.26 Unauthenticated email is not accepted',
+              }),
+            },
+          ],
+          [
+            {
+              why: 'a 5.1.1 status beside the address 5.7.1.9',
+              policy: false,
+              ds: deliveryStatus({ message: '550 client host [5.7.1.9] 5.1.1 user unknown' }),
+            },
+          ],
+          [
+            {
+              why: 'only the address 203.0.5.7',
+              policy: false,
+              ds: deliveryStatus({ message: 'client host 203.0.5.7 blocked' }),
+            },
+          ],
+        ],
+      },
     )
   })
 })

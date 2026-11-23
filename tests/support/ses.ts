@@ -337,11 +337,37 @@ function sesMessage(
   }
 }
 
+/** A bounced recipient's DSN fields; one given as `undefined` is left out of the recipient's entry. */
+export interface SesRecipientStatus {
+  status?: string | undefined
+  diagnosticCode?: string | undefined
+}
+
+export interface SesBounceOptions extends SesOptions {
+  /** Each recipient's `status` and `diagnosticCode`; `5.1.1`, user unknown, for any it does not answer. */
+  statusOf?: (emailAddress: string) => SesRecipientStatus | undefined
+}
+
+function bouncedRecipient(
+  emailAddress: string,
+  given: SesRecipientStatus | undefined,
+): { emailAddress: string; [field: string]: unknown } {
+  const entry: { emailAddress: string; [field: string]: unknown } = {
+    emailAddress,
+    action: 'failed',
+    status: '5.1.1',
+    diagnosticCode: 'smtp; 550 5.1.1 user unknown',
+    ...given,
+  }
+  for (const [name, value] of Object.entries(entry)) if (value === undefined) delete entry[name]
+  return entry
+}
+
 /** A bounce of `bounceType` (`Permanent`, `Transient`, `Undetermined`) to `recipients`. */
 export function sesBounce(
   recipients: string[],
   bounceType: string,
-  opts: SesOptions = {},
+  opts: SesBounceOptions = {},
 ): SesMessage {
   const at = opts.at ?? new Date().toISOString()
   return sesMessage(
@@ -352,12 +378,9 @@ export function sesBounce(
         feedbackId: `0100${randomBytes(12).toString('hex')}-000000`,
         bounceType,
         bounceSubType: bounceType === 'Permanent' ? 'General' : 'MailboxFull',
-        bouncedRecipients: recipients.map((emailAddress) => ({
-          emailAddress,
-          action: 'failed',
-          status: '5.1.1',
-          diagnosticCode: 'smtp; 550 5.1.1 user unknown',
-        })),
+        bouncedRecipients: recipients.map((emailAddress) =>
+          bouncedRecipient(emailAddress, opts.statusOf?.(emailAddress)),
+        ),
         timestamp: at,
         reportingMTA: 'dsn; a8-70.smtp-out.amazonses.com',
       },
@@ -365,6 +388,17 @@ export function sesBounce(
     { ...opts, at },
   )
 }
+
+/** The recipients' server refusing the store's sending host (a blocklist), which SES reports as a Permanent bounce. */
+export const sesPolicyRejection = (recipients: string[], opts: SesOptions = {}): SesMessage =>
+  sesBounce(recipients, 'Permanent', {
+    ...opts,
+    statusOf: () => ({
+      status: '5.7.1',
+      diagnosticCode:
+        'smtp; 550 5.7.1 Service unavailable, Client host [203.0.113.7] blocked using Spamhaus',
+    }),
+  })
 
 /** A spam complaint from `recipients`. */
 export function sesComplaint(recipients: string[], opts: SesOptions = {}): SesMessage {

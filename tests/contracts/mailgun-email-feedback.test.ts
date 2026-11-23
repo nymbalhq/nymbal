@@ -1,3 +1,4 @@
+import { describe, expect, it } from 'vitest'
 import { runEmailFeedbackContract, runWebhookContract } from '@nymbalhq/contract-tests'
 import type { Logger } from '@nymbalhq/types'
 import { createMailgunEmailAdapter } from '../../packages/adapters/email/mailgun/src/index.js'
@@ -7,9 +8,11 @@ import {
   MAILGUN_TEST_SIGNING_KEY,
   mailgunRequest,
   permanentFailure,
+  policyRejection,
   signedBody,
   signedPost,
   temporaryFailure,
+  type MailgunEventData,
   type MailgunSignature,
 } from '../support/mailgun'
 
@@ -31,6 +34,11 @@ const AT = Date.parse('2026-10-29T12:00:00.250Z') / 1000
 const HARD = 'hard@contracts.test'
 const SOFT = 'soft@contracts.test'
 const COMPLAINT = 'complaint@contracts.test'
+const POLICY = 'policy@contracts.test'
+
+/** A recipient's server refusing the store's sending host, as Mailgun reports it: permanent, 5.7.1. */
+const policySample = (): MailgunEventData =>
+  policyRejection(POLICY, { id: 'mg-policy', timestamp: AT })
 
 const build = () =>
   createMailgunEmailAdapter({
@@ -55,6 +63,7 @@ runEmailFeedbackContract('mailgun', build, {
     request: signedPost(complaint(COMPLAINT, { id: 'mg-complaint', timestamp: AT })),
     recipient: COMPLAINT,
   }),
+  policyRejection: () => ({ request: signedPost(policySample()), recipient: POLICY }),
 })
 
 const delivery = () => signedPost(permanentFailure(HARD, { id: 'mg-delivery', timestamp: AT }))
@@ -69,4 +78,23 @@ runWebhookContract('mailgun', build, {
       signature: { ...signature, token: changeOneCharacter(signature.token, 17) },
     })
   },
+})
+
+describe('the policy rejection sample', () => {
+  it('AC-6: Mailgun hands the policy rejection sample on soft, and the same failure with 5.1.1 in place of 5.7.1 hard', async () => {
+    const policy = policySample()
+    const mailbox = {
+      ...(JSON.parse(JSON.stringify(policy).replaceAll('5.7.1', '5.1.1')) as MailgunEventData),
+      id: 'mg-mailbox',
+    }
+
+    const handedOn: unknown[] = []
+    for (const sample of [policy, mailbox]) {
+      const { rawBody, headers } = signedPost(sample)
+      const delivery = await build().receiveWebhook!(rawBody, headers)
+      handedOn.push(delivery.events.map((e) => [e.payload['recipient'], e.payload['bounce']]))
+    }
+
+    expect(handedOn).toEqual([[[policy.recipient, 'soft']], [[mailbox.recipient, 'hard']]])
+  })
 })

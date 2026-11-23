@@ -50,16 +50,37 @@ function occurredAtOf(data: Json): string | null {
   return Number.isNaN(at.getTime()) ? null : at.toISOString()
 }
 
+/** The first SMTP enhanced status (`C.S.D`, RFC 3463) in `text` that is not part of a longer dotted number. */
+const STATUS = /(?<!\d\.?)[245]\.\d{1,3}\.\d{1,3}(?!\.?\d)/
+
 /**
- * A permanent failure is a hard bounce and any other failure soft; events other than failures and complaints carry
- * none. The recipient is handed on as given: the kernel normalises it, and refuses a delivery whose payload is malformed.
+ * The status Mailgun reports for a failure: `enhanced-code`, else the server's `message`, else its `description`,
+ * the first field holding a status deciding.
+ */
+function statusOf(data: Json): string | null {
+  const status = data['delivery-status']
+  if (!isObject(status)) return null
+  for (const field of ['enhanced-code', 'message', 'description']) {
+    const value = status[field]
+    const match = typeof value === 'string' ? STATUS.exec(value) : null
+    if (match !== null) return match[0]
+  }
+  return null
+}
+
+/**
+ * A permanent failure is a hard bounce, unless its status is 5.7.x: the recipient's server refused the sender (policy
+ * or reputation), which says nothing of the mailbox. Any other failure is soft; events other than failures and
+ * complaints carry none. The recipient is handed on as given: the kernel normalises it, and refuses a delivery whose
+ * payload is malformed.
  */
 function eventsOf(data: Json): WebhookEventDraft[] {
   const recipient = data['recipient']
   const messageId = messageIdOf(data)
   const occurredAt = occurredAtOf(data)
   if (data['event'] === 'failed') {
-    const bounce = data['severity'] === 'permanent' ? 'hard' : 'soft'
+    const permanent = data['severity'] === 'permanent' && !statusOf(data)?.startsWith('5.7.')
+    const bounce = permanent ? 'hard' : 'soft'
     return [{ type: MAILGUN_BOUNCED, payload: { recipient, bounce, messageId, occurredAt } }]
   }
   if (data['event'] === 'complained') {

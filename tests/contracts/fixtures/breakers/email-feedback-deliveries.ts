@@ -23,3 +23,20 @@ export const emailFeedbackOptions = {
     recipient: 'complaint@breakers.test',
   }),
 }
+
+/**
+ * The shared options with a policy rejection sample: the test provider hands on the classification it is sent, so a
+ * sample signed `soft` is a provider that reads the refusal right, and one signed `hard` a provider that does not.
+ */
+export const withPolicyRejection = (bounce: 'soft' | 'hard') => ({
+  ...emailFeedbackOptions,
+  policyRejection: () => ({
+    request: formDelivery(
+      `dlv_breakers_policy_${bounce}`,
+      bounce === 'soft'
+        ? softBounce('policy@breakers.test', AT)
+        : hardBounce('policy@breakers.test', AT),
+    ),
+    recipient: 'policy@breakers.test',
+  }),
+})

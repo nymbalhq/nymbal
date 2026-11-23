@@ -10,7 +10,8 @@ import { setupMockClient } from '../testing/index.js'
 
 const TAG = 'nymbal-notify-me'
 const EVENT = 'nymbal:alert:requested'
-const NOTICE = 'Check your inbox to confirm.'
+const NOTICE =
+  'Check your inbox to confirm. Nothing arrived? Check the address and subscribe again.'
 
 interface Deferred {
   promise: Promise<void>
@@ -418,6 +419,113 @@ describe('nymbal-notify-me', () => {
           } finally {
             document.removeEventListener(EVENT, listener)
           }
+        },
+      ),
+      { numRuns: 25 },
+    )
+  })
+
+  it('AC-8: after an accepted subscribe the notice tells the shopper to check the address; while the field holds the accepted address, in any case or spacing, the submit is disabled and submits make no call; with another address the submit is enabled, the notice stays, and one submit makes one call for the new address', async () => {
+    expect(customElements.get(TAG), `${TAG} is defined by registerComponents()`).toBeDefined()
+    const client = setupMockClient() as unknown as Client
+    const sent: Array<{ email: string; variantId: string; kind: string }> = []
+    installAlerts(client, async (input) => {
+      sent.push(input as { email: string; variantId: string; kind: string })
+      return { status: 'pending' }
+    })
+    const el = await mount({ 'product-id': 'p1', 'variant-id': 'v0', stock: '0' })
+    const submit = () => byTestId<HTMLButtonElement>(el, 'notify-me-submit')
+    const form = () => submit().closest('form')!
+    const state = () => ({
+      disabled: find<HTMLButtonElement>(el, 'notify-me-submit')?.disabled ?? null,
+      notice: shownText(el, 'notify-me-notice'),
+      calls: sent.length,
+    })
+
+    type(el, 'ada@exmaple.test')
+    submit().click()
+    await flush(el)
+    const accepted = state()
+
+    type(el, '  ADA@Exmaple.TEST ')
+    await flush(el)
+    form().requestSubmit()
+    submit().click()
+    await flush(el)
+    const sameAddress = state()
+
+    type(el, 'ada@example.test')
+    await flush(el)
+    const corrected = state()
+    submit().click()
+    await flush(el)
+    const resubscribed = state()
+
+    type(el, 'ada@exmaple.test')
+    await flush(el)
+    form().requestSubmit()
+    await flush(el)
+    const backToFirst = state()
+
+    expect({ accepted, sameAddress, corrected, resubscribed, backToFirst }).toEqual({
+      accepted: { disabled: true, notice: NOTICE, calls: 1 },
+      sameAddress: { disabled: true, notice: NOTICE, calls: 1 },
+      corrected: { disabled: false, notice: NOTICE, calls: 1 },
+      resubscribed: { disabled: true, notice: NOTICE, calls: 2 },
+      backToFirst: { disabled: true, notice: NOTICE, calls: 2 },
+    })
+    expect(sent.map((call) => [call.email, call.variantId, call.kind])).toEqual([
+      ['ada@exmaple.test', 'v0', 'back_in_stock'],
+      ['ada@example.test', 'v0', 'back_in_stock'],
+    ])
+  })
+
+  it('AC-9: property: over two addresses typed in turn, k = 1-5 rapid submits (clicks and requestSubmit()) of each, while its call is held and again once it is accepted, make exactly one alerts.subscribe call per address', async () => {
+    expect(customElements.get(TAG), `${TAG} is defined by registerComponents()`).toBeDefined()
+    await fc.assert(
+      fc.asyncProperty(
+        fc.uniqueArray(email, { minLength: 2, maxLength: 2 }),
+        fc.tuple(fc.integer({ min: 1, max: 5 }), fc.integer({ min: 1, max: 5 })),
+        fc.tuple(fc.integer({ min: 0, max: 5 }), fc.integer({ min: 0, max: 5 })),
+        fc.constantFrom('0', '4'),
+        async (addresses, whileHeld, afterAccepted, stock) => {
+          document.body.innerHTML = ''
+          const client = setupMockClient() as unknown as Client
+          const sent: string[] = []
+          let held = deferred()
+          installAlerts(client, async (input) => {
+            sent.push((input as { email: string }).email)
+            await held.promise
+            return { status: 'pending' }
+          })
+          const el = await mount({ 'product-id': 'p9', 'variant-id': 'v9', stock })
+          const burst = (k: number): void => {
+            const button = byTestId<HTMLButtonElement>(el, 'notify-me-submit')
+            const form = button.closest('form')!
+            for (let i = 0; i < k; i += 1) {
+              if (i % 2 === 0) button.click()
+              else form.requestSubmit()
+            }
+          }
+
+          const perAddress: number[] = []
+          for (const [i, address] of addresses.entries()) {
+            const before = sent.length
+            type(el, address)
+            await flush(el)
+            burst(whileHeld[i]!)
+            await flush(el)
+            held.resolve()
+            await flush(el)
+            held = deferred()
+            burst(afterAccepted[i]!)
+            await flush(el)
+            held.resolve()
+            await flush(el)
+            perAddress.push(sent.length - before)
+          }
+
+          expect({ perAddress, sent }).toEqual({ perAddress: [1, 1], sent: addresses })
         },
       ),
       { numRuns: 25 },

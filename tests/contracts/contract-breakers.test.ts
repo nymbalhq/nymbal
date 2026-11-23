@@ -18,8 +18,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 // on a kernel event type, one hands on class-instance payloads; each fails only the case named for its defect, and the
 // provider itself passes every case.
 // The email feedback suite runs the same way on the kernel's test email provider: one twin mints a delivery id per
-// call, one hands on a feedback event with no recipient, one leaves its bounce type out of producesEvents; each fails
-// only the case named for its defect, and the provider itself passes every case.
+// call, one hands on a feedback event with no recipient, one leaves its bounce type out of producesEvents, one hands
+// a policy rejection on as hard; each fails only the case named for its defect, and the provider itself passes every
+// case, with one case more when given a policy rejection sample.
 // The shipping tracking suite runs the same way on the kernel's test shipping provider: one twin mints a delivery id
 // per call, one hands on a numberless copy beside each tracking event, one leaves its tracking type out of
 // producesEvents; each fails only the case named for its defect, and the provider itself passes every case.
@@ -54,6 +55,7 @@ const WEBHOOK_IDEMPOTENCY = /\bidempotency:/
 const WEBHOOK_NAMESPACE = /\bnamespace:/
 const FEEDBACK_REPLAY = /\breplay:/
 const FEEDBACK_SHAPE = /\bshape:/
+const FEEDBACK_POLICY = /\bpolicy rejection\b/
 const TRACKING_REPLAY = /\breplay:/
 const TRACKING_SHAPE = /\bshape:/
 const REVIEW_SUBMIT = /\bsubmit:/
@@ -353,6 +355,31 @@ describe('the published email feedback suite fails a provider with the defect it
     expect(run.controlFailed, run.why).toEqual([])
     expect(run.controlPassed).toBe(run.badTotal)
   })
+
+  it('AC-5: an email provider that hands a policy rejection (5.7.x) on as a hard bounce fails the policy rejection case and nothing else; the same provider handing it on soft passes every case', () => {
+    const run = compare(
+      'email-feedback-policy-hard',
+      'email-feedback-policy-control',
+      FEEDBACK_POLICY,
+    )
+
+    expect(run.failed.length, run.why).toBeGreaterThan(0)
+    expect(run.offTopic, run.why).toEqual([])
+    expect(run.controlFailed, run.why).toEqual([])
+    expect(run.controlPassed).toBe(run.badTotal)
+  })
+
+  it('AC-5: given a policy rejection sample the suite runs one case more, the policy rejection case; given none it runs the cases it runs today, all passed', () => {
+    const without = outcome('email-feedback-control')
+    const given = outcome('email-feedback-policy-control')
+
+    expect([without.failed, given.failed], `${without.message} ${given.message}`).toEqual([[], []])
+    expect(given.passedTitles.filter((title) => !without.passedTitles.includes(title))).toEqual([
+      'classification: the policy rejection is soft for its recipient',
+    ])
+    expect(given.passedTitles.length).toBe(without.passedTitles.length + 1)
+    expect(without.passedTitles.filter((title) => FEEDBACK_POLICY.test(title))).toEqual([])
+  })
 })
 
 describe('the published shipping tracking suite fails a provider with the defect it exists for', () => {
@@ -505,7 +532,11 @@ describe('the published tax suite fails a provider that gets shipping wrong', ()
   // Kills: a suite a provider package passes while never charging tax on delivery, or while charging it on a delivery
   // that was never sent.
   it.each([
-    ['answers no tax on the shipping its runner names as taxed', 'tax-ignores-shipping', TAX_SHIPPING_TAXED],
+    [
+      'answers no tax on the shipping its runner names as taxed',
+      'tax-ignores-shipping',
+      TAX_SHIPPING_TAXED,
+    ],
     ['taxes shipping on a request that sent none', 'tax-shipping-when-null', TAX_SHIPPING_NULL],
   ] as const)(
     'AC-27: a tax provider that %s fails that case and nothing else; the same provider without the defect passes every case',

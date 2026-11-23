@@ -27,7 +27,8 @@ const SCHEMA: ElementSchema = {
   children: false,
 }
 
-const NOTICE = 'Check your inbox to confirm.'
+const NOTICE =
+  'Check your inbox to confirm. Nothing arrived? Check the address and subscribe again.'
 
 const HEADINGS: Record<AlertKind, string> = {
   back_in_stock: "Email me when it's back",
@@ -44,7 +45,8 @@ function kindFor(stock: number | undefined): AlertKind | null {
  * The alert form for the variant the page shows: "email me when it's back" for an out-of-stock variant, "email me if
  * the price drops" for an in-stock one. One subscribe per submission: `requestSubmit()` and Enter fire `submit` while
  * the button is disabled, so the pending flag, not the button, is the guard (as `NymbalFormElement`'s). An accepted
- * request stays accepted for its variant and kind, so a second click cannot send a second confirmation.
+ * request stays accepted for its variant, kind and address, so a second click cannot send a second confirmation,
+ * while a shopper who mistyped can correct the address and subscribe it without a reload.
  */
 export class NymbalNotifyMe extends NymbalVariantElement {
   static override schema = SCHEMA
@@ -81,8 +83,12 @@ export class NymbalNotifyMe extends NymbalVariantElement {
 
   private pending = false
   private error: string | null = null
-  /** `${variantId}:${kind}` of each accepted request. */
+  /** `acceptance()` of each accepted request. */
   private readonly acceptedFor = new Set<string>()
+  /** `${variantId}:${kind}` of each form showing its notice, until its next submit replaces it. */
+  private readonly noticeFor = new Set<string>()
+  /** The address field's value as last typed, so the submit's state follows it. */
+  private typed = ''
 
   /** The variant the form is for and its stock: the store's selected one once it holds this product. */
   private followed(): { variantId: string | undefined; stock: number | undefined } {
@@ -91,21 +97,36 @@ export class NymbalNotifyMe extends NymbalVariantElement {
     return { variantId: store.variant?.id, stock: store.variant?.stock ?? 0 }
   }
 
+  /** The key an accepted request is remembered by: the address as typed, trimmed and lower-cased. */
+  private static acceptance(variantId: string, kind: AlertKind, email: string): string {
+    return `${variantId}:${kind}:${email.trim().toLowerCase()}`
+  }
+
+  private readonly onInput = (event: Event): void => {
+    const field = event.target
+    if (!(field instanceof HTMLInputElement) || field.name !== 'email') return
+    this.typed = field.value
+    this.requestUpdate()
+  }
+
   private readonly onSubmit = (event: Event): void => {
     event.preventDefault()
     const { variantId, stock } = this.followed()
     const kind = kindFor(stock)
     if (this.pending || variantId === undefined || kind === null) return
-    if (this.acceptedFor.has(`${variantId}:${kind}`)) return
+    const email = this.renderRoot.querySelector<HTMLInputElement>('[name="email"]')?.value ?? ''
+    const key = NymbalNotifyMe.acceptance(variantId, kind, email)
+    if (this.acceptedFor.has(key)) return
     this.pending = true
     this.error = null
-    const email = this.renderRoot.querySelector<HTMLInputElement>('[name="email"]')?.value ?? ''
+    this.noticeFor.delete(`${variantId}:${kind}`)
     const sent = this.client.adapter.alerts.subscribe({ email, variantId, kind })
     this.requestUpdate()
     sent.then(
       () => {
         this.pending = false
-        this.acceptedFor.add(`${variantId}:${kind}`)
+        this.acceptedFor.add(key)
+        this.noticeFor.add(`${variantId}:${kind}`)
         this.requestUpdate()
         this.dispatchEvent(
           new CustomEvent('nymbal:alert:requested', {
@@ -127,9 +148,18 @@ export class NymbalNotifyMe extends NymbalVariantElement {
     const { variantId, stock } = this.followed()
     const kind = kindFor(stock)
     if (kind === null) return nothing
-    const accepted = variantId !== undefined && this.acceptedFor.has(`${variantId}:${kind}`)
+    const accepted =
+      variantId !== undefined &&
+      this.acceptedFor.has(NymbalNotifyMe.acceptance(variantId, kind, this.typed))
+    const notice = variantId !== undefined && this.noticeFor.has(`${variantId}:${kind}`)
     return html`
-      <form part="form" data-testid="notify-me" data-kind=${kind} @submit=${this.onSubmit}>
+      <form
+        part="form"
+        data-testid="notify-me"
+        data-kind=${kind}
+        @submit=${this.onSubmit}
+        @input=${this.onInput}
+      >
         <h3 part="heading">${HEADINGS[kind]}</h3>
         ${renderField({
           id: 'notify-me-email',
@@ -149,7 +179,7 @@ export class NymbalNotifyMe extends NymbalVariantElement {
         >
           Notify me
         </button>
-        ${accepted
+        ${notice
           ? html`<p part="notice" role="status" data-testid="notify-me-notice">${NOTICE}</p>`
           : nothing}
         ${this.error === null

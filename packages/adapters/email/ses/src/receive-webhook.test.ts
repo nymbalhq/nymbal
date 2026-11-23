@@ -32,11 +32,13 @@ import {
   type FetchCall,
   type KindField,
   type SesMessage,
+  type SesRecipientStatus,
   type SesRequest,
   type SnsMessage,
   type UnsignedSnsMessage,
 } from '../../../../../tests/support/ses'
 import { fakeTimeBounds, until } from '../../../../../tests/support/fake-clock'
+import { noStatusText, replyWith, status } from '../../../../../tests/support/smtp-status'
 import { createSesEmailAdapter, type SesEmailAdapterConfig } from './index.js'
 
 // receiveWebhook on SNS posts of SES feedback. Each message is signed with a self-signed test certificate; `fetch` is
@@ -687,5 +689,104 @@ describe('AC-3: only an AWS-signed message for the store topic, with a certifica
     } finally {
       realClock()
     }
+  })
+})
+
+// --- a refused sender is not a dead address ---------------------------------------------------------------------
+
+/** Each bounced recipient's `bounce`, from one signed Permanent bounce whose recipients carry `statuses`. */
+async function hardnessOf(
+  statuses: Record<string, SesRecipientStatus>,
+): Promise<Record<string, unknown>> {
+  const to = Object.keys(statuses)
+  const ses = sesBounce(to, 'Permanent', { statusOf: (address) => statuses[address] })
+  const delivery = await receive(adapter(), signedSnsPost(notification(ses)))
+  expect(delivery.verified).toBe(true)
+  expect(delivery.events.map((e: WebhookEventDraft) => e.type)).toEqual(to.map(() => BOUNCED))
+  return Object.fromEntries(
+    delivery.events.map((e: WebhookEventDraft) => [
+      String(e.payload['recipient']),
+      e.payload['bounce'],
+    ]),
+  )
+}
+
+describe("a recipient's server refusing the sender is soft", () => {
+  it('AC-2: a Permanent bounce to two recipients, one with status 5.7.1 and one with 5.1.1, is soft for the first and hard for the second', async () => {
+    stubFetch()
+
+    const got = await hardnessOf({
+      'refused@example.test': {
+        status: '5.7.1',
+        diagnosticCode:
+          'smtp; 550 5.7.1 Service unavailable, Client host [203.0.113.7] blocked using Spamhaus',
+      },
+      'gone@example.test': { status: '5.1.1', diagnosticCode: 'smtp; 550 5.1.1 user unknown' },
+    })
+
+    expect(got).toEqual({ 'refused@example.test': 'soft', 'gone@example.test': 'hard' })
+  })
+
+  it('AC-2: a recipient with no status and a diagnosticCode of smtp; 550 5.7.26 is soft; one with neither field stays hard', async () => {
+    stubFetch()
+
+    const got = await hardnessOf({
+      'unauthenticated@example.test': {
+        status: undefined,
+        diagnosticCode: 'smtp; 550 5.7.26 This message does not pass authentication checks',
+      },
+      'unknown@example.test': { status: undefined, diagnosticCode: undefined },
+    })
+
+    expect(got).toEqual({ 'unauthenticated@example.test': 'soft', 'unknown@example.test': 'hard' })
+  })
+
+  /** A recipient's DSN fields and whether they name a policy refusal: the status in `status` (its diagnosticCode
+   * any reply, read after it), in `diagnosticCode` alone, or nowhere (words and IPv4 addresses only, or nothing). */
+  const recipientStatus: fc.Arbitrary<{ why: string; policy: boolean; dsn: SesRecipientStatus }> =
+    fc.oneof(
+      status.chain((s) =>
+        fc
+          .oneof(
+            noStatusText,
+            status.chain((other) => replyWith(other.code)),
+          )
+          .map((diagnosticCode) => ({
+            why: `status ${s.code}`,
+            policy: s.policy,
+            dsn: { status: s.code, diagnosticCode },
+          })),
+      ),
+      status.chain((s) =>
+        replyWith(s.code).map((diagnosticCode) => ({
+          why: `diagnosticCode with ${s.code}`,
+          policy: s.policy,
+          dsn: { status: undefined, diagnosticCode },
+        })),
+      ),
+      fc.option(noStatusText, { nil: undefined }).map((diagnosticCode) => ({
+        why: 'no status',
+        policy: false,
+        dsn: { status: undefined, diagnosticCode },
+      })),
+    )
+
+  it('AC-4: property: in a Permanent bounce, each recipient whose status (its own status, else its diagnosticCode) is 5.S.D is soft exactly when S is 7, whatever the other recipients carry; IPv4 addresses in the text (203.0.5.7, 5.7.1.9) are never read as a status', async () => {
+    stubFetch()
+    await fc.assert(
+      fc.asyncProperty(
+        fc
+          .uniqueArray(fc.emailAddress(), { minLength: 1, maxLength: 4 })
+          .chain((to) => fc.tuple(...to.map(() => recipientStatus)).map((each) => ({ to, each }))),
+        async ({ to, each }) => {
+          const got = await hardnessOf(Object.fromEntries(to.map((a, i) => [a, each[i]!.dsn])))
+
+          expect(got, JSON.stringify(each)).toEqual(
+            Object.fromEntries(to.map((a, i) => [a, each[i]!.policy ? 'soft' : 'hard'])),
+          )
+        },
+      ),
+      { numRuns: 60 },
+    )
   })
 })

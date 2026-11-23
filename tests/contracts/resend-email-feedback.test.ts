@@ -1,3 +1,4 @@
+import { describe, expect, it } from 'vitest'
 import { runEmailFeedbackContract, runWebhookContract } from '@nymbalhq/contract-tests'
 import type { Logger } from '@nymbalhq/types'
 import { createResendEmailAdapter } from '../../packages/adapters/email/resend/src/index.js'
@@ -5,8 +6,10 @@ import {
   bounced,
   changeOneCharacter,
   complained,
+  policyRejected,
   RESEND_TEST_SECRET,
   signedPost,
+  type ResendEvent,
   type ResendRequest,
 } from '../support/resend'
 
@@ -28,6 +31,7 @@ const AT = { createdAt: new Date('2026-10-29T12:00:00.250Z') }
 const HARD = 'hard@contracts.test'
 const SOFT = 'soft@contracts.test'
 const COMPLAINT = 'complaint@contracts.test'
+const POLICY = 'policy@contracts.test'
 
 const build = () =>
   createResendEmailAdapter({
@@ -40,6 +44,8 @@ const build = () =>
   })
 
 const hardBounce = bounced([HARD], 'Permanent', { ...AT, emailId: 'email-hard' })
+/** A recipient's server refusing the store's sending host, as Resend reports it: Permanent, 5.7.1 in its message. */
+const policyBounce = policyRejected([POLICY], { ...AT, emailId: 'email-policy' })
 
 runEmailFeedbackContract('resend', build, {
   bounce: () => ({ request: signedPost(hardBounce, { id: 'msg_hard' }), recipient: HARD }),
@@ -55,6 +61,10 @@ runEmailFeedbackContract('resend', build, {
     }),
     recipient: COMPLAINT,
   }),
+  policyRejection: () => ({
+    request: signedPost(policyBounce, { id: 'msg_policy' }),
+    recipient: POLICY,
+  }),
 })
 
 const delivery = (): ResendRequest => signedPost(hardBounce, { id: 'msg_delivery' })
@@ -67,3 +77,26 @@ const tampered = (): ResendRequest => {
 }
 
 runWebhookContract('resend', build, { delivery, tampered })
+
+describe('the policy rejection sample', () => {
+  it('AC-6: Resend hands the policy rejection sample on soft, and the same bounce with 5.1.1 in place of 5.7.1 hard', async () => {
+    const mailbox = JSON.parse(
+      JSON.stringify(policyBounce).replaceAll('5.7.1', '5.1.1'),
+    ) as ResendEvent
+
+    const handedOn: unknown[] = []
+    for (const [event, id] of [
+      [policyBounce, 'msg_policy'],
+      [mailbox, 'msg_mailbox'],
+    ] as const) {
+      const { rawBody, headers } = signedPost(event, { id })
+      const delivery = await build().receiveWebhook!(rawBody, headers)
+      handedOn.push(delivery.events.map((e) => [e.payload['recipient'], e.payload['bounce']]))
+    }
+
+    expect(handedOn).toEqual([
+      policyBounce.data.to.map((to) => [to, 'soft']),
+      mailbox.data.to.map((to) => [to, 'hard']),
+    ])
+  })
+})

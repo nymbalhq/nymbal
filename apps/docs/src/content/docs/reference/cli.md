@@ -286,7 +286,23 @@ List dead events, or put them back for the running store to deliver. Bare it lis
 
 Manage the email suppression list
 
-Subcommands: `nymbal suppressions clear`.
+Subcommands: `nymbal suppressions show`, `nymbal suppressions list`, `nymbal suppressions clear`.
+
+## `nymbal suppressions show`
+
+Say whether one address is suppressed, why and since when
+
+| Argument | Type | Description | Default |
+| --- | --- | --- | --- |
+| `<email>` | positional | The address to look up |  |
+
+## `nymbal suppressions list`
+
+List the suppressed addresses, newest first
+
+| Argument | Type | Description | Default |
+| --- | --- | --- | --- |
+| `--limit` | string | How many to list (default 100) |  |
 
 ## `nymbal suppressions clear`
 
