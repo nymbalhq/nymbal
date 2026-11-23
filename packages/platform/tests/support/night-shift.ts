@@ -161,6 +161,20 @@ export function soldOn(
   }
 }
 
+/** `total` units of `v` spread over `days` as evenly as whole units go, the remainder on the earliest days. */
+export function spreadSold(
+  v: SoldVariant,
+  total: number,
+  days: string[],
+  source = 'storefront',
+): RollupDelta[] {
+  const base = Math.floor(total / days.length)
+  const extra = total - base * days.length
+  return days
+    .map((day, i) => soldOn(day, v, base + (i < extra ? 1 : 0), source))
+    .filter((d) => d.table === 'productDays' && d.units > 0)
+}
+
 export function searchedOn(day: string, term: string, searches: number): RollupDelta {
   return { table: 'searchDays', localDay: day, timezone: ZONE, term, searches }
 }
@@ -189,9 +203,12 @@ export interface RefundSeed {
   actor?: string
   status?: 'pending' | 'succeeded' | 'failed'
   reason?: string | null
+  /** The order line the refund names: none by default. */
+  variantId?: string | null
+  productId?: string | null
 }
 
-/** One `order_refunds` row through the repository; by default a succeeded refund an admin made. */
+/** One `order_refunds` row through the repository; by default a succeeded refund an admin made, naming no line. */
 export async function seedRefund(k: Side, seed: RefundSeed): Promise<void> {
   await unaudited(() =>
     k.store.transaction((tx) =>
@@ -205,6 +222,8 @@ export async function seedRefund(k: Side, seed: RefundSeed): Promise<void> {
         reason: seed.reason ?? null,
         actor: seed.actor ?? 'admin:night-shift-suite',
         createdAt: seed.at,
+        variantId: seed.variantId ?? null,
+        productId: seed.productId ?? null,
       }),
     ),
   )

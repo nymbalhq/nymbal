@@ -719,6 +719,13 @@ export const routeSchemas: Record<string, RouteSchema> = {
       amountMinor: money.positive(),
       reason: z.string().optional(),
       requestId: z.string().uuid().optional(),
+      variantId: z
+        .string()
+        .min(1)
+        .optional()
+        .describe(
+          'The variant of the order line this refund is for. Leave it out for a refund not tied to one product, such as shipping.',
+        ),
     }),
   },
   'GET /api/admin/orders/:id/timeline': {

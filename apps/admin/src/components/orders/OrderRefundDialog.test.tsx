@@ -176,3 +176,156 @@ describe('the refund amount in the order’s currency', () => {
     ])
   })
 })
+
+// The refund may name one of the order's lines: the dialog offers each line a refund can name (a variant the order holds
+// once, of a product), starts on the line only when there is exactly one such line, and sends the chosen line's
+// variantId and nothing for "Not for one product". The select may be a native one or the admin's Radix select.
+
+type Line = AdminOrder['lineItems'][number]
+
+const line = (variantId: string, productId: string, productName: string, variantName: string): Line => ({
+  variantId,
+  productId,
+  productName,
+  variantName,
+  sku: `SKU-${variantId}`,
+  qty: 1,
+  unitPriceMinor: 1000,
+  lineSubtotalMinor: 1000,
+  lineTaxMinor: 0,
+  lineTotalMinor: 1000,
+  imageUrl: '',
+})
+
+const WIDGET = line('v-1', 'p-1', 'Widget', 'Default')
+const GADGET = line('v-2', 'p-2', 'Gadget', 'Large')
+/** An import's lines with no match in the catalogue share the variant `unknown`. */
+const UNMATCHED = [line('unknown', 'unknown', 'Old mug', 'Old mug'), line('unknown', 'unknown', 'Old cup', 'Old cup')]
+/** An imported fee is a line with no product. */
+const FEE = line('fee:9', '', 'Gift wrap', '')
+
+const NONE = 'Not for one product'
+const labelOf = (l: Line) => `${l.productName} · ${l.variantName}`
+
+function withLines(lines: Line[]): AdminOrder {
+  return { ...paidIn('GBP'), lineItems: lines } as AdminOrder
+}
+
+/** The refund route: records each body as sent and answers it succeeded. */
+function bodiesApi(order: AdminOrder) {
+  const sent: Array<Record<string, unknown>> = []
+  vi.stubGlobal('fetch', async (input: string | URL | Request, init: RequestInit = {}) => {
+    const url = new URL(
+      String(input instanceof Request ? input.url : input),
+      'http://localhost/admin/',
+    )
+    if (url.pathname === '/api/csrf') return json({ data: { token: 'csrf-tok' } })
+    if (
+      (init.method ?? 'GET').toUpperCase() === 'POST' &&
+      url.pathname === `/api/admin/orders/${order.id}/refund`
+    ) {
+      const body = JSON.parse(String(init.body)) as Record<string, unknown>
+      sent.push(body)
+      return json({
+        data: {
+          order,
+          payment: order.payment,
+          refund: { id: `r-${sent.length}`, status: 'succeeded', amountMinor: body.amountMinor },
+        },
+      })
+    }
+    return json({ data: {} })
+  })
+  return { sent }
+}
+
+const lineSelect = (): HTMLElement => screen.getByTestId('admin-order-refund-line')
+
+/** What the select shows as chosen. */
+function shownLine(): string {
+  const el = lineSelect()
+  const text = el instanceof HTMLSelectElement ? el.selectedOptions[0]?.textContent : el.textContent
+  return (text ?? '').trim()
+}
+
+/** Every choice the select offers, in order. */
+async function offeredLines(user: ReturnType<typeof userEvent.setup>): Promise<string[]> {
+  const el = lineSelect()
+  if (el instanceof HTMLSelectElement) {
+    return Array.from(el.options).map((o) => (o.textContent ?? '').trim())
+  }
+  await user.click(el)
+  const names = (await screen.findAllByRole('option')).map((o) => (o.textContent ?? '').trim())
+  await user.keyboard('{Escape}')
+  return names
+}
+
+async function chooseLine(user: ReturnType<typeof userEvent.setup>, label: string): Promise<void> {
+  const el = lineSelect()
+  if (el instanceof HTMLSelectElement) {
+    const option = Array.from(el.options).find((o) => (o.textContent ?? '').trim() === label)
+    if (option === undefined) throw new Error(`the select offers no ${label}`)
+    await user.selectOptions(el, option)
+    return
+  }
+  await user.click(el)
+  await user.click(await screen.findByRole('option', { name: label }))
+}
+
+/** Renders the dialog, optionally picks a line, confirms the prefilled amount and answers what was shown and sent. */
+async function refundWith(order: AdminOrder, choose?: string) {
+  const api = bodiesApi(order)
+  const user = userEvent.setup()
+  const { view, closed } = renderDialog(order)
+  const start = shownLine()
+  if (choose !== undefined) await chooseLine(user, choose)
+  await user.click(confirmButton())
+  await waitFor(() => expect(closed.count).toBe(1))
+  view.unmount()
+  vi.unstubAllGlobals()
+  return { start, sent: api.sent }
+}
+
+describe('a refund names the order line it is for', () => {
+  // Kills: an unmatched imported line or a fee offered as a product (the refund would be labelled `unknown` or with no
+  // product), or a line left out of the choice.
+  it('AC-6: the select lists "Not for one product" and each line with a variant the order holds once and a product, leaving out an unmatched imported pair and a fee line', async () => {
+    const order = withLines([WIDGET, ...UNMATCHED, GADGET, FEE])
+    bodiesApi(order)
+    const user = userEvent.setup()
+    renderDialog(order)
+
+    const offered = await offeredLines(user)
+
+    expect(offered).toEqual([NONE, labelOf(WIDGET), labelOf(GADGET)])
+  })
+
+  // Kills: a multi-line order's refund guessed onto a line, and the chosen line not sent.
+  it('AC-6: an order with two offerable lines starts on "Not for one product" and sends no variantId; with the second line chosen it sends that line’s variantId', async () => {
+    const order = withLines([WIDGET, GADGET, FEE])
+
+    const untouched = await refundWith(order)
+    const chosen = await refundWith(order, labelOf(GADGET))
+
+    expect(untouched.start).toBe(NONE)
+    expect(untouched.sent).toHaveLength(1)
+    expect(Object.keys(untouched.sent[0]!)).not.toContain('variantId')
+    expect(chosen.sent).toHaveLength(1)
+    expect(chosen.sent[0]!['variantId']).toBe(order.lineItems[1]!.variantId)
+    expect(chosen.sent[0]!['amountMinor']).toBe(untouched.sent[0]!['amountMinor'])
+  })
+
+  // Kills: a one-product order's refund left unlabelled by default, or a start on the line whose variantId is not sent.
+  it('AC-6: an order with one offerable line, alone or beside an unmatched imported pair and a fee, starts on that line and sends its variantId', async () => {
+    const outcomes = []
+    for (const lines of [[WIDGET], [WIDGET, ...UNMATCHED, FEE]]) {
+      const { start, sent } = await refundWith(withLines(lines))
+      outcomes.push({ start, sent: sent.map((body) => body['variantId']) })
+    }
+
+    expect(outcomes).toEqual([
+      { start: labelOf(WIDGET), sent: [WIDGET.variantId] },
+      { start: labelOf(WIDGET), sent: [WIDGET.variantId] },
+    ])
+  })
+})

@@ -16,6 +16,18 @@ import { formatMoney, parseMoney, toMoneyInput } from '@/lib/money'
 import { tid } from '@/lib/testid'
 import type { AdminOrder } from '@/types'
 
+type OrderLine = AdminOrder['lineItems'][number]
+
+/**
+ * The lines a refund can name: a variant the order holds once, of a product. An import's unmatched lines share the
+ * variant `unknown` and its fees have no product, so neither tells one product apart.
+ */
+function nameableLines(lines: OrderLine[]): OrderLine[] {
+  const held = new Map<string, number>()
+  for (const l of lines) held.set(l.variantId, (held.get(l.variantId) ?? 0) + 1)
+  return lines.filter((l) => held.get(l.variantId) === 1 && l.productId !== '')
+}
+
 interface OrderRefundDialogProps {
   order: AdminOrder
   onClose: () => void
@@ -40,6 +52,9 @@ export function OrderRefundDialog({ order, onClose }: OrderRefundDialogProps) {
   const { refundableMinor, currency } = order.payment
   const [amount, setAmount] = useState(toMoneyInput(refundableMinor, currency))
   const [reason, setReason] = useState('')
+  const lines = nameableLines(order.lineItems)
+  // An order of one product is most likely refunded for it; with several, the admin says which.
+  const [variantId, setVariantId] = useState(lines.length === 1 ? lines[0]!.variantId : '')
   const [failure, setFailure] = useState<string | null>(null)
   // One refund request per dialog: a repeat of it (a double click, a retry after a lost answer) refunds once.
   const [requestId, setRequestId] = useState(() => crypto.randomUUID())
@@ -62,6 +77,7 @@ export function OrderRefundDialog({ order, onClose }: OrderRefundDialogProps) {
         amountMinor,
         requestId,
         ...(reason.trim() && { reason: reason.trim() }),
+        ...(variantId !== '' && { variantId }),
       })
       if (answer.refund.status === 'failed') {
         // That request is answered: trying again is a new one.
@@ -118,6 +134,23 @@ export function OrderRefundDialog({ order, onClose }: OrderRefundDialogProps) {
                 Enter an amount above 0 and up to {formatMoney(refundableMinor, currency)}.
               </p>
             )}
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="refund-line">Product</Label>
+            <select
+              id="refund-line"
+              value={variantId}
+              onChange={(e) => setVariantId(e.target.value)}
+              className="h-9 w-full rounded-md border border-zinc-200 bg-white px-2 text-sm"
+              data-testid={tid('order', 'refund-line')}
+            >
+              <option value="">Not for one product</option>
+              {lines.map((l) => (
+                <option key={l.variantId} value={l.variantId}>
+                  {l.productName} · {l.variantName}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="refund-reason">Reason (optional)</Label>

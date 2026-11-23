@@ -272,6 +272,9 @@ export const orderRefunds = sqliteTable(
     createdAt: text('created_at').notNull(),
     /** The client's key for one refund request: a repeat of it on the order answers the refund it made. */
     requestId: text('request_id'),
+    /** The order line the refund is for, by its variant, with that line's product; null when it names none. */
+    variantId: text('variant_id'),
+    productId: text('product_id'),
   },
   (t) => ({
     orderIdx: index('order_refunds_order_idx').on(t.orderId),

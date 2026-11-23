@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import fc from 'fast-check'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import type { ReportSummary } from '@nymbalhq/types'
@@ -24,6 +25,7 @@ import {
   seedRefund,
   shippedJob,
   soldOn,
+  spreadSold,
   type SoldVariant,
 } from '../support/night-shift.js'
 import { openRaw, type RawReader } from '../support/raw.js'
@@ -447,6 +449,179 @@ describe('AC-18: every number a summary prints is one of its facts', () => {
         },
       ),
       { numRuns: 25 },
+    )
+  }, 120_000)
+})
+
+// ---- refund rate by product -----------------------------------------------------------------------------------------
+
+interface ProductCase {
+  refunds: number
+  baselineRefunds: number
+  units: number
+  baselineUnits: number
+  name?: string
+}
+
+/**
+ * A store that has labelled refunds since before the baseline (one named refund 35 days back, outside both windows)
+ * and has sold every day (a product with no refunds), with no paid orders, so the store-wide rule has nothing to
+ * compare: each case is a product with its named refunds and units in the week and the four weeks before, and
+ * `unnamed` refunds in the week name no product. The products, in the order given.
+ */
+async function productNight(cases: ProductCase[], unnamed = 0): Promise<SoldVariant[]> {
+  const order = await seedOrder(k, { source: 'storefront' })
+  const background = await variantWith(1_000, 'Everyday tee')
+  const products: SoldVariant[] = cases.map((c) => ({
+    variantId: randomUUID(),
+    productId: randomUUID(),
+    productName: c.name ?? 'Linen shirt',
+    sku: `SKU-${randomUUID().slice(0, 6)}`,
+  }))
+  await applyFigures(k, [
+    ...sold(background, daysRange(34, 0), 10),
+    ...cases.flatMap((c, i) => [
+      ...spreadSold(products[i]!, c.baselineUnits, daysRange(34, 7)),
+      ...spreadSold(products[i]!, c.units, daysRange(6, 0)),
+    ]),
+  ])
+  const refund = (p: SoldVariant | null, at: Date) =>
+    seedRefund(k, {
+      orderId: order.id,
+      at,
+      ...(p !== null && { variantId: p.variantId, productId: p.productId }),
+    })
+  await refund(background, noonOf(daysBack(35)))
+  for (const [i, c] of cases.entries()) {
+    for (let n = 0; n < c.baselineRefunds; n += 1)
+      await refund(products[i]!, noonOf(daysBack(30 - (n % 7))))
+    for (let n = 0; n < c.refunds; n += 1) await refund(products[i]!, noonOf(daysBack(6 - (n % 7))))
+  }
+  for (let n = 0; n < unnamed; n += 1) await refund(null, noonOf(daysBack(6 - (n % 7))))
+  return products
+}
+
+const refundJob = shippedJob('refund-rate')
+
+/** The subjects of the night's product drafts, in the job's order. */
+async function productDrafts(): Promise<string[]> {
+  return (await draftsOf(k, refundJob, NOW))
+    .map((d) => d.subject)
+    .filter((subject) => subject.startsWith('product:'))
+}
+
+const subjectOf = (p: SoldVariant) => `product:${p.productId}`
+
+describe('AC-9: the by-product rule at its edges', () => {
+  // Kills: a strict comparison (exactly twice does not fire) and the ratio turned round (just under twice fires).
+  it('AC-9: 4 named refunds on 100 units against 8 on 400 is exactly twice the baseline rate and fires; 7 on 100 against 15 on 400 is just under and does not', async () => {
+    const [atTwice] = await productNight([
+      { refunds: 4, baselineRefunds: 8, units: 100, baselineUnits: 400 },
+    ])
+    const twice = await productDrafts()
+    await resetNight(k)
+    await productNight([{ refunds: 7, baselineRefunds: 15, units: 100, baselineUnits: 400 }])
+    const under = await productDrafts()
+
+    expect(twice).toEqual([subjectOf(atTwice!)])
+    expect(under).toEqual([])
+  })
+
+  // Kills: the minimum off by one or dropped, and a product with no units in either window firing (a rise from zero
+  // units, or a division by zero read as a spike).
+  it('AC-9: 2 named refunds, no units sold in the week, or none in the baseline writes no product insight, while 3 named refunds on units in both windows does', async () => {
+    const cases: ProductCase[] = [
+      { refunds: 2, baselineRefunds: 0, units: 100, baselineUnits: 400 },
+      { refunds: 4, baselineRefunds: 1, units: 0, baselineUnits: 400 },
+      { refunds: 4, baselineRefunds: 0, units: 100, baselineUnits: 0 },
+      { refunds: 3, baselineRefunds: 0, units: 100, baselineUnits: 400 },
+    ]
+    const fired: boolean[] = []
+    const others: string[][] = []
+    for (const c of cases) {
+      await resetNight(k)
+      const [p] = await productNight([c])
+      const drafted = await productDrafts()
+      fired.push(drafted.includes(subjectOf(p!)))
+      others.push(drafted.filter((subject) => subject !== subjectOf(p!)))
+    }
+
+    expect(fired).toEqual([false, false, false, true])
+    expect(others).toEqual(cases.map(() => []))
+  })
+
+  // Kills: every refund of the week counted toward each product, so unlabelled refunds lift a product over the line.
+  it('AC-9: a refund that names no product counts toward no product: beside a product that fires, one with 2 named and 5 unnamed refunds in the week gets no insight', async () => {
+    const [firing] = await productNight(
+      [
+        { refunds: 4, baselineRefunds: 0, units: 100, baselineUnits: 400 },
+        { refunds: 2, baselineRefunds: 0, units: 100, baselineUnits: 400 },
+      ],
+      5,
+    )
+
+    expect(await productDrafts()).toEqual([subjectOf(firing!)])
+  })
+
+  // Kills: no cap, the cap keeping the fewest refunds, or a tie at the cut decided by seed order.
+  it('AC-9: of six products that fire, the five with the most refunds get an insight, ordered by refunds then product id', async () => {
+    const counts = [4, 8, 4, 6, 7, 5]
+    const products = await productNight(
+      counts.map((refunds) => ({ refunds, baselineRefunds: 0, units: 100, baselineUnits: 400 })),
+    )
+    const ranked = products
+      .map((p, i) => ({ subject: subjectOf(p), id: p.productId, refunds: counts[i]! }))
+      .sort((a, b) => b.refunds - a.refunds || (a.id < b.id ? -1 : 1))
+
+    const drafted = await productDrafts()
+    await runTwice(k, NOW, [refundJob])
+    const rows = await insightRows(raw, 'refund-rate')
+    const [run] = (await runRows(raw)).filter((r) => r.job === 'refund-rate')
+
+    expect(drafted).toEqual(ranked.map((r) => r.subject))
+    expect(rows.map((r) => r.subject).sort()).toEqual(
+      ranked
+        .slice(0, 5)
+        .map((r) => r.subject)
+        .sort(),
+    )
+    expect(run?.insights).toBe(rows.length)
+  })
+})
+
+describe('AC-11: every number a product refund summary prints is one of its facts', () => {
+  const name = fc.stringMatching(/^[A-Z][a-z]{2,8} [1-9][0-9]{0,3}( [a-z]{1,5})?$/)
+
+  it('AC-11: property: for generated product names holding digits and counts that fire, every number in the product summary occurs in a fact', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.record({
+          name,
+          refunds: fc.integer({ min: 3, max: 9 }),
+          units: fc.integer({ min: 1, max: 300 }),
+          baselineUnits: fc.integer({ min: 1, max: 900 }),
+          pick: fc.nat(),
+        }),
+        async ({ name: productName, refunds, units, baselineUnits, pick }) => {
+          // Any baseline count the rule still fires on: refunds × baselineUnits ≥ 2 × baselineRefunds × units.
+          const most = Math.min(20, Math.floor((refunds * baselineUnits) / (2 * units)))
+          const baselineRefunds = pick % (most + 1)
+          await resetNight(k)
+          const [p] = await productNight([
+            { refunds, baselineRefunds, units, baselineUnits, name: productName },
+          ])
+
+          const drafts = (await draftsOf(k, refundJob, NOW)).filter(
+            (d) => d.subject === subjectOf(p!),
+          )
+
+          expect(drafts.map((d) => d.facts['productName'])).toEqual([productName])
+          expect(numbersNotInFacts(drafts[0]!.summary, drafts[0]!.facts), drafts[0]!.summary).toEqual(
+            [],
+          )
+        },
+      ),
+      { numRuns: 20 },
     )
   }, 120_000)
 })

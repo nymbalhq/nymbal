@@ -123,7 +123,8 @@ export class OrderConflictError extends NymbalError {
       | 'order.payment_in_progress'
       | 'refund.not_captured'
       | 'refund.exceeds_captured'
-      | 'refund.request_reused',
+      | 'refund.request_reused'
+      | 'refund.line_unknown',
     message: string,
     options: { cause?: unknown; context?: ErrorContext } = {},
   ) {

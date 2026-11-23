@@ -51,6 +51,8 @@ export interface RefundInput {
   actor: string
   /** The client's key for this request: a repeat on the order answers the refund the first one made. */
   requestId?: string
+  /** The variant of the order line the refund is for; a label only, it changes no amount. */
+  variantId?: string
 }
 
 export interface RefundResult {
@@ -171,6 +173,17 @@ export function createRefundService(deps: CreateRefundServiceDeps): RefundServic
         return { repeat: { order, payment: orderPayment(order, refunds), refund: earlier } }
       }
     }
+    const line =
+      input.variantId === undefined
+        ? undefined
+        : order.lineItems.find((l) => l.variantId === input.variantId)
+    if (input.variantId !== undefined && line === undefined) {
+      throw new OrderConflictError(
+        'refund.line_unknown',
+        `Order ${order.orderNumber} has no line for that variant`,
+        { context: { variantId: input.variantId } },
+      )
+    }
     if (
       order.capturedMinor <= 0 ||
       (order.captureMethod === 'provider' && !order.paymentIntentId)
@@ -202,6 +215,8 @@ export function createRefundService(deps: CreateRefundServiceDeps): RefundServic
       actor: input.actor,
       createdAt: new Date(),
       requestId: input.requestId ?? null,
+      variantId: line?.variantId ?? null,
+      productId: line?.productId ?? null,
     }
     await repos.orderRefund.insert(tx, row)
     return { order, row }

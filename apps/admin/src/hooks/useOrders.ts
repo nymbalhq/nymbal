@@ -205,17 +205,22 @@ export function useRefundOrder() {
       amountMinor,
       reason,
       requestId,
+      variantId,
     }: {
       orderId: string
       amountMinor: number
       reason?: string
       /** Sent again on a retry of the same refund, so the server makes it once. */
       requestId: string
+      /** The order line the refund is for; absent for one not tied to a product. */
+      variantId?: string
     }) =>
-      api.post<RefundAnswer>(
-        `/api/admin/orders/${orderId}/refund`,
-        reason ? { amountMinor, reason, requestId } : { amountMinor, requestId },
-      ),
+      api.post<RefundAnswer>(`/api/admin/orders/${orderId}/refund`, {
+        amountMinor,
+        requestId,
+        ...(reason && { reason }),
+        ...(variantId !== undefined && { variantId }),
+      }),
     onSuccess: async (answer) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['orders', 'detail', answer.order.orderNumber] }),

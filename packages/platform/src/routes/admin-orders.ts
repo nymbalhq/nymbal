@@ -284,7 +284,12 @@ export function registerAdminOrdersRoutes(
       try {
         const id = ctx.params.id
         if (!id) return fail('admin.invalid', 'id required', 400)
-        const body = ctx.body as { amountMinor: number; reason?: string; requestId?: string }
+        const body = ctx.body as {
+          amountMinor: number
+          reason?: string
+          requestId?: string
+          variantId?: string
+        }
         // A keyed refund runs outside the key's transaction, so a retry whose first attempt moved money but never
         // recorded its key must still find that refund: the key stands in for a requestId the caller did not send.
         const keyed = idempotencyKeyOf(ctx)
@@ -294,6 +299,7 @@ export function registerAdminOrdersRoutes(
           amountMinor: body.amountMinor,
           ...(body.reason !== undefined && { reason: body.reason }),
           ...(requestId !== undefined && { requestId }),
+          ...(body.variantId !== undefined && { variantId: body.variantId }),
           actor: `admin:${ctx.auth!.userId}`,
         })
         return ok(result)

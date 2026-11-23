@@ -154,20 +154,32 @@ function PaymentPanel({ order }: { order: Order & { payment: OrderPayment } }) {
       </dl>
       {payment.refunds.length > 0 && (
         <ul className="space-y-1 border-t border-zinc-100 pt-2 text-sm">
-          {payment.refunds.map((refund) => (
-            <li
-              key={refund.id}
-              className="flex justify-between gap-2"
-              data-testid={tid('order', 'refund-row', refund.id)}
-            >
-              <span className="text-zinc-500">
-                {REFUND_STATUS_LABELS[refund.status]} · {formatDate(refund.createdAt)}
-              </span>
-              <span className="font-mono text-zinc-700">
-                {formatMoney(refund.amountMinor, refund.currency)}
-              </span>
-            </li>
-          ))}
+          {payment.refunds.map((refund) => {
+            const line =
+              refund.variantId === null
+                ? undefined
+                : order.lineItems.find((l) => l.variantId === refund.variantId)
+            return (
+              <li
+                key={refund.id}
+                className="flex justify-between gap-2"
+                data-testid={tid('order', 'refund-row', refund.id)}
+              >
+                <span className="text-zinc-500">
+                  {REFUND_STATUS_LABELS[refund.status]} · {formatDate(refund.createdAt)}
+                  {line && (
+                    <span data-testid={tid('order', 'refund-row-line', refund.id)}>
+                      {' '}
+                      · for {line.productName}
+                    </span>
+                  )}
+                </span>
+                <span className="font-mono text-zinc-700">
+                  {formatMoney(refund.amountMinor, refund.currency)}
+                </span>
+              </li>
+            )
+          })}
         </ul>
       )}
     </div>
