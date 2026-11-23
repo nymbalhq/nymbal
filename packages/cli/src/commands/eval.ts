@@ -12,9 +12,11 @@ import {
   createApp,
   createCommandStore,
   createLogger,
+  declaredSettings,
   GOLDEN_QUESTIONS,
   GoldenAdapterError,
   goldenStore,
+  importAdapterModule,
   runContentEval,
   runGolden,
   runMigrations,
@@ -44,15 +46,34 @@ const KEY_VARIABLES: Record<string, string> = {
   openai: 'OPENAI_API_KEY',
 }
 
-/** What an OpenAI-compatible server that takes no key is sent: such servers ignore it, and the slot needs one set. */
+/**
+ * What an OpenAI-compatible server that takes no key is sent when the project's package still requires one (a release
+ * whose `apiKey` declares no `optionalWith`): such servers ignore it.
+ */
 const UNUSED_KEY = 'unused'
+
+/** Whether the project's package lets `config` leave its `apiKey` unset: its `optionalWith` path is set there. */
+async function keyOptional(
+  ai: NymbalConfig['commerce']['ai'],
+  config: Record<string, unknown>,
+): Promise<boolean> {
+  const declared = declaredSettings(await importAdapterModule('ai', ai, process.env))
+  const path = declared.find((s) => s.path === 'apiKey')?.optionalWith
+  if (path === undefined) return false
+  const value = path
+    .split('.')
+    .reduce<unknown>((at, key) => (at as Record<string, unknown> | undefined)?.[key], config)
+  return value !== undefined && value !== null && value !== ''
+}
 
 /**
  * The provider's key must be in the block or the environment: a key saved only in Settings lives in the project's
  * database, which the eval never opens. An OpenAI-compatible server on another host may take none: the block it
  * answers is the one to run with.
  */
-function withKey(ai: NymbalConfig['commerce']['ai']): NymbalConfig['commerce']['ai'] {
+async function withKey(
+  ai: NymbalConfig['commerce']['ai'],
+): Promise<NymbalConfig['commerce']['ai']> {
   const variable = KEY_VARIABLES[ai.provider]
   if (variable === undefined) return ai
   const config = (ai as { config?: Record<string, unknown> }).config ?? {}
@@ -65,6 +86,7 @@ function withKey(ai: NymbalConfig['commerce']['ai']): NymbalConfig['commerce']['
     URL.canParse(baseUrl) &&
     new URL(baseUrl).hostname !== 'api.openai.com'
   ) {
+    if (await keyOptional(ai, config)) return ai
     return { ...ai, config: { ...config, apiKey: UNUSED_KEY } } as NymbalConfig['commerce']['ai']
   }
   throw new EvalRefused(
@@ -170,7 +192,7 @@ async function onThrowawayStore<T>(
 ): Promise<T> {
   const { config, projectRoot, adapters } = project
   const ai = config.commerce.ai
-  const evalConfig = throwawayConfig(config, withKey(ai))
+  const evalConfig = throwawayConfig(config, await withKey(ai))
   const dir = mkdtempSync(join(tmpdir(), 'nymbal-eval-'))
   const sqlitePath = join(dir, 'eval.db')
   process.env['NYMBAL_ADMIN_EMAIL'] = EVAL_ADMIN

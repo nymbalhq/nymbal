@@ -166,6 +166,11 @@ export interface AdapterSetting {
    * unconfigured.
    */
   optional?: boolean
+  /**
+   * A dot path in the same block that, when set, makes this secret optional: an OpenAI-compatible server at a
+   * `baseUrl` may take no key, while OpenAI's own host needs one.
+   */
+  optionalWith?: string
 }
 
 /**

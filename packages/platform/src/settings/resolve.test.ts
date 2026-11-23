@@ -2,7 +2,7 @@ import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import type { AdapterSetting } from '@nymbalhq/types'
 import { COMMERCE_SLOTS } from '../adapters/registry.js'
-import { fillFromSettings } from './resolve.js'
+import { fillFromSettings, missingSecrets } from './resolve.js'
 
 // AC-2: `fillFromSettings(slot, block, declared, rows, env)` resolves each declared path as
 // `block[path] ?? env[decl.env] ?? row`, a pure function: the block's values are kept, nothing undeclared or from
@@ -150,5 +150,109 @@ describe('AC-2: precedence is config, then environment, then Settings', () => {
       }),
       { numRuns: 500 },
     )
+  })
+})
+
+// AC-1: `missingSecrets(config, declared)` names each declared secret the config lacks, except one declared
+// `optional: true` and one whose `optionalWith` path is present in the config. Undefined, null and '' are absent.
+
+/** Leaf paths only, so each can be set in one nested config. */
+const SECRET_UNIVERSE = ['apiKey', 'baseUrl', 'webhookSecret', 'smtp.pass', 'smtp.host'] as const
+/** Each slot a path may hold: unset, one of the three absent values, or a present one. */
+const SLOT_VALUES = ['unset', undefined, null, '', 'set', 0] as const
+
+const presentIn = (config: Record<string, unknown>, path: string): boolean => {
+  const value = getPath(config, path)
+  return value !== undefined && value !== null && value !== ''
+}
+
+const secretsCaseArb = fc
+  .record({
+    declaredPaths: fc.subarray([...SECRET_UNIVERSE]),
+    secret: fc.array(fc.boolean(), {
+      minLength: SECRET_UNIVERSE.length,
+      maxLength: SECRET_UNIVERSE.length,
+    }),
+    optional: fc.array(fc.constantFrom(true, false, undefined), {
+      minLength: SECRET_UNIVERSE.length,
+      maxLength: SECRET_UNIVERSE.length,
+    }),
+    optionalWith: fc.array(fc.option(fc.constantFrom(...SECRET_UNIVERSE), { nil: undefined }), {
+      minLength: SECRET_UNIVERSE.length,
+      maxLength: SECRET_UNIVERSE.length,
+    }),
+    values: fc.array(fc.constantFrom(...SLOT_VALUES), {
+      minLength: SECRET_UNIVERSE.length,
+      maxLength: SECRET_UNIVERSE.length,
+    }),
+  })
+  .map((c) => {
+    const config: Record<string, unknown> = {}
+    SECRET_UNIVERSE.forEach((path, i) => {
+      if (c.values[i] !== 'unset') setPath(config, path, c.values[i])
+    })
+    const declared = c.declaredPaths.map((path) => {
+      const i = SECRET_UNIVERSE.indexOf(path)
+      const optional = c.optional[i]
+      const optionalWith = c.optionalWith[i] === path ? undefined : c.optionalWith[i]
+      return {
+        path,
+        label: `Label for ${path}`,
+        secret: c.secret[i]!,
+        ...(optional !== undefined && { optional }),
+        ...(optionalWith !== undefined && { optionalWith }),
+      }
+    })
+    return { config, declared }
+  })
+
+describe('AC-1: a secret is optional when its optionalWith path is set', () => {
+  it('AC-1: missingSecrets names exactly the secrets that are unset, not optional and whose optionalWith path is absent', () => {
+    fc.assert(
+      fc.property(secretsCaseArb, ({ config, declared }) => {
+        const expected = declared
+          .filter(
+            (d) =>
+              d.secret &&
+              d.optional !== true &&
+              !presentIn(config, d.path) &&
+              !(d.optionalWith !== undefined && presentIn(config, d.optionalWith)),
+          )
+          .map((d) => d.path)
+        expect(missingSecrets(config, declared as AdapterSetting[])).toEqual(expected)
+      }),
+      { numRuns: 500 },
+    )
+  })
+
+  it("AC-1: the OpenAI declaration needs no key once baseUrl is set, and still names apiKey when baseUrl is absent or ''", () => {
+    const key: AdapterSetting = {
+      path: 'apiKey',
+      label: 'API key',
+      secret: true,
+      env: 'OPENAI_API_KEY',
+    }
+    const baseUrlSetting: AdapterSetting = { path: 'baseUrl', label: 'API base URL', secret: false }
+    const declared = [{ ...key, optionalWith: 'baseUrl' }, baseUrlSetting]
+    const required = [key, baseUrlSetting]
+    const blocks = {
+      noBaseUrl: { model: 'm' },
+      emptyBaseUrl: { model: 'm', baseUrl: '' },
+      baseUrl: { model: 'm', baseUrl: 'http://127.0.0.1:11434/v1' },
+    }
+
+    const withOptional = Object.fromEntries(
+      Object.entries(blocks).map(([name, block]) => [name, missingSecrets(block, declared)]),
+    )
+    const withoutOptional = Object.fromEntries(
+      Object.entries(blocks).map(([name, block]) => [name, missingSecrets(block, required)]),
+    )
+
+    expect(withOptional).toEqual({ noBaseUrl: ['apiKey'], emptyBaseUrl: ['apiKey'], baseUrl: [] })
+    expect(withoutOptional).toEqual({
+      noBaseUrl: ['apiKey'],
+      emptyBaseUrl: ['apiKey'],
+      baseUrl: ['apiKey'],
+    })
   })
 })
