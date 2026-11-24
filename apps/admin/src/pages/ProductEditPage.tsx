@@ -24,7 +24,10 @@ import { UnsavedChangesGuard } from '@/components/common/UnsavedChangesGuard'
 import { useProduct, useCreateProduct, useUpdateProduct } from '@/hooks/useProducts'
 import { useIntentKey } from '@/hooks/useIntentKey'
 import { useStoreCurrency } from '@/hooks/useMe'
-import { ApiError } from '@/lib/api'
+import { useCategories } from '@/hooks/useCategories'
+import { categoryTree } from '@/lib/category-tree'
+import { refusalOf } from '@/lib/api'
+import { slugify } from '@/lib/slug'
 import { tid } from '@/lib/testid'
 import type { ProductSnapshot, ProductStatus, Variant, ProductMedia } from '@nymbalhq/types'
 
@@ -42,25 +45,6 @@ const DEFAULT_PRODUCT: Partial<ProductSnapshot> = {
   variants: [],
   categoryIds: [],
   metadata: {},
-}
-
-/** Why the server refused a save: each issue's own message when it names them, else the error's. */
-function refusalOf(err: unknown): string {
-  if (!(err instanceof ApiError)) return 'The product was not saved'
-  const issues = err.context?.['issues']
-  const messages = Array.isArray(issues)
-    ? issues.flatMap((issue: { message?: unknown }) =>
-        typeof issue.message === 'string' ? [issue.message] : [],
-      )
-    : []
-  return messages.length > 0 ? messages.join('; ') : err.message
-}
-
-function slugify(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')
 }
 
 export function ProductEditPage() {
@@ -138,7 +122,7 @@ export function ProductEditPage() {
       }
     } catch (err) {
       // The form keeps what was typed, so the merchant can correct it and save again.
-      setSaveError(refusalOf(err))
+      setSaveError(refusalOf(err, 'The product was not saved'))
     }
   }
 
@@ -462,6 +446,11 @@ export function ProductEditPage() {
             </Select>
           </div>
 
+          <CategoriesCard
+            checked={form.categoryIds ?? []}
+            onChange={(ids) => update('categoryIds', ids)}
+          />
+
           {/* Summary */}
           {!isNew && existingProduct && (
             <div className="rounded-lg border border-zinc-200 bg-white p-4 space-y-2 text-xs text-zinc-500">
@@ -484,6 +473,57 @@ export function ProductEditPage() {
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+/** The categories the product is in, one checkbox per category, indented as the tree. */
+function CategoriesCard({
+  checked,
+  onChange,
+}: {
+  checked: readonly string[]
+  onChange: (ids: string[]) => void
+}) {
+  const { data: categories, isLoading, isError } = useCategories()
+  const toggle = (id: string) =>
+    onChange(checked.includes(id) ? checked.filter((c) => c !== id) : [...checked, id])
+
+  return (
+    <div
+      className="min-w-0 rounded-lg border border-zinc-200 bg-white p-4 space-y-3"
+      data-testid={tid('product', 'categories')}
+    >
+      <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">Categories</h3>
+      {isLoading ? (
+        <Skeleton className="h-16 w-full" />
+      ) : isError ? (
+        <p className="text-xs text-zinc-500">The categories could not be loaded.</p>
+      ) : !categories || categories.length === 0 ? (
+        <p className="text-xs text-zinc-500">
+          No categories yet.{' '}
+          <Link to="/categories" className="text-blue-600 hover:underline">
+            Make one
+          </Link>
+        </p>
+      ) : (
+        <ul className="space-y-1.5">
+          {categoryTree(categories).map(({ category, depth }) => (
+            <li key={category.id} style={{ paddingLeft: `${depth}rem` }}>
+              <label className="flex items-start gap-2 text-sm text-zinc-700">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 shrink-0"
+                  checked={checked.includes(category.id)}
+                  onChange={() => toggle(category.id)}
+                  data-testid={tid('product', 'category', category.id)}
+                />
+                <span className="min-w-0 break-all">{category.name}</span>
+              </label>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }

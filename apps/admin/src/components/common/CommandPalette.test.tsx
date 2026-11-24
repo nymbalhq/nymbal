@@ -13,10 +13,11 @@ import { renderWithProviders } from '@/tests/render'
 const FIELD = { name: 'Search or run a command' }
 
 /** The palette's pages, in any order. */
-const TWELVE = [
+const THIRTEEN = [
   'Go to Dashboard',
   'Go to Orders',
   'Go to Products',
+  'Go to Categories',
   'Go to Promotions',
   'Go to Inventory',
   'Go to Customers',
@@ -32,6 +33,7 @@ const DESTINATION: Record<string, string> = {
   'Go to Dashboard': '/',
   'Go to Orders': '/orders',
   'Go to Products': '/products',
+  'Go to Categories': '/categories',
   'Go to Promotions': '/promotions',
   'Go to Inventory': '/inventory',
   'Go to Customers': '/customers',
@@ -176,7 +178,7 @@ describe('the palette shows what the server found', () => {
 describe('the palette goes to a page by keyboard', () => {
   // Kills: no navigation commands; a fuzzy or unfocused field; Enter that selects nothing; the palette left open over
   // the new page; a reopen that shows the last search; a search sent for one character.
-  it('AC-4: the named field lists the twelve pages; "inv" leaves Go to Inventory highlighted first; Enter opens /inventory and closes the palette; reopened, it is empty with all twelve; no search is sent under two characters', async () => {
+  it('AC-4: the named field lists the thirteen pages; "inv" leaves Go to Inventory highlighted first; Enter opens /inventory and closes the palette; reopened, it is empty with all thirteen; no search is sent under two characters', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     const api = fakeSearchApi()
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime.bind(vi) })
@@ -186,7 +188,7 @@ describe('the palette goes to a page by keyboard', () => {
     const field = await screen.findByRole('combobox', FIELD)
     expect(field, 'the field takes the keyboard when the palette opens').toHaveFocus()
     const goTo = screen.getByRole('group', { name: 'Go to' })
-    expect([...optionNames(goTo)].sort()).toEqual([...TWELVE].sort())
+    expect([...optionNames(goTo)].sort()).toEqual([...THIRTEEN].sort())
 
     await user.keyboard('i')
     await act(() => vi.advanceTimersByTimeAsync(1000))
@@ -208,7 +210,7 @@ describe('the palette goes to a page by keyboard', () => {
     const reopened = await screen.findByRole('combobox', FIELD)
     expect(reopened).toHaveValue('')
     expect([...optionNames(screen.getByRole('group', { name: 'Go to' }))].sort()).toEqual(
-      [...TWELVE].sort(),
+      [...THIRTEEN].sort(),
     )
     expect(
       api.searches.every((q) => q.length >= 2),
@@ -222,7 +224,7 @@ describe('the palette goes to a page by keyboard', () => {
     renderPalette('/settings')
     const reached: Record<string, string> = {}
 
-    for (const label of TWELVE) {
+    for (const label of THIRTEEN) {
       await openPalette(user)
       const goTo = await screen.findByRole('group', { name: 'Go to' })
       await user.click(within(goTo).getByRole('option', { name: label }))

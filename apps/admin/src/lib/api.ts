@@ -13,6 +13,18 @@ export class ApiError extends Error {
   }
 }
 
+/** Why the server refused a write: each issue's own message when it names them, else the error's. */
+export function refusalOf(err: unknown, fallback: string): string {
+  if (!(err instanceof ApiError)) return fallback
+  const issues = err.context?.['issues']
+  const messages = Array.isArray(issues)
+    ? issues.flatMap((issue: { message?: unknown }) =>
+        typeof issue.message === 'string' ? [issue.message] : [],
+      )
+    : []
+  return messages.length > 0 ? messages.join('; ') : err.message
+}
+
 type UrlQuery = Record<string, string | number | boolean | undefined | null>
 
 const CSRF_HEADER = 'x-csrf-token'

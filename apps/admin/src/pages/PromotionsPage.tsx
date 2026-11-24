@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type MouseEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import { Plus, Tag } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -30,6 +30,7 @@ import {
 } from '@/hooks/usePromotions'
 import { ApiError } from '@/lib/api'
 import { formatDate } from '@/lib/dates'
+import { firstClick } from '@/lib/first-click'
 import { formatMoney, parseMoney, toMoneyInput } from '@/lib/money'
 import { parsePercentBps, toPercentInput } from '@/lib/percent'
 import { promotionState, type PromotionState } from '@/lib/promotion-state'
@@ -61,21 +62,6 @@ function toLocalInput(iso: string): string {
 function discountOf(p: AdminPromotion, storeCurrency: string): string {
   if (p.kind === 'percent') return `${toPercentInput(p.percentBps ?? 0)}%`
   return `${formatMoney(p.amountOffMinor ?? 0, p.currency ?? storeCurrency)} off`
-}
-
-/**
- * A click handler that acts on a single click only: the second click of a double-click whose first opened or closed a
- * dialog lands on whatever is under the pointer now, and must not act there. A submit button's second click submits
- * nothing. Enter and Space click with detail 0.
- */
-function firstClick(action: () => void = () => {}): (e: MouseEvent<HTMLButtonElement>) => void {
-  return (e) => {
-    if (e.detail > 1) {
-      e.preventDefault()
-      return
-    }
-    action()
-  }
 }
 
 function errorText(err: unknown, fallback: string): string {
