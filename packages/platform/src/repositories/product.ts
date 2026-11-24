@@ -41,6 +41,7 @@ export interface ProductUpdate {
   seoDescription?: string
   media?: ProductMedia[]
   metadata?: Record<string, unknown>
+  taxCode?: string | null
   brand?: string
   updatedAt: Date
 }
@@ -242,6 +243,10 @@ export function createProductRepository(store: CommandStore): ProductRepository 
       if (patch.seoDescription !== undefined) {
         pg.seoDescription = patch.seoDescription
         sq.seoDescription = patch.seoDescription
+      }
+      if (patch.taxCode !== undefined) {
+        pg.taxCode = patch.taxCode
+        sq.taxCode = patch.taxCode
       }
       if (patch.brand !== undefined) {
         pg.brand = patch.brand

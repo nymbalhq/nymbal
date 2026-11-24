@@ -225,6 +225,7 @@ const productFields = {
   shortDescription: z.string().optional(),
   status: productStatus.optional(),
   type: z.enum(['simple', 'variable']).optional(),
+  taxCode: z.string().trim().min(1).max(64).nullable().optional(),
   seoTitle: z.string().optional(),
   seoDescription: z.string().optional(),
   media: z.array(productMedia).optional(),
@@ -834,7 +835,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
     name: 'admin.products.update',
     command: 'product.update',
     description:
-      "Update a product's fields and its variants' prices and GTINs; a variant left out keeps both, and stock moves only through inventory.",
+      "Update a product's fields (taxCode: what it is taxed as, null for the standard rate) and its variants' prices and GTINs; a variant left out keeps both, and stock moves only through inventory.",
     params: idParams,
     body: z.object({
       name: z.string().optional(),

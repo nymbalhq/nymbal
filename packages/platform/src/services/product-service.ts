@@ -34,6 +34,7 @@ export interface ProductCreateInput {
   seoDescription?: string
   media?: Product['media']
   metadata?: Record<string, unknown>
+  taxCode?: string | null
   brand?: string
   categoryIds?: string[]
   variants?: Array<
@@ -137,6 +138,7 @@ export function createProductService(deps: CreateProductServiceDeps): ProductSer
           ...(input.seoDescription !== undefined && { seoDescription: input.seoDescription }),
           ...(input.media !== undefined && { media: input.media }),
           ...(input.metadata !== undefined && { metadata: input.metadata }),
+          ...(input.taxCode !== undefined && { taxCode: input.taxCode }),
           ...(input.brand !== undefined && { brand: input.brand }),
           createdAt: now,
           updatedAt: now,
@@ -198,6 +200,7 @@ export function createProductService(deps: CreateProductServiceDeps): ProductSer
         seoDescription: original.seoDescription,
         media: original.media,
         metadata: original.metadata,
+        taxCode: original.taxCode ?? null,
         brand: original.brand ?? '',
         categoryIds: original.categoryIds,
         // A copy holds no goods: stock is received into it like any new product. Its GTINs are not copied either: it
@@ -247,6 +250,7 @@ export function createProductService(deps: CreateProductServiceDeps): ProductSer
           ...(input.seoDescription !== undefined && { seoDescription: input.seoDescription }),
           ...(input.media !== undefined && { media: input.media }),
           ...(input.metadata !== undefined && { metadata: input.metadata }),
+          ...(input.taxCode !== undefined && { taxCode: input.taxCode }),
           ...(input.brand !== undefined && { brand: input.brand }),
           updatedAt: now,
         }

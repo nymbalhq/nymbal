@@ -521,3 +521,33 @@ describe('storePreviewReads', () => {
     expect(await reads.order('ord_gone')).toBeNull()
   })
 })
+
+describe('previewOf: product.update of a tax code', () => {
+  const coded = productOf({ taxCode: 'standard' })
+  const uncoded = productOf({ id: 'prod_plain', taxCode: null })
+  const reads = readsOf({ products: { [coded.id]: coded, [uncoded.id]: uncoded } })
+  const rows = async (id: string, args: Record<string, unknown>) =>
+    (await previewOf(viewOf('product.update', { id, ...args }), reads))?.changes ?? []
+
+  // Kills: a proposal that changes what a product is taxed as, approved from a preview that does not show it.
+  it('AC-4: a proposal whose arguments hold taxCode previews a Tax code row, the product’s code now beside the proposed one; the same arguments without it have no such row and are otherwise the same', async () => {
+    const args = { name: 'Tee v2', taxCode: 'reduced', media: [] }
+    const { taxCode: _taxCode, ...without } = args
+    const withCode = await rows(coded.id, args)
+
+    expect(withCode.filter((c) => c.label === 'Tax code')).toEqual([
+      { label: 'Tax code', kind: 'value', current: coded.taxCode, proposed: 'reduced' },
+    ])
+    expect(await rows(coded.id, without)).toEqual(withCode.filter((c) => c.label !== 'Tax code'))
+  })
+
+  // Kills: a clear shown as no change, or a product with no code shown as holding one.
+  it('AC-4: a taxCode of null on a coded product previews its code now beside none; a code on a product with none previews none beside it', async () => {
+    expect(
+      (await rows(coded.id, { taxCode: null })).map((c) => [c.label, c.current, c.proposed]),
+    ).toEqual([['Tax code', coded.taxCode, null]])
+    expect(
+      (await rows(uncoded.id, { taxCode: 'zero' })).map((c) => [c.label, c.current, c.proposed]),
+    ).toEqual([['Tax code', null, 'zero']])
+  })
+})

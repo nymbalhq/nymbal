@@ -32,6 +32,7 @@ const SCALARS = [
   ['shortDescription', 'Short description'],
   ['status', 'Status'],
   ['type', 'Type'],
+  ['taxCode', 'Tax code'],
   ['seoTitle', 'SEO title'],
   ['seoDescription', 'SEO description'],
   ['brand', 'Brand'],

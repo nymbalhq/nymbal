@@ -912,3 +912,118 @@ describe('ProductService: brand and GTIN', () => {
     await commandStore.close()
   })
 })
+
+describe('ProductService: a product’s tax code', () => {
+  interface Seen {
+    type: string
+    product: { id: string; taxCode?: string | null }
+  }
+
+  /** setup(), with every product.created and product.updated delivered into `seen` once drained. */
+  async function withEvents() {
+    const ctx = await setup()
+    const seen: Seen[] = []
+    await ctx.eventBus.subscribe([EVT_PRODUCT_CREATED, EVT_PRODUCT_UPDATED], (event) => {
+      seen.push({
+        type: event.type,
+        product: (event.payload as { product: Seen['product'] }).product,
+      })
+    })
+    /** The events a step published, once delivered; `seen` is emptied for the next step. */
+    const drained = async (): Promise<Seen[]> => {
+      await ctx.relay.drain()
+      return seen.splice(0)
+    }
+    return { ...ctx, drained }
+  }
+
+  const codesOf = (events: Seen[]) => events.map((e) => [e.type, e.product.taxCode ?? null])
+
+  // Kills: a create that drops the code, or a created event whose snapshot does not carry it.
+  it('AC-3: create with a code stores it, and its one product.created.v1 carries it', async () => {
+    const { service, commandStore, drained } = await withEvents()
+    const created = await service.create({ slug: 'taxed', name: 'Taxed', taxCode: 'reduced' })
+    const stored = await service.getById(created.id)
+
+    expect([created.taxCode, stored.taxCode]).toEqual(['reduced', 'reduced'])
+    expect(codesOf(await drained())).toEqual([[EVT_PRODUCT_CREATED, stored.taxCode]])
+    await commandStore.close()
+  })
+
+  // Kills: a tax edit the event log and History never see; an update without the key that clears the code.
+  it('AC-3: update(id, { taxCode }) publishes one product.updated.v1 whose snapshot carries the new code; update(id, { name }) leaves the code as it was', async () => {
+    const { service, commandStore, drained } = await withEvents()
+    const created = await service.create({ slug: 'retaxed', name: 'Retaxed', taxCode: 'reduced' })
+    await drained()
+
+    await service.update(created.id, { taxCode: 'zero' })
+    const zero = await service.getById(created.id)
+    const onCode = await drained()
+    await service.update(created.id, { name: 'Renamed' })
+    const renamed = await service.getById(created.id)
+    const onName = await drained()
+
+    expect([created.taxCode, zero.taxCode, renamed.taxCode]).toEqual(['reduced', 'zero', 'zero'])
+    expect(codesOf(onCode)).toEqual([[EVT_PRODUCT_UPDATED, zero.taxCode]])
+    expect(codesOf(onName)).toEqual([[EVT_PRODUCT_UPDATED, zero.taxCode]])
+    expect(renamed.name).toBe('Renamed')
+    await commandStore.close()
+  })
+
+  // Kills: an update that writes only a set code and never a clear, or rewrites the code when the key is absent.
+  it('AC-3: property: over updates that omit taxCode, clear it with null or set it, the stored code and each product.updated snapshot’s code are the last one set, or null after a clear', async () => {
+    type Step = { kind: 'omit' } | { kind: 'null' } | { kind: 'set'; code: string }
+    const arbCode = fc.stringMatching(/^[a-z0-9_-]{1,64}$/)
+    const arbStep: fc.Arbitrary<Step> = fc.oneof(
+      fc.constant<Step>({ kind: 'omit' }),
+      fc.constant<Step>({ kind: 'null' }),
+      fc.record({ kind: fc.constant('set' as const), code: arbCode }),
+    )
+    const { service, commandStore, drained } = await withEvents()
+    let n = 0
+    await fc.assert(
+      fc.asyncProperty(
+        fc.option(arbCode, { nil: null }),
+        fc.array(arbStep, { minLength: 1, maxLength: 6 }),
+        async (initial, steps) => {
+          n += 1
+          const created = await service.create({
+            slug: `prop-${n}`,
+            name: `Prop ${n}`,
+            ...(initial !== null && { taxCode: initial }),
+          })
+          await drained()
+          let model: string | null = initial
+          for (const [i, step] of steps.entries()) {
+            if (step.kind === 'omit') await service.update(created.id, { description: `d${i}` })
+            else if (step.kind === 'null') await service.update(created.id, { taxCode: null })
+            else await service.update(created.id, { taxCode: step.code })
+            if (step.kind === 'null') model = null
+            if (step.kind === 'set') model = step.code
+            const label = JSON.stringify(steps.slice(0, i + 1))
+            expect((await service.getById(created.id)).taxCode ?? null, label).toBe(model)
+            expect(codesOf(await drained()), label).toEqual([[EVT_PRODUCT_UPDATED, model]])
+          }
+        },
+      ),
+      { numRuns: 25 },
+    )
+    await commandStore.close()
+  })
+
+  // Kills: a copy that loses the product's tax treatment.
+  it('AC-3: duplicate of a product with a code makes a copy with the same code, in the answer and as stored; a product with none copies none', async () => {
+    const { service, commandStore } = await setup()
+    const taxed = await service.create({ slug: 'coded', name: 'Coded', taxCode: 'reduced' })
+    const untaxed = await service.create({ slug: 'uncoded', name: 'Uncoded' })
+
+    const copy = await service.duplicate(taxed.id)
+    const plainCopy = await service.duplicate(untaxed.id)
+    const stored = await service.getById(copy.id)
+
+    expect(taxed.taxCode).toBe('reduced')
+    expect([copy.taxCode, stored.taxCode]).toEqual([taxed.taxCode, taxed.taxCode])
+    expect(plainCopy.taxCode ?? null).toBe(untaxed.taxCode ?? null)
+    await commandStore.close()
+  })
+})

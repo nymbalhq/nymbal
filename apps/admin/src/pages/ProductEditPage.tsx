@@ -295,6 +295,25 @@ export function ProductEditPage() {
                     data-testid={tid('product', 'brand')}
                   />
                 </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="product-tax-code">Tax code</Label>
+                  <Input
+                    id="product-tax-code"
+                    value={form.taxCode ?? ''}
+                    // A blank field is no code (the standard rate); the route refuses '' as a code.
+                    onChange={(e) =>
+                      update('taxCode', e.target.value.trim() === '' ? null : e.target.value)
+                    }
+                    placeholder="e.g. reduced"
+                    maxLength={64}
+                    data-testid={tid('product', 'tax-code')}
+                  />
+                  <p className="text-xs text-zinc-500">
+                    What this product is taxed as: a code from your tax rates or your tax provider.
+                    Empty for the standard rate.
+                  </p>
+                </div>
               </div>
             </TabsContent>
 
