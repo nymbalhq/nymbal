@@ -1,5 +1,84 @@
 # nymbal
 
+## 1.10.0
+
+### Minor Changes
+
+- 689edc3: `commerce.shipping.pricing: 'carrier'` (default `'table'`) charges what the shipping adapter rates (EasyPost with an `apiKey`): it needs `defaultWeightGrams`, `store.shipFrom`, no table rows and an adapter that declares `rates`; the cart is one parcel of variant weights (set by the WooCommerce importer or the API until the admin has a weight field), and a carrier that is down or slower than 5 s answers 503 `checkout.shipping_unavailable`.
+  `POST /api/checkout/quote` has a built-in limit of 30 a minute per cart, counted as `/api/checkout`'s; raise it the same way for load tests. The shipping contract asks for a carrier and a service name that stay the same between calls.
+  Breaking: `CheckoutError` gains `shipping_unavailable` (an exhaustive switch over its codes stops compiling), an order's `metadata.shipping.provider` is any provider name rather than only `native`, and the ACP surface's deps take `shippingPricing`.
+- 452299f: `agents.roles.content`: a weekly night-shift review that proposes product SEO titles and descriptions for the Inbox, checked against copy rules and the product's own facts; `nymbal eval content` scores it.
+  Product pages use a product's `seoTitle` and `seoDescription` for the `<title>` and meta description when set. Breaking: the product document and the SDK's `DenormalisedProduct` gain required `seoTitle` and `seoDescription` (run `nymbal replay`), and the demo seed leaves both blank.
+- 09d8bff: `nymbal heartbeat` checks once, for cron, that the store takes an order and that a saved card can be charged and refunded; turn on `features.heartbeat` and set the `heartbeat` block. A checkout with the heartbeat address is placed and cancelled without payment (`checkout.synthetic`) and kept out of the admin's lists (`?source=synthetic` lists them).
+  Payments adapters gain `chargeSavedCard` behind a `saved-card` capability (native stub and Stripe); Stripe ignores the heartbeat charge's webhooks.
+- aec9558: New stores get `renovate.json` (one pull request per Nymbal release) and a workflow job running `nymbal update-check`, which lets a security update merge itself only under the `renovate/auto-updates` preset and when it adds no migration and the compatibility matrix certifies it. Breaking: `features.autoUpdates` is removed from the config; delete it from `nymbal.config.ts`.
+- 3e72f2b: `nymbal replay --to reports` rebuilds report figures from the event log for the days it still holds whole (`--dry-run` counts what would change); run it after upgrading or to repair reports, with the server stopped or idle on SQLite.
+- 7e965d7: `nymbal suppressions show <email>` says whether an address is suppressed, why and since when; `nymbal suppressions list [--limit n]` lists suppressed addresses, newest first. `EmailSuppressionRepository.list` backs it.
+
+### Patch Changes
+
+- bad1a72: Breaking: `agents.acp.apiKey` and `NYMBAL_ACP_API_KEY` are removed; list each assistant's key by name in `agents.acp.keys`, such as `[{ name: 'muse', key: env('NYMBAL_ACP_API_KEY_MUSE') }]`.
+  An ACP order's source is `agent:<name>` of the key that opened it and each activity entry's actor `acp:<name>` of the key that sent it; `nymbal doctor` lists the keys by name.
+- 1b92cb6: `nymbal --version`, `deploy`, `upgrade`, `update-check`, `build` and `config:validate` start faster: the platform is loaded only by the commands that use it.
+- 1eead46: `nymbal replay` refuses a store with migrations pending and says to run `nymbal migrate`, instead of failing on a missing column.
+  `nymbal dev` and `nymbal start` print a config error's code after its message, as `<message> [<code>]`; `nymbal import --dry-run` refuses a currency mismatch.
+- db79bd8: `nymbal import --dry-run` lists a record it cannot read under Errors, counted as refused, instead of stopping, and refuses a product whose own variations share a SKU, as the import does.
+  `--concurrency` (and the `concurrency` option) must be a whole number of 1 or more; `--entities` help names all five entities and the real default.
+- f5bfc9a: A provider package can declare a secret optional when another setting is set (`optionalWith` on a `settings` entry).
+  `@nymbalhq/ai-openai` works with Ollama, vLLM and other keyless OpenAI-compatible servers at a `baseUrl` without a dummy `apiKey`, and sends no `Authorization` header when it has no key.
+  A keyless host needs this release of `@nymbalhq/platform` too; with an older kernel the slot stays not configured.
+- f7edde7: A tax provider that declares `commit` and `refund` now has paid orders and their refunds filed with it in the background, retried every 5 minutes, and `nymbal doctor` shows a `tax documents` line.
+- Updated dependencies [bad1a72]
+- Updated dependencies [64b219c]
+- Updated dependencies [35ce5da]
+- Updated dependencies [8d445ae]
+- Updated dependencies [66d24a2]
+- Updated dependencies [ebf8ea0]
+- Updated dependencies [6e82231]
+- Updated dependencies [8112f97]
+- Updated dependencies [5f9281b]
+- Updated dependencies [4fdb102]
+- Updated dependencies [ee2ef8c]
+- Updated dependencies [d64b5ed]
+- Updated dependencies [689edc3]
+- Updated dependencies [d92618d]
+- Updated dependencies [452299f]
+- Updated dependencies [14246b8]
+- Updated dependencies [8b16c14]
+- Updated dependencies [152c3c4]
+- Updated dependencies [7e6ec0c]
+- Updated dependencies [9046d9b]
+- Updated dependencies [1eead46]
+- Updated dependencies [db79bd8]
+- Updated dependencies [660a7a9]
+- Updated dependencies [f5bfc9a]
+- Updated dependencies [8efbf8d]
+- Updated dependencies [924fe84]
+- Updated dependencies [b598c5c]
+- Updated dependencies [09d8bff]
+- Updated dependencies [aec9558]
+- Updated dependencies [da9c72b]
+- Updated dependencies [a86e406]
+- Updated dependencies [91b13f2]
+- Updated dependencies [c1411ad]
+- Updated dependencies [e0f3f5d]
+- Updated dependencies [84cecf1]
+- Updated dependencies [3e72f2b]
+- Updated dependencies [322a42e]
+- Updated dependencies [151fb67]
+- Updated dependencies [1193705]
+- Updated dependencies [ce6de60]
+- Updated dependencies [c17ff1c]
+- Updated dependencies [7e965d7]
+- Updated dependencies [f7edde7]
+- Updated dependencies [797f011]
+  - @nymbalhq/config@1.10.0
+  - @nymbalhq/platform@1.10.0
+  - @nymbalhq/types@1.10.0
+  - @nymbalhq/admin@1.10.0
+  - @nymbalhq/http@1.10.0
+  - @nymbalhq/importers@0.6.0
+
 ## 1.9.0
 
 ### Minor Changes

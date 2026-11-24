@@ -1,5 +1,44 @@
 # @nymbalhq/web-components
 
+## 1.10.0
+
+### Minor Changes
+
+- 64b219c: Breaking: an address's country must be an ISO 3166-1 two-letter code (`UK`, `United Kingdom` and `GBR` are refused; use `GB`), and a US region a state's code or name; the config refuses a non-ISO country in `store.shipFrom`, tax and shipping rates.
+  The address form picks the country, and a US state, from a list.
+- 8b16c14: Shoppers enter discount codes on the cart page and in the checkout summary, and see the discount and the total they will be charged before the address; ACP sessions take `discounts.codes` (or `coupons`) and answer `discounts`, MCP agents get `cart_addCode` and `cart_removeCode`, and UCP checkouts total the cart's discount.
+  Breaking: `CommerceAdapter.cart` methods resolve `ShopperCart` and it gains required `addCode` and `removeCode`; `CartState` gains `totals`, `promotions` and `errorCode`; the elements' `cart` projection needs `discountTotalMinor`, `totalMinor` and `codes` (the templates' `fetchCart` fills them).
+  ACP sessions now carry `discounts` and `capabilities.extensions`; `POST /api/cart/codes` refuses `.` and `..`.
+  A store already scaffolded copies `src/lib/api.ts` (Astro) or `lib/api.ts` (Next.js) from the new template.
+- ce6de60: The profile page lists the devices a shopper is signed in on (`nymbal-session-list`, `SessionList`), and each can be signed out, or every one at once; signing out now ends only that browser's session, and the release signs nobody out.
+  Breaking: a custom `CommerceAdapter` must implement `customers.listSessions`, `endSession` and `endAllSessions`.
+
+### Patch Changes
+
+- e948f4e: `nymbal-add-to-cart` shows why an add was refused in a new `error` part and no longer fires `nymbal:cart:item-added` for it, so the cart drawer stays closed.
+  Templates: the Next.js footer's About column is text instead of links to pages the template lacks, the Astro account navigation wraps at phone width, and the guest order page leaves out an empty timeline.
+- 7e965d7: `nymbal-notify-me` tells the shopper to check the address if nothing arrives, and takes a corrected address in the same form without a reload.
+- Updated dependencies [64b219c]
+- Updated dependencies [ebf8ea0]
+- Updated dependencies [6e82231]
+- Updated dependencies [d64b5ed]
+- Updated dependencies [689edc3]
+- Updated dependencies [452299f]
+- Updated dependencies [14246b8]
+- Updated dependencies [8b16c14]
+- Updated dependencies [7e6ec0c]
+- Updated dependencies [660a7a9]
+- Updated dependencies [f5bfc9a]
+- Updated dependencies [8efbf8d]
+- Updated dependencies [924fe84]
+- Updated dependencies [b598c5c]
+- Updated dependencies [09d8bff]
+- Updated dependencies [da9c72b]
+- Updated dependencies [84cecf1]
+- Updated dependencies [ce6de60]
+  - @nymbalhq/types@1.10.0
+  - @nymbalhq/sdk@1.10.0
+
 ## 1.9.0
 
 ### Minor Changes

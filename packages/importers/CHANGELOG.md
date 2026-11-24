@@ -1,5 +1,59 @@
 # @nymbalhq/importers
 
+## 0.6.0
+
+### Minor Changes
+
+- 8efbf8d: Amounts read with each currency's ISO 4217 minor units, from `CURRENCY_MINOR_UNITS` and `currencyExponent` in `@nymbalhq/types`: the admin shows 1999 JPY as JP¥1,999 and 1999 KWD as KWD 1.999, and its refund and price inputs take amounts in those digits.
+  Breaking for HUF, IDR, COP, PKR, IQD and the other currencies where `Intl` and ISO 4217 differ: emails, the admin, the WooCommerce importer and EasyPost now read them with ISO's digits (1999 HUF reads HUF 19.99, was HUF 1,999); stored amounts do not change.
+  EasyPost refuses a rate in a currency with no ISO 4217 minor units, one listed without them (such as XXX) or not listed at all (such as ZZZ), and needs `@nymbalhq/types` 1.10.0 or later.
+
+### Patch Changes
+
+- 1eead46: `planWooCommerceImport` refuses a WooCommerce store in another currency, as the import does, before it reads a record.
+  A delta import (`--since`) now reports a re-listed product's own warnings (unsellable, a sale, no price); lines about stock, which a delta leaves as imported, stay out. A variation whose WooCommerce price was cleared keeps its stored price in a delta, and the report says so.
+- db79bd8: `nymbal import --dry-run` lists a record it cannot read under Errors, counted as refused, instead of stopping, and refuses a product whose own variations share a SKU, as the import does.
+  `--concurrency` (and the `concurrency` option) must be a whole number of 1 or more; `--entities` help names all five entities and the real default.
+- Updated dependencies [bad1a72]
+- Updated dependencies [64b219c]
+- Updated dependencies [35ce5da]
+- Updated dependencies [ebf8ea0]
+- Updated dependencies [6e82231]
+- Updated dependencies [8112f97]
+- Updated dependencies [5f9281b]
+- Updated dependencies [4fdb102]
+- Updated dependencies [d64b5ed]
+- Updated dependencies [689edc3]
+- Updated dependencies [d92618d]
+- Updated dependencies [452299f]
+- Updated dependencies [14246b8]
+- Updated dependencies [8b16c14]
+- Updated dependencies [152c3c4]
+- Updated dependencies [7e6ec0c]
+- Updated dependencies [660a7a9]
+- Updated dependencies [f5bfc9a]
+- Updated dependencies [8efbf8d]
+- Updated dependencies [924fe84]
+- Updated dependencies [b598c5c]
+- Updated dependencies [09d8bff]
+- Updated dependencies [aec9558]
+- Updated dependencies [da9c72b]
+- Updated dependencies [c1411ad]
+- Updated dependencies [e0f3f5d]
+- Updated dependencies [84cecf1]
+- Updated dependencies [3e72f2b]
+- Updated dependencies [322a42e]
+- Updated dependencies [151fb67]
+- Updated dependencies [1193705]
+- Updated dependencies [ce6de60]
+- Updated dependencies [c17ff1c]
+- Updated dependencies [7e965d7]
+- Updated dependencies [f7edde7]
+- Updated dependencies [797f011]
+  - @nymbalhq/config@1.10.0
+  - @nymbalhq/platform@1.10.0
+  - @nymbalhq/types@1.10.0
+
 ## 0.5.0
 
 ### Minor Changes

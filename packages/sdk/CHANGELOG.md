@@ -1,5 +1,42 @@
 # @nymbalhq/sdk
 
+## 1.10.0
+
+### Minor Changes
+
+- d64b5ed: A product has a brand and each variant a GTIN, set in the admin and served in the product page's JSON-LD and the agent feeds; a number that is not a GTIN is refused.
+  Breaking: the product document gains a required `brand` and a `gtin` on each variant; run `nymbal replay --to catalogue` on an existing store so its documents carry them.
+- 452299f: `agents.roles.content`: a weekly night-shift review that proposes product SEO titles and descriptions for the Inbox, checked against copy rules and the product's own facts; `nymbal eval content` scores it.
+  Product pages use a product's `seoTitle` and `seoDescription` for the `<title>` and meta description when set. Breaking: the product document and the SDK's `DenormalisedProduct` gain required `seoTitle` and `seoDescription` (run `nymbal replay`), and the demo seed leaves both blank.
+- 8b16c14: Shoppers enter discount codes on the cart page and in the checkout summary, and see the discount and the total they will be charged before the address; ACP sessions take `discounts.codes` (or `coupons`) and answer `discounts`, MCP agents get `cart_addCode` and `cart_removeCode`, and UCP checkouts total the cart's discount.
+  Breaking: `CommerceAdapter.cart` methods resolve `ShopperCart` and it gains required `addCode` and `removeCode`; `CartState` gains `totals`, `promotions` and `errorCode`; the elements' `cart` projection needs `discountTotalMinor`, `totalMinor` and `codes` (the templates' `fetchCart` fills them).
+  ACP sessions now carry `discounts` and `capabilities.extensions`; `POST /api/cart/codes` refuses `.` and `..`.
+  A store already scaffolded copies `src/lib/api.ts` (Astro) or `lib/api.ts` (Next.js) from the new template.
+- ce6de60: The profile page lists the devices a shopper is signed in on (`nymbal-session-list`, `SessionList`), and each can be signed out, or every one at once; signing out now ends only that browser's session, and the release signs nobody out.
+  Breaking: a custom `CommerceAdapter` must implement `customers.listSessions`, `endSession` and `endAllSessions`.
+
+### Patch Changes
+
+- Updated dependencies [64b219c]
+- Updated dependencies [ebf8ea0]
+- Updated dependencies [6e82231]
+- Updated dependencies [d64b5ed]
+- Updated dependencies [689edc3]
+- Updated dependencies [452299f]
+- Updated dependencies [14246b8]
+- Updated dependencies [8b16c14]
+- Updated dependencies [7e6ec0c]
+- Updated dependencies [660a7a9]
+- Updated dependencies [f5bfc9a]
+- Updated dependencies [8efbf8d]
+- Updated dependencies [924fe84]
+- Updated dependencies [b598c5c]
+- Updated dependencies [09d8bff]
+- Updated dependencies [da9c72b]
+- Updated dependencies [84cecf1]
+- Updated dependencies [ce6de60]
+  - @nymbalhq/types@1.10.0
+
 ## 1.9.0
 
 ### Minor Changes

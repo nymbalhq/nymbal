@@ -1,5 +1,29 @@
 # create-nymbal-app
 
+## 0.10.0
+
+### Minor Changes
+
+- 8b16c14: Shoppers enter discount codes on the cart page and in the checkout summary, and see the discount and the total they will be charged before the address; ACP sessions take `discounts.codes` (or `coupons`) and answer `discounts`, MCP agents get `cart_addCode` and `cart_removeCode`, and UCP checkouts total the cart's discount.
+  Breaking: `CommerceAdapter.cart` methods resolve `ShopperCart` and it gains required `addCode` and `removeCode`; `CartState` gains `totals`, `promotions` and `errorCode`; the elements' `cart` projection needs `discountTotalMinor`, `totalMinor` and `codes` (the templates' `fetchCart` fills them).
+  ACP sessions now carry `discounts` and `capabilities.extensions`; `POST /api/cart/codes` refuses `.` and `..`.
+  A store already scaffolded copies `src/lib/api.ts` (Astro) or `lib/api.ts` (Next.js) from the new template.
+- aec9558: New stores get `renovate.json` (one pull request per Nymbal release) and a workflow job running `nymbal update-check`, which lets a security update merge itself only under the `renovate/auto-updates` preset and when it adds no migration and the compatibility matrix certifies it. Breaking: `features.autoUpdates` is removed from the config; delete it from `nymbal.config.ts`.
+
+### Patch Changes
+
+- e948f4e: `nymbal-add-to-cart` shows why an add was refused in a new `error` part and no longer fires `nymbal:cart:item-added` for it, so the cart drawer stays closed.
+  Templates: the Next.js footer's About column is text instead of links to pages the template lacks, the Astro account navigation wraps at phone width, and the guest order page leaves out an empty timeline.
+- d64b5ed: A product has a brand and each variant a GTIN, set in the admin and served in the product page's JSON-LD and the agent feeds; a number that is not a GTIN is refused.
+  Breaking: the product document gains a required `brand` and a `gtin` on each variant; run `nymbal replay --to catalogue` on an existing store so its documents carry them.
+- 452299f: `agents.roles.content`: a weekly night-shift review that proposes product SEO titles and descriptions for the Inbox, checked against copy rules and the product's own facts; `nymbal eval content` scores it.
+  Product pages use a product's `seoTitle` and `seoDescription` for the `<title>` and meta description when set. Breaking: the product document and the SDK's `DenormalisedProduct` gain required `seoTitle` and `seoDescription` (run `nymbal replay`), and the demo seed leaves both blank.
+- cc21a61: Next.js product pages carry `og:title`, `og:description` and `og:type`, matching their `<title>` and meta description; a scaffolded store copies `app/(catalog)/product/[slug]/page.tsx` from the new template.
+- 91b13f2: New Astro stores start on `astro` 7.4.7 and `@astrojs/node` 11.1.12 or later, which fix a file read through the `/_image` endpoint and an XSS through dynamic tag names.
+  The admin bundles `react-router-dom` 6.30.6, which fixes two open-redirect advisories.
+- ce6de60: The profile page lists the devices a shopper is signed in on (`nymbal-session-list`, `SessionList`), and each can be signed out, or every one at once; signing out now ends only that browser's session, and the release signs nobody out.
+  Breaking: a custom `CommerceAdapter` must implement `customers.listSessions`, `endSession` and `endAllSessions`.
+
 ## 0.9.0
 
 ### Minor Changes
