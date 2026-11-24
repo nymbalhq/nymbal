@@ -8,6 +8,7 @@ import { OrdersListPage, ordersListHandle } from '@/pages/OrdersListPage'
 import { OrderDetailPage, orderDetailHandle } from '@/pages/OrderDetailPage'
 import { ProductsListPage, productsListHandle } from '@/pages/ProductsListPage'
 import { ProductEditPage, productEditHandle, productNewHandle } from '@/pages/ProductEditPage'
+import { PromotionsPage, promotionsHandle } from '@/pages/PromotionsPage'
 import { InventoryPage, inventoryHandle } from '@/pages/InventoryPage'
 import { CustomersListPage, customersListHandle } from '@/pages/CustomersListPage'
 import { CustomerDetailPage, customerDetailHandle } from '@/pages/CustomerDetailPage'
@@ -83,6 +84,11 @@ export const router: ReturnType<typeof createBrowserRouter> = createBrowserRoute
               handle: productEditHandle,
             },
           ],
+        },
+        {
+          path: 'promotions',
+          element: <PromotionsPage />,
+          handle: promotionsHandle,
         },
         {
           path: 'inventory',

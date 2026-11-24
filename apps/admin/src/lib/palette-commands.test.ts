@@ -197,12 +197,12 @@ describe('matchCommands', () => {
     )
   })
 
-  it('AC-2: "inv" keeps Go to Inventory alone, and "go PRO" keeps Go to Products but not New product', () => {
+  it('AC-2: "inv" keeps Go to Inventory alone, and "go PRO" keeps Go to Products and Go to Promotions but not New product', () => {
     expect(matchCommands('inv', NAVIGATION_COMMANDS).map((c: NavigationCommand) => c.to)).toEqual([
       '/inventory',
     ])
     expect(
       matchCommands('go PRO', NAVIGATION_COMMANDS).map((c: NavigationCommand) => c.to),
-    ).toEqual(['/products'])
+    ).toEqual(['/products', '/promotions'])
   })
 })

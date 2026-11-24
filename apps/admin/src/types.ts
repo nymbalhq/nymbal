@@ -107,3 +107,21 @@ export interface LoginResponse {
     expiresIn: number
   }
 }
+
+/** A discount code as `GET /api/admin/promotions` answers it: amounts in minor units, a percent in basis points. */
+export interface AdminPromotion {
+  id: string
+  code: string
+  kind: 'percent' | 'fixed'
+  percentBps: number | null
+  amountOffMinor: number | null
+  currency: string | null
+  minimumSubtotalMinor: number | null
+  expiresAt: string | null
+  usageCap: number | null
+  active: boolean
+  createdAt: string
+  updatedAt: string
+  /** Redemptions whose order is not cancelled. */
+  usedCount: number
+}

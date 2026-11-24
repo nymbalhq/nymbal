@@ -15,6 +15,7 @@ export const NAVIGATION_COMMANDS: readonly NavigationCommand[] = [
   { id: 'go-dashboard', label: 'Go to Dashboard', to: '/' },
   { id: 'go-orders', label: 'Go to Orders', to: '/orders' },
   { id: 'go-products', label: 'Go to Products', to: '/products' },
+  { id: 'go-promotions', label: 'Go to Promotions', to: '/promotions' },
   { id: 'go-inventory', label: 'Go to Inventory', to: '/inventory' },
   { id: 'go-customers', label: 'Go to Customers', to: '/customers' },
   { id: 'go-reviews', label: 'Go to Reviews', to: '/reviews' },
