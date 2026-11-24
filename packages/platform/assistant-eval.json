@@ -1,16 +1,16 @@
 {
-  "hash": "sha256:bf1687820123fbb3ea2d37ab2747e4861351cde1a7df804b1015d393ae97820b",
+  "hash": "sha256:9e803b00babf29f41d5d9575169a0c05b7aaf86802ceaf6fa862cf4f12ed7fc2",
   "provider": "anthropic",
   "model": "claude-sonnet-4-6",
   "runs": 3,
   "passed": 27,
   "total": 28,
   "threshold": 25,
-  "date": "2026-11-21",
+  "date": "2026-11-23",
   "usage": {
-    "inputTokens": 2073586,
-    "outputTokens": 14085,
-    "cacheReadTokens": 2001592,
-    "cacheWriteTokens": 71643
+    "inputTokens": 2162886,
+    "outputTokens": 14000,
+    "cacheReadTokens": 2087244,
+    "cacheWriteTokens": 75290
   }
 }
