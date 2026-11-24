@@ -22,6 +22,7 @@ import { runImportRollback } from './import-rollback.js'
 import { runPasswordHashImport } from './import-password-hashes.js'
 
 const IMPORT_ENTITIES = ['categories', 'products', 'customers', 'orders', 'reviews'] as const satisfies readonly ImportEntity[]
+const DEFAULT_ENTITIES = ['categories', 'products', 'customers', 'orders'] as const satisfies readonly ImportEntity[]
 
 function printProgress(event: ProgressEvent): void {
   if (event.kind === 'phase') {
@@ -59,7 +60,7 @@ export const importCommand = defineCommand({
     },
     entities: {
       type: 'string',
-      description: 'Comma-separated list: products,customers,orders,reviews (default: products,customers,orders)',
+      description: `Comma-separated list: ${IMPORT_ENTITIES.join(',')} (default: ${DEFAULT_ENTITIES.join(',')})`,
     },
     ai: {
       type: 'boolean',
@@ -166,6 +167,13 @@ export const importCommand = defineCommand({
       return
     }
 
+    const concurrencyArg = String(args.concurrency ?? '4')
+    if (!/^\d+$/.test(concurrencyArg) || Number(concurrencyArg) < 1) {
+      console.error(`--concurrency must be a whole number of 1 or more, got "${concurrencyArg}"`)
+      process.exit(1)
+    }
+    const concurrency = Number(concurrencyArg)
+
     intro(p.bold('Nymbal Import'))
 
     // ── Resolve source ────────────────────────────────────────────────────────
@@ -223,10 +231,9 @@ export const importCommand = defineCommand({
       }
       entityList = names as ImportEntity[]
     } else {
-      entityList = ['categories', 'products', 'customers', 'orders']
+      entityList = [...DEFAULT_ENTITIES]
     }
 
-    const concurrency = parseInt(String(args.concurrency ?? '4'), 10)
     const aiEnabled = args.ai !== false
     const gdprEnabled = args.gdpr !== false
 

@@ -44,6 +44,10 @@ export function formatPlan(plan: ImportPlan, storeName: string): string {
     )
   }
 
+  lines.push('', '## Errors', '')
+  if (plan.errors.length === 0) lines.push('None.')
+  for (const e of plan.errors) lines.push(`- ${e.entity} ${e.sourceId}: ${e.error}`)
+
   lines.push('', '## Unmapped fields', '')
   const unmapped = PLAN_ENTITIES.filter((e) => plan.unmapped[e].length > 0)
   if (unmapped.length === 0) lines.push('None.')

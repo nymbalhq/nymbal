@@ -104,6 +104,7 @@ export async function runImportPlan(run: ImportPlanRun): Promise<void> {
           (e) => `  ${e.padEnd(width)}  ${plan.counts[e].import} / ${plan.counts[e].source}`,
         ),
         `  Collisions: ${plan.collisions.length}`,
+        `  Errors:     ${plan.errors.length}`,
         `  Estimate:   about ${plan.estimate.seconds} s`,
         ...(typeof plan.existingStore === 'object'
           ? [p.yellow(`  ⚠ Not checked against the store: ${plan.existingStore.notChecked}`)]

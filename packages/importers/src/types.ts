@@ -159,6 +159,8 @@ export interface ImportPlan {
   /** Source fields the import never reads, by how many records carry a value for them. */
   unmapped: Record<PlanEntity, Array<{ field: string; records: number }>>
   collisions: PlanCollision[]
+  /** Records whose fields the import cannot read, in the order read: each is counted refused and claims nothing. */
+  errors: Array<{ entity: ImportEntity; sourceId: string; error: string }>
   estimate: {
     requests: { api: number; images: number }
     meanRequestMs: number

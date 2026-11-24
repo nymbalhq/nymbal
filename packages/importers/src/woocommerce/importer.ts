@@ -98,6 +98,13 @@ function sourceOrder<T>() {
 
 export const DEFAULT_UNTRACKED_STOCK = 1000
 
+/** Fewer than one worker would pass every product, customer and order over and still end the import complete. */
+export function checkConcurrency(concurrency: number): void {
+  if (!Number.isInteger(concurrency) || concurrency < 1) {
+    throw new Error(`concurrency must be a whole number of 1 or more, not ${concurrency}`)
+  }
+}
+
 /** Why a store in another currency than the WooCommerce store's is refused, before anything is written. */
 export function currencyRefusal(sourceCurrency: string, storeCurrency: string): string {
   return `The WooCommerce store prices in ${sourceCurrency} and this store in ${storeCurrency}: nothing was imported. Import into a store whose currency is ${sourceCurrency}.`
@@ -154,6 +161,7 @@ export async function runWooCommerceImport(
   if (!Number.isInteger(untrackedStock) || untrackedStock < 0) {
     throw new Error(`untrackedStock must be a whole number of 0 or more, not ${untrackedStock}`)
   }
+  checkConcurrency(opts.concurrency)
   const startMs = Date.now()
   const { services, adapters, media, onProgress } = deps
   const emit = onProgress ?? (() => undefined)

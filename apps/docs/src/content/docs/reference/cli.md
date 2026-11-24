@@ -110,7 +110,7 @@ Migrate content from WooCommerce (or other sources) into Nymbal
 | `--url` | string | Store URL (e.g. https://mystore.com) |  |
 | `--key` | string | WooCommerce Consumer Key (or set WOOCOMMERCE_KEY env var) |  |
 | `--secret` | string | WooCommerce Consumer Secret (or set WOOCOMMERCE_SECRET env var) |  |
-| `--entities` | string | Comma-separated list: products,customers,orders,reviews (default: products,customers,orders) |  |
+| `--entities` | string | Comma-separated list: categories,products,customers,orders,reviews (default: categories,products,customers,orders) |  |
 | `--ai` | boolean | Enable AI enrichment (default: true) | `true` |
 | `--gdpr` | boolean | Anonymise customer PII (default: true) | `true` |
 | `--fresh` | boolean | Ignore previous progress and re-import | `false` |

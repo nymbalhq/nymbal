@@ -12,13 +12,13 @@ npx nymbal import --source woocommerce --url https://mystore.com --key <ck_…> 
 npx nymbal import --source woocommerce --url https://mystore.com --key <ck_…> --secret <cs_…>
 ```
 
-`--dry-run` imports nothing: it writes `nymbal-import-plan.json` and `.md` with the counts, the collisions, the fields
-it cannot map and an estimate. `WOOCOMMERCE_KEY` and `WOOCOMMERCE_SECRET` can stand in for `--key` and `--secret`.
+`--dry-run` imports nothing: it writes `nymbal-import-plan.json` and `.md` with the counts, the collisions, the records it
+cannot read, the fields it cannot map and an estimate. `WOOCOMMERCE_KEY` and `WOOCOMMERCE_SECRET` can stand in for `--key` and `--secret`.
 
 ## What it does
 
 - Maps products, categories, customers and orders onto Nymbal's, and reviews too with
-  `--entities products,customers,orders,reviews`.
+  `--entities categories,products,customers,orders,reviews`.
 - Anonymises customers' personal data by default; `--no-gdpr` keeps it.
 - Fills in missing product fields through your AI provider when one is configured; `--no-ai` turns it off.
 - Resumes where it stopped after an interruption; `--fresh` starts again.
