@@ -1,4 +1,4 @@
-import { act, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useLocation } from 'react-router-dom'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -229,5 +229,46 @@ describe('the palette goes to a page by keyboard', () => {
     }
 
     expect(reached).toEqual(DESTINATION)
+  })
+
+  // Kills: the query cleared only once a render sees the palette closed, so a Cmd-K pressed before the next render
+  // (a busy page after the navigation) reopens it on the old query and the new typing is appended to it.
+  it('reopened before the page renders again, the palette starts empty after a command ran', async () => {
+    fakeSearchApi()
+    const user = userEvent.setup()
+    renderPalette()
+    await openPalette(user)
+    const field = await screen.findByRole('combobox', FIELD)
+    await user.type(field, 'inventory')
+    const goTo = await screen.findByRole('group', { name: 'Go to' })
+    await highlight(user, within(goTo).getByRole('option', { name: 'Go to Inventory' }))
+
+    act(() => {
+      fireEvent.keyDown(field, { key: 'Enter' })
+      useCommandPalette.getState().open()
+    })
+
+    expect(screen.getByTestId('where')).toHaveTextContent(/^\/inventory$/)
+    expect(await screen.findByRole('combobox', FIELD)).toHaveValue('')
+    expect(screen.getByRole('tab', { name: 'Search' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  // Kills: a reset only on the palette's own closes, so a link elsewhere that closes it (an assistant record card)
+  // and a reopen before the next render bring back the Ask tab and its draft.
+  it('closed from outside and reopened before the page renders again, the palette starts on an empty Search tab', async () => {
+    fakeSearchApi()
+    const user = userEvent.setup()
+    renderPalette()
+    await openPalette(user)
+    await user.type(await screen.findByRole('combobox', FIELD), '?how many orders')
+    expect(screen.getByRole('tab', { name: 'Ask' })).toHaveAttribute('aria-selected', 'true')
+
+    act(() => {
+      useCommandPalette.getState().close()
+      useCommandPalette.getState().open()
+    })
+
+    expect(screen.getByRole('tab', { name: 'Search' })).toHaveAttribute('aria-selected', 'true')
+    expect(await screen.findByRole('combobox', FIELD)).toHaveValue('')
   })
 })

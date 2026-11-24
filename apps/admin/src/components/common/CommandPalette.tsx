@@ -32,7 +32,7 @@ function useDebounce<T>(value: T, delay: number): T {
 }
 
 export function CommandPalette() {
-  const { isOpen, close } = useCommandPalette()
+  const { isOpen, closes, close } = useCommandPalette()
   const stopAssistant = useAssistant((s) => s.stop)
   const navigate = useNavigate()
   const [tab, setTab] = useState<PaletteTab>('search')
@@ -42,15 +42,20 @@ export function CommandPalette() {
   const inputRef = useRef<HTMLInputElement>(null)
   const scope = usePageCommands((s) => s.scope)
 
-  // Closing the palette, by Esc or a navigation, stops the answer that streams: nothing spends the key unseen.
+  // Every close (Esc, a command, a link elsewhere) resets the palette in the render that first sees it, so a reopen
+  // that comes before the close was rendered still starts on an empty Search tab.
+  const [seenCloses, setSeenCloses] = useState(closes)
+  if (closes !== seenCloses) {
+    setSeenCloses(closes)
+    setTab('search')
+    setQuery('')
+    setDraft('')
+  }
+
+  // Closing the palette stops the answer that streams: nothing spends the key unseen.
   useEffect(() => {
-    if (!isOpen) {
-      stopAssistant()
-      setTab('search')
-      setQuery('')
-      setDraft('')
-    }
-  }, [isOpen, stopAssistant])
+    stopAssistant()
+  }, [closes, stopAssistant])
 
   /** `?` as the first character of a search asks the rest instead. */
   const onQueryChange = (value: string) => {
