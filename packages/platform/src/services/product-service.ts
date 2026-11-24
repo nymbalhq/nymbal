@@ -42,13 +42,14 @@ export interface ProductCreateInput {
   >
 }
 
-/** A variant's prices and GTIN: `compareAtPriceMinor` or `gtin` omitted keeps the stored one, null clears it (a GTIN
- *  of '' too). */
+/** A variant's prices, GTIN and weight: `compareAtPriceMinor`, `gtin` or `weightGrams` omitted keeps the stored one,
+ *  null clears it (a GTIN of '' too). */
 export interface VariantPriceInput {
   id: string
   priceMinor: number
   compareAtPriceMinor?: number | null
   gtin?: string | null
+  weightGrams?: number | null
 }
 
 export interface ProductUpdateInput extends Omit<ProductUpdate, 'updatedAt'> {
@@ -269,14 +270,16 @@ export function createProductService(deps: CreateProductServiceDeps): ProductSer
               : item.compareAtPriceMinor
           const storedGtin = before.gtin ?? null
           const gtin = item.gtin === undefined ? storedGtin : item.gtin || null
+          const weightGrams = item.weightGrams === undefined ? before.weightGrams : item.weightGrams
           const repriced =
             item.priceMinor !== before.priceMinor ||
             compareAtPriceMinor !== before.compareAtPriceMinor
-          if (!repriced && gtin === storedGtin) continue
+          if (!repriced && gtin === storedGtin && weightGrams === before.weightGrams) continue
           await repos.variant.update(tx, item.id, {
             priceMinor: item.priceMinor,
             compareAtPriceMinor,
             gtin,
+            weightGrams,
             updatedAt: now,
           })
           current.set(item.id, {
@@ -284,6 +287,7 @@ export function createProductService(deps: CreateProductServiceDeps): ProductSer
             priceMinor: item.priceMinor,
             compareAtPriceMinor,
             gtin,
+            weightGrams,
           })
           if (!repriced) continue
           await publisher.publish(EVT_PRODUCT_VARIANT_PRICE_CHANGED, {

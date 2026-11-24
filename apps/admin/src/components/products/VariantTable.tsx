@@ -20,8 +20,8 @@ interface VariantTableProps {
   onChange: (variants: Variant[]) => void
   currency: string
   /**
-   * An existing product's save keeps only price and GTIN: SKU, name, stock and status read as text (stock links to the
-   * variant in Inventory), and rows are neither added nor removed.
+   * An existing product's save keeps only price, GTIN and weight: SKU, name, stock and status read as text (stock
+   * links to the variant in Inventory), and rows are neither added nor removed.
    */
   existing?: boolean
 }
@@ -47,7 +47,32 @@ function createEmptyVariant(productId: string): Variant {
 
 interface EditableVariant extends Variant {
   _priceDisplay: string
+  _weightDisplay: string
 }
+
+const MAX_WEIGHT_GRAMS = 1_000_000
+
+/** Whole grams from 0 to 1,000,000, null for an empty field, undefined for anything else (the last weight stands). */
+function parseWeight(text: string): number | null | undefined {
+  const trimmed = text.trim()
+  if (trimmed === '') return null
+  if (!/^\d+$/.test(trimmed)) return undefined
+  const grams = Number(trimmed)
+  return grams <= MAX_WEIGHT_GRAMS ? grams : undefined
+}
+
+const toWeightInput = (grams: number | null): string => (grams === null ? '' : String(grams))
+
+function editable(v: Variant, currency: string): EditableVariant {
+  return {
+    ...v,
+    _priceDisplay: toMoneyInput(v.priceMinor, currency),
+    _weightDisplay: toWeightInput(v.weightGrams),
+  }
+}
+
+const plain = (rows: EditableVariant[]): Variant[] =>
+  rows.map(({ _priceDisplay: _p, _weightDisplay: _w, ...rest }) => rest)
 
 export function VariantTable({
   productId,
@@ -57,13 +82,14 @@ export function VariantTable({
   existing = false,
 }: VariantTableProps) {
   const [editing, setEditing] = useState<EditableVariant[]>(
-    variants.map((v) => ({
-      ...v,
-      _priceDisplay: toMoneyInput(v.priceMinor, currency),
-    })),
+    variants.map((v) => editable(v, currency)),
   )
 
-  const updateVariant = (id: string, field: keyof Variant | '_priceDisplay', value: unknown) => {
+  const updateVariant = (
+    id: string,
+    field: keyof Variant | '_priceDisplay' | '_weightDisplay',
+    value: unknown,
+  ) => {
     setEditing((prev) => {
       const updated = prev.map((v) => {
         if (v.id !== id) return v
@@ -71,29 +97,37 @@ export function VariantTable({
           const price = parseMoney(value as string, currency)
           return { ...v, _priceDisplay: value as string, priceMinor: price ?? v.priceMinor }
         }
+        if (field === '_weightDisplay') {
+          const grams = parseWeight(value as string)
+          return {
+            ...v,
+            _weightDisplay: value as string,
+            weightGrams: grams === undefined ? v.weightGrams : grams,
+          }
+        }
         return { ...v, [field]: value }
       })
-      onChange(updated.map(({ _priceDisplay: _, ...rest }) => rest))
+      onChange(plain(updated))
       return updated
     })
   }
 
   const addVariant = () => {
     const empty = createEmptyVariant(productId)
-    const next = [...editing, { ...empty, _priceDisplay: toMoneyInput(empty.priceMinor, currency) }]
+    const next = [...editing, editable(empty, currency)]
     setEditing(next)
-    onChange(next.map(({ _priceDisplay: _, ...rest }) => rest))
+    onChange(plain(next))
   }
 
   const removeVariant = (id: string) => {
     const next = editing.filter((v) => v.id !== id)
     setEditing(next)
-    onChange(next.map(({ _priceDisplay: _, ...rest }) => rest))
+    onChange(plain(next))
   }
 
   return (
     <div className="space-y-2">
-      <div className="rounded-md border border-zinc-200 overflow-hidden">
+      <div className="rounded-md border border-zinc-200 overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-zinc-50 border-b border-zinc-200">
             <tr>
@@ -110,6 +144,9 @@ export function VariantTable({
                 GTIN
               </th>
               <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-zinc-500">
+                Weight (g)
+              </th>
+              <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-zinc-500">
                 Stock
               </th>
               <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-zinc-500">
@@ -121,7 +158,7 @@ export function VariantTable({
           <tbody>
             {editing.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-3 py-6 text-center text-sm text-zinc-400">
+                <td colSpan={8} className="px-3 py-6 text-center text-sm text-zinc-400">
                   {existing ? 'No variants.' : 'No variants yet. Add one below.'}
                 </td>
               </tr>
@@ -182,6 +219,24 @@ export function VariantTable({
                     inputMode="numeric"
                     placeholder="UPC or EAN"
                     className="h-7 w-32 font-mono text-xs"
+                  />
+                </td>
+                <td className="px-3 py-2">
+                  <Input
+                    type="text"
+                    value={variant._weightDisplay}
+                    onChange={(e) => updateVariant(variant.id, '_weightDisplay', e.target.value)}
+                    onBlur={() =>
+                      updateVariant(
+                        variant.id,
+                        '_weightDisplay',
+                        toWeightInput(variant.weightGrams),
+                      )
+                    }
+                    data-testid={tid('product', 'variant-weight', variant.id)}
+                    aria-label={`Weight of ${variant.name} in grams`}
+                    inputMode="numeric"
+                    className="h-7 w-20 ml-auto text-right font-mono text-xs"
                   />
                 </td>
                 <td className="px-3 py-2 text-right">

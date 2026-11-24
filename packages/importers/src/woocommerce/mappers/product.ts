@@ -3,7 +3,7 @@ import type { VariantDimensions } from '@nymbalhq/types'
 import type { WcProduct, WcVariation } from '../client.js'
 import { slugify } from './category.js'
 import { toMinorUnits } from './money.js'
-import { toGrams, toMillimetres, type DimensionUnit, type WeightUnit } from './units.js'
+import { MAX_GRAMS, toGrams, toMillimetres, type DimensionUnit, type WeightUnit } from './units.js'
 
 /** The WooCommerce store's currency, units and low-stock amount, and the stock an untracked item imports with. */
 export interface StoreContext {
@@ -105,6 +105,19 @@ function soldAs(item: Sellable, parent: WcProduct, store: StoreContext) {
   }
 }
 
+/** A weight heavier than the store holds, which imports as none; null when the weight carries over. */
+function overweight(
+  item: Sellable,
+  parent: WcProduct,
+  store: StoreContext,
+  label: string,
+): string | null {
+  const weight = item.weight || parent.weight
+  return Number(weight) > 0 && toGrams(weight, store.weightUnit) === null
+    ? `${label}weight ${weight} ${store.weightUnit} is over ${MAX_GRAMS.toLocaleString('en')} g: imported with no weight`
+    : null
+}
+
 function negativeStock(item: Sellable, label: string): string | null {
   const quantity = item.stock_quantity ?? 0
   return item.manage_stock === true && quantity < 0
@@ -122,6 +135,7 @@ function readSimple(
   const warnings = [
     saleWarning(wc, ''),
     negativeStock(wc, ''),
+    overweight(wc, wc, store, ''),
     wc.manage_stock === false && stock > 0
       ? `stock not tracked in WooCommerce: imported as ${stock} in stock`
       : null,
@@ -176,6 +190,7 @@ function readVariable(
         // A product none of whose variations has a price gets one warning for the product instead.
         unsellable === null && !priced ? `${label}no price: imported inactive` : null,
         negativeStock(v, label),
+        overweight(v, wc, store, label),
       ].filter((w) => w !== null),
     )
     const optionName = v.attributes.map((a) => a.option).join(' / ')

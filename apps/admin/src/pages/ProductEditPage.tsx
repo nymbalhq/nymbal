@@ -104,15 +104,17 @@ export function ProductEditPage() {
         flushSync(() => setIsDirty(false))
         navigate(`/products/${created.slug}`)
       } else if (existingProduct) {
-        // The update keeps each own variant's prices and GTIN and nothing else of it; a cleared GTIN is sent as null.
+        // The update keeps each own variant's prices, GTIN and weight and nothing else of it; a cleared GTIN is sent as
+        // null.
         const own = new Set(existingProduct.variants.map((v) => v.id))
         const variants = (form.variants ?? [])
           .filter((v) => own.has(v.id))
-          .map(({ id, priceMinor, compareAtPriceMinor, gtin }) => ({
+          .map(({ id, priceMinor, compareAtPriceMinor, gtin, weightGrams }) => ({
             id,
             priceMinor,
             compareAtPriceMinor,
             gtin: gtin || null,
+            weightGrams,
           }))
         const data = { ...form, variants }
         // The update writes its answer into the detail query before it resolves, so the clean form takes the saved

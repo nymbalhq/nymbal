@@ -1,7 +1,7 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { toGrams, toMillimetres } from '../../src/woocommerce/mappers/units.js'
-import { mapProduct } from '../../src/woocommerce/mappers/product.js'
+import { mapProduct, productWarnings } from '../../src/woocommerce/mappers/product.js'
 import { storeContext, wcProduct, wcVariable, wcVariation } from './support/wc.js'
 
 // WooCommerce stores weight in kg|g|lbs|oz and dimensions in m|cm|mm|in|yd (woocommerce_weight_unit,
@@ -9,6 +9,8 @@ import { storeContext, wcProduct, wcVariable, wcVariation } from './support/wc.j
 
 const GRAMS = { kg: 1000, g: 1, lbs: 453.59237, oz: 28.349523125 } as const
 const MILLIMETRES = { m: 1000, cm: 10, mm: 1, in: 25.4, yd: 914.4 } as const
+/** The heaviest weight the store holds, in grams. */
+const HEAVIEST = 1_000_000
 type WeightUnit = keyof typeof GRAMS
 type DimensionUnit = keyof typeof MILLIMETRES
 
@@ -32,8 +34,9 @@ describe('toGrams and toMillimetres', () => {
         fc.constantFrom(...(Object.keys(GRAMS) as WeightUnit[])),
         (value, unit) => {
           const exact = Number(value) * GRAMS[unit]
-          // Under one gram or millimetre, whether 0 or null comes back is not the point of these properties.
-          fc.pre(exact >= 1)
+          // Under one gram or millimetre, whether 0 or null comes back is not the point of these properties; over
+          // the store's heaviest weight is the bound's own test.
+          fc.pre(exact >= 1 && exact <= HEAVIEST)
           const grams = toGrams(value, unit)
           expect(Number.isInteger(grams), `${value} ${unit} → ${grams}`).toBe(true)
           expect(Math.abs(grams! - exact), `${value} ${unit} → ${grams}`).toBeLessThanOrEqual(
@@ -84,6 +87,66 @@ describe('toGrams and toMillimetres', () => {
   })
 })
 
+describe('a weight heavier than the store holds', () => {
+  it('maps to null above 1,000,000 g and to itself at it, in every unit', () => {
+    expect(toGrams('1000', 'kg')).toBe(1_000_000)
+    expect(toGrams('1000000', 'g')).toBe(1_000_000)
+    expect(toGrams('1500', 'kg')).toBeNull()
+    expect(toGrams('1000001', 'g')).toBeNull()
+    expect(toGrams('2205', 'lbs')).toBeNull()
+    expect(toGrams('35273', 'oz')).toBe(999_973)
+    expect(toGrams('35274', 'oz')).toBeNull()
+  })
+
+  it('property: a converted weight is never above 1,000,000 g', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1, max: 10_000_000 }),
+        fc.constantFrom(...(Object.keys(GRAMS) as WeightUnit[])),
+        (value, unit) => {
+          const grams = toGrams(String(value), unit)
+          const exact = Math.round(value * GRAMS[unit])
+          expect(grams, `${value} ${unit}`).toBe(exact <= HEAVIEST ? exact : null)
+        },
+      ),
+      { numRuns: 300 },
+    )
+  })
+
+  it('a simple product weighing 1500 kg imports with no weight and warns with the weight it had; 1000 kg imports as is with no warning', () => {
+    const store = storeContext({ weightUnit: 'kg' })
+    const heavy = wcProduct({ weight: '1500' })
+    expect(mapProduct(heavy, [], [], [], '', store).variants![0]!.weightGrams).toBeNull()
+    expect(productWarnings(heavy, [], store).filter((w) => w.includes('weight'))).toEqual([
+      'weight 1500 kg is over 1,000,000 g: imported with no weight',
+    ])
+
+    const limit = wcProduct({ weight: '1000' })
+    expect(mapProduct(limit, [], [], [], '', store).variants![0]!.weightGrams).toBe(1_000_000)
+    expect(productWarnings(limit, [], store).filter((w) => w.includes('weight'))).toEqual([])
+  })
+
+  it('a variation weighing 1,000,001 g imports with no weight and warns under its id, its sibling keeping its weight', () => {
+    const store = storeContext({ weightUnit: 'g' })
+    const heavy = wcVariation({ id: 21, sku: 'V-HEAVY', weight: '1000001' })
+    const light = wcVariation({ id: 22, sku: 'V-LIGHT', weight: '250' })
+    const wc = wcVariable([heavy, light], {
+      weight: '',
+      dimensions: { length: '', width: '', height: '' },
+    })
+    const bySku = new Map(
+      mapProduct(wc, [heavy, light], [], [], '', store).variants!.map((v) => [
+        v.sku,
+        v.weightGrams,
+      ]),
+    )
+    expect(Object.fromEntries(bySku)).toEqual({ 'V-HEAVY': null, 'V-LIGHT': 250 })
+    expect(productWarnings(wc, [heavy, light], store).filter((w) => w.includes('weight'))).toEqual([
+      'variation 21: weight 1000001 g is over 1,000,000 g: imported with no weight',
+    ])
+  })
+})
+
 describe('mapProduct in the store’s units', () => {
   it('AC-4: property: a simple product’s weight and dimensions convert from the store’s units, not from kg and cm', () => {
     fc.assert(
@@ -94,6 +157,7 @@ describe('mapProduct in the store’s units', () => {
         fc.tuple(amount, amount, amount),
         (weightUnit, dimensionUnit, weight, [length, width, height]) => {
           fc.pre(Number(weight) * GRAMS[weightUnit] >= 1)
+          fc.pre(Number(weight) * GRAMS[weightUnit] <= HEAVIEST)
           fc.pre([length, width, height].every((d) => Number(d) * MILLIMETRES[dimensionUnit] >= 1))
           const variant = mapProduct(
             wcProduct({ weight, dimensions: { length, width, height } }),

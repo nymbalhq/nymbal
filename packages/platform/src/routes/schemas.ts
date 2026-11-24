@@ -198,13 +198,22 @@ const gtin = z
     (v) => v === '' || isGtin(v),
     'a GTIN is 8, 12, 13 or 14 digits ending in its check digit',
   )
+/** Whole grams; null when the variant has none and is rated at the store's default weight. */
+const WEIGHT_ISSUE = 'a weight is whole grams from 0 to 1,000,000'
+const weightGrams = z
+  .number({ error: WEIGHT_ISSUE })
+  .int(WEIGHT_ISSUE)
+  .min(0, WEIGHT_ISSUE)
+  .max(1_000_000, WEIGHT_ISSUE)
+  .nullable()
+  .optional()
 const productVariant = z.object({
   id: z.string().optional(),
   sku: z.string(),
   name: z.string(),
   priceMinor: money,
   compareAtPriceMinor: money.nullable().optional(),
-  weightGrams: z.number().nullable().optional(),
+  weightGrams,
   dimensions: variantDimensions.nullable().optional(),
   stock: z.number().int(),
   lowStockThreshold: z.number().int().optional(),
@@ -212,13 +221,14 @@ const productVariant = z.object({
   status: z.enum(['active', 'inactive']).optional(),
   gtin: gtin.nullable().optional(),
 })
-/** A variant's prices and GTIN in a product update: an omitted compare-at price or GTIN keeps the stored one, null
- *  clears it. */
+/** A variant's prices, GTIN and weight in a product update: an omitted compare-at price, GTIN or weight keeps the
+ *  stored one, null clears it. */
 const variantPrices = z.object({
   id,
   priceMinor: money.min(0),
   compareAtPriceMinor: money.min(0).nullable().optional(),
   gtin: gtin.nullable().optional(),
+  weightGrams,
 })
 const productFields = {
   description: z.string().optional(),
@@ -835,7 +845,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
     name: 'admin.products.update',
     command: 'product.update',
     description:
-      "Update a product's fields (taxCode: what it is taxed as, null for the standard rate) and its variants' prices and GTINs; a variant left out keeps both, and stock moves only through inventory.",
+      "Update a product's fields (taxCode: what it is taxed as, null for the standard rate) and its variants' prices, GTINs and weights; a variant left out keeps them, and stock moves only through inventory.",
     params: idParams,
     body: z.object({
       name: z.string().optional(),

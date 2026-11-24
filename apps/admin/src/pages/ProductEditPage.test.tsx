@@ -7,9 +7,10 @@ import { renderWithProviders } from '@/tests/render'
 import { ProductEditPage } from './ProductEditPage'
 
 // The product page on an existing product offers only what its save keeps: SKU, name, stock and status read as text
-// (stock a link to the variant in Inventory), price and GTIN the inputs, no Add or Delete Variant; Save sends one PATCH
-// whose variants are the loaded product's prices and GTINs alone. On a new product the table stays editable, and
-// Create sends the rows it holds with their stock. The product's brand is an input of the form, saved with it.
+// (stock a link to the variant in Inventory), price, GTIN and weight the inputs, no Add or Delete Variant; Save sends one
+// PATCH whose variants are the loaded product's prices, GTINs and weights alone. On a new product the table stays
+// editable, and Create sends the rows it holds with their stock. The product's brand is an input of the form, saved with
+// it.
 
 const AT = '2026-10-20T10:00:00.000Z'
 const GTIN_A = '4006381333931'
@@ -147,10 +148,10 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-const SENT_KEYS = ['compareAtPriceMinor', 'gtin', 'id', 'priceMinor']
+const SENT_KEYS = ['compareAtPriceMinor', 'gtin', 'id', 'priceMinor', 'weightGrams']
 
 describe('Product save', () => {
-  it('AC-7: on an existing product the Variants tab shows SKU, name, stock and status as text, the stock a link to /inventory?q=<sku>, price and GTIN the inputs, no Add Variant and no delete; a price edit then Save sends one PATCH whose variants are exactly the loaded ids, each { id, priceMinor, compareAtPriceMinor, gtin }, the edited one at its new price', async () => {
+  it('AC-7: on an existing product the Variants tab shows SKU, name, stock and status as text, the stock a link to /inventory?q=<sku>, price, GTIN and weight the inputs, no Add Variant and no delete; a price edit then Save sends one PATCH whose variants are exactly the loaded ids, each { id, priceMinor, compareAtPriceMinor, gtin, weightGrams }, the edited one at its new price', async () => {
     const api = fakeApi()
     const user = userEvent.setup()
     renderWithProviders(
@@ -178,8 +179,12 @@ describe('Product save', () => {
       const inputs = within(row).queryAllByRole('textbox')
       expect(
         inputs.map((el) => el.getAttribute('data-testid')).sort(),
-        `${v.id}: the row's inputs are its price and its GTIN`,
-      ).toEqual([`admin-product-variant-gtin-${v.id}`, `admin-product-variant-price-${v.id}`])
+        `${v.id}: the row's inputs are its price, its GTIN and its weight`,
+      ).toEqual([
+        `admin-product-variant-gtin-${v.id}`,
+        `admin-product-variant-price-${v.id}`,
+        `admin-product-variant-weight-${v.id}`,
+      ])
       expect(within(row).queryAllByRole('spinbutton'), `${v.id}: no stock input`).toEqual([])
       expect(within(row).queryAllByRole('combobox'), `${v.id}: no status select`).toEqual([])
       expect(within(row).getByText(v.sku)).toBeInTheDocument()
@@ -214,12 +219,14 @@ describe('Product save', () => {
         priceMinor: 2150,
         compareAtPriceMinor: edited.compareAtPriceMinor,
         gtin: edited.gtin,
+        weightGrams: edited.weightGrams,
       },
       {
         id: untouched.id,
         priceMinor: untouched.priceMinor,
         compareAtPriceMinor: untouched.compareAtPriceMinor,
         gtin: untouched.gtin,
+        weightGrams: untouched.weightGrams,
       },
     ])
     expect(sent.description).toBe('Loose, light and repriced.')

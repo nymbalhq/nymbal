@@ -112,6 +112,14 @@ function productChanges(product: ProductSnapshot, args: Rec): ProposalChange[] {
         proposed: valueOf(entry['gtin']) || null,
       })
     }
+    if ('weightGrams' in entry) {
+      changes.push({
+        label: `Weight of ${variant.name} (g)`,
+        kind: 'value',
+        current: variant.weightGrams,
+        proposed: valueOf(entry['weightGrams']),
+      })
+    }
   }
   return changes
 }

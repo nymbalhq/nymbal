@@ -17,13 +17,18 @@ const MILLIMETRES_PER: Readonly<Record<DimensionUnit, number>> = {
   yd: 914.4,
 }
 
-function convert(value: string, factor: number): number | null {
+/** The heaviest weight the store holds. */
+export const MAX_GRAMS = 1_000_000
+
+/** The value in whole target units; null when it is empty, not positive or above `max`. */
+function convert(value: string, factor: number, max = Infinity): number | null {
   const n = Number(value)
-  return n > 0 ? Math.round(n * factor) : null
+  const converted = Math.round(n * factor)
+  return n > 0 && converted <= max ? converted : null
 }
 
 export function toGrams(value: string, unit: WeightUnit): number | null {
-  return convert(value, GRAMS_PER[unit])
+  return convert(value, GRAMS_PER[unit], MAX_GRAMS)
 }
 
 export function toMillimetres(value: string, unit: DimensionUnit): number | null {
