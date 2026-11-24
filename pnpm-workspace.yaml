@@ -40,3 +40,6 @@ packageExtensions:
 # A patched uuid for the Lighthouse CI tooling (a devDependency; it calls only uuid.v4).
 overrides:
   "@lhci/cli>uuid": "^11.1.1"
+  # Vitest 3 asks for tinypool 1, which has no fix for two prototype-pollution advisories; tinypool 2 drops
+  # Node 18 (pinned to 26) and defaults its thread count differently, which Vitest overrides with explicit counts.
+  tinypool: "^2.1.2"
