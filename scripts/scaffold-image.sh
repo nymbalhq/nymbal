@@ -9,7 +9,7 @@
 # worktree's compose stack.
 #
 # It edits package versions, the generated scaffold and the lockfile in this checkout while it runs, and restores them
-# on exit.
+# on exit. The logs of the servers it starts stay after it, in reports/scaffold-image-<template>-{store,stripe}.log.
 set -euo pipefail
 
 template="${1:-}"
@@ -27,6 +27,9 @@ store_container=""
 image=""
 database=""
 stripe_pid=""
+mkdir -p "$root/reports"
+store_log="$root/reports/scaffold-image-$template-store.log"
+stripe_log="$root/reports/scaffold-image-$template-stripe.log"
 # shellcheck source=local-registry.sh
 . "$root/scripts/local-registry.sh"
 
@@ -55,6 +58,7 @@ client.connect().then(() => client.query(process.argv[2])).finally(() => client.
 cleanup() {
   local status=$?
   set +e
+  [ -n "$store_container" ] && docker logs "$store_container" >"$store_log" 2>&1
   [ -n "$store_container" ] && docker rm -f "$store_container" >/dev/null 2>&1
   [ -n "$stripe_pid" ] && kill "$stripe_pid" >/dev/null 2>&1 && wait "$stripe_pid" 2>/dev/null
   [ -n "$image" ] && docker image rm -f "$image" >/dev/null 2>&1
@@ -131,10 +135,10 @@ in_image node node_modules/nymbal/bin/nymbal.mjs seed
 # shopper's confirm there posts the signed payment_intent.succeeded to the store, as Stripe does.
 node "$root/tests/fixtures/stripe-api/server.mjs" --host 0.0.0.0 --port "$stripe_port" \
   --webhook-url "http://127.0.0.1:$store_port/api/webhooks/stripe" --webhook-secret "$webhook_secret" \
-  >"$work/stripe.out" 2>"$work/stripe.log" &
+  >"$work/stripe.out" 2>"$stripe_log" &
 stripe_pid=$!
 for _ in $(seq 1 40); do [ -s "$work/stripe.out" ] && break; sleep 0.25; done
-[ -s "$work/stripe.out" ] || { cat "$work/stripe.log" >&2; echo "scaffold-image: the fake Stripe API did not start" >&2; exit 1; }
+[ -s "$work/stripe.out" ] || { cat "$stripe_log" >&2; echo "scaffold-image: the fake Stripe API did not start" >&2; exit 1; }
 
 ready_start="$(now_ms)"
 store_container="$(docker run -d --add-host host.docker.internal:host-gateway --env-file "$work/container.env" \
@@ -159,7 +163,7 @@ if ! (cd "$root" && NYMBAL_SCAFFOLD_DIR="$project" NYMBAL_IMAGE="$image" NYMBAL_
   NYMBAL_STRIPE_API_URL="http://127.0.0.1:$stripe_port" \
   pnpm vitest run --project scaffold-image); then
   docker logs "$store_container" 2>&1 | tail -40 >&2
-  tail -20 "$work/stripe.log" >&2
+  tail -20 "$stripe_log" >&2
   exit 1
 fi
 

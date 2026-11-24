@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, gte, isNotNull, like, lt, notExists, sql, type SQL } from 'drizzle-orm'
+import { and, asc, eq, gt, gte, isNotNull, like, lt, notExists, or, sql, type SQL } from 'drizzle-orm'
 import type { Customer, CustomerAddress, Role } from '@nymbalhq/types'
 import {
   postgresDb,
@@ -113,6 +113,28 @@ function postgresUnconfirmedDue(db: PostgresClient, w: UnconfirmedWindow): SQL {
   )!
 }
 
+// An account with the customer role whose email, first name or last name holds `q`, ignoring case: instr and strpos
+// compare characters, so a % or _ matches only itself. SQLite's own lower() folds ASCII alone, so that side goes
+// through the store connection's unicode_lower.
+function sqliteSearchMatch(q: string): SQL {
+  const c = sqliteSchema.customers
+  const holds = (column: SQL) =>
+    sql`instr(unicode_lower(${column}), unicode_lower(cast(${q} as text))) > 0`
+  return and(
+    sql`exists (select 1 from json_each(${c.roles}) where value = 'customer')`,
+    or(holds(sql`${c.email}`), holds(sql`${c.firstName}`), holds(sql`${c.lastName}`)),
+  )!
+}
+
+function postgresSearchMatch(q: string): SQL {
+  const c = postgresSchema.customers
+  const holds = (column: SQL) => sql`strpos(lower(${column}), lower(cast(${q} as text))) > 0`
+  return and(
+    sql`${c.roles} @> jsonb_build_array('customer'::text)`,
+    or(holds(sql`${c.email}`), holds(sql`${c.firstName}`), holds(sql`${c.lastName}`)),
+  )!
+}
+
 /** A stored customer: its roles column is always read. */
 export type CustomerWithHash = Customer & { passwordHash: string; roles: Role[] }
 
@@ -120,6 +142,11 @@ export interface CustomerRepository extends StoreRepository {
   findById(tx: ReadTx, id: string): Promise<CustomerWithHash | null>
   findByEmail(tx: ReadTx, email: string): Promise<CustomerWithHash | null>
   list(tx: ReadTx, opts?: { limit?: number; offset?: number }): Promise<CustomerWithHash[]>
+  /**
+   * Accounts with the customer role whose email, first name or last name holds `q`, case-insensitive, every character
+   * literal; createdAt ascending, then id, at most `limit`.
+   */
+  search(tx: ReadTx, opts: { q: string; limit: number }): Promise<CustomerWithHash[]>
   /** Rows by id after `page.after`: a walk over the table that a concurrent write cannot make skip a row. */
   listPage(tx: ReadTx, page: KeysetPage): Promise<CustomerWithHash[]>
   insert(tx: Tx, c: CustomerInsert): Promise<void>
@@ -228,6 +255,27 @@ export function createCustomerRepository(store: CommandStore): CustomerRepositor
         .from(postgresSchema.customers)
         .limit(limit)
         .offset(offset)
+      return rows.map((r) => rowToCustomer('postgres', r as Record<string, unknown>))
+    },
+    async search(tx, { q, limit }) {
+      if (tx.kind === 'sqlite') {
+        const t = sqliteSchema.customers
+        const rows = sqliteDb(tx)
+          .select()
+          .from(t)
+          .where(sqliteSearchMatch(q))
+          .orderBy(asc(t.createdAt), asc(t.id))
+          .limit(limit)
+          .all()
+        return rows.map((r) => rowToCustomer('sqlite', r as Record<string, unknown>))
+      }
+      const t = postgresSchema.customers
+      const rows = await postgresDb(tx)
+        .select()
+        .from(t)
+        .where(postgresSearchMatch(q))
+        .orderBy(asc(t.createdAt), asc(t.id))
+        .limit(limit)
       return rows.map((r) => rowToCustomer('postgres', r as Record<string, unknown>))
     },
     async insert(tx, c) {
@@ -365,7 +413,9 @@ export function createCustomerRepository(store: CommandStore): CustomerRepositor
         const rows = db
           .select({ id: t.id })
           .from(t)
-          .where(and(sqliteUnconfirmedDue(db, opts), after === undefined ? undefined : gt(t.id, after)))
+          .where(
+            and(sqliteUnconfirmedDue(db, opts), after === undefined ? undefined : gt(t.id, after)),
+          )
           .orderBy(asc(t.id))
           .limit(limit)
           .all()
@@ -376,7 +426,9 @@ export function createCustomerRepository(store: CommandStore): CustomerRepositor
       const rows = await db
         .select({ id: t.id })
         .from(t)
-        .where(and(postgresUnconfirmedDue(db, opts), after === undefined ? undefined : gt(t.id, after)))
+        .where(
+          and(postgresUnconfirmedDue(db, opts), after === undefined ? undefined : gt(t.id, after)),
+        )
         .orderBy(asc(t.id))
         .limit(limit)
       return rows.map((r) => r.id)

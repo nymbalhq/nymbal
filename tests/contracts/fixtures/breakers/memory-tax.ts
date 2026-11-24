@@ -23,6 +23,8 @@ export interface TaxFlaws {
   ignoresShipping?: boolean
   /** A shipping tax on a request that sent no shipping, as if a standard delivery had been sent. */
   shippingWhenNull?: boolean
+  /** Quotes that name another provider than the adapter's own `providerName`. */
+  namesOtherProvider?: boolean
 }
 
 /** The runner's options for every memory-tax run: it taxes shipping, so the suite checks that it does. */
@@ -76,7 +78,7 @@ export function memoryTax(flaws: TaxFlaws = {}): TaxAdapter {
               : 0
       const total = lines.reduce((s, l) => s + l.taxMinor, 0) + shippingTaxMinor
       return {
-        provider: 'memory-tax',
+        provider: flaws.namesOtherProvider === true ? 'another-tax' : 'memory-tax',
         inclusive: params.pricesIncludeTax,
         lines,
         shippingTaxMinor,

@@ -34,17 +34,20 @@ export interface ProductCreateInput {
   seoDescription?: string
   media?: Product['media']
   metadata?: Record<string, unknown>
+  brand?: string
   categoryIds?: string[]
   variants?: Array<
     Omit<VariantInsert, 'id' | 'productId' | 'createdAt' | 'updatedAt'> & { id?: string }
   >
 }
 
-/** A variant's prices: `compareAtPriceMinor` omitted keeps the stored one, null clears it. */
+/** A variant's prices and GTIN: `compareAtPriceMinor` or `gtin` omitted keeps the stored one, null clears it (a GTIN
+ *  of '' too). */
 export interface VariantPriceInput {
   id: string
   priceMinor: number
   compareAtPriceMinor?: number | null
+  gtin?: string | null
 }
 
 export interface ProductUpdateInput extends Omit<ProductUpdate, 'updatedAt'> {
@@ -55,6 +58,11 @@ export interface ProductUpdateInput extends Omit<ProductUpdate, 'updatedAt'> {
 
 export interface ProductService {
   create(input: ProductCreateInput): Promise<ProductSnapshot>
+  /**
+   * Copies a product as a draft named "<name> (Copy)" with no stock. The copy takes the first free suffix, `-copy`
+   * then `-copy-<k>`, whose slug and every SKU (`-COPY`, `-COPY-<k>`) no product or variant in the store holds.
+   */
+  duplicate(id: string): Promise<ProductSnapshot>
   update(id: string, input: ProductUpdateInput): Promise<ProductSnapshot>
   delete(id: string): Promise<void>
   publish(id: string): Promise<void>
@@ -78,7 +86,8 @@ export interface CreateProductServiceDeps {
   currency: string
 }
 
-async function snapshot(
+/** A product as `product.*` events carry it: its variants and the ids of its categories. */
+export async function productSnapshot(
   tx: ReadTx,
   repos: Repositories,
   product: Product,
@@ -99,7 +108,7 @@ export function createProductService(deps: CreateProductServiceDeps): ProductSer
     return product
   }
 
-  return {
+  const service: ProductService = {
     async create(input) {
       audit.note('product.create')
       if (!input.slug.trim()) throw new ValidationError('Product slug is required')
@@ -128,6 +137,7 @@ export function createProductService(deps: CreateProductServiceDeps): ProductSer
           ...(input.seoDescription !== undefined && { seoDescription: input.seoDescription }),
           ...(input.media !== undefined && { media: input.media }),
           ...(input.metadata !== undefined && { metadata: input.metadata }),
+          ...(input.brand !== undefined && { brand: input.brand }),
           createdAt: now,
           updatedAt: now,
         }
@@ -137,6 +147,7 @@ export function createProductService(deps: CreateProductServiceDeps): ProductSer
           const id = v.id ?? uuidv7()
           const vi: VariantInsert = {
             ...v,
+            gtin: v.gtin || null,
             id,
             productId,
             createdAt: now,
@@ -157,6 +168,53 @@ export function createProductService(deps: CreateProductServiceDeps): ProductSer
         }
         await publisher.publish(EVT_PRODUCT_CREATED, { product: snap })
         return snap
+      })
+    },
+
+    async duplicate(id) {
+      const original = await service.getById(id)
+      const suffix = await store.read(async (tx) => {
+        for (let k = 1; ; k += 1) {
+          const tail = k === 1 ? '' : `-${k}`
+          if (await repos.product.findBySlug(tx, `${original.slug}-copy${tail}`)) continue
+          let skusFree = true
+          for (const v of original.variants) {
+            if (await repos.variant.findBySku(tx, `${v.sku}-COPY${tail}`)) {
+              skusFree = false
+              break
+            }
+          }
+          if (skusFree) return tail
+        }
+      })
+      return service.create({
+        slug: `${original.slug}-copy${suffix}`,
+        name: `${original.name} (Copy)`,
+        description: original.description,
+        shortDescription: original.shortDescription,
+        status: 'draft',
+        type: original.type,
+        seoTitle: original.seoTitle,
+        seoDescription: original.seoDescription,
+        media: original.media,
+        metadata: original.metadata,
+        brand: original.brand ?? '',
+        categoryIds: original.categoryIds,
+        // A copy holds no goods: stock is received into it like any new product. Its GTINs are not copied either: it
+        // is a new trade item until the merchant says otherwise.
+        variants: original.variants.map((v) => ({
+          sku: `${v.sku}-COPY${suffix}`,
+          name: v.name,
+          priceMinor: v.priceMinor,
+          compareAtPriceMinor: v.compareAtPriceMinor,
+          weightGrams: v.weightGrams,
+          dimensions: v.dimensions,
+          stock: 0,
+          lowStockThreshold: v.lowStockThreshold,
+          options: v.options,
+          status: v.status,
+          taxCode: v.taxCode ?? null,
+        })),
       })
     },
 
@@ -189,6 +247,7 @@ export function createProductService(deps: CreateProductServiceDeps): ProductSer
           ...(input.seoDescription !== undefined && { seoDescription: input.seoDescription }),
           ...(input.media !== undefined && { media: input.media }),
           ...(input.metadata !== undefined && { metadata: input.metadata }),
+          ...(input.brand !== undefined && { brand: input.brand }),
           updatedAt: now,
         }
         await repos.product.update(tx, product.id, updateInput)
@@ -204,18 +263,25 @@ export function createProductService(deps: CreateProductServiceDeps): ProductSer
             item.compareAtPriceMinor === undefined
               ? before.compareAtPriceMinor
               : item.compareAtPriceMinor
-          if (
-            item.priceMinor === before.priceMinor &&
-            compareAtPriceMinor === before.compareAtPriceMinor
-          ) {
-            continue
-          }
+          const storedGtin = before.gtin ?? null
+          const gtin = item.gtin === undefined ? storedGtin : item.gtin || null
+          const repriced =
+            item.priceMinor !== before.priceMinor ||
+            compareAtPriceMinor !== before.compareAtPriceMinor
+          if (!repriced && gtin === storedGtin) continue
           await repos.variant.update(tx, item.id, {
             priceMinor: item.priceMinor,
             compareAtPriceMinor,
+            gtin,
             updatedAt: now,
           })
-          current.set(item.id, { ...before, priceMinor: item.priceMinor, compareAtPriceMinor })
+          current.set(item.id, {
+            ...before,
+            priceMinor: item.priceMinor,
+            compareAtPriceMinor,
+            gtin,
+          })
+          if (!repriced) continue
           await publisher.publish(EVT_PRODUCT_VARIANT_PRICE_CHANGED, {
             productId: product.id,
             variantId: item.id,
@@ -226,7 +292,7 @@ export function createProductService(deps: CreateProductServiceDeps): ProductSer
             currency,
           })
         }
-        const snap = await snapshot(tx, repos, await requireProduct(tx, product.id))
+        const snap = await productSnapshot(tx, repos, await requireProduct(tx, product.id))
         await publisher.publish(EVT_PRODUCT_UPDATED, { product: snap })
         return snap
       })
@@ -258,7 +324,7 @@ export function createProductService(deps: CreateProductServiceDeps): ProductSer
           slug: product.slug,
         })
         const fresh = await requireProduct(tx, product.id)
-        const snap = await snapshot(tx, repos, fresh)
+        const snap = await productSnapshot(tx, repos, fresh)
         await publisher.publish(EVT_PRODUCT_UPDATED, { product: snap })
       })
     },
@@ -274,20 +340,20 @@ export function createProductService(deps: CreateProductServiceDeps): ProductSer
           slug: product.slug,
         })
         const fresh = await requireProduct(tx, product.id)
-        const snap = await snapshot(tx, repos, fresh)
+        const snap = await productSnapshot(tx, repos, fresh)
         await publisher.publish(EVT_PRODUCT_UPDATED, { product: snap })
       })
     },
 
     async getById(id) {
-      return store.read(async (tx) => snapshot(tx, repos, await requireProduct(tx, id)))
+      return store.read(async (tx) => productSnapshot(tx, repos, await requireProduct(tx, id)))
     },
 
     async getBySlug(slug) {
       return store.read(async (tx) => {
         const product = await repos.product.findBySlug(tx, slug)
         if (!product) throw new NotFoundError('product', slug)
-        return snapshot(tx, repos, product)
+        return productSnapshot(tx, repos, product)
       })
     },
 
@@ -296,10 +362,11 @@ export function createProductService(deps: CreateProductServiceDeps): ProductSer
         const products = await repos.product.list(tx, opts)
         const out: ProductSnapshot[] = []
         for (const p of products) {
-          out.push(await snapshot(tx, repos, p))
+          out.push(await productSnapshot(tx, repos, p))
         }
         return out
       })
     },
   }
+  return service
 }

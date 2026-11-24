@@ -1,4 +1,5 @@
 import type { AgentSurfaceUrls, Cart } from '@nymbalhq/types'
+import { cartTotals } from '../services/promotions-quote.js'
 import { UCP_CAPABILITY, UCP_VERSION, type UcpCapability } from './profile.js'
 
 /** A product as the catalogue routes answer it (the `products` read model). */
@@ -11,7 +12,15 @@ export interface ListedProduct {
   media: unknown
   priceRange: { minMinor: number; maxMinor: number } | null
   currency: string | null
-  variants: Array<{ id: string; sku: string; name: string; priceMinor: number; stock: number }>
+  brand?: string
+  variants: Array<{
+    id: string
+    sku: string
+    name: string
+    priceMinor: number
+    stock: number
+    gtin?: string | null
+  }>
 }
 
 export interface UcpLink {
@@ -28,6 +37,17 @@ export interface UcpVariant {
   price: { amount: number; currency: string }
   availability: { available: boolean }
   inputs?: Array<{ id: string; match: 'exact' | 'featured' }>
+  barcodes?: UcpBarcode[]
+}
+
+export interface UcpBarcode {
+  type: 'GTIN'
+  value: string
+}
+
+/** A variant's GTIN as UCP and ACP barcodes, or nothing to spread when it has none. */
+export function barcodesOf(gtin: string | null | undefined): { barcodes?: UcpBarcode[] } {
+  return gtin ? { barcodes: [{ type: 'GTIN', value: gtin }] } : {}
 }
 
 export interface UcpProduct {
@@ -42,6 +62,8 @@ export interface UcpProduct {
   }
   media?: Array<{ type: 'image'; url: string; alt_text?: string }>
   variants: UcpVariant[]
+  /** UCP's product has no brand property; its business-defined `metadata` carries it. */
+  metadata?: { brand: string }
 }
 
 export interface UcpMessage {
@@ -127,7 +149,10 @@ export function ucpProduct(product: ListedProduct, urls: AgentSurfaceUrls): UcpP
       description: { plain: variant.name },
       price: { amount: variant.priceMinor, currency },
       availability: { available: variant.stock > 0 },
+      ...barcodesOf(variant.gtin),
     })),
+    ...(product.brand !== undefined &&
+      product.brand.trim() !== '' && { metadata: { brand: product.brand } }),
   }
 }
 
@@ -152,6 +177,8 @@ export function ucpCheckout(
   urls: AgentSurfaceUrls,
   links: readonly UcpLink[],
 ): Record<string, unknown> {
+  // A cart has no address, so no shipping or tax: its total is the lines less the codes' discount.
+  const totals = cartTotals(cart)
   return {
     ucp: {
       version: UCP_VERSION,
@@ -181,8 +208,12 @@ export function ucpCheckout(
     status: 'requires_escalation',
     currency: cart.currency,
     totals: [
-      { type: 'subtotal', amount: cart.subtotalMinor },
-      { type: 'total', amount: cart.subtotalMinor },
+      { type: 'subtotal', amount: totals.subtotalMinor },
+      // UCP's discount amounts are below zero.
+      ...(totals.discountTotalMinor > 0
+        ? [{ type: 'discount', display_text: 'Discount', amount: -totals.discountTotalMinor }]
+        : []),
+      { type: 'total', amount: totals.totalMinor },
     ],
     messages: [HANDOFF_MESSAGE],
     links: links.map((link) => ({ ...link })),

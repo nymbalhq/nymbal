@@ -22,6 +22,7 @@ export function registerAdminMeRoute(
           userId: ctx.auth!.userId,
           roles: ctx.auth!.roles,
           storeName: config.store.name,
+          currency: config.store.currency,
           environment: process.env['NODE_ENV'] ?? 'development',
         })
       } catch (err) {

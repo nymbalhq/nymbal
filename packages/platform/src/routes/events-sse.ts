@@ -1,5 +1,6 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import {
+  EVT_ORDER_PLACED,
   type DocumentStoreAdapter,
   type EventBusAdapter,
   type HttpAdapter,
@@ -26,6 +27,11 @@ const ADMIN_PRODUCT_EVENTS = [
   'product.restocked.v1',
   'product.variant_price_changed.v1',
 ]
+
+/** An `order.placed` payload whose order is the heartbeat's. */
+function isSynthetic(payload: unknown): boolean {
+  return (payload as { order?: { source?: unknown } } | null)?.order?.source === 'synthetic'
+}
 
 interface NonceRecord {
   used: boolean
@@ -145,8 +151,18 @@ export function registerEventsSseRoute(adapter: HttpAdapter, deps: RegisterEvent
     // Unnamed: every open tab, on every instance, receives every event. A shared name would make the tabs consumers
     // of one group on a shared bus, each event reaching one of them.
     const subscription = await eventBus.subscribe(
-      ['order.*', 'payment.*', 'inventory.*', 'adapter.*', 'proposal.*', ...ADMIN_PRODUCT_EVENTS],
+      [
+        'order.*',
+        'payment.*',
+        'inventory.*',
+        'adapter.*',
+        'proposal.*',
+        'insight.*',
+        ...ADMIN_PRODUCT_EVENTS,
+      ],
       (event) => {
+        // The heartbeat's order is placed and cancelled at once; a live list or toast would show it every run.
+        if (event.type === EVT_ORDER_PLACED && isSynthetic(event.payload)) return
         stream.send({
           id: event.id,
           event: event.type,

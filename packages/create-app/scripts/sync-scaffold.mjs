@@ -31,6 +31,7 @@ export const NON_SCAFFOLD_PACKAGES = new Set([
   '@nymbalhq/event-bus-redis-streams',
   '@nymbalhq/media-s3',
   '@nymbalhq/payments-stripe',
+  '@nymbalhq/promotions-talon-one',
   '@nymbalhq/proof-kit',
   '@nymbalhq/search-algolia',
   '@nymbalhq/security-cloudflare',

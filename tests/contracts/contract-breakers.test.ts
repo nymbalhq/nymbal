@@ -18,18 +18,22 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 // on a kernel event type, one hands on class-instance payloads; each fails only the case named for its defect, and the
 // provider itself passes every case.
 // The email feedback suite runs the same way on the kernel's test email provider: one twin mints a delivery id per
-// call, one hands on a feedback event with no recipient, one leaves its bounce type out of producesEvents; each fails
-// only the case named for its defect, and the provider itself passes every case.
+// call, one hands on a feedback event with no recipient, one leaves its bounce type out of producesEvents, one hands
+// a policy rejection on as hard; each fails only the case named for its defect, and the provider itself passes every
+// case, with one case more when given a policy rejection sample.
 // The shipping tracking suite runs the same way on the kernel's test shipping provider: one twin mints a delivery id
 // per call, one hands on a numberless copy beside each tracking event, one leaves its tracking type out of
 // producesEvents; each fails only the case named for its defect, and the provider itself passes every case.
 // The shipping suite's words case runs the same way on the kernel's test shipping provider with all three words: each
 // twin declares a word without its method, has a method without its word, declares tracking with no webhook, labels
 // without rates, an unknown word or one twice, and fails only the words case; a twin that buys a new label on a repeated
-// rate id fails only the labels cases; one with no word runs no rates, labels or tracking case at all.
+// rate id fails only the labels cases; one with no word runs no rates, labels or tracking case at all. A rating twin
+// that answers an empty service fails only the rates shape case, and one that renames its services on each call only
+// the rates stability case.
 // The tax suite runs the same way on an in-memory provider that files documents: one twin answers its first line twice
-// and loses the second, one puts half a unit on a line's tax, one answers a total one more than its lines; each fails
-// only the case named for its defect, and the provider itself passes every case.
+// and loses the second, one puts half a unit on a line's tax, one answers a total one more than its lines, one names
+// another provider in its quotes; each fails only the case named for its defect, and the provider itself passes every
+// case.
 // The reviews suite's submit case runs the same way: an adapter without submit that stores a review anyway, beside the
 // one that refuses it (seeded through `seed`), and a submit adapter that drops the customer and order beside the
 // control; each fails only the submit case.
@@ -51,17 +55,21 @@ const WEBHOOK_IDEMPOTENCY = /\bidempotency:/
 const WEBHOOK_NAMESPACE = /\bnamespace:/
 const FEEDBACK_REPLAY = /\breplay:/
 const FEEDBACK_SHAPE = /\bshape:/
+const FEEDBACK_POLICY = /\bpolicy rejection\b/
 const TRACKING_REPLAY = /\breplay:/
 const TRACKING_SHAPE = /\bshape:/
 const REVIEW_SUBMIT = /\bsubmit:/
 const SHIPPING_WORDS = /\bwords:/
 const SHIPPING_LABELS = /\blabels:/
+const RATES_SHAPE = /\brates: property:/
+const RATES_STABILITY = /\brates: stability:/
 const REFUND_LIST = /\brefund list:/
 const TAX_LINES = /\blines:/
 const TAX_AMOUNTS = /\bamounts:/
 const TAX_TOTAL = /\btotal:/
 const TAX_SHIPPING_NULL = /\bshipping-null:/
 const TAX_SHIPPING_TAXED = /\bshipping-taxed:/
+const TAX_PROVIDER = /\bprovider:/
 
 interface Outcome {
   passed: string[]
@@ -347,6 +355,31 @@ describe('the published email feedback suite fails a provider with the defect it
     expect(run.controlFailed, run.why).toEqual([])
     expect(run.controlPassed).toBe(run.badTotal)
   })
+
+  it('AC-5: an email provider that hands a policy rejection (5.7.x) on as a hard bounce fails the policy rejection case and nothing else; the same provider handing it on soft passes every case', () => {
+    const run = compare(
+      'email-feedback-policy-hard',
+      'email-feedback-policy-control',
+      FEEDBACK_POLICY,
+    )
+
+    expect(run.failed.length, run.why).toBeGreaterThan(0)
+    expect(run.offTopic, run.why).toEqual([])
+    expect(run.controlFailed, run.why).toEqual([])
+    expect(run.controlPassed).toBe(run.badTotal)
+  })
+
+  it('AC-5: given a policy rejection sample the suite runs one case more, the policy rejection case; given none it runs the cases it runs today, all passed', () => {
+    const without = outcome('email-feedback-control')
+    const given = outcome('email-feedback-policy-control')
+
+    expect([without.failed, given.failed], `${without.message} ${given.message}`).toEqual([[], []])
+    expect(given.passedTitles.filter((title) => !without.passedTitles.includes(title))).toEqual([
+      'classification: the policy rejection is soft for its recipient',
+    ])
+    expect(given.passedTitles.length).toBe(without.passedTitles.length + 1)
+    expect(without.passedTitles.filter((title) => FEEDBACK_POLICY.test(title))).toEqual([])
+  })
 })
 
 describe('the published shipping tracking suite fails a provider with the defect it exists for', () => {
@@ -450,10 +483,30 @@ describe('the published shipping suite fails an adapter whose words and methods 
       'labels',
       'labels',
       'rates',
+      'rates',
       'tracking',
       'words',
     ])
   })
+})
+
+describe('the published shipping suite fails a rating adapter the kernel cannot give stable options', () => {
+  // Kills: a shipping package that passes the suite while the kernel cannot name its options, or names them
+  // differently on each call, so the option a shopper chose at the quote is never found at place.
+  it.each([
+    ['answers a rate with an empty service', 'shipping-rate-no-service', RATES_SHAPE],
+    ['names its services differently on each call', 'shipping-rate-services-vary', RATES_STABILITY],
+  ] as const)(
+    'AC-14: a shipping adapter that %s (%s) fails that rates case and nothing else; the test shipping provider passes every case',
+    (_defect, broken, about) => {
+      const run = shippingRun(broken, about)
+
+      expect(run.failedWords, run.why).toEqual(['rates'])
+      expect(run.offTopic, run.why).toEqual([])
+      expect(run.ranOffControl, run.why).toEqual([])
+      expect(run.controlFailed, run.why).toEqual([])
+    },
+  )
 })
 
 describe('the published tax suite fails a provider whose quote the kernel must refuse', () => {
@@ -479,7 +532,11 @@ describe('the published tax suite fails a provider that gets shipping wrong', ()
   // Kills: a suite a provider package passes while never charging tax on delivery, or while charging it on a delivery
   // that was never sent.
   it.each([
-    ['answers no tax on the shipping its runner names as taxed', 'tax-ignores-shipping', TAX_SHIPPING_TAXED],
+    [
+      'answers no tax on the shipping its runner names as taxed',
+      'tax-ignores-shipping',
+      TAX_SHIPPING_TAXED,
+    ],
     ['taxes shipping on a request that sent none', 'tax-shipping-when-null', TAX_SHIPPING_NULL],
   ] as const)(
     'AC-27: a tax provider that %s fails that case and nothing else; the same provider without the defect passes every case',
@@ -492,4 +549,17 @@ describe('the published tax suite fails a provider that gets shipping wrong', ()
       expect(run.controlPassed).toBe(run.badTotal)
     },
   )
+})
+
+describe('the published tax suite fails a provider whose quotes name another provider', () => {
+  // Kills: a provider package passing the suite while its quotes name another provider, so the kernel skips every order
+  // it quoted as "not the current adapter's" and never files one.
+  it('AC-12: a tax provider whose quote names another provider fails the provider case and nothing else; the same provider without the defect passes every case', () => {
+    const run = compare('tax-provider-mismatch', 'tax-control', TAX_PROVIDER)
+
+    expect(run.failed.length, run.why).toBeGreaterThan(0)
+    expect(run.offTopic, run.why).toEqual([])
+    expect(run.controlFailed, run.why).toEqual([])
+    expect(run.controlPassed).toBe(run.badTotal)
+  })
 })

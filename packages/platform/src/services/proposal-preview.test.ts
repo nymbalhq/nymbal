@@ -305,6 +305,59 @@ describe('previewOf: product.update', () => {
   })
 })
 
+describe('previewOf: product.update of a brand and GTINs', () => {
+  const GTIN_A = '4006381333931'
+  const GTIN_B = '036000291452'
+  const branded = productOf({
+    brand: 'Acme',
+    variants: [
+      variantOf({ gtin: GTIN_A }),
+      variantOf({ id: 'var_small', name: 'Small', sku: 'TEE-S', priceMinor: 2000, gtin: null }),
+    ],
+  })
+  const reads = readsOf({ products: { [branded.id]: branded } })
+  const rows = async (args: Record<string, unknown>) =>
+    (await previewOf(viewOf('product.update', { id: branded.id, ...args }), reads))?.changes ?? []
+
+  it('AC-11: a brand sent is listed as Brand, its value now beside the proposed one, after the other scalar fields and before the collections; the same args without it list no Brand row and are otherwise the same', async () => {
+    const args = { seoDescription: 'Buy a better tee', brand: 'Northwind', media: [] }
+    const { brand: _brand, ...without } = args
+    const withBrand = await rows(args)
+
+    expect(withBrand.map((c) => c.label)).toEqual(['SEO description', 'Brand', 'Media'])
+    expect(withBrand.find((c) => c.label === 'Brand')).toEqual({
+      label: 'Brand',
+      kind: 'value',
+      current: 'Acme',
+      proposed: 'Northwind',
+    })
+    expect(await rows(without)).toEqual(withBrand.filter((c) => c.label !== 'Brand'))
+  })
+
+  it("AC-11: a variants entry holding gtin lists GTIN of <variant name> after that variant's price rows, its GTIN now beside the proposed one and none for null; entries without gtin list no GTIN row and are otherwise the same", async () => {
+    const [large, small] = branded.variants as [Variant, Variant]
+    const variants = [
+      { id: large.id, priceMinor: large.priceMinor, compareAtPriceMinor: null, gtin: null },
+      { id: small.id, priceMinor: small.priceMinor, gtin: GTIN_B },
+    ]
+    const withGtin = await rows({ variants })
+    const withoutGtin = await rows({ variants: variants.map(({ gtin: _gtin, ...rest }) => rest) })
+
+    expect(withGtin.map((c) => c.label)).toEqual([
+      `Price of ${large.name}`,
+      `Compare-at price of ${large.name}`,
+      `GTIN of ${large.name}`,
+      `Price of ${small.name}`,
+      `GTIN of ${small.name}`,
+    ])
+    expect(withGtin.filter((c) => c.label.startsWith('GTIN of '))).toEqual([
+      { label: `GTIN of ${large.name}`, kind: 'value', current: GTIN_A, proposed: null },
+      { label: `GTIN of ${small.name}`, kind: 'value', current: null, proposed: GTIN_B },
+    ])
+    expect(withoutGtin).toEqual(withGtin.filter((c) => !c.label.startsWith('GTIN of ')))
+  })
+})
+
 describe('previewOf: inventory.adjust', () => {
   const large = variantOf()
   const reads = readsOf({ variants: { [large.id]: { variant: large, productName: 'Tee' } } }, 'USD')

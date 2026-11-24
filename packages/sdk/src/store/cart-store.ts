@@ -1,5 +1,6 @@
-import type { CartItem } from '@nymbalhq/types'
+import type { CartItem, ShopperCart } from '@nymbalhq/types'
 import type { CommerceAdapter } from '../adapter/commerce-adapter.js'
+import { NymbalApiError } from '../adapter/fetch-client.js'
 import type { CartState } from '../types.js'
 import { createStore } from './create-store.js'
 
@@ -16,8 +17,11 @@ const INITIAL_STATE: CartState = {
   subtotalMinor: 0,
   currency: 'USD',
   itemCount: 0,
+  totals: null,
+  promotions: { codes: [], unavailable: false },
   loading: false,
   error: null,
+  errorCode: null,
 }
 
 export interface CartStore {
@@ -28,102 +32,34 @@ export interface CartStore {
   updateQuantity(variantId: string, qty: number): Promise<void>
   clear(): Promise<void>
   load(): Promise<void>
+  /** Adds a discount code, trimmed; a blank one asks nothing. A refusal sets `error` and `errorCode`. */
+  addCode(code: string): Promise<void>
+  removeCode(code: string): Promise<void>
   destroy(): void
 }
 
 export function createCartStore(adapter: CommerceAdapter): CartStore {
   const store = createStore<CartState>(INITIAL_STATE)
 
-  async function load(): Promise<void> {
-    store.setState({ loading: true, error: null })
+  /** One cart call: the state becomes the API's answer, or keeps the cart and says why the call was refused. */
+  async function run(call: () => Promise<ShopperCart>): Promise<void> {
+    store.setState({ loading: true, error: null, errorCode: null })
     try {
-      const cart = await adapter.cart.get()
+      const cart = await call()
       store.setState({
         items: cart.items,
         subtotalMinor: cart.subtotalMinor,
         currency: cart.currency,
         itemCount: deriveItemCount(cart.items),
+        totals: cart.totals,
+        promotions: cart.promotions,
         loading: false,
       })
     } catch (err) {
       store.setState({
         loading: false,
         error: err instanceof Error ? err.message : String(err),
-      })
-    }
-  }
-
-  async function addItem(variantId: string, qty = 1): Promise<void> {
-    store.setState({ loading: true, error: null })
-    try {
-      const cart = await adapter.cart.addItem(variantId, qty)
-      store.setState({
-        items: cart.items,
-        subtotalMinor: cart.subtotalMinor,
-        currency: cart.currency,
-        itemCount: deriveItemCount(cart.items),
-        loading: false,
-      })
-    } catch (err) {
-      store.setState({
-        loading: false,
-        error: err instanceof Error ? err.message : String(err),
-      })
-    }
-  }
-
-  async function removeItem(variantId: string): Promise<void> {
-    store.setState({ loading: true, error: null })
-    try {
-      const cart = await adapter.cart.removeItem(variantId)
-      store.setState({
-        items: cart.items,
-        subtotalMinor: cart.subtotalMinor,
-        currency: cart.currency,
-        itemCount: deriveItemCount(cart.items),
-        loading: false,
-      })
-    } catch (err) {
-      store.setState({
-        loading: false,
-        error: err instanceof Error ? err.message : String(err),
-      })
-    }
-  }
-
-  async function updateQuantity(variantId: string, qty: number): Promise<void> {
-    store.setState({ loading: true, error: null })
-    try {
-      const cart = await adapter.cart.updateQuantity(variantId, qty)
-      store.setState({
-        items: cart.items,
-        subtotalMinor: cart.subtotalMinor,
-        currency: cart.currency,
-        itemCount: deriveItemCount(cart.items),
-        loading: false,
-      })
-    } catch (err) {
-      store.setState({
-        loading: false,
-        error: err instanceof Error ? err.message : String(err),
-      })
-    }
-  }
-
-  async function clear(): Promise<void> {
-    store.setState({ loading: true, error: null })
-    try {
-      await adapter.cart.clear()
-      store.setState({
-        items: [],
-        subtotalMinor: 0,
-        itemCount: 0,
-        loading: false,
-      })
-    } catch (err) {
-      store.setState({
-        loading: false,
-        error: err instanceof Error ? err.message : String(err),
+        errorCode: err instanceof NymbalApiError ? err.code : null,
       })
     }
   }
@@ -131,11 +67,17 @@ export function createCartStore(adapter: CommerceAdapter): CartStore {
   return {
     getState: store.getState,
     subscribe: store.subscribe,
-    addItem,
-    removeItem,
-    updateQuantity,
-    clear,
-    load,
+    addItem: (variantId, qty = 1) => run(() => adapter.cart.addItem(variantId, qty)),
+    removeItem: (variantId) => run(() => adapter.cart.removeItem(variantId)),
+    updateQuantity: (variantId, qty) => run(() => adapter.cart.updateQuantity(variantId, qty)),
+    clear: () => run(() => adapter.cart.clear()),
+    load: () => run(() => adapter.cart.get()),
+    async addCode(code) {
+      const trimmed = code.trim()
+      if (trimmed === '') return
+      return run(() => adapter.cart.addCode(trimmed))
+    },
+    removeCode: (code) => run(() => adapter.cart.removeCode(code)),
     destroy: store.destroy,
   }
 }

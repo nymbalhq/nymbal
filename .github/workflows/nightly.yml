@@ -3,8 +3,8 @@ run-name: Nightly on ${{ github.ref_name }}
 
 # Dispatched on dev each night by nightly-trigger.yml: a schedule runs the default branch's copy of a workflow, and
 # this one must run dev's own. It runs what a dev push leaves out (Lighthouse, the harness test projects, the mobile
-# E2E, the other store sets, the full mutation runs), and a red run here holds the next merge into dev, as a red push
-# run does.
+# E2E, the other store sets, the mail outage journey, the full mutation runs), and a red run here holds the next merge
+# into dev, as a red push run does.
 on:
   workflow_dispatch:
 
@@ -23,8 +23,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       # Seeds an API with the store's own images, builds and serves both templates, and holds every page to
-      # perf-budgets.json, as the pull request job does, on the median of five runs a page.
-      - run: pnpm perf:budgets --runs 5
+      # perf-budgets.json, as the release dispatch does, on seven runs a page (LCP's lower quartile, the other medians).
+      - run: pnpm perf:budgets --runs 7
       - name: Upload the budget report
         if: always()
         uses: actions/upload-artifact@v7
@@ -81,18 +81,6 @@ jobs:
           name: build-output
       - name: Stryker over every mutate target, ignoring the incremental file
         run: pnpm mutation --force
-      # The full run's incremental report, stamped with the commit it was measured at, is cached for an incremental
-      # run to restore and mutate only what changed since that commit. Both steps sit before the ratchet check, so a
-      # ratchet failure still saves it.
-      - name: Stamp the incremental report
-        run: git rev-parse HEAD > reports/mutation/stryker-incremental.commit
-      - name: Cache the incremental report
-        uses: actions/cache/save@v6
-        with:
-          path: |
-            reports/mutation/stryker-incremental.json
-            reports/mutation/stryker-incremental.commit
-          key: stryker-incremental-v3-nightly-${{ github.sha }}
       - name: No file below its unit ratchet entry
         run: pnpm --silent mutation:ratchet check --report reports/mutation/mutation.json
       - name: Upload the Stryker report
@@ -349,4 +337,72 @@ jobs:
             tests/e2e/test-results
             tests/e2e/playwright-report
             reports/e2e-*.json
+          if-no-files-found: ignore
+
+  e2e-mail-outage:
+    # The mail outage journey on the custom-providers store: Mailpit's Chaos refuses every recipient, then the store's
+    # own retries (10 s and doubling) send each mail once. Chaos applies to the whole Mailpit, so it has a job and a
+    # Mailpit of its own.
+    name: E2E — a mail outage on custom providers
+    runs-on: ubuntu-24.04
+    needs: [build]
+    timeout-minutes: 15
+    env:
+      NYMBAL_TEST_MAILPIT_URL: http://localhost:18025
+      NYMBAL_TEST_MAILPIT_SMTP: localhost:11025
+    services:
+      mailpit:
+        image: axllent/mailpit:v1.22.0
+        env:
+          MP_ENABLE_CHAOS: 'true'
+        ports:
+          - '11025:1025'
+          - '18025:8025'
+        options: >-
+          --health-cmd "/mailpit readyz"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          name: build-output
+      - name: Playwright version
+        id: playwright
+        run: |
+          version=$(grep -m1 -oE "^  '@playwright/test@[0-9]+\.[0-9]+\.[0-9]+'" pnpm-lock.yaml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright browsers
+        id: browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+      - name: Install Playwright browsers
+        if: steps.browsers.outputs.cache-hit != 'true'
+        run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
+      - name: Install Playwright system libraries
+        if: steps.browsers.outputs.cache-hit == 'true'
+        run: pnpm --filter @nymbalhq/e2e exec playwright install-deps chromium
+      # The base is unused by an E2E step; HEAD~1 only satisfies --base.
+      - name: A mail outage
+        run: pnpm exec tsx scripts/gate.ts --full --only "e2e mail-outage" --services external --no-build --base HEAD~1
+      - name: Upload the Playwright results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-mail-outage
+          path: |
+            tests/e2e/test-results
+            reports/e2e-*.json
+            !reports/e2e-shutdown.json
           if-no-files-found: ignore

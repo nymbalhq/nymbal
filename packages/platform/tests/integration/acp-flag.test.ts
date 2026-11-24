@@ -1,19 +1,17 @@
 import { randomUUID } from 'node:crypto'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import type { NymbalConfig } from '@nymbalhq/config'
+import { afterEach, describe, expect, it } from 'vitest'
 import { ConfigError } from '@nymbalhq/types'
 import { createHttpServer } from '../../../http/src/index.js'
 import { createNativeStubPaymentsAdapter } from '../../src/adapters/payments/native-stub.js'
 import { createLogger } from '../../src/logger.js'
-import { ACP_KEY, ACP_LINKS, ACP_PATH, acpClient, PINNED_VERSION, withAcp } from '../support/acp.js'
+import { ACP_KEY, ACP_PATH, acpClient, PINNED_VERSION, withAcp } from '../support/acp.js'
 import { serveWithAgents, type AgentStore } from '../support/agents.js'
 import { createKernel, type Kernel } from '../support/kernel.js'
 import { adminAccount } from '../support/mcp.js'
 
-// AC-2: `agents.acp` is off by default and nothing of ACP is served; on, it needs a key of at least 32 characters
-// (config or NYMBAL_ACP_API_KEY) and a payments adapter that takes a delegated token, or attachHttp refuses to start.
+// AC-2: `agents.acp` is off by default and nothing of ACP is served; on, it needs a payments adapter that takes a
+// delegated token, or attachHttp refuses to start. Its keys are acp-keys.test.ts's.
 
-const KEY_ENV = 'NYMBAL_ACP_API_KEY'
 const ROUTES: Array<['GET' | 'POST', string]> = [
   ['GET', '/feed'],
   ['POST', '/checkout_sessions'],
@@ -64,15 +62,6 @@ async function surfaces(store: AgentStore): Promise<Surface[]> {
   return body.data?.agents?.surfaces ?? []
 }
 
-/** `agents.acp` on with whatever key the test gives it (none: the environment's). */
-function acpOn(acp: Record<string, unknown>): (config: NymbalConfig) => NymbalConfig {
-  return (config) =>
-    ({
-      ...config,
-      agents: { ...config.agents, acp: { enabled: true, links: [...ACP_LINKS], ...acp } },
-    }) as NymbalConfig
-}
-
 /** What attachHttp does on a kernel of this config: null when it starts, the error when it refuses. */
 async function attach(kernel: Kernel): Promise<unknown> {
   const http = createHttpServer({
@@ -92,18 +81,10 @@ async function attach(kernel: Kernel): Promise<unknown> {
   }
 }
 
-describe('AC-2: agents.acp is a flag, off by default, with a key and a delegating payments adapter when on', () => {
-  let saved: string | undefined
+describe('AC-2: agents.acp is a flag, off by default, with a delegating payments adapter when on', () => {
   const kernels: Kernel[] = []
 
-  beforeEach(() => {
-    saved = process.env[KEY_ENV]
-    delete process.env[KEY_ENV]
-  })
-
   afterEach(async () => {
-    if (saved === undefined) delete process.env[KEY_ENV]
-    else process.env[KEY_ENV] = saved
     for (const k of kernels.splice(0)) await k.close()
   })
 
@@ -131,43 +112,6 @@ describe('AC-2: agents.acp is a flag, off by default, with a key and a delegatin
     } finally {
       await off.stop()
       await on.stop()
-    }
-  })
-
-  // Kills: a store that starts with ACP open and no key.
-  it(`AC-2: enabled with no key in the config and no ${KEY_ENV}, attachHttp rejects with ConfigError config.acp_key_missing naming ${KEY_ENV}`, async () => {
-    const k = await createKernel({ dialect: 'sqlite', configure: acpOn({}) })
-    kernels.push(k)
-
-    const error = await attach(k)
-
-    expect(error).toBeInstanceOf(ConfigError)
-    expect((error as ConfigError).code).toBe('config.acp_key_missing')
-    expect((error as ConfigError).message).toContain(KEY_ENV)
-  })
-
-  // Kills: the length rule applied to the config's key only.
-  it(`AC-2: a 31-character ${KEY_ENV} makes attachHttp reject with config.acp_key_short naming ${KEY_ENV}; a 32-character one starts, and that key, not another of the same length, is the bearer the feed takes`, async () => {
-    process.env[KEY_ENV] = 'k'.repeat(31)
-    const short = await createKernel({ dialect: 'sqlite', configure: acpOn({}) })
-    kernels.push(short)
-    const refused = await attach(short)
-
-    const envKey = `env-${randomUUID()}`.padEnd(32, 'k').slice(0, 32)
-    process.env[KEY_ENV] = envKey
-    const store = await serveWithAgents(
-      await createKernel({ dialect: 'sqlite', configure: acpOn({}) }),
-    )
-    try {
-      const withEnvKey = await acpClient(store.baseUrl, { key: envKey }).feed()
-      const otherKey = await acpClient(store.baseUrl, { key: 'x'.repeat(envKey.length) }).feed()
-
-      expect(refused).toBeInstanceOf(ConfigError)
-      expect((refused as ConfigError).code).toBe('config.acp_key_short')
-      expect((refused as ConfigError).message).toContain(KEY_ENV)
-      expect([withEnvKey.status, otherKey.status]).toEqual([200, 401])
-    } finally {
-      await store.stop()
     }
   })
 

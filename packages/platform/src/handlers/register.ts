@@ -5,6 +5,7 @@ import type { Repositories } from '../repositories/index.js'
 import type { AdapterRegistry } from '../adapters/registry.js'
 import type { AlertService } from '../services/alert-service.js'
 import type { OrderService } from '../services/order-service.js'
+import type { TaxDocuments } from '../services/tax-documents.js'
 import { parseDurationToMs } from '../services/auth-service.js'
 import { registerCategoryProjection } from './projections/category-projection.js'
 import { registerProductProjection } from './projections/product-projection.js'
@@ -20,6 +21,8 @@ import { registerAlertHandler } from './side-effects/alert-handler.js'
 import { registerEmailFeedbackHandler } from './side-effects/email-feedback-handler.js'
 import { registerShippingTrackingHandler } from './side-effects/shipping-tracking-handler.js'
 import { registerShippingStartTrackingHandler } from './side-effects/shipping-start-tracking-handler.js'
+import { registerTaxDocumentsHandler } from './side-effects/tax-documents-handler.js'
+import { registerPromotionsHandler } from './side-effects/promotions-handler.js'
 
 export interface RegisterHandlersDeps {
   config: NymbalConfig
@@ -33,6 +36,8 @@ export interface RegisterHandlersDeps {
   orders: OrderService
   /** Publishes the note a carrier's refusal leaves on an order. */
   publisher: EventPublisher
+  /** Files paid orders and their refunds with the tax provider. */
+  taxDocuments: TaxDocuments
   logger: Logger
 }
 
@@ -132,6 +137,19 @@ export async function registerHandlers(deps: RegisterHandlersDeps): Promise<void
     repos,
     publisher,
     logger: handlerLogger.child({ handler: 'shipping-start-tracking' }),
+  })
+  await registerTaxDocumentsHandler({
+    eventBus,
+    tax: adapters.tax,
+    documents: deps.taxDocuments,
+    logger: handlerLogger.child({ handler: 'tax-documents' }),
+  })
+  await registerPromotionsHandler({
+    eventBus,
+    promotions: adapters.promotions,
+    processedEventRepo: repos.processedEvent,
+    repos,
+    logger: handlerLogger.child({ handler: 'promotions' }),
   })
   await registerSearchHandler({
     eventBus,

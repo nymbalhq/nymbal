@@ -16,6 +16,7 @@ import {
   type ResendEvent,
   type ResendRequest,
 } from '../../../../../tests/support/resend'
+import { noStatusText, replyWith, status } from '../../../../../tests/support/smtp-status'
 import { createResendEmailAdapter } from './index.js'
 
 // receiveWebhook on Resend's posts, signed through Svix over `svix-id.svix-timestamp.body`. Time is pinned (only
@@ -519,6 +520,64 @@ describe('AC-3: only a correctly signed, fresh Svix post verifies', () => {
         ).toEqual([false, false, false, true])
         expect([emptyKeyed.deliveryId, emptyKeyed.events]).toEqual(['', []])
       }),
+    )
+  })
+})
+
+// --- a refused sender is not a dead address ---------------------------------------------------------------------
+
+/** Each `to` address's `bounce`, from one signed email.bounced of type Permanent whose bounce.message is `message`. */
+async function hardnessOf(to: string[], message: string): Promise<Array<[unknown, unknown]>> {
+  const delivery = await receive(adapter(), signedPost(bounced(to, 'Permanent', { message })))
+  expect(delivery.verified).toBe(true)
+  expect(delivery.events.map((e: WebhookEventDraft) => e.type)).toEqual(to.map(() => BOUNCED))
+  return delivery.events.map((e: WebhookEventDraft) => [
+    e.payload['recipient'],
+    e.payload['bounce'],
+  ])
+}
+
+const TO = ['first@example.test', 'second@example.test']
+
+describe("a recipient's server refusing the sender is soft", () => {
+  it('AC-3: a Permanent email.bounced whose bounce.message holds 5.7.1 is soft for each to address; with 5.1.1, or a message with no status, it stays hard', async () => {
+    const got = {
+      policy: await hardnessOf(
+        TO,
+        '550 5.7.1 Service unavailable, Client host [203.0.113.7] blocked using Spamhaus',
+      ),
+      mailbox: await hardnessOf(
+        TO,
+        '550 5.1.1 The email account that you tried to reach does not exist',
+      ),
+      none: await hardnessOf(TO, 'The recipient mail server rejected the message.'),
+    }
+
+    expect(got).toEqual({
+      policy: TO.map((to) => [to, 'soft']),
+      mailbox: TO.map((to) => [to, 'hard']),
+      none: TO.map((to) => [to, 'hard']),
+    })
+  })
+
+  it('AC-4: property: a Permanent email.bounced whose bounce.message holds a status 5.S.D is soft for every to address exactly when S is 7; IPv4 addresses in the message (203.0.5.7, 5.7.1.9) are never read as a status', async () => {
+    const message = fc.oneof(
+      status.chain((s) =>
+        replyWith(s.code).map((text) => ({ why: s.code, policy: s.policy, text })),
+      ),
+      noStatusText.map((text) => ({ why: 'no status', policy: false, text })),
+    )
+    await fc.assert(
+      fc.asyncProperty(
+        fc.uniqueArray(fc.emailAddress(), { minLength: 1, maxLength: 4 }),
+        message,
+        async (to, m) => {
+          expect(await hardnessOf(to, m.text), `${m.why}: ${m.text}`).toEqual(
+            to.map((address) => [address, m.policy ? 'soft' : 'hard']),
+          )
+        },
+      ),
+      { numRuns: 150 },
     )
   })
 })

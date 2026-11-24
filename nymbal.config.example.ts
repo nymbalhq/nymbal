@@ -41,6 +41,12 @@ export default defineConfig({
       xFrameOptions: 'deny',
     },
     csrf: true,
+    // Until a sunset date, a shopper with no password here (never imported, or imported without a hash) signs in with
+    // their old platform's password: the endpoint below is asked once and the store keeps its own hash. The endpoint's
+    // contract is in the importing guide; its bearer is NYMBAL_LEGACY_AUTH_SECRET.
+    // auth: {
+    //   legacy: { until: '2027-06-30', remote: { url: 'https://old-store.example/nymbal/check' } },
+    // },
   },
 
   commerce: {
@@ -66,6 +72,10 @@ export default defineConfig({
       //   { id: 'world', name: 'International', amountMinor: 1999 },
       // ],
       rates: [],
+      // Or charge what the carrier quotes, with a provider that rates (EasyPost with an apiKey) and no rows above: the
+      // cart is one parcel from store.shipFrom, each unit at its variant's weight or this default.
+      // pricing: 'carrier',
+      // defaultWeightGrams: 500,
     },
     tax: {
       provider: 'native',
@@ -90,7 +100,26 @@ export default defineConfig({
 
   features: {
     staging: false,
+    // true needs a `heartbeat` block: the store check's address, and optionally a saved card to charge and refund.
     heartbeat: false,
-    autoUpdates: false,
   },
+
+  // A nightly look at the store's own figures, from `at` store time. With commerce.ai set, up to `maxInsightsPerNight`
+  // of its search, order and refund insights get a suggested next step from the model; 0 turns that off.
+  nightShift: { enabled: true, at: '03:00', ai: { maxInsightsPerNight: 5 } },
+
+  // A weekly review that asks the AI provider for SEO titles and descriptions where a product's are missing or break
+  // the copy rules; each answer waits in the Inbox. Needs commerce.ai and the night shift.
+  // agents: {
+  //   roles: {
+  //     content: {
+  //       enabled: true,
+  //       schedule: 'weekly',
+  //       fields: ['seoTitle', 'seoDescription'],
+  //       prompt: 'Warm and plain; British spelling.',
+  //       maxProducts: 20,
+  //       maxTokensPerRun: 100_000,
+  //     },
+  //   },
+  // },
 })

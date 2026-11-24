@@ -8,7 +8,8 @@ import type { MediaStorage, ProductSnapshot } from '@nymbalhq/types'
 import { ENTITIES } from '../state.js'
 import type { ImportEntity, ImportState, ImportWarning, SinceByEntity } from '../types.js'
 import type { WcProduct, WcVariation } from './client.js'
-import { mapProduct, productSlug, type StoreContext } from './mappers/product.js'
+import { toMinorUnits } from './mappers/money.js'
+import { mapProduct, productSlug, productWarnings, type StoreContext } from './mappers/product.js'
 import { downloadProductImages, type ImagePolicy } from './media.js'
 import { imageSources } from './refs.js'
 
@@ -156,6 +157,13 @@ const sameSet = (a: string[], b: string[]) => {
   return left.size === right.size && [...left].every((x) => right.has(x))
 }
 
+/** The mapper's lines about stock (untracked, a shared pool, negative stock): a delta leaves stock as imported. */
+const STOCK_WARNING =
+  /stock not tracked in WooCommerce|sell from one stock pool|\(backorders owed\): imported as 0$/
+
+/** The mapper's line for a variation with no price, which describes a first import's write, not a delta's. */
+const UNPRICED_VARIATION = /^variation \d+: no price: imported inactive$/
+
 export interface ProductChanges {
   /** Whether the product was written. */
   written: boolean
@@ -167,8 +175,8 @@ export interface ProductChanges {
 /**
  * Brings an imported product to what WooCommerce lists for it now, writing it only when something differs: its copy,
  * status, SEO, categories, media and the prices of variants matched by SKU. The slug, the type, the variants themselves
- * and their stock stay as imported; a variant or type that no longer matches is a warning. An enriched product keeps
- * the AI's copy.
+ * and their stock stay as imported; a variant or type that no longer matches is a warning, as is each of the product's
+ * own warnings bar those about stock. An enriched product keeps the AI's copy.
  */
 export async function applyProductChanges(
   wc: WcProduct,
@@ -226,10 +234,30 @@ export async function applyProductChanges(
     }
   }
 
+  for (const message of productWarnings(source, variations, deps.store)) {
+    if (!STOCK_WARNING.test(message) && !UNPRICED_VARIATION.test(message)) {
+      warnings.push({ phase: 'products', id, message })
+    }
+  }
+
+  // The mapper's variants follow its sources in order: the variations, or the product itself.
+  const sold = mapped.type === 'variable' ? variations : [source]
   const prices: VariantPriceInput[] = []
-  for (const v of mapped.variants ?? []) {
+  for (const [i, v] of (mapped.variants ?? []).entries()) {
     const before = storedBySku.get(v.sku)
     if (before === undefined) continue
+    // The mapper prices an item with no price at 0; the delta keeps what the store sells it at.
+    const item = sold[i]
+    if (item !== undefined && toMinorUnits(item.price, deps.store.currency) === null) {
+      if (mapped.type === 'variable') {
+        warnings.push({
+          phase: 'products',
+          id,
+          message: `variation ${item.id}: no price in WooCommerce: kept at its stored price`,
+        })
+      }
+      continue
+    }
     const compareAtPriceMinor = v.compareAtPriceMinor ?? null
     if (v.priceMinor === before.priceMinor && compareAtPriceMinor === before.compareAtPriceMinor)
       continue

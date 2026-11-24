@@ -379,6 +379,45 @@ describe('AC-5: the module must serve the slot and the provider', () => {
   })
 })
 
+describe('AC-5: a settings entry may name the path that makes it optional, as a non-empty string only', () => {
+  const PKG = '@nymbalhq/ai-acme'
+
+  it("AC-5: a settings entry whose optionalWith is 5, '', true, null or an array is refused at load with adapter.package_invalid naming the settings export; 'baseUrl' is accepted", () => {
+    const cases: Array<{ label: string; optionalWith: unknown; outcome: string }> = [
+      { label: 'a number', optionalWith: 5, outcome: 'adapter.package_invalid' },
+      { label: 'empty', optionalWith: '', outcome: 'adapter.package_invalid' },
+      { label: 'a boolean', optionalWith: true, outcome: 'adapter.package_invalid' },
+      { label: 'null', optionalWith: null, outcome: 'adapter.package_invalid' },
+      { label: 'an array', optionalWith: ['baseUrl'], outcome: 'adapter.package_invalid' },
+      { label: 'a path', optionalWith: 'baseUrl', outcome: 'accepted' },
+    ]
+    const outcomes = cases.map(({ label, optionalWith }) => {
+      const settings = [
+        { path: 'apiKey', label: 'API key', secret: true, env: 'ACME_API_KEY', optionalWith },
+        { path: 'baseUrl', label: 'API base URL', secret: false },
+      ]
+      try {
+        const checked = checkAdapterModule(
+          { ...adapterModule('ai', 'acme'), settings },
+          'ai',
+          'acme',
+          PKG,
+        )
+        return `${label}: ${JSON.stringify(checked.settings) === JSON.stringify(settings) ? 'accepted' : 'accepted with other settings'}`
+      } catch (error) {
+        const e = error as ConfigError
+        const named =
+          e instanceof ConfigError &&
+          e.message.includes(PKG) &&
+          (e.context as { export?: unknown } | undefined)?.export === 'settings'
+        return `${label}: ${e instanceof ConfigError ? e.code : String(e)}${named ? '' : ` (message: ${e.message})`}`
+      }
+    })
+
+    expect(outcomes).toEqual(cases.map(({ label, outcome }) => `${label}: ${outcome}`))
+  })
+})
+
 describe('AC-6: a typo gets a suggestion, not an install line', () => {
   /** One edit of `name`: an insertion, deletion, substitution or adjacent transposition. */
   const oneEdit = (name: string) =>

@@ -1,7 +1,17 @@
 import { spawn, spawnSync } from 'node:child_process'
-import { cpSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
+import {
+  cpSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
+import { createServer, type Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import semver from 'semver'
 import { afterAll, describe, expect, it } from 'vitest'
 import { parseYaml, type Yaml } from '../tooling/workflow-yaml.js'
 
@@ -56,11 +66,15 @@ function runnerEnv(): NodeJS.ProcessEnv {
 }
 
 /** One `run` step as GitHub's default shell runs it: bash, errexit and pipefail. */
-function runStep(script: string, cwd: string): Promise<{ code: number | null; out: string }> {
+function runStep(
+  script: string,
+  cwd: string,
+  extraEnv: NodeJS.ProcessEnv = {},
+): Promise<{ code: number | null; out: string }> {
   return new Promise((resolve) => {
     const child = spawn('bash', ['--noprofile', '--norc', '-eo', 'pipefail', '-c', script], {
       cwd,
-      env: runnerEnv(),
+      env: { ...runnerEnv(), ...extraEnv },
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     let out = ''
@@ -75,9 +89,17 @@ function runStep(script: string, cwd: string): Promise<{ code: number | null; ou
 }
 
 const scratch: string[] = []
+const servers: Server[] = []
 afterAll(() => {
+  for (const server of servers) {
+    server.closeAllConnections()
+    server.close()
+  }
   for (const dir of scratch) rmSync(dir, { recursive: true, force: true })
 })
+
+/** The installed CI checkout the verify case leaves, which the auto-update case goes on with. */
+let installedCheckout: string | undefined
 
 describe("AC-14: the store's own CI workflow on a CI checkout", () => {
   it(
@@ -123,7 +145,138 @@ describe("AC-14: the store's own CI workflow on a CI checkout", () => {
       ).toEqual(runs.map((run) => [run, 0]))
       expect(results.at(-1)!.out).toContain('verify: passed, 7 steps')
       expect(git(copy, 'status', '--porcelain')).toBe('')
+      installedCheckout = copy
     },
     2 * STEP_MS + 120_000,
+  )
+})
+
+const AUTO_UPDATES_PRESET = 'github>nymbalhq/nymbal//renovate/auto-updates'
+const NYMBAL_NAME = /^(nymbal|@nymbalhq\/.+)$/
+
+/** A third-party devDependency and a lower range of the same major: the patch lowered, else the minor. */
+function lowerRange(devDependencies: Record<string, string>): [string, string] {
+  const ranges = Object.entries(devDependencies)
+    .filter(([name]) => !NYMBAL_NAME.test(name))
+    .map(([name, value]) => ({ name, value, at: /^([~^]?)(\d+\.\d+\.\d+)$/.exec(value) }))
+    .filter((r) => r.at !== null && semver.valid(r.at[2]!) !== null)
+  const patch = ranges.find((r) => semver.patch(r.at![2]!) > 0)
+  if (patch) {
+    const v = semver.parse(patch.at![2]!)!
+    return [patch.name, `${patch.at![1]}${v.major}.${v.minor}.${v.patch - 1}`]
+  }
+  const minor = ranges.find((r) => semver.minor(r.at![2]!) > 0)
+  if (minor) {
+    const v = semver.parse(minor.at![2]!)!
+    return [minor.name, `${minor.at![1]}${v.major}.${v.minor - 1}.0`]
+  }
+  throw new Error(
+    `no devDependency of the scaffold has a range to lower: ${JSON.stringify(devDependencies)}`,
+  )
+}
+
+/** A compatibility matrix whose one row, for the installed nymbal, lists every installed Nymbal package's version. */
+async function matrixFor(project: string): Promise<string> {
+  const manifest = JSON.parse(readFileSync(join(project, 'package.json'), 'utf8')) as {
+    dependencies?: Record<string, string>
+    devDependencies?: Record<string, string>
+    pnpm?: { overrides?: Record<string, string> }
+    overrides?: Record<string, string>
+  }
+  const names = new Set(
+    [manifest.dependencies, manifest.devDependencies, manifest.pnpm?.overrides, manifest.overrides]
+      .flatMap((section) => Object.keys(section ?? {}))
+      .filter((name) => NYMBAL_NAME.test(name)),
+  )
+  const packages: Record<string, string> = {}
+  for (const name of names) {
+    const file = join(project, 'node_modules', name, 'package.json')
+    if (existsSync(file))
+      packages[name] = (JSON.parse(readFileSync(file, 'utf8')) as { version: string }).version
+  }
+  const stack = packages['nymbal']!
+  const body = JSON.stringify({
+    schema: 1,
+    generatedAt: new Date().toISOString(),
+    stacks: { [stack]: { packages, adapters: {} } },
+  })
+  const server = createServer((_req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' }).end(body)
+  })
+  servers.push(server)
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  return `http://127.0.0.1:${(server.address() as { port: number }).port}/matrix.json`
+}
+
+describe("AC-14: the auto-update job's check on the same CI checkout", () => {
+  it(
+    "AC-14: its last run step with CI=true says auto-updates off after a source-only commit under the scaffold's renovate.json, and may merge a lower-range devDependency moving up under the auto-updates preset with a matrix certifying the install; git status is empty after each",
+    async () => {
+      const jobs = asMap(asMap(parseYaml(readFileSync(WORKFLOW, 'utf8')))['jobs'])
+      const job = jobs['auto-update']
+      const steps =
+        job !== null &&
+        typeof job === 'object' &&
+        !Array.isArray(job) &&
+        Array.isArray(job['steps'])
+          ? job['steps'].map(asMap)
+          : []
+      const check = steps
+        .filter((s) => typeof s['run'] === 'string')
+        .map((s) => (s['run'] as string).trim())
+        .at(-1)
+      expect(check, "the auto-update job's last run step").toMatch(/ nymbal update-check$/)
+      expect(
+        installedCheckout,
+        'the verify case above left no installed checkout',
+      ).not.toBeUndefined()
+      const copy = installedCheckout!
+
+      // (a) a source-only commit, renovate.json as create-nymbal-app wrote it.
+      // At the project root: the Next.js template has no src/.
+      writeFileSync(join(copy, 'update-check-probe.txt'), 'a source-only change\n')
+      git(copy, 'add', '-A')
+      git(copy, 'commit', '-q', '-m', 'a source-only change')
+      const off = await runStep(check!, copy)
+      expect(
+        [off.code, off.out.includes('update-check: auto-updates off')],
+        off.out.slice(-3000),
+      ).toEqual([0, true])
+      expect(git(copy, 'status', '--porcelain')).toBe('')
+
+      // (b) the base declares one devDependency a range lower; the head is the scaffold's package.json with the
+      // auto-updates preset. Base and head install the same @nymbalhq/platform, so no journal is fetched.
+      const manifestPath = join(copy, 'package.json')
+      const scaffolded = readFileSync(manifestPath, 'utf8')
+      const manifest = JSON.parse(scaffolded) as { devDependencies: Record<string, string> }
+      const [name, lower] = lowerRange(manifest.devDependencies)
+      writeFileSync(
+        manifestPath,
+        `${JSON.stringify({ ...manifest, devDependencies: { ...manifest.devDependencies, [name]: lower } }, null, 2)}\n`,
+      )
+      git(copy, 'commit', '-q', '-am', `base: ${name} ${lower}`)
+      writeFileSync(manifestPath, scaffolded)
+      const renovatePath = join(copy, 'renovate.json')
+      const renovate = JSON.parse(readFileSync(renovatePath, 'utf8')) as Record<string, unknown>
+      writeFileSync(
+        renovatePath,
+        `${JSON.stringify({ ...renovate, extends: [AUTO_UPDATES_PRESET] }, null, 2)}\n`,
+      )
+      git(
+        copy,
+        'commit',
+        '-q',
+        '-am',
+        `head: ${name} back to the scaffold's range, auto-updates on`,
+      )
+
+      const merge = await runStep(check!, copy, { NYMBAL_MATRIX_URL: await matrixFor(copy) })
+      expect(
+        [merge.code, merge.out.includes('update-check: may merge')],
+        merge.out.slice(-3000),
+      ).toEqual([0, true])
+      expect(git(copy, 'status', '--porcelain')).toBe('')
+    },
+    2 * STEP_MS,
   )
 })

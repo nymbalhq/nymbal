@@ -81,6 +81,30 @@ describe('event log: append, listAll, maxSeq', () => {
     await env.append(events)
     expect(ids(await env.all())).toEqual(events.map((e) => e.id))
   })
+
+  it('oldestCreatedAt is null on an empty log and the earliest append time over rows in any state', async () => {
+    const env = await setup()
+    const oldest = () => env.store.read((tx) => env.log.oldestCreatedAt(tx))
+    expect(await oldest()).toBeNull()
+
+    // Appended out of time order, so the first row by seq is not the oldest.
+    const [pending, dead, delivered] = [1, 2, 3].map((i) => makeEvent('order.created.v1', { i }))
+    await env.append([pending!], minutes(7))
+    await env.append([dead!], minutes(5))
+    await env.append([delivered!], minutes(9))
+    await env.store.transaction(async (tx) => {
+      await env.log.markDelivered(tx, [delivered!.id, dead!.id], minutes(10))
+      await env.log.recordFailure(tx, dead!.id, minutes(10), 1)
+    })
+    const rows = await env.all()
+    expect(rows.find((r) => r.event.id === dead!.id)!.deadAt).not.toBeNull()
+    expect(rows.find((r) => r.event.id === delivered!.id)!.deliveredAt).not.toBeNull()
+
+    const earliest = Math.min(...rows.map((r) => r.createdAt.getTime()))
+    expect(rows[0]!.createdAt.getTime()).toBeGreaterThan(earliest)
+    expect((await oldest())!.getTime()).toBe(earliest)
+    expect(await oldest()).toEqual(minutes(5))
+  })
 })
 
 describe('event log: delivery state', () => {

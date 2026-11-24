@@ -17,6 +17,8 @@ export interface RequestAuth {
   userId?: string
   roles?: string[]
   token?: string
+  /** The sign-in the bearer belongs to; absent on a token minted before sessions were named. */
+  sessionId?: string
 }
 
 export interface Logger {

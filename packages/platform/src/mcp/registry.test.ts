@@ -22,8 +22,10 @@ import { RouteTable, recordingAdapter } from './route-table.js'
 
 /**
  * Every entry the registry keeps from the tool list: credentials, streams, provider-signed bytes, files, view history,
- * the AI key; a proposal's decision, so no agent approves its own; a settings value, so none sits in a proposal, and its clearing, so no agent clears one; the
- * assistant's turn and stream, which spend the AI key, so no agent calls the assistant.
+ * the AI key; a proposal's decision, so no agent approves its own; an insight's dismissal, so no agent silences what
+ * the merchant has not seen; a settings value, so none sits in a proposal, and its clearing, so no agent clears one; the
+ * assistant's turn and stream, which spend the AI key, so no agent calls the assistant; the admin promotion and
+ * category routes, which need previews of their own before an agent may change them.
  */
 const EXCLUDED = [
   'auth.register',
@@ -35,6 +37,9 @@ const EXCLUDED = [
   'auth.verifyEmail',
   'auth.resendVerification',
   'customers.changePassword',
+  'customers.sessions',
+  'customers.endSession',
+  'customers.endAllSessions',
   'admin.events.ticket',
   'admin.events.stream',
   'admin.activity.export',
@@ -47,16 +52,20 @@ const EXCLUDED = [
   'admin.products.enhance',
   'admin.proposals.approve',
   'admin.proposals.reject',
+  'admin.insights.dismiss',
   'admin.settings.put',
   'admin.settings.delete',
   'admin.assistant.turn',
   'admin.assistant.stream',
-  'cart.addCode',
-  'cart.removeCode',
   'admin.promotions.list',
   'admin.promotions.create',
   'admin.promotions.update',
   'admin.promotions.delete',
+  'admin.categories.list',
+  'admin.categories.create',
+  'admin.categories.update',
+  'admin.categories.delete',
+  'admin.categories.reorder',
 ].sort()
 
 /** The routes a cookie names the cart of; their tools take it as `cart`. */
@@ -66,6 +75,8 @@ const CART_HANDLES = [
   'PATCH /api/cart/items/:variantId',
   'DELETE /api/cart/items/:variantId',
   'DELETE /api/cart',
+  'POST /api/cart/codes',
+  'DELETE /api/cart/codes/:code',
   'POST /api/checkout',
   'POST /api/checkout/quote',
 ].sort()
@@ -222,7 +233,7 @@ describe('AC-1: one tool per registry entry', () => {
     }
   })
 
-  it('AC-13: the entries marked tool: false are exactly the fourteen kept from agents plus proposal approve, proposal reject, settings put and delete, the assistant’s turn and stream, the cart-code and admin-promotion routes, the three password routes and the two confirmation routes, and every stream route is among them', () => {
+  it('AC-13: the entries marked tool: false are exactly the fourteen kept from agents plus proposal approve, proposal reject, the insight dismiss, settings put and delete, the assistant’s turn and stream, the admin-promotion routes, the admin-category routes, the three password routes, the two confirmation routes and the three devices routes, and every stream route is among them', () => {
     const marked = Object.values(routeSchemas)
       .filter((entry) => entry.tool === false)
       .map((entry) => entry.name)
@@ -233,7 +244,7 @@ describe('AC-1: one tool per registry entry', () => {
     expect(streamed.filter((name) => !marked.includes(name))).toEqual([])
   })
 
-  it("AC-1: each tool's inputSchema is one object whose properties are its params, query and body keys flattened, plus cart on the seven cookie-named cart routes and idempotencyKey on every admin command, and whose required keys are the parts' required keys", () => {
+  it("AC-1: each tool's inputSchema is one object whose properties are its params, query and body keys flattened, plus cart on the nine cookie-named cart routes and idempotencyKey on every admin command, and whose required keys are the parts' required keys", () => {
     const handled = Object.entries(routeSchemas)
       .filter(([, entry]) => entry.handles?.['cart'] === 'nymbal.cart')
       .map(([key]) => key)

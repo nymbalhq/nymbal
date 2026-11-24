@@ -109,11 +109,13 @@ export function OrderView({
           )}
         </div>
 
-        <OrderTimeline
-          className={styles.summary}
-          entries={timeline}
-          {...(timelineHtml !== undefined && { serverHtml: timelineHtml })}
-        />
+        {timeline.length > 0 && (
+          <OrderTimeline
+            className={styles.summary}
+            entries={timeline}
+            {...(timelineHtml !== undefined && { serverHtml: timelineHtml })}
+          />
+        )}
 
         <OrderSummary
           className={styles.summary}

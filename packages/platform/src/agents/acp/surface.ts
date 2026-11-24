@@ -1,4 +1,4 @@
-import { createHash, timingSafeEqual } from 'node:crypto'
+import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import {
   CART_LINE_MAX_QTY,
@@ -15,16 +15,19 @@ import {
   type DocumentStoreAdapter,
   type Logger,
   type Order,
+  type PromotionEffect,
   type ResponseEnvelope,
   type ToolSurface,
 } from '@nymbalhq/types'
 import { requestHash } from '../../audit/idempotency.js'
+import { CODE_MAX_LENGTH, isCartCode } from '../../routes/cart.js'
+import { MAX_CART_CODES } from '../../services/cart-service.js'
 import type { BeginCheckoutResult, CheckoutService } from '../../services/checkout-service.js'
+import { cartCodes, cartTotals } from '../../services/promotions-quote.js'
 import { shippingOptions, type ShippingRate } from '../../services/shipping-quote.js'
 import { formatMoney } from '../../money.js'
-import { ucpProduct, type ListedProduct } from '../catalog.js'
+import { barcodesOf, ucpProduct, type ListedProduct } from '../catalog.js'
 import { toNymbalAddress } from './address.js'
-import { acpAgentName } from './agent-name.js'
 import {
   ACP_BASE_PATH,
   ACP_CAPABILITIES,
@@ -34,9 +37,12 @@ import {
   ACP_VERSION,
   acpHandler,
 } from './constants.js'
+import { acpKeyMatcher, type AcpKey } from './keys.js'
 import {
+  acpDiscounts,
   acpSession,
   cartLines,
+  discountWarnings,
   missingMessages,
   orderLines,
   orderTotals,
@@ -54,10 +60,13 @@ export interface AcpLink {
   title?: string | undefined
 }
 
-/** Runs a POST once per Idempotency-Key: its stored answer is replayed, and the key with another body is refused. */
+/**
+ * Runs a POST once per Idempotency-Key of the ACP key that sent it (`keyName`): its stored answer is replayed, and the
+ * Idempotency-Key with another body is refused.
+ */
 export type AcpIdempotent = (
   command: string,
-  request: { key: string; hash: string },
+  request: { key: string; hash: string; keyName: string },
   run: () => Promise<ResponseEnvelope>,
 ) => Promise<ResponseEnvelope>
 
@@ -76,12 +85,14 @@ export interface AcpSurfaceDeps {
   }
   sessions: DocumentStoreAdapter
   checkout: Pick<CheckoutService, 'beginCheckout' | 'quote'>
-  /** `commerce.shipping.rates`: which options an address is offered, and whether a session with none shows any. */
+  /** `commerce.shipping.rates`: which options an address is offered on a store that prices by its table. */
   shippingRates: readonly ShippingRate[]
+  /** What prices shipping: no table (one free option), the table, or the carrier's rates. */
+  shippingPricing: 'free' | 'table' | 'carrier'
   idempotent: AcpIdempotent
   payments: { providerName: string; environment: 'test' | 'production' }
   urls: () => AgentSurfaceUrls
-  config: { apiKey: string; links: readonly AcpLink[]; merchantId?: string | undefined }
+  config: { keys: readonly AcpKey[]; links: readonly AcpLink[]; merchantId?: string | undefined }
   store: { currency: string; name: string }
   logger: Logger
 }
@@ -92,6 +103,8 @@ const MAX_ITEMS = 50
 const FEED_PAGE = 100
 const SUPPORTED_VERSIONS = [ACP_VERSION]
 const MAX_IDEMPOTENCY_KEY = 255
+const CODES_DOWN =
+  'The discount codes could not be checked just now. Send discounts.codes again in an update shortly.'
 
 // --- Requests ------------------------------------------------------------------------------------------------------
 
@@ -138,6 +151,13 @@ const selectedFulfillment = z.object({
 /** Request fields the pinned schema allows that this store reads nothing from. */
 const ignored = z.unknown().optional()
 
+const discounts = z
+  .object({ codes: z.array(z.string()) })
+  .strict()
+  .optional()
+/** The protocol's deprecated spelling of `discounts.codes`, read when `discounts` is absent. */
+const coupons = z.array(z.string()).optional()
+
 const createRequest = z
   .object({
     line_items: z.array(item).min(1),
@@ -147,8 +167,8 @@ const createRequest = z
     fulfillment_details: fulfillmentDetails.optional(),
     fulfillment_groups: ignored,
     affiliate_attribution: ignored,
-    coupons: ignored,
-    discounts: ignored,
+    coupons,
+    discounts,
     locale: ignored,
     timezone: ignored,
     quote_id: ignored,
@@ -164,8 +184,8 @@ const updateRequest = z
     fulfillment_details: fulfillmentDetails.optional(),
     selected_fulfillment_options: z.array(selectedFulfillment).optional(),
     fulfillment_groups: ignored,
-    coupons: ignored,
-    discounts: ignored,
+    coupons,
+    discounts,
     order_notes: ignored,
   })
   .strict()
@@ -290,6 +310,44 @@ function mergeItems(items: readonly Item[]): Line[] {
 
 const itemParam = (line: Line) => `$.line_items[${line.index}].id`
 
+// --- Codes ---------------------------------------------------------------------------------------------------------
+
+/** The codes a request asks the cart to hold, each trimmed, with the field they came in for pointing at them. */
+interface AskedCodes {
+  codes: Array<{ code: string; index: number }>
+  param: '$.discounts.codes' | '$.coupons'
+}
+
+/**
+ * `discounts.codes`, else `coupons`, checked as the cart's code route checks a code, before anything changes: one the
+ * route would refuse, or more than five distinct, is refused here. A code repeated in another case is asked once.
+ */
+function askedCodes(data: {
+  discounts?: { codes: string[] } | undefined
+  coupons?: string[] | undefined
+}): { ok: true; asked: AskedCodes | undefined } | { ok: false; answer: ResponseEnvelope } {
+  const param = data.discounts !== undefined ? '$.discounts.codes' : '$.coupons'
+  const list = data.discounts?.codes ?? data.coupons
+  if (list === undefined) return { ok: true, asked: undefined }
+  const codes: AskedCodes['codes'] = []
+  for (const [index, raw] of list.entries()) {
+    const code = raw.trim()
+    if (!isCartCode(code)) {
+      return {
+        ok: false,
+        answer: invalid(`A code is 1 to ${CODE_MAX_LENGTH} characters`, `${param}[${index}]`),
+      }
+    }
+    if (!codes.some((c) => c.code.toLowerCase() === code.toLowerCase())) {
+      codes.push({ code, index })
+    }
+  }
+  if (codes.length > MAX_CART_CODES) {
+    return { ok: false, answer: invalid(`A session holds at most ${MAX_CART_CODES} codes`, param) }
+  }
+  return { ok: true, asked: { codes, param } }
+}
+
 /** What a refused cart call answers, by the cart route's code. */
 const CART_REFUSAL: Record<string, string> = {
   'cart.variant_missing': 'invalid_item_id',
@@ -299,12 +357,12 @@ const CART_REFUSAL: Record<string, string> = {
 /**
  * The Agentic Commerce Protocol's checkout over REST (`/api/acp/**`): a session is a guest cart, opened and changed
  * through the route tools as the calling agent, and completed by charging the agent's delegated payment through the
- * store's checkout. Every request is held to the store's ACP key, the pinned API version and, on a POST, an
- * Idempotency-Key, in that order, before anything is read.
+ * store's checkout. Every request is held to one of the store's ACP keys, the pinned API version and, on a POST, an
+ * Idempotency-Key, in that order, before anything is read. The matched key's name is the calling agent.
  */
 export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
   const { mcp, config } = deps
-  const storeKey = sha256(config.apiKey)
+  const matchKey = acpKeyMatcher(config.keys)
   const handler = () =>
     acpHandler({
       psp: deps.payments.providerName,
@@ -312,17 +370,19 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
       merchantId: config.merchantId,
     })
 
-  function callerOf(request: AgentRouteRequest): Caller {
-    return { agent: { name: acpAgentName(header(request, 'user-agent')) }, ip: request.ip }
+  function callerOf(request: AgentRouteRequest, agent: string): Caller {
+    return { agent: { name: agent }, ip: request.ip }
   }
 
-  /** The bearer (in constant time), the version and, on a POST, the key: the first that fails answers. */
-  function refusal(request: AgentRouteRequest, post: boolean): ResponseEnvelope | null {
+  /** The name of the key the bearer is, or null for any other bearer. */
+  function keyOf(request: AgentRouteRequest): string | null {
     const authorization = header(request, 'authorization') ?? ''
     const bearer = /^Bearer (.+)$/i.exec(authorization)?.[1] ?? ''
-    if (bearer === '' || !timingSafeEqual(sha256(bearer), storeKey)) {
-      return acpError(401, 'unauthorized', 'The bearer is not this store’s ACP key')
-    }
+    return matchKey(bearer)?.name ?? null
+  }
+
+  /** The version and, on a POST, the Idempotency-Key: the first that fails answers. */
+  function refusal(request: AgentRouteRequest, post: boolean): ResponseEnvelope | null {
     const version = header(request, 'api-version')
     if (version === undefined || version === '') {
       return acpError(400, 'missing_api_version', 'The API-Version header is required', {
@@ -352,14 +412,31 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
   /** What a session shows before it is priced: the free standard option on a store with no table, else none. */
   const unpriced: SessionPricing = {
     kind: 'unpriced',
-    options: deps.shippingRates.length === 0 ? [STANDARD_FULFILLMENT] : [],
+    options: deps.shippingPricing === 'free' ? [STANDARD_FULFILLMENT] : [],
   }
 
-  /** The option ids an address is offered: the ids never depend on the goods, only their amounts do. */
-  function offeredIds(details: StoredSession['fulfillment_details']): string[] {
+  /**
+   * The option ids the session's cart is offered at an address. A table's ids never depend on the goods, only their
+   * amounts do; a carrier's do (a heavier parcel loses services), so they are its quote's. Null when that quote is
+   * refused: the answer renders the refusal as `price()` does.
+   */
+  async function offeredIds(
+    token: string,
+    details: StoredSession['fulfillment_details'],
+  ): Promise<string[] | null> {
     if (details?.address === undefined) return unpriced.options.map((option) => option.id)
     const shipTo = toNymbalAddress(details.address, details.phone_number)
-    return shippingOptions(deps.shippingRates, shipTo, 0).map((option) => option.id)
+    if (deps.shippingPricing !== 'carrier') {
+      return shippingOptions(deps.shippingRates, shipTo, 0).map((option) => option.id)
+    }
+    try {
+      const quote = await deps.checkout.quote({ cartToken: token, shippingAddress: shipTo })
+      return quote.options.map((option) => option.id)
+    } catch (err) {
+      if (err instanceof CheckoutError && err.code === 'checkout.cart_empty') return null
+      if (quoteRefusal(err) === null) throw err
+      return null
+    }
   }
 
   function info(content: string): AcpMessage {
@@ -384,6 +461,10 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
         return info(
           'The discounts for this order could not be worked out just now. Retry this request shortly.',
         )
+      case 'checkout.shipping_unavailable':
+        return info(
+          'The delivery price for this order could not be worked out just now. Retry this request shortly.',
+        )
       case 'checkout.no_shipping':
         return message(
           'region_restricted',
@@ -402,6 +483,10 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
     quote?: CheckoutQuote
     /** Why the session could not be priced; it is then not ready for payment. */
     refusal?: AcpMessage
+    /** The refusal was the promotions engine's. */
+    promotionsDown?: boolean
+    /** The money effects the totals shown applied. */
+    applied: readonly PromotionEffect[]
   }
 
   /**
@@ -425,17 +510,17 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
           optionId: option.id,
           totals: orderTotals(order),
         },
+        applied: orderPromotions(order).effects,
       }
     }
+    if (loaded.status === 'canceled') {
+      return { pricing: { kind: 'unpriced', options: [STANDARD_FULFILLMENT] }, applied: [] }
+    }
+    // Before a quote the session shows what its cart comes to: the lines less the codes' discount.
+    const totals = cartTotals(loaded.cart)
+    const atCart: Priced = { pricing: { ...unpriced, totals }, applied: totals.applied }
     const details = loaded.stored.fulfillment_details
-    if (loaded.status === 'canceled' || details?.address === undefined) {
-      return {
-        pricing:
-          loaded.status === 'canceled'
-            ? { kind: 'unpriced', options: [STANDARD_FULFILLMENT] }
-            : unpriced,
-      }
-    }
+    if (details?.address === undefined) return atCart
     const asked = {
       cartToken: loaded.token,
       shippingAddress: toNymbalAddress(details.address, details.phone_number),
@@ -465,15 +550,27 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
           totals: quote.totals,
         },
         quote,
+        applied: quote.totals.applied,
       }
     } catch (err) {
       // A cart emptied outside the session has nothing to price; it reads as its lines do.
-      if (err instanceof CheckoutError && err.code === 'checkout.cart_empty')
-        return { pricing: unpriced }
+      if (err instanceof CheckoutError && err.code === 'checkout.cart_empty') return atCart
       const refusal = quoteRefusal(err)
       if (refusal === null) throw err
-      return { pricing: unpriced, refusal }
+      return {
+        ...atCart,
+        refusal,
+        promotionsDown: (err as CheckoutError).code === 'checkout.promotions_unavailable',
+      }
     }
+  }
+
+  /** What an order recorded of its promotions: the codes accepted and the money effects they applied. */
+  function orderPromotions(order: Order): { codes: string[]; effects: PromotionEffect[] } {
+    const recorded = (
+      order.metadata as { promotions?: { codes?: string[]; effects?: PromotionEffect[] } }
+    ).promotions
+    return { codes: recorded?.codes ?? [], effects: recorded?.effects ?? [] }
   }
 
   // --- Reading a session -----------------------------------------------------------------------------------------
@@ -514,13 +611,15 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
     write?: boolean
     /** The total moved since the agent was last answered: the answer warns the buyer to review it. */
     priceChanged?: boolean
+    /** A code could not be added because the promotions engine was down: the session says to send the codes again. */
+    codesDown?: boolean
   }
 
   async function render(
     loaded: Loaded,
     opts: RenderOptions = {},
   ): Promise<Record<string, unknown>> {
-    const { pricing, quote, refusal } = await price(loaded)
+    const { pricing, quote, refusal, promotionsDown, applied } = await price(loaded)
     if (opts.write === true && quote !== undefined) {
       const quoted = { totalMinor: quote.totals.totalMinor, optionId: quote.shippingOptionId }
       await save(loaded.token, { ...loaded.stored, quoted })
@@ -533,6 +632,7 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
     }
     if (loaded.status === 'completed') {
       const { order } = loaded
+      const recorded = orderPromotions(order)
       const acpOrder: AcpOrder = {
         type: 'order',
         id: order.id,
@@ -549,6 +649,10 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
         currency: order.currency,
         messages: [],
         order: acpOrder,
+        discounts: acpDiscounts(
+          recorded.codes.map((code) => ({ code, status: 'accepted' })),
+          applied,
+        ),
       })
     }
     const { cart } = loaded
@@ -562,19 +666,30 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
       opts.priceChanged === true && quote !== undefined
         ? [priceChange(quote.totals.totalMinor, quote.currency)]
         : []
+    const discounts = acpDiscounts(cartCodes(cart.promotions).codes, applied)
+    // One word on the engine being down: the codes' message stands in for the quote's own.
+    const codesDown = opts.codesDown === true ? [info(CODES_DOWN)] : []
+    const refused =
+      refusal === undefined || (opts.codesDown === true && promotionsDown === true) ? [] : [refusal]
     return acpSession({
       ...common,
       id: loaded.token,
-      status: refusal === undefined ? (opts.status ?? loaded.status) : 'not_ready_for_payment',
+      status:
+        refusal === undefined && opts.codesDown !== true
+          ? (opts.status ?? loaded.status)
+          : 'not_ready_for_payment',
       lines,
       currency: cart.currency,
       expiresAt: cart.expiresAt,
       messages: [
         ...missing,
-        ...(refusal === undefined ? [] : [refusal]),
+        ...refused,
+        ...codesDown,
+        ...discountWarnings(discounts),
         ...changed,
         ...(opts.messages ?? []),
       ],
+      discounts,
     })
   }
 
@@ -712,18 +827,76 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
     return refused
   }
 
+  /**
+   * What a code tool's refusal answers, by the cart route's code, `at` the code it was asked for; null when the codes
+   * could not be checked (the engine down, or a refusal the agent can do nothing about but send them again).
+   */
+  function codeRefusal(
+    result: { structuredContent?: Record<string, unknown> | undefined },
+    asked: AskedCodes,
+    at: string,
+    token: string,
+  ): ResponseEnvelope | null {
+    const refused = result.structuredContent?.['code']
+    switch (refused) {
+      case 'cart.code_invalid':
+        return invalid(`A code is 1 to ${CODE_MAX_LENGTH} characters`, at)
+      case 'cart.code_limit':
+        return invalid(`A session holds at most ${MAX_CART_CODES} codes`, asked.param)
+      case 'cart.missing':
+        return notFound(token)
+      case 'cart.promotions_unavailable':
+        return null
+      default:
+        deps.logger.warn({ session: token, code: refused }, 'an ACP session’s code was refused')
+        return null
+    }
+  }
+
+  /**
+   * The cart's codes set to exactly the asked ones, whatever their case: the others removed, then the missing ones
+   * added in the asked order, each as the calling agent. A refusal the agent can act on answers; any other stops there
+   * and is reported as `codesDown`.
+   */
+  async function setCodes(
+    token: string,
+    asked: AskedCodes,
+    caller: Caller,
+  ): Promise<{ answer: ResponseEnvelope } | { codesDown: boolean }> {
+    const held = cartCodes((await deps.cart(token))?.promotions).codes.map((c) => c.code)
+    const wanted = new Set(asked.codes.map((c) => c.code.toLowerCase()))
+    const has = new Set(held.map((code) => code.toLowerCase()))
+    for (const code of held) {
+      if (wanted.has(code.toLowerCase())) continue
+      const result = await mcp.call('cart_removeCode', { cart: token, code }, caller)
+      if (result.isError !== true) continue
+      const answer = codeRefusal(result, asked, asked.param, token)
+      return answer === null ? { codesDown: true } : { answer }
+    }
+    for (const { code, index } of asked.codes) {
+      if (has.has(code.toLowerCase())) continue
+      const result = await mcp.call('cart_addCode', { cart: token, code }, caller)
+      if (result.isError !== true) continue
+      const answer = codeRefusal(result, asked, `${asked.param}[${index}]`, token)
+      return answer === null ? { codesDown: true } : { answer }
+    }
+    return { codesDown: false }
+  }
+
   // --- Routes ----------------------------------------------------------------------------------------------------
 
-  async function create(request: AgentRouteRequest): Promise<ResponseEnvelope> {
+  async function create(request: AgentRouteRequest, agent: string): Promise<ResponseEnvelope> {
     const body = parsed(createRequest, request.body)
     if (!body.ok) return body.answer
     const { data } = body
     if (data.currency.toLowerCase() !== deps.store.currency.toLowerCase()) {
       return invalid(`This store sells in ${deps.store.currency.toLowerCase()}`, '$.currency')
     }
+    const codes = askedCodes(data)
+    if (!codes.ok) return codes.answer
     const lines = mergeItems(data.line_items)
-    const caller = callerOf(request)
-    return keyed('acp.create', request, async () => {
+    const caller = callerOf(request, agent)
+    return keyed('acp.create', request, agent, async () => {
       const refused = await check(lines, caller)
       if (refused !== null) return refused
       const opened = await mcp.call('cart_get', {}, caller)
@@ -743,7 +916,13 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
           fulfillment_details: data.fulfillment_details,
         }),
       })
-      return answer(token, 201, { write: true })
+      if (codes.asked === undefined) return answer(token, 201, { write: true })
+      const set = await setCodes(token, codes.asked, caller)
+      if ('answer' in set) {
+        await mcp.call('cart_clear', { cart: token }, caller)
+        return set.answer
+      }
+      return answer(token, 201, { write: true, codesDown: set.codesDown })
     })
   }
 
@@ -751,7 +930,7 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
     return answer(request.params['id'] ?? '', 200)
   }
 
-  async function update(request: AgentRouteRequest): Promise<ResponseEnvelope> {
+  async function update(request: AgentRouteRequest, agent: string): Promise<ResponseEnvelope> {
     const id = request.params['id'] ?? ''
     const body = parsed(updateRequest, request.body)
     if (!body.ok) return body.answer
@@ -759,9 +938,11 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
     if (data.line_items !== undefined && data.line_items.length === 0) {
       return invalid('A session holds at least one item', '$.line_items')
     }
-    const caller = callerOf(request)
+    const codes = askedCodes(data)
+    if (!codes.ok) return codes.answer
+    const caller = callerOf(request, agent)
     const lines = data.line_items === undefined ? undefined : mergeItems(data.line_items)
-    return keyed('acp.update', request, async () => {
+    return keyed('acp.update', request, agent, async () => {
       const loaded = await load(id)
       if (loaded === null) return notFound(id)
       if (loaded.status !== 'ready_for_payment' && loaded.status !== 'not_ready_for_payment') {
@@ -773,11 +954,11 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
           ? stored.fulfillment_details
           : { ...stored.fulfillment_details, ...data.fulfillment_details }
       // Checked against the address this update leaves, before anything changes.
-      const offered = offeredIds(details)
-      const other = (data.selected_fulfillment_options ?? []).findIndex(
-        (option) => !offered.includes(option.option_id),
-      )
-      if (other >= 0) {
+      const selected = data.selected_fulfillment_options ?? []
+      const offered = selected.length === 0 ? [] : await offeredIds(id, details)
+      const other =
+        offered === null ? -1 : selected.findIndex((option) => !offered.includes(option.option_id))
+      if (offered !== null && other >= 0) {
         return invalid(
           offered.length === 0
             ? 'No fulfillment option is offered until the session has an address the store delivers to'
@@ -798,28 +979,31 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
           selected_fulfillment_options: data.selected_fulfillment_options,
         }),
       })
-      return answer(id, 200, { write: true })
+      if (codes.asked === undefined) return answer(id, 200, { write: true })
+      const set = await setCodes(id, codes.asked, caller)
+      if ('answer' in set) return set.answer
+      return answer(id, 200, { write: true, codesDown: set.codesDown })
     })
   }
 
-  async function cancel(request: AgentRouteRequest): Promise<ResponseEnvelope> {
+  async function cancel(request: AgentRouteRequest, agent: string): Promise<ResponseEnvelope> {
     const id = request.params['id'] ?? ''
     const body = parsed(cancelRequest, request.body)
     if (!body.ok) return body.answer
-    return keyed('acp.cancel', request, async () => {
+    return keyed('acp.cancel', request, agent, async () => {
       const loaded = await load(id)
       if (loaded === null) return notFound(id)
       // A session with an order (paid, or being paid) is never cancelled here: the order is the merchant's.
       if (loaded.status !== 'ready_for_payment' && loaded.status !== 'not_ready_for_payment') {
         return closed()
       }
-      await mcp.call('cart_clear', { cart: id }, callerOf(request))
+      await mcp.call('cart_clear', { cart: id }, callerOf(request, agent))
       await save(id, { ...loaded.stored, canceledAt: new Date().toISOString() })
       return answer(id, 200)
     })
   }
 
-  async function complete(request: AgentRouteRequest): Promise<ResponseEnvelope> {
+  async function complete(request: AgentRouteRequest, agent: string): Promise<ResponseEnvelope> {
     const id = request.params['id'] ?? ''
     const body = parsed(completeRequest, request.body)
     if (!body.ok) return body.answer
@@ -834,7 +1018,7 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
         '$.payment_data.instrument.credential.type',
       )
     }
-    return keyed('acp.complete', request, async () => {
+    return keyed('acp.complete', request, agent, async () => {
       const loaded = await load(id)
       if (loaded === null) return notFound(id)
       if (loaded.status === 'completed' || loaded.status === 'canceled') return closed()
@@ -928,6 +1112,7 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
         return answer(id, 200, { write: true, priceChanged: true })
       case 'checkout.tax_unavailable':
       case 'checkout.promotions_unavailable':
+      case 'checkout.shipping_unavailable':
       case 'checkout.no_shipping':
         // Priced again, the session carries the refusal's message; were the engine back, it is ready to retry.
         return answer(id, 200, { write: true })
@@ -936,15 +1121,16 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
     }
   }
 
-  /** A POST once per Idempotency-Key, scoped to the endpoint; the key with another body is ACP's 422. */
+  /** A POST once per Idempotency-Key, scoped to the endpoint and the ACP key; the key with another body is ACP's 422. */
   async function keyed(
     command: string,
     request: AgentRouteRequest,
+    keyName: string,
     run: () => Promise<ResponseEnvelope>,
   ): Promise<ResponseEnvelope> {
     const key = `acp:${sha256(header(request, 'idempotency-key') ?? '').toString('hex')}`
     const hash = requestHash({ params: request.params, body: request.body })
-    const result = await deps.idempotent(command, { key, hash }, run)
+    const result = await deps.idempotent(command, { key, hash, keyName }, run)
     const code = (result.body as { error?: { code?: unknown } } | undefined)?.error?.code
     if (result.status === 409 && code === 'idempotency.key_reused') {
       return acpError(
@@ -956,8 +1142,8 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
     return result
   }
 
-  async function feed(request: AgentRouteRequest): Promise<ResponseEnvelope> {
-    const caller = callerOf(request)
+  async function feed(request: AgentRouteRequest, agent: string): Promise<ResponseEnvelope> {
+    const caller = callerOf(request, agent)
     const urls = deps.urls()
     const seller = { name: deps.store.name, links: config.links.map((link) => ({ ...link })) }
     const products: Record<string, unknown>[] = []
@@ -989,6 +1175,7 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
               available: variant.stock > 0,
               status: variant.stock > 0 ? 'in_stock' : 'out_of_stock',
             },
+            ...barcodesOf(variant.gtin),
             seller,
           })),
         })
@@ -1002,7 +1189,7 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
   function route(
     method: 'GET' | 'POST',
     path: string,
-    handle: (request: AgentRouteRequest) => Promise<ResponseEnvelope>,
+    handle: (request: AgentRouteRequest, agent: string) => Promise<ResponseEnvelope>,
   ): AgentRoute {
     const post = method === 'POST'
     return {
@@ -1017,7 +1204,11 @@ export function createAcpSurface(deps: AcpSurfaceDeps): AgentSurfaceAdapter {
         }
         let result: ResponseEnvelope
         try {
-          result = refusal(request, post) ?? (await handle(request))
+          const agent = keyOf(request)
+          result =
+            agent === null
+              ? acpError(401, 'unauthorized', 'The bearer is not this store’s ACP key')
+              : (refusal(request, post) ?? (await handle(request, agent)))
         } catch (err) {
           deps.logger.error({ err, path }, 'an ACP request failed')
           result = acpError(500, 'processing_error', 'The store could not answer this request')

@@ -308,7 +308,10 @@ const VIEWERS = ['viewer-a', 'viewer-b', 'viewer-c']
 const TERMS = ['blue widget', 'left handed teapot', 'unicorn mug']
 
 /** Any rollup event over the pool, its timestamp inside `window`. */
-export function rollupEventArb(pool: Pool, window: EventWindow): fc.Arbitrary<NymbalEvent<unknown>> {
+export function rollupEventArb(
+  pool: Pool,
+  window: EventWindow,
+): fc.Arbitrary<NymbalEvent<unknown>> {
   const at = fc
     .integer({ min: 0, max: window.hours * 60 })
     .map((minutes) => new Date(window.base.getTime() + minutes * 60_000))
@@ -335,12 +338,10 @@ export function rollupEventArb(pool: Pool, window: EventWindow): fc.Arbitrary<Ny
 
 /** Each index in `0..n-1` at least once, some repeated, in any order. */
 export function deliveryOrders(n: number): fc.Arbitrary<number[]> {
-  return fc
-    .array(fc.integer({ min: 0, max: n - 1 }), { maxLength: n })
-    .chain((repeats) => {
-      const all = [...Array.from({ length: n }, (_, i) => i), ...repeats]
-      return fc.shuffledSubarray(all, { minLength: all.length, maxLength: all.length })
-    })
+  return fc.array(fc.integer({ min: 0, max: n - 1 }), { maxLength: n }).chain((repeats) => {
+    const all = [...Array.from({ length: n }, (_, i) => i), ...repeats]
+    return fc.shuffledSubarray(all, { minLength: all.length, maxLength: all.length })
+  })
 }
 
 type Row = Record<string, unknown>
@@ -479,6 +480,8 @@ export interface MoneyBySource {
 export interface MoneyTotal {
   currency: string
   window: Row
+  /** The total's window holds today, a store day still open. */
+  partial: boolean
   capturedMinor: number
   refundedMinor: number
   netCapturedMinor: number
@@ -486,7 +489,7 @@ export interface MoneyTotal {
   bySource: MoneyBySource[]
 }
 
-export interface MoneyRow extends Omit<MoneyTotal, 'window'> {
+export interface MoneyRow extends Omit<MoneyTotal, 'window' | 'partial'> {
   bucket: string
   partial: boolean
   timezone: string
@@ -536,7 +539,13 @@ export interface RunwayItem {
 
 /** The default answer of `GET /api/admin/reports`. */
 export interface ReportBody {
-  window: { from: string; to: string; timezone: string; grain: string | null; closedThrough: string }
+  window: {
+    from: string
+    to: string
+    timezone: string
+    grain: string | null
+    closedThrough: string
+  }
   since: string | null
   definitions: Record<string, string>
   money: { totals: MoneyTotal[] }

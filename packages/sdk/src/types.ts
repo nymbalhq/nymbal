@@ -1,7 +1,9 @@
 import type {
+  CartCodes,
   CartItem,
   CheckoutPayment,
   CheckoutQuote,
+  CheckoutTotals,
   Customer,
   Address,
   Facet,
@@ -22,6 +24,8 @@ export interface DenormalisedVariant {
   priceMinor: number
   stock: number
   options: VariantOption[]
+  /** The variant's GTIN; null when it has none. */
+  gtin: string | null
 }
 
 export interface DenormalisedProduct {
@@ -32,6 +36,11 @@ export interface DenormalisedProduct {
   shortDescription: string
   status: string
   type: string
+  /** The product's own page title and meta description; '' when the merchant has set none. */
+  seoTitle: string
+  seoDescription: string
+  /** '' when the product has none. */
+  brand: string
   media: unknown
   variantCount: number
   inStock: boolean
@@ -54,8 +63,14 @@ export interface CartState {
   subtotalMinor: number
   currency: string
   itemCount: number
+  /** What the cart comes to, codes' discount included, as the API last said; null before its first answer. */
+  totals: CheckoutTotals | null
+  /** What the engine said of each code on the cart. */
+  promotions: CartCodes
   loading: boolean
   error: string | null
+  /** The API's code for `error` (`cart.code_limit`, …), null when there is none or no API answer gave it. */
+  errorCode: string | null
 }
 
 export interface ProductState {

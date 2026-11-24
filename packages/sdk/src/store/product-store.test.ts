@@ -13,13 +13,18 @@ function makeProduct(overrides?: Partial<DenormalisedProduct>): DenormalisedProd
     shortDescription: '',
     status: 'active',
     type: 'simple',
+    seoTitle: '',
+    seoDescription: '',
+    brand: '',
     media: [],
     variantCount: 1,
     inStock: true,
     priceRange: null,
     currency: 'GBP',
     priceMinor: 1000,
-    variants: [{ id: 'v1', sku: 'S1', name: 'D', priceMinor: 1000, stock: 5, options: [] }],
+    variants: [
+      { id: 'v1', sku: 'S1', name: 'D', priceMinor: 1000, stock: 5, options: [], gtin: null },
+    ],
     categoryIds: [],
     categories: [],
     createdAt: '',
@@ -49,6 +54,7 @@ describe('ProductStore', () => {
           priceMinor: 1000 + i,
           stock: i,
           options: [],
+          gtin: null,
         }))
         const store = createProductStore(makeAdapter(makeProduct({ variants })))
         await store.loadBySlug('test-product')
@@ -92,6 +98,7 @@ describe('ProductStore', () => {
       stock: 3,
       lowStockThreshold: 1,
       options: [],
+      gtin: null,
       status: 'active' as const,
       createdAt: '',
       updatedAt: '',

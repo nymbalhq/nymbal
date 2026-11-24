@@ -4,6 +4,9 @@
 # (scripts/stack.ts): the main checkout is slot 0, this file's `nymbal` and defaults; a linked worktree's slot runs
 # `docker compose -p nymbal-s<k>` with every port moved, so worktrees share no container. A hand-run `docker compose`
 # gets both in a subshell, so the slot is not left pinned in the shell: `(eval "$(pnpm --silent stack env)"; docker compose up -d)`.
+# Every path an image declares as a VOLUME is mounted here: Docker makes an anonymous volume for any it is not, and
+# `down` without `-v` leaves that behind. Test data lives on tmpfs (no test restarts a service); WordPress's database
+# is a named volume, kept and reused beside its site files.
 name: nymbal
 
 services:
@@ -12,6 +15,8 @@ services:
     environment:
       POSTGRES_PASSWORD: nymbal
       POSTGRES_DB: nymbal
+    tmpfs:
+      - /var/lib/postgresql/data
     ports:
       - '${NYMBAL_POSTGRES_PORT:-54329}:5432'
     healthcheck:
@@ -22,6 +27,8 @@ services:
 
   redis:
     image: redis:7-alpine
+    tmpfs:
+      - /data
     ports:
       - '${NYMBAL_REDIS_PORT:-63799}:6379'
     healthcheck:
@@ -49,6 +56,8 @@ services:
   minio:
     image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372
     command: ['server', '/data']
+    tmpfs:
+      - /data
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
@@ -86,6 +95,8 @@ services:
       MARIADB_DATABASE: wordpress
       MARIADB_USER: wordpress
       MARIADB_PASSWORD: wordpress
+    volumes:
+      - wordpress-db:/var/lib/mysql
     healthcheck:
       test: ['CMD', 'healthcheck.sh', '--connect', '--innodb_initialized']
       interval: 2s
@@ -140,3 +151,4 @@ services:
 
 volumes:
   wordpress-site:
+  wordpress-db:

@@ -15,12 +15,13 @@ import {
 } from '@nymbalhq/types'
 import type {
   AlertKind,
-  Cart,
   Category,
   ProductSortKey,
+  ShopperCart,
   ShopperOrder,
   StoreCapabilities,
 } from '@nymbalhq/types'
+import type { CartProjection } from '@nymbalhq/web-components'
 
 const API_URL = process.env.NYMBAL_API_URL ?? 'http://localhost:3001'
 
@@ -236,15 +237,11 @@ export async function fetchReviews(productId: string): Promise<ReviewsListResult
   return envelope.data ?? { items: [], nextCursor: null }
 }
 
-/** The cart the cart elements take as their `cart` attribute: its lines and sums, never the cart token. */
-export interface CartProjection {
-  items: Cart['items']
-  subtotalMinor: number
-  currency: string
-  itemCount: number
-}
+export type { CartProjection }
 
 const CART_COOKIE = 'nymbal.cart'
+const NO_LINES = { items: [], subtotalMinor: 0, currency: '', itemCount: 0 }
+const NO_CODES = { discountTotalMinor: 0, totalMinor: 0, codes: [] }
 
 /** The `nymbal.cart` value in a request's Cookie header, or null. */
 function cartToken(cookie: string | null): string | null {
@@ -270,12 +267,15 @@ export const fetchCart = cache(async (cookie: string | null): Promise<CartProjec
       headers: { Cookie: `${CART_COOKIE}=${token}` },
     })
     if (!res.ok) return null
-    const { items, subtotalMinor, currency } = ((await res.json()) as { data: Cart }).data
+    const cart = ((await res.json()) as { data: ShopperCart }).data
     return {
-      items,
-      subtotalMinor,
-      currency,
-      itemCount: items.reduce((n, item) => n + item.qty, 0),
+      items: cart.items,
+      subtotalMinor: cart.subtotalMinor,
+      currency: cart.currency,
+      itemCount: cart.items.reduce((n, item) => n + item.qty, 0),
+      discountTotalMinor: cart.totals.discountTotalMinor,
+      totalMinor: cart.totals.totalMinor,
+      codes: cart.promotions.codes,
     }
   } catch (err) {
     unstable_rethrow(err)
@@ -294,7 +294,7 @@ export function hasCartCookie(cookie: string | null): boolean {
  * else `fetchCart`'s answer, where null (a failed read) is an unknown cart and never shown as empty.
  */
 export async function cartPageCart(cookie: string | null): Promise<CartProjection | null> {
-  if (!hasCartCookie(cookie)) return { items: [], subtotalMinor: 0, currency: '', itemCount: 0 }
+  if (!hasCartCookie(cookie)) return { ...NO_LINES, ...NO_CODES }
   return fetchCart(cookie)
 }
 

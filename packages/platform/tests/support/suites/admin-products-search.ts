@@ -7,9 +7,9 @@ import type { Dialect, Kernel } from '../kernel.js'
 import { adminClient, type AdminClient } from '../money.js'
 import { openRaw, writeRaw, type RawReader } from '../raw.js'
 
-// The admin products list searched by name on one dialect, through the served kernel's route. Every product a test
-// searches for is made after a run of products longer than the route's old window (limit + offset + 200 rows), so a
-// search over a window of the table cannot find it.
+// The admin products list and the admin global search, searched by name or slug on one dialect, through the served
+// kernel's routes. Every product a test searches for is made after a run of products longer than either route's old
+// window (limit + offset + 200 rows, or the oldest 200), so a search over a window of the table cannot find it.
 
 export interface AdminProductsSearchOptions {
   /** A kernel on a database of its own. */
@@ -32,10 +32,17 @@ export function adminProductsSearchSuite(
     /** The product made before the filler, by name. */
     const beforeFiller = `Solstice Sandal ${randomUUID().slice(0, 8)}`
     let beforeFillerId: string
+    /** The product made before the filler that the global search looks for. */
+    const searchBeforeFiller = `Meridian Kettle ${randomUUID().slice(0, 8)}`
+    let searchBeforeFillerId: string
 
-    const makeProduct = async (name: string, status: ProductStatus = 'active') => {
+    const makeProduct = async (
+      name: string,
+      status: ProductStatus = 'active',
+      slug = `search-${randomUUID()}`,
+    ) => {
       const product = await k.services.product.create({
-        slug: `search-${randomUUID()}`,
+        slug,
         name,
         description: '',
         status,
@@ -59,6 +66,7 @@ export function adminProductsSearchSuite(
       admin = await adminClient(k, served.baseUrl)
       raw = openRaw(k.dialect, k.target)
       beforeFillerId = await makeProduct(beforeFiller)
+      searchBeforeFillerId = await makeProduct(searchBeforeFiller)
       for (let i = 0; i < FILLER; i += 1) await makeProduct(`Filler ${i}`)
     }, 120_000)
 
@@ -72,6 +80,15 @@ export function adminProductsSearchSuite(
       const res = await admin.call<Product[]>('GET', `/api/admin/products?${params.toString()}`)
       expect(res.status, JSON.stringify(res.body)).toBe(200)
       return res.body.data!
+    }
+
+    async function globalSearch(q: string): Promise<Product[]> {
+      const res = await admin.call<{ products: Product[] }>(
+        'GET',
+        `/api/admin/search?${new URLSearchParams({ q }).toString()}`,
+      )
+      expect(res.status, JSON.stringify(res.body)).toBe(200)
+      return res.body.data!.products
     }
 
     const namesOf = (products: Product[]) => products.map((p) => p.name).sort()
@@ -157,5 +174,59 @@ export function adminProductsSearchSuite(
         { numRuns: options.propertyRuns },
       )
     }, 120_000)
+
+    it(`AC-1: GET /api/admin/search?q= finds a product made after more than 200 others, and the one made before them (${dialect})`, async () => {
+      const tag = searchBeforeFiller.split(' ').at(-1)!
+      const afterFillerId = await makeProduct(`Meridian Kettle Second ${tag}`)
+
+      const found = await globalSearch('meridian KETTLE')
+
+      expect(found.map((p) => p.id)).toEqual([searchBeforeFillerId, afterFillerId])
+    }, 60_000)
+
+    it(`AC-2: GET /api/admin/search?q= finds a product made after the filler by part of its slug alone, in another case (${dialect})`, async () => {
+      const tag = randomUUID().slice(0, 8)
+      const slugOnlyId = await makeProduct(
+        `Quayside Jug ${randomUUID().slice(0, 8)}`,
+        'active',
+        `tidewater-${tag}-jug`,
+      )
+
+      const found = await globalSearch(`TIDEWATER-${tag.toUpperCase()}`)
+
+      expect(found.map((p) => p.id)).toEqual([slugOnlyId])
+    }, 60_000)
+
+    it(`AC-3: GET /api/admin/search returns exactly the first five matches by createdAt then id when seven match (${dialect})`, async () => {
+      const tag = randomUUID().slice(0, 8)
+      const ids: string[] = []
+      for (let i = 0; i < 7; i += 1) ids.push(await makeProduct(`Aurora Vase ${tag} ${i}`))
+      // Four rows sharing an instant across the fifth place, so which of them make the cut rests on the id.
+      const tied = ids.slice(3)
+      const { created_at: first } = await raw.one<{ created_at: unknown }>(
+        'SELECT created_at FROM products WHERE id = ?',
+        [tied[0]],
+      )
+      await writeRaw(
+        k.dialect,
+        k.target,
+        `UPDATE products SET created_at = ? WHERE id IN (${tied.map(() => '?').join(', ')})`,
+        [new Date(first as string | Date).toISOString(), ...tied],
+      )
+      const stored = await raw.rows<{ id: string; created_at: unknown }>(
+        `SELECT id, created_at FROM products WHERE id IN (${ids.map(() => '?').join(', ')})`,
+        ids,
+      )
+      const instant = (r: { created_at: unknown }) =>
+        new Date(r.created_at as string | Date).getTime()
+      const firstFive = [...stored]
+        .sort((a, b) => instant(a) - instant(b) || (a.id < b.id ? -1 : 1))
+        .slice(0, 5)
+        .map((r) => r.id)
+
+      const found = await globalSearch(`aurora vase ${tag}`)
+
+      expect(found.map((p) => p.id)).toEqual(firstFive)
+    }, 60_000)
   })
 }

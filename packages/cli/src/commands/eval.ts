@@ -7,20 +7,28 @@ import type { LoadedConfig, NymbalConfig } from '@nymbalhq/config'
 import { createHttpServer } from '@nymbalhq/http'
 import {
   assistantEvalHash,
+  CONTENT_CASES,
+  contentStore,
   createApp,
   createCommandStore,
   createLogger,
+  declaredSettings,
   GOLDEN_QUESTIONS,
   GoldenAdapterError,
   goldenStore,
+  importAdapterModule,
+  runContentEval,
   runGolden,
   runMigrations,
   tallyGolden,
+  type ContentEvalReport,
+  type ContentEvalResult,
   type GoldenCall,
   type GoldenReport,
   type GoldenResult,
   type GoldenTally,
   type GoldenUsage,
+  type NymbalApp,
 } from '@nymbalhq/platform'
 import { loadProject } from '../utils/project.js'
 import { getCliVersion } from '../utils/version.js'
@@ -38,15 +46,34 @@ const KEY_VARIABLES: Record<string, string> = {
   openai: 'OPENAI_API_KEY',
 }
 
-/** What an OpenAI-compatible server that takes no key is sent: such servers ignore it, and the slot needs one set. */
+/**
+ * What an OpenAI-compatible server that takes no key is sent when the project's package still requires one (a release
+ * whose `apiKey` declares no `optionalWith`): such servers ignore it.
+ */
 const UNUSED_KEY = 'unused'
+
+/** Whether the project's package lets `config` leave its `apiKey` unset: its `optionalWith` path is set there. */
+async function keyOptional(
+  ai: NymbalConfig['commerce']['ai'],
+  config: Record<string, unknown>,
+): Promise<boolean> {
+  const declared = declaredSettings(await importAdapterModule('ai', ai, process.env))
+  const path = declared.find((s) => s.path === 'apiKey')?.optionalWith
+  if (path === undefined) return false
+  const value = path
+    .split('.')
+    .reduce<unknown>((at, key) => (at as Record<string, unknown> | undefined)?.[key], config)
+  return value !== undefined && value !== null && value !== ''
+}
 
 /**
  * The provider's key must be in the block or the environment: a key saved only in Settings lives in the project's
  * database, which the eval never opens. An OpenAI-compatible server on another host may take none: the block it
  * answers is the one to run with.
  */
-function withKey(ai: NymbalConfig['commerce']['ai']): NymbalConfig['commerce']['ai'] {
+async function withKey(
+  ai: NymbalConfig['commerce']['ai'],
+): Promise<NymbalConfig['commerce']['ai']> {
   const variable = KEY_VARIABLES[ai.provider]
   if (variable === undefined) return ai
   const config = (ai as { config?: Record<string, unknown> }).config ?? {}
@@ -59,6 +86,7 @@ function withKey(ai: NymbalConfig['commerce']['ai']): NymbalConfig['commerce']['
     URL.canParse(baseUrl) &&
     new URL(baseUrl).hostname !== 'api.openai.com'
   ) {
+    if (await keyOptional(ai, config)) return ai
     return { ...ai, config: { ...config, apiKey: UNUSED_KEY } } as NymbalConfig['commerce']['ai']
   }
   throw new EvalRefused(
@@ -92,12 +120,14 @@ function throwawayConfig(config: NymbalConfig, ai: NymbalConfig['commerce']['ai'
       reviews: native,
       search: native,
       analytics: native,
-      shipping: { ...native, rates: [] },
+      shipping: { ...native, rates: [], pricing: 'table' },
       tax: { ...native, onUnavailable: 'refuse', rates: [] },
       promotions: { ...native, onUnavailable: 'proceed' },
       ai,
     },
     http: { ...config.http, host: '127.0.0.1' },
+    // The eval runs what it scores itself: a night shift of the throwaway store's own would ask the model too.
+    nightShift: { ...config.nightShift, enabled: false },
   } as NymbalConfig
 }
 
@@ -155,17 +185,14 @@ interface Evaluated {
   hash: string
 }
 
-async function evaluate(
+/** Runs `use` on an app over a throwaway store of the project's config, removed when it ends. */
+async function onThrowawayStore<T>(
   project: LoadedConfig,
-  args: {
-    only: string | undefined
-    json: boolean
-    verbose: boolean
-  },
-): Promise<Evaluated> {
+  use: (app: NymbalApp, config: NymbalConfig) => Promise<T>,
+): Promise<T> {
   const { config, projectRoot, adapters } = project
   const ai = config.commerce.ai
-  const evalConfig = throwawayConfig(config, withKey(ai))
+  const evalConfig = throwawayConfig(config, await withKey(ai))
   const dir = mkdtempSync(join(tmpdir(), 'nymbal-eval-'))
   const sqlitePath = join(dir, 'eval.db')
   process.env['NYMBAL_ADMIN_EMAIL'] = EVAL_ADMIN
@@ -189,34 +216,47 @@ async function evaluate(
         adapters?.ai !== undefined && { adapters: { ai: adapters.ai } }),
     })
     try {
-      const http = createHttpServer({
-        config: evalConfig,
-        logger,
-        documentStore: app.platform.documentStore,
-        version: getCliVersion(),
-        network: app.network,
-      })
-      // The routes are the tools; nothing listens.
-      await app.attachHttp(http.adapter, { adminRoot: null })
-      await goldenStore(app)
-      const hash = assistantEvalHash(app.assistantTools!)
-      const only = args.only
-        ?.split(',')
-        .map((id) => id.trim())
-        .filter((id) => id !== '')
-      const report = await runGolden(app, {
-        ...(only !== undefined && { only }),
-        ...(!args.json && {
-          onResult: (result) => process.stdout.write(`${line(result, args.verbose)}\n`),
-        }),
-      })
-      return { report, hash }
+      return await use(app, evalConfig)
     } finally {
       await app.stop()
     }
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
+}
+
+async function evaluate(
+  project: LoadedConfig,
+  args: {
+    only: string | undefined
+    json: boolean
+    verbose: boolean
+  },
+): Promise<Evaluated> {
+  return onThrowawayStore(project, async (app, evalConfig) => {
+    const http = createHttpServer({
+      config: evalConfig,
+      logger: app.platform.logger,
+      documentStore: app.platform.documentStore,
+      version: getCliVersion(),
+      network: app.network,
+    })
+    // The routes are the tools; nothing listens.
+    await app.attachHttp(http.adapter, { adminRoot: null })
+    await goldenStore(app)
+    const hash = assistantEvalHash(app.assistantTools!)
+    const only = args.only
+      ?.split(',')
+      .map((id) => id.trim())
+      .filter((id) => id !== '')
+    const report = await runGolden(app, {
+      ...(only !== undefined && { only }),
+      ...(!args.json && {
+        onResult: (result) => process.stdout.write(`${line(result, args.verbose)}\n`),
+      }),
+    })
+    return { report, hash }
+  })
 }
 
 const assistantCommand = defineCommand({
@@ -363,7 +403,140 @@ const assistantCommand = defineCommand({
   },
 })
 
+function contentLine(result: ContentEvalResult, verbose: boolean): string {
+  const head = result.ok
+    ? `PASS ${result.id} ${result.title}`
+    : `FAIL ${result.id} ${result.title}: ${result.reasons.join('; ')}`
+  return verbose ? `${head}\n  outcome: ${result.outcome}` : head
+}
+
+/** Each case of several runs once: verdict by majority, every run's reasons kept. */
+function contentResults(
+  reports: readonly ContentEvalReport[],
+  tally: GoldenTally,
+): Array<{ id: string; ok: boolean; reasons: string[] }> {
+  return tally.questions.map((q) => ({
+    id: q.id,
+    ok: q.ok,
+    reasons: [
+      ...new Set(reports.flatMap((r) => r.results.find((x) => x.id === q.id)?.reasons ?? [])),
+    ],
+  }))
+}
+
+const contentCommand = defineCommand({
+  meta: {
+    name: 'content',
+    description: `Run the content role on its ${CONTENT_CASES.length} cases with the project's AI provider, on a throwaway store`,
+  },
+  args: {
+    only: { type: 'string', description: 'Run only these case ids, comma-separated' },
+    threshold: {
+      type: 'string',
+      description: 'How many must pass for exit 0 (default every case run)',
+    },
+    runs: {
+      type: 'string',
+      description:
+        'Run the cases this many times, each on a fresh store, and judge each case by majority (default 1)',
+    },
+    json: { type: 'boolean', description: 'Print the tally and results as JSON', default: false },
+    verbose: {
+      type: 'boolean',
+      description: 'Print what the role did with each case’s product',
+      default: false,
+    },
+  },
+  async run({ args }) {
+    let code: number
+    let out: NodeJS.WriteStream
+    let text: string
+    try {
+      const runs = runsOf(args.runs)
+      if (runs === undefined) throw new EvalRefused('--runs takes a whole number of at least 1')
+      const only =
+        typeof args.only === 'string'
+          ? args.only
+              .split(',')
+              .map((id) => id.trim())
+              .filter((id) => id !== '')
+          : undefined
+      const unknown = (only ?? []).filter((id) => !CONTENT_CASES.some((c) => c.id === id))
+      if (unknown.length > 0) {
+        throw new EvalRefused(
+          `no content case ${unknown.join(', ')}: the cases are ${CONTENT_CASES.map((c) => c.id).join(', ')}`,
+        )
+      }
+      const total = only?.length ?? CONTENT_CASES.length
+      const threshold =
+        typeof args.threshold === 'string' && args.threshold !== '' ? Number(args.threshold) : total
+      if (!Number.isInteger(threshold) || threshold < 0) {
+        throw new EvalRefused('--threshold takes a whole number')
+      }
+      const project = await loadProject()
+      if (project.config.commerce.ai.provider === 'none')
+        throw new EvalRefused('no AI provider: set ai in nymbal.config.ts')
+      const prompt = project.config.agents.roles.content.prompt
+      const reports: ContentEvalReport[] = []
+      for (let run = 1; run <= runs; run += 1) {
+        const report = await onThrowawayStore(project, async (app) => {
+          await contentStore(app)
+          return runContentEval(app, {
+            ...(only !== undefined && { only }),
+            ...(prompt !== undefined && { prompt }),
+          })
+        })
+        reports.push(report)
+        if (!args.json) {
+          if (runs > 1) process.stdout.write(`run ${run}/${runs}\n`)
+          for (const result of report.results) {
+            process.stdout.write(`${contentLine(result, args.verbose)}\n`)
+          }
+          if (runs > 1) {
+            process.stdout.write(`${tokensLine(`tokens run ${run}/${runs}`, report.usage)}\n`)
+          }
+        }
+      }
+      const tally = tallyGolden(reports)
+      const usage = totalOf(reports.map((r) => r.usage))
+      out = process.stdout
+      text = args.json
+        ? JSON.stringify(
+            {
+              runs: tally.runs,
+              passed: tally.passed,
+              total: tally.total,
+              threshold,
+              usage,
+              models: [...new Set(reports.flatMap((r) => r.models))],
+              results: contentResults(reports, tally),
+            },
+            null,
+            2,
+          )
+        : [
+            ...(runs > 1
+              ? tally.questions.map((q) => `tally ${q.id} ${q.passed}/${tally.runs}`)
+              : []),
+            `content eval: ${tally.passed}/${tally.total} passed (threshold ${threshold})`,
+            tokensLine('tokens', usage),
+          ].join('\n')
+      code = tally.passed >= threshold ? 0 : 1
+    } catch (error) {
+      if (!(error instanceof EvalRefused)) throw error
+      out = process.stderr
+      text = error.message
+      code = 2
+    }
+    // A pipe is written asynchronously: exiting before the write lands would cut the output short.
+    out.write(`${text}\n`, () => process.exit(code))
+  },
+})
+
 export const evalCommand = defineCommand({
-  meta: { name: 'eval', description: 'Score a store feature against its golden questions' },
-  subCommands: { assistant: assistantCommand },
+  meta: {
+    name: 'eval',
+    description: 'Score a store feature against its golden questions or cases',
+  },
+  subCommands: { assistant: assistantCommand, content: contentCommand },
 })

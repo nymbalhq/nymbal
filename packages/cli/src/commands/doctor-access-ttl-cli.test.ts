@@ -7,13 +7,13 @@ import {
   cliEnv,
   doctorJson,
   migratedSqlite,
-  runCli,
   type CliRun,
 } from '../../../../tests/support/doctor.js'
+import { runInProcess } from './fixtures/in-process.js'
 
 // `nymbal doctor --json` carries the access token lifetime line beside its other checks: degraded for an accessTtl over
-// 15 minutes on an https store, ok on an http one. Spawns the built CLI (`pnpm build` first) in a fresh project per case,
-// on the repository's config.
+// 15 minutes on an https store, ok on an http one. Runs the command in this process (fixtures/in-process.ts) in a fresh
+// project per case, on the repository's config.
 
 const NAME = 'access token lifetime'
 
@@ -53,7 +53,7 @@ async function doctor(storeUrl: string, accessTtl: string): Promise<CliRun> {
     NODE_ENV: undefined,
     NYMBAL_PUBLIC_URL: undefined,
   })
-  return runCli(['doctor', '--json'], { cwd: project, env })
+  return runInProcess(['doctor', '--json'], { cwd: project, env })
 }
 
 const lineOf = (run: CliRun) => doctorJson(run.stdout).checks.find((c) => c.name === NAME)

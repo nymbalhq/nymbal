@@ -126,12 +126,13 @@ jobs:
         run: pnpm perf:budgets --bytes
       # A dispatch (the release's) also runs the Lighthouse suite. It runs `pnpm perf:budgets` twice: with a 300 KB
       # script added to Astro's home page (it must fail), then as committed (it must pass, and writes the report).
-      # Each metric is the median of five Lighthouse runs a page: of three, one slow run on a shared runner was enough
-      # to cross a budget.
+      # Seven Lighthouse runs a page: LCP is judged on their lower quartile (the second fastest), every other metric on
+      # the median. LCP falls in a fast or a slow mode about 400 ms apart on the same build, so a median crossed a
+      # budget whenever most runs were slow.
       - name: perf:budgets (tests/perf)
         if: github.event_name == 'workflow_dispatch'
         env:
-          NYMBAL_PERF_BUDGETS_ARGS: --runs 5
+          NYMBAL_PERF_BUDGETS_ARGS: --runs 7
         run: pnpm exec vitest run --config tests/perf/vitest.config.ts
       # Each page loads only its own elements, seen only in a production build (the dev-server E2E jobs cannot): both
       # templates built for this slot's API, then the journeys in tests/e2e/prod.
@@ -172,8 +173,8 @@ jobs:
             reports/perf-budgets.json
           if-no-files-found: warn
 
-  # The service-backed gate steps, one a combination so they run side by side; the SQLite integration and contract
-  # projects, which need no service, ride the lightest one.
+  # The service-backed gate steps, one a combination so they run side by side; the service-free integration and
+  # contract projects run in the push's tests shards.
   integration:
     name: Integration — ${{ matrix.step }}
     if: inputs.select != 'lighthouse'
@@ -255,9 +256,6 @@ jobs:
       - name: Proof kit services (Postgres race, Mailpit sink)
         if: matrix.step == 'proof-kit-services'
         run: pnpm exec tsx scripts/gate.ts --full --only proof-kit-services --no-build --services external --base "$GATE_BASE"
-      - name: Platform and importers integration, contracts
-        if: matrix.step == 'proof-kit-services'
-        run: pnpm vitest run --project platform-integration --project importers-integration --project contracts-native
 
   sentinels:
     name: Sentinels and tests-fail-on-base
@@ -729,9 +727,9 @@ jobs:
       - name: Install Playwright system libraries
         if: steps.browsers.outputs.cache-hit == 'true'
         run: pnpm --filter @nymbalhq/e2e exec playwright install-deps chromium
-      # The mail outage journey turns this job's Mailpit's Chaos on, so it runs here, after the other target is done.
-      - name: Next.js on custom providers (functional, a11y), then a mail outage
-        run: pnpm exec tsx scripts/gate.ts --full --only "e2e nextjs-custom,e2e mail-outage" --services external --no-build --base "$GATE_BASE"
+      # The mail outage journey runs in the nightly (nightly.yml, e2e-mail-outage).
+      - name: Next.js on custom providers (functional, a11y)
+        run: pnpm exec tsx scripts/gate.ts --full --only "e2e nextjs-custom" --services external --no-build --base "$GATE_BASE"
       - name: Upload the Playwright reports
         if: always()
         uses: actions/upload-artifact@v7

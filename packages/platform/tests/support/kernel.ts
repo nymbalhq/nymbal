@@ -48,9 +48,9 @@ export function kernelConfig(dialect: Dialect): NymbalConfig {
       adapter: 'middleware',
       botProtection: { mode: 'off' },
       // The harness overrides the built-in login, register and password limits, so suites that call them many times
-      // from 127.0.0.1 are not refused. Tests of the defaults remove these keys (`withoutAuthRateRules`). Checkout, the
-      // order link request and review submission are raised for the same reason: their built-in limits are proven in
-      // the http package.
+      // from 127.0.0.1 are not refused. Tests of the defaults remove these keys (`withoutAuthRateRules`). Checkout and
+      // its quote, the order link request and review submission are raised for the same reason: their built-in limits
+      // are proven in the http package.
       rateLimit: {
         '/api/auth/login': { requests: 1000, window: '1m', action: 'block' },
         '/api/auth/register': { requests: 1000, window: '1m', action: 'block' },
@@ -60,6 +60,7 @@ export function kernelConfig(dialect: Dialect): NymbalConfig {
         '/api/auth/verify-email': { requests: 1000, window: '1m', action: 'block' },
         '/api/auth/resend-verification': { requests: 1000, window: '1m', action: 'block' },
         '/api/checkout': { requests: 1000, window: '1m', action: 'block' },
+        '/api/checkout/quote': { requests: 1000, window: '1m', action: 'block' },
         '/api/orders/link': { requests: 1000, window: '1m', action: 'block' },
         '/api/reviews': { requests: 1000, window: '1m', action: 'block' },
       },

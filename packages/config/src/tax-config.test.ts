@@ -1,4 +1,5 @@
 import fc from 'fast-check'
+import * as types from '@nymbalhq/types'
 import { describe, expect, it } from 'vitest'
 import { nymbalConfigSchema, type NymbalConfigInput } from './schema.js'
 
@@ -165,5 +166,49 @@ describe('AC-6: the tax config', () => {
       'commerce.tax.rates',
     ])
     expect(refusedAt({ provider: 'custom', onUnavailable: 'native', rates: [GB] })).toEqual([])
+  })
+})
+
+/** The issues a tax block's refusal names: each path, joined with dots, and its message. */
+function taxRefusal(tax: unknown): Array<{ path: string; message: string }> {
+  const result = nymbalConfigSchema.safeParse(config(tax))
+  return result.success
+    ? []
+    : result.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message }))
+}
+
+/** The codes an address may carry, from @nymbalhq/types. */
+function countryCodes(): readonly string[] {
+  const codes = (types as unknown as { COUNTRY_CODES?: readonly string[] }).COUNTRY_CODES
+  expect(codes, '@nymbalhq/types exports COUNTRY_CODES').toBeInstanceOf(Array)
+  return codes!
+}
+
+describe('AC-8: a tax row names an ISO 3166-1 country', () => {
+  // Kills: a row naming UK boots and silently matches no shopper, whose form sends GB; or XX, which no address carries.
+  it("AC-8: a row for UK or XX is refused at commerce.tax.rates.1.country, and UK's message names GB", () => {
+    for (const country of ['UK', 'XX']) {
+      expect(
+        taxRefusal({ provider: 'native', rates: [GB, { country, percent: 20 }] }).map(
+          (i) => i.path,
+        ),
+        country,
+      ).toEqual(['commerce.tax.rates.1.country'])
+    }
+    const uk = taxRefusal({ provider: 'native', rates: [GB, { country: 'UK', percent: 20 }] })
+    expect(uk[0]?.message).toContain('use "GB" for the United Kingdom')
+  })
+
+  // Kills: a valid code stops a store booting.
+  it('AC-8: a row for every COUNTRY_CODES entry parses with that country', () => {
+    for (const country of countryCodes()) {
+      const parsed = nymbalConfigSchema.safeParse(
+        config({ provider: 'native', rates: [{ country, percent: 10 }] }),
+      )
+      expect(
+        parsed.success ? parsed.data.commerce.tax.rates.map((r) => r.country) : parsed.error.issues,
+        country,
+      ).toEqual([country])
+    }
   })
 })

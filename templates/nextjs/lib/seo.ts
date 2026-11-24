@@ -3,6 +3,19 @@ import { descriptionText } from '@nymbalhq/web-components/ssr'
 
 export { descriptionText, serializeJsonLd } from '@nymbalhq/web-components/ssr'
 
+type HeadFields = 'name' | 'shortDescription' | 'description' | 'seoTitle' | 'seoDescription'
+
+/** A set SEO title is the whole title (absolute, so the layout's "%s | Nymbal" leaves it); blank keeps today's. */
+export function productHead(product: Pick<DenormalisedProduct, HeadFields>) {
+  const absolute = product.seoTitle.trim() !== ''
+  const fallback = descriptionText(product.shortDescription || product.description)
+  return {
+    title: absolute ? product.seoTitle : product.name,
+    description: product.seoDescription.trim() || fallback || `Buy ${product.name}.`,
+    absolute,
+  }
+}
+
 export interface BreadcrumbItem {
   name: string
   url: string
@@ -15,6 +28,7 @@ export function productJsonLd(
   const url = `${baseUrl}/product/${product.slug}`
   const priceCurrency = product.currency ?? 'GBP'
   const availability = `https://schema.org/${product.inStock ? 'InStock' : 'OutOfStock'}`
+  const gtin = product.variants.length === 1 ? product.variants[0]?.gtin : null
 
   const offers: Record<string, unknown> =
     product.variants.length > 1 && product.priceRange
@@ -41,6 +55,9 @@ export function productJsonLd(
     description: descriptionText(product.description),
     url,
     sku: product.variants[0]?.sku ?? product.id,
+    ...(product.brand.trim() !== '' && { brand: { '@type': 'Brand', name: product.brand } }),
+    // One page with several variants is several trade items, so only a single variant's GTIN is stated.
+    ...(gtin && { gtin }),
     offers,
     ...(product.rating?.count && {
       aggregateRating: {

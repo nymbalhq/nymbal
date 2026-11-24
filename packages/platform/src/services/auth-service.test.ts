@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
 import fc from 'fast-check'
 import {
@@ -211,6 +211,62 @@ describe('AuthService', () => {
     expect(before?.revokedAt).toBeNull()
     for (const token of ['garbage', forged]) await auth.logout(token)
     expect(await row()).toEqual(before)
+    await commandStore.close()
+  })
+
+  // Defect: logout takes any verified token, so an access token (which names its session too) signs the device out.
+  it('logout given an access token leaves the session signed in and its refresh token renewing', async () => {
+    const { auth, commandStore } = await setup()
+    const { customer, tokens } = await auth.register({
+      email: 'access-logout@test.com',
+      password: 'password123',
+    })
+    const sid = decodeJwt(tokens.accessToken).sid
+    expect(sid).toBe(decodeJwt(tokens.refreshToken).sid)
+
+    await auth.logout(tokens.accessToken)
+
+    expect((await auth.listSessions(customer.id)).map((s) => s.id)).toEqual([sid])
+    expect(await refreshes(auth, tokens.refreshToken)).toBe(true)
+    await commandStore.close()
+  })
+
+  // Defect: logout ends only the session a token's `sid` names, so a shopper signed in before sessions existed (a row
+  // with no session id, a token with no `sid`) has the cookie cleared and the row left live.
+  it('logout of a token minted before sessions ends that session', async () => {
+    const { auth, repos, commandStore } = await setup()
+    const { customer } = await auth.register({ email: 'legacy@test.com', password: 'password123' })
+    await auth.endAllSessions(customer.id)
+    const jti = randomUUID()
+    const legacy = await new SignJWT({
+      sub: customer.id,
+      email: customer.email,
+      roles: ['customer'] as const,
+      type: 'refresh' as const,
+      jti,
+    })
+      .setProtectedHeader({ alg: 'HS256' })
+      .setIssuedAt()
+      .setIssuer('nymbal')
+      .setJti(jti)
+      .setExpirationTime(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000))
+      .sign(new TextEncoder().encode('test-secret-32-characters-long-x'))
+    await commandStore.transaction((tx) =>
+      repos.refreshToken.insert(tx, {
+        id: jti,
+        customerId: customer.id,
+        tokenHash: createHash('sha256').update(legacy).digest('hex'),
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        createdAt: new Date(),
+      }),
+    )
+    expect(decodeJwt(legacy).sid).toBeUndefined()
+    expect((await auth.listSessions(customer.id)).map((s) => s.id)).toEqual([jti])
+
+    await auth.logout(legacy)
+
+    await expect(auth.refresh(legacy)).rejects.toMatchObject({ code: 'auth.token_invalid' })
+    expect(await auth.listSessions(customer.id)).toEqual([])
     await commandStore.close()
   })
 

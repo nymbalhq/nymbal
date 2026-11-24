@@ -4,6 +4,7 @@ import { UCP_PROFILE_PATH } from '../agents/profile.js'
 import { ACP_CAPABILITIES } from '../agents/acp/constants.js'
 import { UCP_CAPABILITIES } from '../agents/ucp-surface.js'
 import type { Repositories } from '../repositories/index.js'
+import { readToday } from '../reports/today.js'
 import { ok, renderError } from './envelope.js'
 import { requireRole } from './role-middleware.js'
 
@@ -38,25 +39,16 @@ export function registerAdminDashboardRoute(
     '/api/admin/dashboard',
     requireRole('admin', async (ctx) => {
       try {
-        const startOfToday = new Date(new Date().setHours(0, 0, 0, 0))
-
-        // Fetch recent orders (last 200 to compute today's stats)
-        const allOrders = await store.read((tx) => repos.order.list(tx, { limit: 200 }))
-
-        const todayOrders = allOrders.filter((o) => new Date(o.createdAt) >= startOfToday)
-
-        const shippedStatuses = new Set(['shipped', 'delivered'])
-
-        const todayOrderCount = todayOrders.length
-        // Revenue is the money kept: what was captured less what was refunded, whatever the status says.
-        const todayRevenueMinor = todayOrders.reduce(
-          (sum, o) => sum + o.capturedMinor - o.refundedMinor,
-          0,
+        const today = await readToday(
+          {
+            store: repos.reportRollup.store,
+            repo: repos.reportRollup,
+            timeZone: config.store.timezone,
+            now: () => new Date(),
+          },
+          config.store.currency,
         )
-        const todayItemsShipped = todayOrders.filter((o) => shippedStatuses.has(o.status)).length
-
-        // Recent orders — last 10 overall
-        const recentOrders = allOrders.slice(0, 10)
+        const recentOrders = await store.read((tx) => repos.order.list(tx, { limit: 10 }))
 
         // Low stock: get all products and check variants
         const productVariants = await store.read(async (tx) => {
@@ -93,11 +85,7 @@ export function registerAdminDashboardRoute(
         )
 
         return ok({
-          today: {
-            orderCount: todayOrderCount,
-            revenueMinor: todayRevenueMinor,
-            itemsShipped: todayItemsShipped,
-          },
+          today,
           recentOrders,
           lowStock,
           agents: {

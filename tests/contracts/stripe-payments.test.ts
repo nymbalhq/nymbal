@@ -1,12 +1,13 @@
 import { createServer, type IncomingMessage, type Server } from 'node:http'
 import { once } from 'node:events'
 import type { AddressInfo } from 'node:net'
+import { randomUUID } from 'node:crypto'
 import Stripe from 'stripe'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { runPaymentsContract } from '@nymbalhq/contract-tests'
 import { createStripePaymentsAdapter } from '@nymbalhq/payments-stripe'
 import { createLogger } from '@nymbalhq/platform'
-import { PaymentError } from '@nymbalhq/types'
+import { PaymentError, type PaymentsAdapter } from '@nymbalhq/types'
 import {
   SIGNATURE_HEADER,
   startStripeFake,
@@ -57,6 +58,7 @@ function buildAdapter() {
 // AC-4 and AC-5: the refund idempotency case against the mock's replay, parsing one signed webhook twice, and the
 // downtime cases on a port nobody listens on.
 runPaymentsContract('stripe', buildAdapter, {
+  savedCard: () => ({ customerRef: 'cus_contract_saved', paymentMethodRef: 'pm_card_visa' }),
   unreachable: () =>
     createStripePaymentsAdapter({
       logger,
@@ -354,5 +356,154 @@ describe('the fake Stripe API delivers the webhook a confirm causes', () => {
       await delivering.close()
       await hook.close()
     }
+  })
+})
+
+// ─── The heartbeat's card charge: one off-session confirm, each answer told apart ────────────────────────────────────
+
+type Outcome =
+  | { status: 'captured'; paymentId: string; amountMinor: number; currency: string }
+  | { status: 'card_refused' | 'key_refused'; detail: string }
+  | { status: 'provider_unreachable'; detail: string; paymentId?: string }
+  | { status: 'threw'; detail: string }
+
+type SavedCardStripe = PaymentsAdapter & {
+  chargeSavedCard?: (charge: {
+    customerRef: string
+    paymentMethodRef: string
+    amountMinor: number
+    currency: string
+    idempotencyKey: string
+    metadata?: Record<string, string>
+  }) => Promise<Exclude<Outcome, { status: 'threw' }>>
+}
+
+describe('AC-8: chargeSavedCard against the offline Stripe', () => {
+  const RESTRICTED_KEY = 'rk_test_heartbeat_restricted'
+  let keyed: StripeFake
+
+  beforeAll(async () => {
+    keyed = await startStripeFake({
+      host: '127.0.0.1',
+      secretKey: SECRET_KEY,
+      restrictedKey: RESTRICTED_KEY,
+    })
+  })
+  afterAll(async () => {
+    await keyed?.close()
+  })
+
+  function stripeOn(at: number, secretKey = SECRET_KEY): SavedCardStripe {
+    return createStripePaymentsAdapter({
+      logger,
+      config: {
+        secretKey,
+        webhookSecret: WEBHOOK_SECRET,
+        host: '127.0.0.1',
+        port: at,
+        protocol: 'http',
+      },
+    }) as SavedCardStripe
+  }
+
+  /** One charge of `paymentMethodRef`; a throw is an answer here too, so a case can say none happened. */
+  async function charge(
+    adapter: SavedCardStripe,
+    paymentMethodRef: string,
+    idempotencyKey = `heartbeat-${randomUUID()}`,
+  ): Promise<Outcome> {
+    expect(adapter.capabilities()).toContain('saved-card')
+    return adapter.chargeSavedCard!({
+      customerRef: 'cus_heartbeat',
+      paymentMethodRef,
+      amountMinor: 137,
+      currency: 'GBP',
+      idempotencyKey,
+      metadata: { run: 'contract' },
+    }).catch((err: unknown) => ({ status: 'threw' as const, detail: String(err) }))
+  }
+
+  // Kills: an unconfirmed intent, a charge on no saved card, a missing off_session (Stripe asks for the shopper), a
+  // missing heartbeat mark (its webhook then reaches finalize), or no idempotency key (a retry charges twice).
+  it('AC-8: a captured charge is one POST /v1/payment_intents carrying the customer, the payment method, confirm and off_session, the amount, currency, metadata[nymbal_heartbeat]=card and the Idempotency-Key, and answers captured with the intent Stripe holds succeeded', async () => {
+    const adapter = stripeOn(port)
+    const key = `heartbeat-${randomUUID()}`
+    const before = fake.received.length
+    const outcome = await charge(adapter, 'pm_card_visa', key)
+    const posts = fake.received
+      .slice(before)
+      .filter((r) => r.method === 'POST' && r.path === '/v1/payment_intents')
+
+    expect(outcome.status, JSON.stringify(outcome)).toBe('captured')
+    expect(posts).toHaveLength(1)
+    expect(posts[0]).toMatchObject({
+      idempotencyKey: key,
+      params: {
+        customer: 'cus_heartbeat',
+        payment_method: 'pm_card_visa',
+        confirm: 'true',
+        off_session: 'true',
+        amount: '137',
+        currency: 'gbp',
+        'metadata[nymbal_heartbeat]': 'card',
+        'metadata[run]': 'contract',
+      },
+    })
+    if (outcome.status !== 'captured') return
+    expect([outcome.amountMinor, outcome.currency]).toEqual([137, 'GBP'])
+    await expect(adapter.getPaymentStatus(outcome.paymentId)).resolves.toBe('succeeded')
+  })
+
+  // Kills: an expired card or a broken card set-up reported as a Stripe outage, or an outage as a card problem; a key
+  // problem reported as either; a throw that ends the run with no result.
+  it('AC-8: a decline (402 card_error) names its decline code, requires_action and a detached method (400) are card_refused with Stripe’s message, 401 and 403 are key_refused, a 500, a 429 rate limit and a closed port are provider_unreachable, and none throws', async () => {
+    const declined = await charge(stripeOn(port), 'pm_card_chargeDeclined')
+    const authentication = await charge(stripeOn(port), 'pm_card_authenticationRequired')
+    const detached = await charge(stripeOn(port), 'pm_card_detached')
+    const unauthorised = await charge(stripeOn(port, 'sk_test_not_this_account'), 'pm_card_visa')
+    const forbidden = await charge(stripeOn(keyed.port, RESTRICTED_KEY), 'pm_card_visa')
+    const serverError = await charge(stripeOn(port), 'pm_fake_api_error')
+    const rateLimited = await charge(stripeOn(port), 'pm_fake_rate_limited')
+    const down = await charge(stripeOn(closedPort), 'pm_card_visa')
+
+    expect(
+      Object.fromEntries(
+        Object.entries({
+          declined,
+          authentication,
+          detached,
+          unauthorised,
+          forbidden,
+          serverError,
+          rateLimited,
+          down,
+        }).map(([name, o]) => [name, o.status]),
+      ),
+    ).toEqual({
+      declined: 'card_refused',
+      authentication: 'card_refused',
+      detached: 'card_refused',
+      unauthorised: 'key_refused',
+      forbidden: 'key_refused',
+      serverError: 'provider_unreachable',
+      rateLimited: 'provider_unreachable',
+      down: 'provider_unreachable',
+    })
+    expect((declined as { detail: string }).detail).toContain('insufficient_funds')
+    expect((detached as { detail: string }).detail).toContain(
+      'The PaymentMethod pm_card_detached is not attached to this Customer.',
+    )
+  })
+
+  // Kills: a charge whose outcome is not yet known reported as captured (then refunded too early) or as a card problem,
+  // or without the payment the merchant must refund by hand.
+  it('AC-8: an intent answered processing is provider_unreachable naming that intent, which Stripe holds as processing', async () => {
+    const adapter = stripeOn(port)
+    const outcome = await charge(adapter, 'pm_card_processing')
+    expect(outcome.status, JSON.stringify(outcome)).toBe('provider_unreachable')
+    const paymentId = (outcome as { paymentId?: string }).paymentId
+    expect(typeof paymentId).toBe('string')
+    await expect(adapter.getPaymentStatus(paymentId!)).resolves.toBe('processing')
+    expect((outcome as { detail: string }).detail).toContain(paymentId!)
   })
 })

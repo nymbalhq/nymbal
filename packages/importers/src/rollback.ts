@@ -79,7 +79,7 @@ async function planRollback(state: ImportState, repos: Repositories): Promise<Ro
 }
 
 /** A delete that throws for a record already gone resolves `absent` instead. */
-async function removal(remove: () => Promise<void>): Promise<RemovalOutcome> {
+async function removal(remove: () => Promise<unknown>): Promise<RemovalOutcome> {
   try {
     await remove()
     return 'removed'

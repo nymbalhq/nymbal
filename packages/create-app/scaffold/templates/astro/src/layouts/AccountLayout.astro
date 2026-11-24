@@ -116,14 +116,13 @@ const { title } = Astro.props
 
   .account-nav {
     display: flex;
+    flex-wrap: wrap;
     gap: var(--nymbal-spacing-xs, 0.25rem);
-    overflow-x: auto;
   }
 
   @media (min-width: 769px) {
     .account-nav {
       flex-direction: column;
-      overflow-x: visible;
     }
   }
 

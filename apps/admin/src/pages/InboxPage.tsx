@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { EmptyState } from '@/components/common/EmptyState'
+import { InsightBrief } from '@/components/insights/InsightBrief'
 import { ProposalCard } from '@/components/proposals/ProposalCard'
 import { RejectProposalDialog } from '@/components/proposals/RejectProposalDialog'
 import { useMe } from '@/hooks/useMe'
@@ -28,6 +29,8 @@ export function InboxPage() {
           Changes agents asked for. Nothing runs until you approve it, as you.
         </p>
       </div>
+
+      <InsightBrief />
 
       <Tabs value={tab} onValueChange={(value) => setTab(value as ProposalTab)}>
         <TabsList>

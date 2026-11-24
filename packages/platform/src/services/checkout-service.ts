@@ -27,6 +27,7 @@ import {
   type PaymentIntent,
   type PaymentStatus,
   type PromotionsAdapter,
+  type ShippingAdapter,
   type ShippingOption,
   type TaxQuote,
   type Variant,
@@ -47,7 +48,13 @@ import {
   type SessionExtras,
 } from './promotions-quote.js'
 import { taxedTotals, type TaxAnswer, type TaxQuoter, type TaxRequest } from './tax-quote.js'
-import { shippingOptions, type ShippingRate } from './shipping-quote.js'
+import {
+  createCarrierRater,
+  parcelOf,
+  shippingOptions,
+  type CarrierOption,
+  type ShippingRate,
+} from './shipping-quote.js'
 import { settleTotals, type SettleInput } from './totals.js'
 import { mintOrderKey } from '../order-access-key.js'
 import type { InventoryService } from './inventory-service.js'
@@ -174,6 +181,22 @@ export interface CreateCheckoutServiceDeps {
   pricesIncludeTax?: boolean
   /** `commerce.shipping.rates`; empty or absent, every address gets one free `standard` option. */
   shippingRates?: readonly ShippingRate[]
+  /**
+   * Present when the carrier prices shipping (`pricing: 'carrier'`): the cart is rated as one parcel from `shipFrom`,
+   * a unit whose variant has no weight weighing `defaultWeightGrams`, and a carrier slower than `boundMs` is down.
+   */
+  carrier?: {
+    adapter: ShippingAdapter
+    shipFrom: Address
+    defaultWeightGrams: number
+    boundMs: number
+  }
+  /**
+   * The heartbeat's address, given only while `features.heartbeat` is on: a checkout with exactly this email (trimmed,
+   * in any case) is the store check's, placed as a synthetic order with no stock reserved, cancelled in the same
+   * transaction, never paid, and refused `synthetic` naming it.
+   */
+  heartbeatEmail?: string
 }
 
 /** The checkout keys an order keeps: each mint past this deletes the oldest, so a checkout loop cannot grow the table. */
@@ -190,14 +213,23 @@ interface DraftMetadata {
   promotions?: Record<string, unknown>
   /** The tax engine's whole answer, when it taxed anything, came from a provider, or was the native fallback. */
   tax?: TaxQuote & { fallback?: true }
-  /** The delivery the order was placed at, present when the store has a shipping table. */
+  /** The delivery the order was placed at, present when the store prices shipping (a table, or a carrier). */
   shipping?: {
-    provider: 'native'
+    /** `native` for the table; the shipping adapter's provider name for a carrier. */
+    provider: string
     optionId: string
     name: string
     amountMinor: number
     estimatedDays: number | null
+    carrier?: string
+    service?: string
   }
+}
+
+/** What a carrier offered for a parcel of this weight. */
+interface Rated {
+  grams: number
+  options: CarrierOption[]
 }
 
 /** Who is checking out and where the parcel goes. */
@@ -210,7 +242,7 @@ type PlaceExtras = SessionExtras & { shipTo: Address }
 type TaxedQuote = PlaceQuote & {
   tax: TaxAnswer | null
   options: ShippingOption[]
-  option: ShippingOption
+  option: ShippingOption | CarrierOption
 }
 
 /** Each line's amount tax is due on: its subtotal less its discount. */
@@ -273,9 +305,13 @@ const SUPERSEDE_ATTEMPTS = 3
  */
 const ABANDON_AFTER_MS = 120_000
 
+/** Why the heartbeat's order is cancelled, in its history. */
+const SYNTHETIC_REASON = 'synthetic: heartbeat store check'
+
 /** What one pass under the cart lock decided, with the key minted for the order it answers. */
 type Placement =
   | { kind: 'placed'; order: Order; orderKey: string | undefined }
+  | { kind: 'synthetic'; order: Order }
   | { kind: 'existing'; order: Order & { paymentIntentId: string }; orderKey: string | undefined }
   | { kind: 'cancel-first'; order: Order & { paymentIntentId: string } }
 
@@ -296,6 +332,21 @@ export function createCheckoutService(
   const keyLifetimeMs = deps.keyLifetimeMs ?? DEFAULT_CHECKOUT_KEY_LIFETIME_MS
   const pricesIncludeTax = deps.pricesIncludeTax ?? false
   const shippingRates = deps.shippingRates ?? []
+  const { carrier } = deps
+  const rating =
+    carrier === undefined
+      ? undefined
+      : {
+          rater: createCarrierRater({
+            ...carrier,
+            currency,
+            logger: logger.child({ service: 'shipping' }),
+          }),
+          defaultWeightGrams: carrier.defaultWeightGrams,
+        }
+  /** Shipping is charged and taxed: a table with rows, or a carrier. Else every address gets the free option. */
+  const pricesShipping = carrier !== undefined || shippingRates.length > 0
+  const heartbeatEmail = deps.heartbeatEmail?.trim().toLowerCase()
   const quotes = createPlaceQuoter({
     engine: deps.promotions,
     boundMs: deps.promotionsBoundMs ?? PROMOTIONS_BOUND_MS,
@@ -324,8 +375,8 @@ export function createCheckoutService(
   }
 
   /**
-   * What a tax engine is asked for the cart's lines and shipping at these totals, shipped where the caller says. With no
-   * shipping table no shipping is sent.
+   * What a tax engine is asked for the cart's lines and shipping at these totals, shipped where the caller says. A store
+   * that does not price shipping sends none.
    */
   async function taxRequest(
     tx: ReadTx,
@@ -359,30 +410,36 @@ export function createCheckoutService(
       shipTo: extras.shipTo,
       customer: { id: extras.customerId, ...(exemption !== undefined && { exemption }) },
       lines,
-      shipping:
-        shippingRates.length === 0
-          ? null
-          : { amountMinor: totals.shippingTotalMinor - totals.shippingDiscountMinor },
+      shipping: pricesShipping
+        ? { amountMinor: totals.shippingTotalMinor - totals.shippingDiscountMinor }
+        : null,
       reference: cartDoc.token,
     }
   }
 
   /**
-   * The delivery options for the goods after their discount, and the one asked for, else the first. Refused when the
-   * table reaches no option to the address, or the one asked for is not among them.
+   * The delivery options (the carrier's when it rated, else the table's for the goods after their discount), and the
+   * one asked for, else the first. Refused when no option reaches the address, or the one asked for is not among them.
    */
   function chooseShipping(
     promo: PlaceQuote,
     shipTo: Address,
     optionId: string | undefined,
-  ): { options: ShippingOption[]; option: ShippingOption } {
+    rated: Rated | null,
+  ): { options: ShippingOption[]; option: ShippingOption | CarrierOption } {
     const { subtotalMinor, discountTotalMinor, shippingDiscountMinor } = promo.totals
     const goodsMinor = subtotalMinor - (discountTotalMinor - shippingDiscountMinor)
-    const options = shippingOptions(shippingRates, shipTo, goodsMinor)
-    if (options.length === 0) {
+    const offered = rated?.options ?? shippingOptions(shippingRates, shipTo, goodsMinor)
+    if (offered.length === 0) {
       throw new CheckoutError('no_shipping', 'The store does not deliver to this address')
     }
-    const option = optionId === undefined ? options[0] : options.find((o) => o.id === optionId)
+    const options = offered.map(({ id, name, amountMinor, estimatedDays }) => ({
+      id,
+      name,
+      amountMinor,
+      estimatedDays,
+    }))
+    const option = optionId === undefined ? offered[0] : offered.find((o) => o.id === optionId)
     if (option === undefined) {
       throw new CheckoutError(
         'shipping_option_unavailable',
@@ -404,8 +461,9 @@ export function createCheckoutService(
     optionId: string | undefined,
     promo: PlaceQuote,
     earlier: TaxedQuote | null,
+    rated: Rated | null,
   ): Promise<TaxedQuote> {
-    const { options, option } = chooseShipping(promo, extras.shipTo, optionId)
+    const { options, option } = chooseShipping(promo, extras.shipTo, optionId, rated)
     const input: SettleInput = {
       ...settleInputOf(cartDoc, promo.effects, pricesIncludeTax),
       shipping: { amountMinor: option.amountMinor },
@@ -428,11 +486,39 @@ export function createCheckoutService(
     return { ...promo, totals: taxedTotals(input, tax.quote), tax, options, option }
   }
 
-  /** What the order keeps of its delivery: only a store with a table records one. */
-  function orderShippingRecord(option: ShippingOption): DraftMetadata['shipping'] {
-    if (shippingRates.length === 0) return undefined
+  /** What the order keeps of its delivery: only a store that prices shipping records one. No rate id is kept. */
+  function orderShippingRecord(option: ShippingOption | CarrierOption): DraftMetadata['shipping'] {
     const { id: optionId, name, amountMinor, estimatedDays } = option
+    if (carrier !== undefined && 'carrier' in option) {
+      const provider = carrier.adapter.providerName
+      const { carrier: carrierName, service } = option
+      return { provider, optionId, name, amountMinor, estimatedDays, carrier: carrierName, service }
+    }
+    if (shippingRates.length === 0) return undefined
     return { provider: 'native', optionId, name, amountMinor, estimatedDays }
+  }
+
+  /** The cart as one parcel, each line at its variant's weight. */
+  async function parcelIn(tx: ReadTx, cartDoc: Cart, defaultWeightGrams: number): Promise<number> {
+    const lines: { weightGrams: number | null; qty: number }[] = []
+    for (const item of cartDoc.items) {
+      const variant = await repos.variant.findById(tx, item.variantId)
+      if (!variant) {
+        throw new CheckoutError('variant_missing', `Variant missing: ${item.variantId}`)
+      }
+      lines.push({ weightGrams: variant.weightGrams, qty: item.qty })
+    }
+    return parcelOf(lines, defaultWeightGrams).weightGrams
+  }
+
+  /**
+   * The carrier's options for the cart, its weights read in a read that ends before the carrier is called, so no read
+   * or write in the store waits on the carrier. Null when the carrier does not price shipping.
+   */
+  async function rateCart(cartDoc: Cart, shipTo: Address): Promise<Rated | null> {
+    if (rating === undefined) return null
+    const grams = await store.read((tx) => parcelIn(tx, cartDoc, rating.defaultWeightGrams))
+    return { grams, options: await rating.rater.rate(shipTo, { weightGrams: grams }) }
   }
 
   /** What the order keeps of the tax answer, when there is anything to keep. */
@@ -506,7 +592,8 @@ export function createCheckoutService(
   }
 
   async function loadValidCart(token: string): Promise<Cart> {
-    const c = await cart.get(token)
+    // The place quoter evaluates the codes itself.
+    const c = await cart.get(token, { evaluate: false })
     if (!c) throw new NotFoundError('cart', token)
     if (!c.items.length) throw await cartEmpty(token)
     if (c.currency !== currency) {
@@ -894,22 +981,43 @@ export function createCheckoutService(
    * T1, under the cart's row lock: the cart's pending order is returned when it is for this cart, superseded when the
    * cart changed and its intent is cancelled, or cancelled itself when its intent is no longer open (`closed`, by the
    * reason), or abandoned when it never got an intent; or else the stock is reserved and a new pending order created
-   * with no intent yet. Nothing is written unless an order is created or cancelled.
+   * with no intent yet. Nothing is written unless an order is created or cancelled. A `synthetic` checkout reserves
+   * nothing, and its order is created and cancelled here.
    */
   async function place(
     tx: Tx,
     input: BeginCheckoutInput,
     closed: ReadonlyMap<string, string>,
+    rated: Rated | null,
+    synthetic: boolean,
   ): Promise<Placement> {
     // Read again under the lock: the lines to order are the ones no concurrent cart command can change now.
     const cartDoc = await repos.cart.lock(tx, input.cartToken)
     if (cartDoc === null) throw new NotFoundError('cart', input.cartToken)
     if (!cartDoc.items.length) throw await cartEmpty(input.cartToken)
 
+    // The carrier rated the cart before the lock. A cart command that landed since changed the parcel: rated again
+    // here, for the lines this order takes, holding the lock (rare: a cart change in the instant of placing).
+    let delivery = rated
+    if (rated !== null && rating !== undefined) {
+      const grams = await parcelIn(tx, cartDoc, rating.defaultWeightGrams)
+      if (grams !== rated.grams) {
+        const options = await rating.rater.rate(input.shippingAddress, { weightGrams: grams })
+        delivery = { grams, options }
+      }
+    }
+
     // Before anything is cancelled, so an outage or a changed total leaves a pending order and its intent as they were.
     const extras = sessionExtras(input, cartDoc)
     const optionId = input.shippingOptionId
-    const dryQuote = await taxed(cartDoc, extras, optionId, await quotes.dry(cartDoc, extras), null)
+    const dryQuote = await taxed(
+      cartDoc,
+      extras,
+      optionId,
+      await quotes.dry(cartDoc, extras),
+      null,
+      delivery,
+    )
     refuseChangedTotal(input, dryQuote.totals)
 
     const pending = await repos.order.findPendingByCartToken(tx, input.cartToken)
@@ -939,7 +1047,8 @@ export function createCheckoutService(
     audit.note('checkout.place', [{ type: 'order', id: orderId }])
     const correlationId = currentCorrelationId()
     const reservationIds: string[] = []
-    for (const item of cartDoc.items) {
+    // A synthetic order is cancelled before this transaction ends: stock is read above, never taken.
+    for (const item of synthetic ? [] : cartDoc.items) {
       try {
         const r = await inventory.reserveStock(item.variantId, item.qty, orderId)
         reservationIds.push(r.reservationId)
@@ -958,6 +1067,7 @@ export function createCheckoutService(
       optionId,
       await quotes.reserve(cartDoc, extras, orderId),
       dryQuote,
+      delivery,
     )
     refuseChangedTotal(input, quote.totals)
     const settled = new Map(quote.totals.lines.map((l) => [l.id, l]))
@@ -1007,7 +1117,7 @@ export function createCheckoutService(
         ...(shipping !== undefined && { shipping }),
       } satisfies DraftMetadata,
       cartToken: cartDoc.token,
-      source: cartDoc.source,
+      source: synthetic ? 'synthetic' : cartDoc.source,
     })
     if (quote.skipped) {
       await repos.orderHistory.append(tx, {
@@ -1031,6 +1141,8 @@ export function createCheckoutService(
         timestamp: new Date(),
       })
     }
+    if (synthetic)
+      return { kind: 'synthetic', order: await cancelDraft(order.id, SYNTHETIC_REASON) }
     return { kind: 'placed', order, orderKey: await mintKey(tx, order) }
   }
 
@@ -1245,12 +1357,26 @@ export function createCheckoutService(
       // Named before the cart is checked, so a refused checkout is the command's; its entry is held once an order is.
       audit.note('checkout.place')
       try {
-        await loadValidCart(input.cartToken)
+        const cartDoc = await loadValidCart(input.cartToken)
+        // Rated once, outside the transaction, and handed to every pass.
+        const rated = await rateCart(cartDoc, input.shippingAddress)
+        const synthetic =
+          heartbeatEmail !== undefined && input.email.trim().toLowerCase() === heartbeatEmail
         // Intents no longer open with the provider (cancelled by this checkout, or failed or cancelled there), with
         // the reason the pending order holding one is cancelled when the next pass finds it under the lock.
         const closed = new Map<string, string>()
         for (let attempt = 0; ; attempt += 1) {
-          const placement = await store.transaction((tx) => place(tx, input, closed))
+          const placement = await store.transaction((tx) =>
+            place(tx, input, closed, rated, synthetic),
+          )
+          if (placement.kind === 'synthetic') {
+            // After the commit, so the refusal's order is there to read; withOrderKey adds its key.
+            throw new CheckoutError(
+              'synthetic',
+              'A heartbeat checkout: the order was placed and cancelled',
+              { context: { orderNumber: placement.order.orderNumber } },
+            )
+          }
           if (placement.kind === 'placed') {
             return withKey(await pay(input, placement.order), placement.orderKey)
           }
@@ -1281,12 +1407,14 @@ export function createCheckoutService(
         ...(input.email !== undefined && { email: input.email }),
         shipTo: input.shippingAddress,
       }
+      const rated = await rateCart(cartDoc, input.shippingAddress)
       const priced = await taxed(
         cartDoc,
         extras,
         input.shippingOptionId,
         await quotes.dry(cartDoc, extras),
         null,
+        rated,
       )
       return {
         currency: priced.totals.currency,

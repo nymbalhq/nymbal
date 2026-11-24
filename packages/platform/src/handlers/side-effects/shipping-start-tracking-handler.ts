@@ -9,7 +9,6 @@ import {
   type ShippingAdapter,
 } from '@nymbalhq/types'
 import type { EventPublisher } from '../../events/publisher.js'
-import { parseNotes } from '../../order-notes.js'
 import type { Repositories } from '../../repositories/index.js'
 import type { ProcessedEventRepository } from '../../repositories/processed-event.js'
 import { withIdempotency } from '../idempotency.js'
@@ -61,8 +60,7 @@ export async function registerShippingStartTrackingHandler(
         actor,
         at: new Date().toISOString(),
       }
-      const notes = [...parseNotes(order.notes, order.createdAt), note]
-      await repos.order.setNotes(tx, orderId, JSON.stringify(notes), new Date())
+      await repos.order.addStaffNote(tx, orderId, note, new Date())
       await publisher.publish(EVT_ORDER_NOTE_ADDED, {
         orderId,
         orderNumber: order.orderNumber,

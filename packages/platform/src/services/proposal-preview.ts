@@ -34,6 +34,7 @@ const SCALARS = [
   ['type', 'Type'],
   ['seoTitle', 'SEO title'],
   ['seoDescription', 'SEO description'],
+  ['brand', 'Brand'],
 ] as const
 const COLLECTIONS = [
   ['media', 'Media'],
@@ -99,6 +100,15 @@ function productChanges(product: ProductSnapshot, args: Rec): ProposalChange[] {
         kind: 'money',
         current: variant.compareAtPriceMinor,
         proposed: valueOf(entry['compareAtPriceMinor']),
+      })
+    }
+    if ('gtin' in entry) {
+      changes.push({
+        label: `GTIN of ${variant.name}`,
+        kind: 'value',
+        current: variant.gtin ?? null,
+        // '' clears a GTIN, as null does.
+        proposed: valueOf(entry['gtin']) || null,
       })
     }
   }

@@ -14,13 +14,25 @@ import AccountLayout from '../../layouts/AccountLayout.astro'
   <p class="account-page-subtitle">Changing it signs out every other device.</p>
 
   <NymbalElement tag="nymbal-change-password-form" attributes={{ class: 'account-form' }} />
+
+  <h2 class="account-section-title">Devices</h2>
+  <p class="account-page-subtitle">Where your account is signed in.</p>
+
+  <NymbalElement tag="nymbal-session-list" attributes={{ class: 'account-form' }} />
 </AccountLayout>
 
 <script>
   import '../../lib/client.js'
   import { NymbalProfileForm } from '@nymbalhq/web-components/elements/nymbal-profile-form'
   import { NymbalChangePasswordForm } from '@nymbalhq/web-components/elements/nymbal-change-password-form'
+  import { NymbalSessionList } from '@nymbalhq/web-components/elements/nymbal-session-list'
 
   NymbalProfileForm.define()
   NymbalChangePasswordForm.define()
+  NymbalSessionList.define()
+
+  // This browser's session ended: as the layout's sign-out does, go to the sign-in page.
+  document.querySelector('nymbal-session-list')?.addEventListener('nymbal:sessions:signed-out', () => {
+    window.location.href = '/account/login'
+  })
 </script>

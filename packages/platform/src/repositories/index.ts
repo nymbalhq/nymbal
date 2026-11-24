@@ -12,6 +12,10 @@ import { createRefreshTokenRepository, type RefreshTokenRepository } from './ref
 import { createOrderRepository, type OrderRepository } from './order.js'
 import { createOrderHistoryRepository, type OrderHistoryRepository } from './order-history.js'
 import { createOrderRefundRepository, type OrderRefundRepository } from './order-refund.js'
+import {
+  createOrderTaxDocumentRepository,
+  type OrderTaxDocumentRepository,
+} from './order-tax-document.js'
 import { createOrderSequenceRepository, type OrderSequenceRepository } from './order-sequence.js'
 import {
   createOrderAccessKeyRepository,
@@ -51,6 +55,7 @@ import { createOrderShipmentRepository, type OrderShipmentRepository } from './o
 import { createProposalRepository, type ProposalRepository } from './proposal.js'
 import { createPromotionRepository, type PromotionRepository } from './promotion.js'
 import { createReportRollupRepository, type ReportRollupRepository } from './report-rollup.js'
+import { createInsightRepository, type InsightRepository } from './insight.js'
 
 export * from './product.js'
 export * from './variant.js'
@@ -61,6 +66,7 @@ export * from './refresh-token.js'
 export * from './order.js'
 export * from './order-history.js'
 export * from './order-refund.js'
+export * from './order-tax-document.js'
 export * from './order-sequence.js'
 export * from './order-access-key.js'
 export * from './inventory-reservation.js'
@@ -77,6 +83,7 @@ export * from './order-shipment.js'
 export * from './proposal.js'
 export * from './promotion.js'
 export * from './report-rollup.js'
+export * from './insight.js'
 export * from './page.js'
 
 export interface Repositories {
@@ -89,6 +96,7 @@ export interface Repositories {
   order: OrderRepository
   orderHistory: OrderHistoryRepository
   orderRefund: OrderRefundRepository
+  orderTaxDocument: OrderTaxDocumentRepository
   orderSequence: OrderSequenceRepository
   orderAccessKey: OrderAccessKeyRepository
   passwordResetToken: PasswordResetTokenRepository
@@ -107,6 +115,7 @@ export interface Repositories {
   proposal: ProposalRepository
   promotion: PromotionRepository
   reportRollup: ReportRollupRepository
+  insight: InsightRepository
 }
 
 export function buildRepositories(
@@ -124,6 +133,7 @@ export function buildRepositories(
     order: createOrderRepository(commandStore),
     orderHistory: createOrderHistoryRepository(commandStore),
     orderRefund: createOrderRefundRepository(commandStore),
+    orderTaxDocument: createOrderTaxDocumentRepository(commandStore),
     orderSequence: createOrderSequenceRepository(commandStore),
     orderAccessKey: createOrderAccessKeyRepository(commandStore),
     passwordResetToken: createPasswordResetTokenRepository(commandStore),
@@ -142,5 +152,6 @@ export function buildRepositories(
     proposal: createProposalRepository(commandStore),
     promotion: createPromotionRepository(commandStore),
     reportRollup: createReportRollupRepository(commandStore),
+    insight: createInsightRepository(commandStore),
   }
 }

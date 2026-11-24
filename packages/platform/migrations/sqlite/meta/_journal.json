@@ -204,6 +204,62 @@
       "when": 1795083591866,
       "tag": "0028_tax_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "6",
+      "when": 1795231350288,
+      "tag": "0030_night_shift",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "6",
+      "when": 1795281263858,
+      "tag": "0031_order_tax_documents",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "6",
+      "when": 1795342707967,
+      "tag": "0032_order_staff_notes",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "6",
+      "when": 1795346073109,
+      "tag": "0033_event_command_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "6",
+      "when": 1795386587620,
+      "tag": "0034_refund_line",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "6",
+      "when": 1795398309175,
+      "tag": "0035_brand_gtin",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "6",
+      "when": 1795425804335,
+      "tag": "0036_insight_guidance",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "6",
+      "when": 1795447119711,
+      "tag": "0037_refresh_token_sessions",
+      "breakpoints": true
     }
   ]
 }

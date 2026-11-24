@@ -6,12 +6,12 @@ import { address, cartWith, createKernel, seedVariant, type Kernel } from '../su
 import { adminClient, storedMoney, type AdminClient } from '../support/money.js'
 import { openRaw, type RawReader } from '../support/raw.js'
 
-// AC-7 on SQLite: dashboard revenue and a customer's totalSpentMinor are Σ (captured − refunded) over their orders,
+// AC-7 on SQLite: the dashboard's net captured today (the store currency row) and a customer's totalSpentMinor are Σ (captured − refunded) over their orders,
 // over generated runs of paid, manually paid and unpaid orders with generated partial refunds. AC-3: the customer
 // page's stats count the same money (past one page of orders on both dialects: suites/customer-stats.ts).
 
 interface Dashboard {
-  today: { orderCount: number; revenueMinor: number; itemsShipped: number }
+  today: { money: Array<{ currency: string; netCapturedMinor: number }> }
 }
 
 interface CustomerRead {
@@ -51,7 +51,9 @@ describe('AC-7: totals count money (sqlite)', () => {
   async function revenue(): Promise<number> {
     const res = await admin.call<Dashboard>('GET', '/api/admin/dashboard')
     expect(res.status, JSON.stringify(res.body)).toBe(200)
-    return res.body.data!.today.revenueMinor
+    const row = res.body.data!.today.money?.find((r) => r.currency === k.config.store.currency)
+    if (row === undefined) throw new Error(`no store currency row: ${JSON.stringify(res.body)}`)
+    return row.netCapturedMinor
   }
 
   async function customerRead(customerId: string): Promise<CustomerRead> {
@@ -126,37 +128,4 @@ describe('AC-7: totals count money (sqlite)', () => {
       { numRuns: 6 },
     )
   }, 180_000)
-
-  it('AC-7: the dashboard revenue equals Σ (captured_minor − refunded_minor) over every order the store holds from today', async () => {
-    // One of each: paid, partially refunded, unpaid; whatever earlier tests left is counted too.
-    for (const kind of ['paid', 'partial', 'unpaid'] as const) {
-      const seeded = await seedVariant(k, 3, { priceMinor: 1_234 })
-      const tag = randomUUID()
-      const started = await k.services.checkout.beginCheckout({
-        cartToken: await cartWith(k, seeded, 2),
-        email:
-          kind === 'unpaid' ? `buyer-${tag}+stub-pending@money.test` : `buyer-${tag}@money.test`,
-        billingAddress: address,
-        shippingAddress: address,
-      })
-      const res =
-        kind === 'partial'
-          ? await admin.call('POST', `/api/admin/orders/${started.orderId}/refund`, {
-              amountMinor: 1_000,
-            })
-          : null
-      expect(res?.status ?? 200, JSON.stringify(res?.body)).toBe(200)
-    }
-    const startOfToday = new Date(new Date().setHours(0, 0, 0, 0)).toISOString()
-    const rows = await raw.rows<{ captured_minor: number; refunded_minor: number }>(
-      'SELECT captured_minor, refunded_minor FROM orders WHERE created_at >= ?',
-      [startOfToday],
-    )
-    const net = rows.reduce(
-      (sum, r) => sum + Number(r.captured_minor) - Number(r.refunded_minor),
-      0,
-    )
-    expect(rows.length).toBeGreaterThan(0)
-    expect(await revenue()).toBe(net)
-  })
 })

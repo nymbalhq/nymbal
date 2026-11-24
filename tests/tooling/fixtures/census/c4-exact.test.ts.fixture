@@ -17,6 +17,6 @@ test('exact matchers', async () => {
   expect(() => run()).toThrow('boom')
   expect(() => run()).toThrow(AuthError)
   expect(() => run()).toThrow(errors.NotFound)
-  expect(total).toBe(expected)
-  expect(line.priceMinor).toBe(fixture.priceMinor)
+  expect(status).toBe(`Pending`)
+  expect(price).toEqual(new Money(1250))
 })

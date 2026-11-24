@@ -82,9 +82,10 @@ function fillOrder(view: HTMLElement, order: ShopperOrder): void {
       state.dataset.testid = 'order-payment-state'
     }
   }
-  view
-    .querySelector('nymbal-order-timeline')
-    ?.setAttribute('entries', JSON.stringify(order.timeline ?? []))
+  // The element renders nothing for no entries, which would leave its host an empty band with a margin.
+  const timeline = view.querySelector('nymbal-order-timeline')
+  if ((order.timeline ?? []).length === 0) timeline?.remove()
+  else timeline?.setAttribute('entries', JSON.stringify(order.timeline))
   const summary = view.querySelector('nymbal-order-summary')
   if (summary) {
     const items = (order.lineItems ?? []).map((item) => ({

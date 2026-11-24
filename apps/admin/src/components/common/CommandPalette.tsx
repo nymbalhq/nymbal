@@ -1,6 +1,6 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ShoppingBag, Package, Users, Search } from 'lucide-react'
+import { ShoppingBag, Package, Users, Search, ArrowRight, Zap } from 'lucide-react'
 import {
   Command,
   CommandInput,
@@ -16,6 +16,8 @@ import { AssistantPanel } from '@/components/assistant/AssistantPanel'
 import { useAssistant } from '@/hooks/useAssistant'
 import { useCommandPalette } from '@/hooks/useCommandPalette'
 import { useGlobalSearch } from '@/hooks/useGlobalSearch'
+import { usePageCommands } from '@/hooks/usePageCommands'
+import { NAVIGATION_COMMANDS, matchCommands } from '@/lib/palette-commands'
 import { tid } from '@/lib/testid'
 
 type PaletteTab = 'search' | 'ask'
@@ -30,21 +32,30 @@ function useDebounce<T>(value: T, delay: number): T {
 }
 
 export function CommandPalette() {
-  const { isOpen, close } = useCommandPalette()
+  const { isOpen, closes, close } = useCommandPalette()
   const stopAssistant = useAssistant((s) => s.stop)
   const navigate = useNavigate()
   const [tab, setTab] = useState<PaletteTab>('search')
   const [query, setQuery] = useState('')
   const [draft, setDraft] = useState('')
   const debouncedQuery = useDebounce(query, 300)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const scope = usePageCommands((s) => s.scope)
 
-  // Closing the palette, by Esc or a navigation, stops the answer that streams: nothing spends the key unseen.
+  // Every close (Esc, a command, a link elsewhere) resets the palette in the render that first sees it, so a reopen
+  // that comes before the close was rendered still starts on an empty Search tab.
+  const [seenCloses, setSeenCloses] = useState(closes)
+  if (closes !== seenCloses) {
+    setSeenCloses(closes)
+    setTab('search')
+    setQuery('')
+    setDraft('')
+  }
+
+  // Closing the palette stops the answer that streams: nothing spends the key unseen.
   useEffect(() => {
-    if (!isOpen) {
-      stopAssistant()
-      setTab('search')
-    }
-  }, [isOpen, stopAssistant])
+    stopAssistant()
+  }, [closes, stopAssistant])
 
   /** `?` as the first character of a search asks the rest instead. */
   const onQueryChange = (value: string) => {
@@ -55,6 +66,11 @@ export function CommandPalette() {
   }
 
   const { data: results } = useGlobalSearch(debouncedQuery)
+  const scopeCommands = scope ? matchCommands(query, scope.commands) : []
+  const goTo = matchCommands(query, NAVIGATION_COMMANDS)
+  const orders = results?.orders.slice(0, 5) ?? []
+  const products = results?.products.slice(0, 5) ?? []
+  const customers = results?.customers.slice(0, 5) ?? []
 
   const runCommand = useCallback(
     (fn: () => void) => {
@@ -69,6 +85,10 @@ export function CommandPalette() {
       <DialogContent
         className="max-w-2xl gap-0 overflow-hidden p-0 shadow-2xl"
         aria-describedby={undefined}
+        onOpenAutoFocus={(e) => {
+          e.preventDefault()
+          inputRef.current?.focus()
+        }}
       >
         <DialogTitle className="sr-only">Search or ask</DialogTitle>
         <Tabs value={tab} onValueChange={(value) => setTab(value as PaletteTab)}>
@@ -81,8 +101,13 @@ export function CommandPalette() {
             </TabsTrigger>
           </TabsList>
           <TabsContent value="search" className="mt-0">
-            <Command className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-zinc-500 [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-group]]:px-2 [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3 [&_[cmdk-item]_svg]:h-5 [&_[cmdk-item]_svg]:w-5">
+            <Command
+              label="Search or run a command"
+              shouldFilter={false}
+              className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-zinc-500 [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-group]]:px-2 [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3 [&_[cmdk-item]_svg]:h-5 [&_[cmdk-item]_svg]:w-5"
+            >
               <CommandInput
+                ref={inputRef}
                 placeholder="Search orders, products, customers... (? to ask)"
                 value={query}
                 onValueChange={onQueryChange}
@@ -97,9 +122,41 @@ export function CommandPalette() {
                   )}
                 </CommandEmpty>
 
-                {results?.orders && results.orders.length > 0 && (
+                {scope && scopeCommands.length > 0 && (
+                  <CommandGroup heading={scope.title}>
+                    {scopeCommands.map((command) => (
+                      <CommandItem
+                        key={command.id}
+                        value={command.id}
+                        onSelect={() => runCommand(command.run)}
+                        data-testid={tid('palette', 'command', command.id)}
+                      >
+                        <Zap className="h-4 w-4 text-zinc-400 shrink-0" />
+                        <span className="text-sm">{command.label}</span>
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                )}
+
+                {goTo.length > 0 && (
+                  <CommandGroup heading="Go to">
+                    {goTo.map((command) => (
+                      <CommandItem
+                        key={command.id}
+                        value={command.id}
+                        onSelect={() => runCommand(() => navigate(command.to))}
+                        data-testid={tid('palette', 'command', command.id)}
+                      >
+                        <ArrowRight className="h-4 w-4 text-zinc-400 shrink-0" />
+                        <span className="text-sm">{command.label}</span>
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                )}
+
+                {orders.length > 0 && (
                   <CommandGroup heading="Orders">
-                    {results.orders.slice(0, 5).map((order) => (
+                    {orders.map((order) => (
                       <CommandItem
                         key={order.id}
                         value={`order-${order.orderNumber}`}
@@ -117,11 +174,11 @@ export function CommandPalette() {
                   </CommandGroup>
                 )}
 
-                {results?.products && results.products.length > 0 && (
+                {products.length > 0 && (
                   <>
-                    {results.orders && results.orders.length > 0 && <CommandSeparator />}
+                    {orders.length > 0 && <CommandSeparator />}
                     <CommandGroup heading="Products">
-                      {results.products.slice(0, 5).map((product) => (
+                      {products.map((product) => (
                         <CommandItem
                           key={product.id}
                           value={`product-${product.id}`}
@@ -140,11 +197,11 @@ export function CommandPalette() {
                   </>
                 )}
 
-                {results?.customers && results.customers.length > 0 && (
+                {customers.length > 0 && (
                   <>
                     <CommandSeparator />
                     <CommandGroup heading="Customers">
-                      {results.customers.slice(0, 5).map((customer) => (
+                      {customers.map((customer) => (
                         <CommandItem
                           key={customer.id}
                           value={`customer-${customer.id}`}

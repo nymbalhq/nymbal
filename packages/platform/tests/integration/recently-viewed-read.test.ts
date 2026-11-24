@@ -85,6 +85,20 @@ describe('AC-5: what GET /api/recently-viewed leaves out at read time (sqlite)',
     await viewAt(shop, [[c, t + 4 * MINUTE]], t + 5 * MINUTE)
     expect(await served(shop), 'C viewed again').toEqual([c, ...left!.filter((id) => id !== c)])
   })
+})
+
+// A kernel of its own: views are stamped strictly after the last one the kernel stamped, so a clock set back behind
+// the views of another test would not give them their old instants.
+describe('AC-5: a view past the 30-day window (sqlite)', () => {
+  let s: ServedKernel
+
+  beforeAll(async () => {
+    s = await serveKernel(await createKernel({ dialect: 'sqlite', configure: withRetention(90) }))
+  }, 60_000)
+
+  afterAll(async () => {
+    await s?.stop()
+  })
 
   it('AC-5: with events.retentionDays 90, a view 31 days old is not served and one 29 days old is', async () => {
     const [old, recent] = [

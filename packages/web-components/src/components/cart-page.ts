@@ -4,6 +4,7 @@ import type { CartItem } from '@nymbalhq/types'
 import { baseStyles, NymbalElement, propertiesOf, type ElementSchema } from '../base-element.js'
 import { formatPrice } from '../format.js'
 import { shownCart } from '../cart-projection.js'
+import { CODE_PARTS, codeStyles, DiscountCodes } from '../discount-codes.js'
 import { NymbalQuantitySelector } from './quantity-selector.js'
 import { buttonStyles } from '../view-styles.js'
 
@@ -40,12 +41,13 @@ const SCHEMA: ElementSchema = {
     'total',
     'actions',
     'checkout',
+    ...CODE_PARTS,
   ],
   slots: ['title', 'empty', 'checkout-label'],
   children: false,
 }
 
-/** The cart as a page: its lines, quantities and removal, and a summary whose subtotal is the API's. */
+/** The cart as a page: its lines, quantities and removal, its discount codes, and a summary of the API's totals. */
 export class NymbalCartPage extends NymbalElement {
   static override schema = SCHEMA
   static uses = [NymbalQuantitySelector]
@@ -53,6 +55,7 @@ export class NymbalCartPage extends NymbalElement {
   static override styles = [
     baseStyles,
     buttonStyles,
+    codeStyles,
     css`
       :host {
         display: block;
@@ -225,6 +228,8 @@ export class NymbalCartPage extends NymbalElement {
 
   declare cart: unknown
 
+  private readonly codes = new DiscountCodes(this, () => this.client.cart)
+
   protected override stores() {
     return [this.client.cart]
   }
@@ -301,7 +306,6 @@ export class NymbalCartPage extends NymbalElement {
       `
     }
 
-    const subtotal = formatPrice(state.subtotalMinor, currency)
     return html`
       <div part="layout">
         <div>
@@ -317,11 +321,20 @@ export class NymbalCartPage extends NymbalElement {
         </div>
         <div part="summary" data-testid="cart-summary">
           <h2 part="summary-title">Order Summary</h2>
+          ${this.codes.render(state.codes)}
           <dl>
             <div part="summary-row subtotal">
               <dt>Subtotal</dt>
-              <dd>${subtotal}</dd>
+              <dd>${formatPrice(state.subtotalMinor, currency)}</dd>
             </div>
+            ${state.discountTotalMinor > 0
+              ? html`<div part="summary-row">
+                  <dt>Discount</dt>
+                  <dd data-testid="cart-summary-discount">
+                    −${formatPrice(state.discountTotalMinor, currency)}
+                  </dd>
+                </div>`
+              : nothing}
             <div part="summary-row">
               <dt>Shipping</dt>
               <dd>Calculated at checkout</dd>
@@ -329,7 +342,7 @@ export class NymbalCartPage extends NymbalElement {
           </dl>
           <div part="total">
             <span>Estimated Total</span>
-            <span>${subtotal}</span>
+            <span data-testid="cart-summary-total">${formatPrice(state.totalMinor, currency)}</span>
           </div>
           <div part="actions">
             <a part="checkout" class="btn btn-primary" href="/checkout" data-testid="checkout-btn"

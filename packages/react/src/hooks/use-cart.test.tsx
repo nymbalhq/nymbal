@@ -13,6 +13,9 @@ function makeCartStore(initialState: Partial<CartState> = {}) {
     itemCount: 0,
     loading: false,
     error: null,
+    errorCode: null,
+    totals: null,
+    promotions: { codes: [], unavailable: false },
     ...initialState,
   }
   const listeners = new Set<() => void>()
@@ -31,6 +34,8 @@ function makeCartStore(initialState: Partial<CartState> = {}) {
     updateQuantity: vi.fn().mockResolvedValue(undefined),
     clear: vi.fn().mockResolvedValue(undefined),
     load: vi.fn().mockResolvedValue(undefined),
+    addCode: vi.fn().mockResolvedValue(undefined),
+    removeCode: vi.fn().mockResolvedValue(undefined),
     destroy: vi.fn(),
   }
 }

@@ -85,7 +85,10 @@ export class GoldenAdapterError extends Error {
   }
 }
 
-export function tallyGolden(reports: readonly GoldenReport[]): GoldenTally {
+/** Judges each question (or case) of several runs by majority; any eval whose results carry an id and a verdict. */
+export function tallyGolden(
+  reports: ReadonlyArray<{ results: ReadonlyArray<{ id: string; ok: boolean }> }>,
+): GoldenTally {
   const ids = reports[0]?.results.map((r) => r.id) ?? []
   const questions = ids.map((id) => {
     const passed = reports.filter((report) =>

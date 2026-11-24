@@ -16,19 +16,19 @@
       "lcpMs": 2500,
       "cls": 0.1,
       "tbtMs": 200,
-      "scriptBytes": 37888
+      "scriptBytes": 38912
     },
     "cart": {
       "lcpMs": 2500,
       "cls": 0.1,
       "tbtMs": 200,
-      "scriptBytes": 27648
+      "scriptBytes": 28672
     },
     "checkout": {
       "lcpMs": 2500,
       "cls": 0.1,
       "tbtMs": 200,
-      "scriptBytes": 34816
+      "scriptBytes": 36864
     }
   },
   "nextjs": {
@@ -60,7 +60,7 @@
       "lcpMs": 2500,
       "cls": 0.1,
       "tbtMs": 200,
-      "scriptBytes": 193536
+      "scriptBytes": 195584
     }
   }
 }

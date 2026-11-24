@@ -110,7 +110,7 @@ Migrate content from WooCommerce (or other sources) into Nymbal
 | `--url` | string | Store URL (e.g. https://mystore.com) |  |
 | `--key` | string | WooCommerce Consumer Key (or set WOOCOMMERCE_KEY env var) |  |
 | `--secret` | string | WooCommerce Consumer Secret (or set WOOCOMMERCE_SECRET env var) |  |
-| `--entities` | string | Comma-separated list: products,customers,orders,reviews (default: products,customers,orders) |  |
+| `--entities` | string | Comma-separated list: categories,products,customers,orders,reviews (default: categories,products,customers,orders) |  |
 | `--ai` | boolean | Enable AI enrichment (default: true) | `true` |
 | `--gdpr` | boolean | Anonymise customer PII (default: true) | `true` |
 | `--fresh` | boolean | Ignore previous progress and re-import | `false` |
@@ -169,6 +169,14 @@ Move this store to the newest Nymbal release its adapters are certified with
 
 Build the storefront for production and run a smoke journey (pages, cart, checkout, order, admin) on a throwaway store; your project's own store is not touched
 
+## `nymbal update-check`
+
+Decide whether a dependency update may merge itself under the auto-updates Renovate preset
+
+| Argument | Type | Description | Default |
+| --- | --- | --- | --- |
+| `--base` | string | The git revision the update is compared with | `"HEAD^1"` |
+
 ## `nymbal doctor`
 
 Check the project without changing it: config, packages, command store, migrations, slots and primitives
@@ -177,6 +185,10 @@ Check the project without changing it: config, packages, command store, migratio
 | --- | --- | --- | --- |
 | `--json` | boolean | Print the checks as one JSON document | `false` |
 | `--timeout` | string | How long each check may take, in ms (default 5000) |  |
+
+## `nymbal heartbeat`
+
+Check once that the store takes an order (placed and cancelled) and the saved card is charged and refunded
 
 ## `nymbal security:plan`
 
@@ -274,7 +286,23 @@ List dead events, or put them back for the running store to deliver. Bare it lis
 
 Manage the email suppression list
 
-Subcommands: `nymbal suppressions clear`.
+Subcommands: `nymbal suppressions show`, `nymbal suppressions list`, `nymbal suppressions clear`.
+
+## `nymbal suppressions show`
+
+Say whether one address is suppressed, why and since when
+
+| Argument | Type | Description | Default |
+| --- | --- | --- | --- |
+| `<email>` | positional | The address to look up |  |
+
+## `nymbal suppressions list`
+
+List the suppressed addresses, newest first
+
+| Argument | Type | Description | Default |
+| --- | --- | --- | --- |
+| `--limit` | string | How many to list (default 100) |  |
 
 ## `nymbal suppressions clear`
 
@@ -303,11 +331,11 @@ Print audit entries as NDJSON, oldest first: ids only, no event payloads or cust
 
 ## `nymbal replay`
 
-Rebuild a derived read model from the command store and swap it in: catalogue, orders, customers, search, recently-viewed or all
+Rebuild a derived read model from the command store and swap it in: catalogue, orders, customers, search, recently-viewed or all. --to reports rebuilds the report figures of the days the event log still holds whole (all leaves them); on SQLite it holds the write lock while it reads the log, so run it with the server stopped or idle; on Postgres writes that count in reports (add to cart, a product view, checkout) wait until it ends
 
 | Argument | Type | Description | Default |
 | --- | --- | --- | --- |
-| `--to` | string | The read model: catalogue, orders, customers, search, recently-viewed or all |  |
+| `--to` | string | The read model: catalogue, orders, customers, search, recently-viewed, reports or all |  |
 | `--dry-run` | boolean | Rebuild into memory and count what differs from the live read model; exits 1 if anything does | `false` |
 
 ## `nymbal mcp`
@@ -323,9 +351,9 @@ Serve the store's agent tools on stdio, for an MCP host to launch (`nymbal mcp t
 
 ## `nymbal eval`
 
-Score a store feature against its golden questions
+Score a store feature against its golden questions or cases
 
-Subcommands: `nymbal eval assistant`.
+Subcommands: `nymbal eval assistant`, `nymbal eval content`.
 
 ## `nymbal eval assistant`
 
@@ -339,6 +367,18 @@ Ask the store assistant the 28 golden questions with the project's AI provider, 
 | `--json` | boolean | Print the tally and every run’s report as JSON | `false` |
 | `--verbose` | boolean | Print each call, its arguments and outcome, and each answer | `false` |
 | `--stamp` | string | Write the eval stamp to this file when the run passes: the hash of the prompt and tools, the provider, model and tally. Anthropic or OpenAI’s own API only, every question, the default threshold or above. The stamp is a statement about the default model on our prompt; the safety boundary holds for every provider and model because it is code |  |
+
+## `nymbal eval content`
+
+Run the content role on its 9 cases with the project's AI provider, on a throwaway store
+
+| Argument | Type | Description | Default |
+| --- | --- | --- | --- |
+| `--only` | string | Run only these case ids, comma-separated |  |
+| `--threshold` | string | How many must pass for exit 0 (default every case run) |  |
+| `--runs` | string | Run the cases this many times, each on a fresh store, and judge each case by majority (default 1) |  |
+| `--json` | boolean | Print the tally and results as JSON | `false` |
+| `--verbose` | boolean | Print what the role did with each case’s product | `false` |
 
 ## `nymbal test`
 

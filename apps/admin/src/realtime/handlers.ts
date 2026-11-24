@@ -25,6 +25,7 @@ interface OrderListFilters {
 }
 
 const ORDERS_LIST: QueryKey = ['orders', 'list']
+const ORDERS_COUNT: QueryKey = ['orders', 'count']
 
 const unset = (value: unknown): boolean => value === undefined
 
@@ -74,11 +75,13 @@ function placeOrder(queryClient: QueryClient, order: Order): void {
 /** The query groups the live handlers keep fresh. */
 const LIVE_QUERY_PREFIXES: QueryKey[] = [
   ORDERS_LIST,
+  ORDERS_COUNT,
   ['orders', 'detail'],
   ['dashboard'],
   ['inventory', 'list'],
   ['proposals'],
   ['products'],
+  ['insights'],
 ]
 
 /**
@@ -103,6 +106,7 @@ export function createEventHandlers(queryClient: QueryClient) {
       case 'order.placed.v1': {
         const { order } = event.payload
         placeOrder(queryClient, order)
+        void queryClient.invalidateQueries({ queryKey: ORDERS_COUNT })
         void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
         push({
           type: 'info',
@@ -122,6 +126,7 @@ export function createEventHandlers(queryClient: QueryClient) {
       case 'order.partially_refunded.v1':
       case 'order.status_changed.v1': {
         void queryClient.invalidateQueries({ queryKey: ORDERS_LIST })
+        void queryClient.invalidateQueries({ queryKey: ORDERS_COUNT })
         void queryClient.invalidateQueries({ queryKey: ['orders', 'detail'] })
         void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
         break
@@ -199,6 +204,12 @@ export function createEventHandlers(queryClient: QueryClient) {
             message: `${event.payload.command} may or may not have gone through. Check it in the inbox before doing it again.`,
           })
         }
+        break
+      }
+
+      case 'insight.created.v1':
+      case 'insight.dismissed.v1': {
+        void queryClient.invalidateQueries({ queryKey: ['insights'] })
         break
       }
 

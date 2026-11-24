@@ -1,6 +1,7 @@
 import { execFileSync, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
+  appendFileSync,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -16,25 +17,15 @@ import { performance } from 'node:perf_hooks'
 import { pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
 import {
-  backgroundWanted,
   type Budget,
   CAP_VARS,
   e2eGlobalTimeoutMs,
   machineBudget,
   type Tool,
+  underCI,
 } from './machine-budget'
 import { loadSentinels } from './sentinels'
-import {
-  acquireExclusive,
-  acquireShared,
-  composePorts,
-  type Hold,
-  liveHolders,
-  QUIET_MAX_WAIT_MS,
-  type StackBlock,
-  stack,
-  stackBlock,
-} from './stack'
+import { composePorts, type StackBlock, stack, stackBlock } from './stack'
 import {
   aggregate,
   classifySource,
@@ -54,19 +45,25 @@ import { type Manifest, type WorkspaceMember, workspaceMembers } from './workspa
 // red, and every step runs even after a red one (except those that need a step that is not ok).
 //
 // The machine is shared, with other worktrees' gates and with other projects. A step that runs Vitest, Playwright or
-// Stryker runs under the machine budget's cap for it (scripts/machine-budget.ts, which owns the defaults and the
-// per-machine file), set in the step's environment: a Vitest step's cap is divided between the worktrees whose gates
-// hold the CPU at once (never above the cap), and when the one-minute load average at a step's start is above the
-// core count, the step's caps halve (never below one) and the gate says so in one line. An E2E step is handed the
-// whole-run bound for the workers it got (E2E_TIMEOUT_ENV), since fewer workers take longer over the same tests. With
-// NYMBAL_BACKGROUND=1 on macOS the CPU-heavy steps (those taking a shared hold of the quiet lock) run at background
-// priority (`taskpolicy -b`), so the rest of the machine is served first; the timing-bound ones (the exclusive hold)
-// and the E2E steps never do (background QoS keeps them to the efficiency cores, where a run outlasts its bound). It
-// is off by default and under CI, as are the default caps: CI keeps each tool's own sizing.
+// Stryker runs under the machine budget's fixed cap for it (scripts/machine-budget.ts, which owns the defaults and
+// the per-machine file), set in the step's environment, and starts at once: the caps are the whole mechanism, with no
+// wait for other gates, no division between them and no halving under load. Since its workers may share the cores
+// with other capped runs, every local Vitest step gets its tests' timeouts tripled (TIMEOUT_SCALE_ENV). An E2E step is
+// handed the whole-run bound for its workers (E2E_TIMEOUT_ENV), since fewer workers take longer over the same tests.
+// Under CI there are no default caps and no scale: CI keeps each tool's own sizing.
 
 export type StepStatus = 'ok' | 'red' | 'skipped'
 
-export type Step = { name: string; status: StepStatus; ms: number; detail?: string }
+export type Step = {
+  name: string
+  status: StepStatus
+  ms: number
+  detail?: string
+  /** The one-minute load average when it started; only a step that ran. */
+  load?: number
+  /** The caps it ran under (scripts/machine-budget.ts), when it was given any. */
+  caps?: Partial<Record<Tool, number>>
+}
 
 /** A step to run. `skip` names the reason to leave it out; `needs` skips it unless every named step is ok. */
 export type StepSpec = {
@@ -76,8 +73,6 @@ export type StepSpec = {
   needs?: string[]
   /** The skip is because there is nothing for the step to do (not a precondition that failed). */
   idle?: boolean
-  /** The quiet lock it holds while it runs: `shared` for a CPU-heavy step, `exclusive` for a timing-bound one. */
-  hold?: 'shared' | 'exclusive'
 }
 
 export type RunOptions = {
@@ -86,24 +81,16 @@ export type RunOptions = {
   /** Progress and the output of red steps, as they happen. */
   log?: (text: string) => void
   env?: NodeJS.ProcessEnv
-  /** How a step takes its hold; the quiet lock of `cwd`'s repository when not given. */
-  acquire?: (mode: 'shared' | 'exclusive', label: string) => Promise<Hold>
-  /** The one-minute load average at a step's start; the machine's when not given. */
+  /** The one-minute load average at a step's start, recorded and never acted on; the machine's when not given. */
   loadAverage?: () => number
-  /** The cores the caps are judged against; the machine's when not given. */
+  /** The cores an E2E step's whole-run bound is judged against; the machine's when not given. */
   cpus?: number
-  /** The platform and the `taskpolicy` binary the CPU-heavy steps run under; this machine's when not given. */
-  platform?: NodeJS.Platform
-  taskpolicy?: string
 }
 
 /** The variable `vitest.config.ts` reads into `test.maxWorkers`; nested Vitest runs inherit it with the environment. */
 export const VITEST_WORKERS_ENV = CAP_VARS.vitest
 
-/**
- * The steps that run Vitest, themselves or nested (sentinels, tests-fail-on-base). Two gates' Vitest runs with a
- * worker per core each starve each other's main process until a worker RPC times out, so each takes a share.
- */
+/** The steps that run Vitest, themselves or nested (sentinels, tests-fail-on-base). */
 const VITEST_STEPS = new Set([
   'tests',
   'integration-postgres',
@@ -113,62 +100,25 @@ const VITEST_STEPS = new Set([
   'tests-fail-on-base',
 ])
 
-/**
- * A Vitest step's workers when `holders` worktrees share `cpus`: its share of the cap, or of the CPUs when there is
- * none (under CI); none set when there is no cap and it is alone.
- */
-export function vitestWorkers(
-  cap: number | undefined,
-  cpus: number,
-  holders: number,
-): number | undefined {
-  const total = cap ?? (holders <= 1 ? undefined : cpus)
-  return total === undefined ? undefined : Math.max(1, Math.floor(total / Math.max(1, holders)))
-}
-
-/** The caps a step runs under: its tool's from the budget, a Vitest step's shared between `holders()` worktrees. */
-export function stepCaps(
-  name: string,
-  budget: Budget,
-  cpus: number,
-  holders: () => number,
-): Partial<Record<Tool, number>> {
+/** The caps a step runs under: its tool's from the budget, as it is. */
+export function stepCaps(name: string, budget: Budget): Partial<Record<Tool, number>> {
   const only = (tool: Tool, cap: number | undefined): Partial<Record<Tool, number>> =>
     cap === undefined ? {} : { [tool]: cap }
-  if (VITEST_STEPS.has(name)) return only('vitest', vitestWorkers(budget.vitest, cpus, holders()))
+  if (VITEST_STEPS.has(name)) return only('vitest', budget.vitest)
   if (name.startsWith('e2e ')) return only('playwright', budget.playwright)
   if (name === 'stryker') return only('stryker', budget.stryker)
   return {}
 }
 
-/** The caps halved (never below one) when the one-minute load average is above the core count; undefined when it is not. */
-export function underLoad(
-  caps: Partial<Record<Tool, number>>,
-  load: number,
-  cpus: number,
-): Partial<Record<Tool, number>> | undefined {
-  if (load <= cpus) return undefined
-  return Object.fromEntries(
-    Object.entries(caps).map(([tool, cap]) => [tool, Math.max(1, Math.floor(cap / 2))]),
-  )
-}
-
-const TOOL_NAMES: Record<Tool, string> = {
-  vitest: 'Vitest workers',
-  playwright: 'Playwright workers',
-  stryker: 'Stryker concurrency',
-}
-
-const describeCaps = (caps: Partial<Record<Tool, number>>): string =>
-  Object.entries(caps)
-    .map(([tool, cap]) => `${TOOL_NAMES[tool as Tool]} ${cap}`)
-    .join(', ')
+/**
+ * The variable vitest.config.ts multiplies every project's test and hook timeouts by. The gate sets it to
+ * TIMEOUT_SCALE for every Vitest step, never under CI; set by hand, the gate leaves it.
+ */
+export const TIMEOUT_SCALE_ENV = 'NYMBAL_TEST_TIMEOUT_SCALE'
+export const TIMEOUT_SCALE = 3
 
 /** The variable tests/e2e/playwright.config.ts reads as the whole-run bound; set by hand, the gate leaves it. */
 export const E2E_TIMEOUT_ENV = 'NYMBAL_E2E_GLOBAL_TIMEOUT_MS'
-
-/** Where macOS keeps `taskpolicy`, which runs a program and its children at background priority (`-b`). */
-export const TASKPOLICY = '/usr/sbin/taskpolicy'
 
 export type RunResult = { exitCode: number; steps: Step[]; report: string }
 
@@ -266,7 +216,8 @@ export const HARNESS_PROJECTS = ['tooling', 'architecture']
 export const SLOW_HARNESS_PROJECTS = ['tooling-slow']
 
 /**
- * The harness projects gate:full leaves out when no harness path changed. `architecture` is not one: it guards
+ * The harness projects gate:full leaves out of its run of every test: none of their tests run when no harness path
+ * changed, and for a harness change only those a related run selects (`plan`). `architecture` is not one: it guards
  * product code (no Stripe import in the kernel, the framework-agnostic guard), so gate:full runs it on every change.
  */
 export const FULL_GATE_HARNESS_PROJECTS = ['tooling', ...SLOW_HARNESS_PROJECTS]
@@ -538,13 +489,9 @@ function execute(
   command: string,
   cwd: string,
   env: NodeJS.ProcessEnv | undefined,
-  taskpolicy?: string,
 ): Promise<{ code: number; output: string }> {
   return new Promise((resolvePromise) => {
-    // The shell `shell: true` would start; under taskpolicy every process it starts inherits the policy.
-    const shell = ['/bin/sh', '-c', command]
-    const [file = '', ...args] = taskpolicy === undefined ? shell : [taskpolicy, '-b', ...shell]
-    const child = spawn(file, args, {
+    const child = spawn('/bin/sh', ['-c', command], {
       cwd,
       env: env ?? process.env,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -565,37 +512,14 @@ function execute(
   })
 }
 
-/**
- * What a step's row says about its hold: an exclusive one always (proof runs quote the wait), a shared one only when
- * it waited past the bound and ran during another worktree's quiet. Its wait is not in the step's time.
- */
-function holdNote(mode: 'shared' | 'exclusive', hold: Hold): string | undefined {
-  const waited = `${seconds(hold.waitedMs)} s`
-  if (mode === 'exclusive') {
-    return hold.quiet ? `quiet after a ${waited} wait` : `ran without quiet after a ${waited} wait`
-  }
-  return hold.quiet ? undefined : `ran during another worktree's quiet after a ${waited} wait`
-}
-
 /** Runs the steps in order, each as a shell command in `cwd`; a red step does not stop the later ones. */
 export async function run(steps: StepSpec[], opts: RunOptions): Promise<RunResult> {
   const results: Step[] = []
   const log = opts.log ?? ((): void => {})
-  const acquire =
-    opts.acquire ??
-    ((mode: 'shared' | 'exclusive', label: string): Promise<Hold> =>
-      mode === 'exclusive'
-        ? acquireExclusive(opts.cwd, label, { maxWaitMs: QUIET_MAX_WAIT_MS })
-        : acquireShared(opts.cwd, label, { maxWaitMs: QUIET_MAX_WAIT_MS }))
   const baseEnv = opts.env ?? process.env
+  // Read before the first step, so a bad value fails the run before any step has run.
   const budget = machineBudget(baseEnv, opts.cwd)
   const cpus = opts.cpus ?? availableParallelism()
-  const policy = opts.taskpolicy ?? TASKPOLICY
-  const background =
-    (opts.platform ?? process.platform) === 'darwin' &&
-    existsSync(policy) &&
-    backgroundWanted(baseEnv, opts.cwd)
-  let backgroundSaid = false
   for (const spec of steps) {
     const unmet = (spec.needs ?? []).flatMap((need) => {
       const earlier = results.find((s) => s.name === need)
@@ -610,34 +534,20 @@ export async function run(steps: StepSpec[], opts: RunOptions): Promise<RunResul
       log(`skipped ${spec.name}: ${reason}\n`)
       continue
     }
-    const mode = spec.hold
-    const hold = mode === undefined ? undefined : await acquire(mode, spec.name)
-    const quiet = mode === undefined || hold === undefined ? undefined : holdNote(mode, hold)
-    if (quiet !== undefined) log(`${spec.name}: ${quiet}\n`)
     log(`running ${spec.name}: ${spec.command}\n`)
     const started = performance.now()
-    let code: number
-    let output: string
-    let holders = 1
-    let caps = stepCaps(spec.name, budget, cpus, () => (holders = liveHolders(opts.cwd)))
-    const load =
-      Object.keys(caps).length === 0 ? 0 : (opts.loadAverage ?? (() => loadavg()[0] ?? 0))()
-    const halved = underLoad(caps, load, cpus)
-    if (halved !== undefined) {
-      caps = halved
-      log(
-        `${spec.name}: load ${load.toFixed(1)} over ${cpus} cores at the start: ${describeCaps(caps)}, halved\n`,
-      )
-    } else if (holders > 1) {
-      log(`${spec.name}: ${describeCaps(caps)}, the CPU shared with ${holders - 1} other gate(s)\n`)
-    }
+    const caps = stepCaps(spec.name, budget)
+    // Recorded for the reader of a slow run, never acted on.
+    const load = (opts.loadAverage ?? (() => loadavg()[0] ?? 0))()
     const e2e = spec.name.startsWith('e2e ')
     const bound =
       e2e && caps.playwright !== undefined && !baseEnv[E2E_TIMEOUT_ENV]
         ? { [E2E_TIMEOUT_ENV]: String(e2eGlobalTimeoutMs(baseEnv, caps.playwright, cpus)) }
         : {}
+    // Capped workers may share the cores with other capped runs: a test that passes alone must not time out beside them.
+    const scaled = VITEST_STEPS.has(spec.name) && !underCI(baseEnv) && !baseEnv[TIMEOUT_SCALE_ENV]
     const env =
-      Object.keys(caps).length === 0
+      Object.keys(caps).length === 0 && !scaled
         ? opts.env
         : {
             ...baseEnv,
@@ -645,28 +555,15 @@ export async function run(steps: StepSpec[], opts: RunOptions): Promise<RunResul
               Object.entries(caps).map(([tool, cap]) => [CAP_VARS[tool as Tool], String(cap)]),
             ),
             ...bound,
+            ...(scaled ? { [TIMEOUT_SCALE_ENV]: String(TIMEOUT_SCALE) } : {}),
           }
-    const yielding = background && mode === 'shared' && !e2e
-    if (yielding && !backgroundSaid) {
-      backgroundSaid = true
-      log(`${spec.name}: CPU-heavy steps run at background priority (NYMBAL_BACKGROUND=1)\n`)
-    }
-    try {
-      ;({ code, output } = await execute(
-        spec.command,
-        opts.cwd,
-        env,
-        yielding ? policy : undefined,
-      ))
-    } finally {
-      await hold?.()
-    }
+    const { code, output } = await execute(spec.command, opts.cwd, env)
     const ms = Math.round(performance.now() - started)
-    const details = [
-      ...(code === 0 ? [] : [`exit ${code}`]),
-      ...(quiet === undefined ? [] : [quiet]),
-    ]
-    const detail = details.length === 0 ? {} : { detail: details.join('; ') }
+    const detail = {
+      ...(code === 0 ? {} : { detail: `exit ${code}` }),
+      load: Math.round(load * 100) / 100,
+      ...(Object.keys(caps).length === 0 ? {} : { caps }),
+    }
     if (code === 0) {
       results.push({ name: spec.name, status: 'ok', ms, ...detail })
       // A green step's `warning:` lines are for the reader (the ratchet's measured-file-without-a-test-change).
@@ -972,7 +869,7 @@ function censusTrendStep(root: string, base: string): number {
   return violations.length === 0 ? 0 : 1
 }
 
-type VitestReport = {
+export type VitestReport = {
   testResults?: Array<{
     name: string
     assertionResults?: Array<{
@@ -1233,41 +1130,13 @@ async function incrementalReport(root: string): Promise<string> {
   return resolve(root, (await strykerConfig(root)).incrementalFile ?? STRYKER_INCREMENTAL_DEFAULT)
 }
 
-/**
- * Beside the incremental report: the commit the report's statuses were measured at. The nightly full run writes it
- * beside the report it caches.
- */
-function incrementalStamp(report: string): string {
-  return `${report.replace(/\.json$/, '')}.commit`
-}
-
-/**
- * The changed paths and moved ratchet entries the stryker step selects by. The incremental report holds statuses
- * from the commit its stamp names, which can be older than `base`: a file changed in between, outside `--mutate`,
- * would be reported with statuses from before its change. So whatever changed since the stamp counts too. A stamp naming no commit here leaves the report's age
- * unknown, and every tracked file counts as changed.
- */
-export async function strykerChanges(
+/** The changed paths and moved ratchet entries the stryker step selects by. */
+export function strykerChanges(
   root: string,
   base: string,
   changed: string[],
-): Promise<{ changed: string[]; moved: string[] }> {
-  const moved = ratchetChangesSince(root, base)
-  const stampPath = incrementalStamp(await incrementalReport(root))
-  if (!existsSync(stampPath)) return { changed, moved }
-  const stamp = readFileSync(stampPath, 'utf8').trim()
-  const at = /^[0-9a-f]{40}$/i.test(stamp) ? commitOf(root, stamp) : undefined
-  if (at === undefined) {
-    process.stderr.write(
-      `stryker: the incremental report's commit ${stamp || '(empty)'} is not in this clone; the whole mutate set is measured\n`,
-    )
-    return { changed: [...new Set([...changed, ...lines(git(root, ['ls-files']))])], moved }
-  }
-  if (at === base) return { changed, moved }
-  return {
-    changed: [...new Set([...changed, ...changedFiles(root, at)])].sort(),
-    moved: [...new Set([...moved, ...ratchetChangesSince(root, at)])],
-  }
+): { changed: string[]; moved: string[] } {
+  return { changed, moved: ratchetChangesSince(root, base) }
 }
 
 /**
@@ -1342,8 +1211,6 @@ export type PlanInput = {
   artefactPresent?: boolean | undefined
   /** `packages/<dir>` of the proof kit and what it imports (`workspaceClosure`); the kit alone when not given. */
   proofKitPackages?: string[] | undefined
-  /** `packages/<dir>` of the kernel and what it imports, which the timing-bound tests load; the kernel when not given. */
-  perfPackages?: string[] | undefined
   /**
    * The sentinels gate:full runs: every one, the ids given, or `none` (as is an empty set), which leaves them to dev
    * CI and the release run. Every one when not given.
@@ -1361,12 +1228,13 @@ export type PlanInput = {
   /**
    * The harness's own Vitest projects (`HARNESS_PROJECTS`): `all` runs them whatever changed (dev CI); `changed`,
    * the default, leaves them out when no harness path changed: all of them in the plain gate, the tooling ones in
-   * gate:full (`FULL_GATE_HARNESS_PROJECTS`).
+   * gate:full (`FULL_GATE_HARNESS_PROJECTS`), which for a harness change runs the tooling tests the change reaches.
    */
   harness?: 'all' | 'changed' | undefined
   /**
-   * Harness test files that read a changed file outside their imports (`harnessInputTests`): gate:full and the plain
-   * gate's `changed` run keep their projects, and the latter takes them beside the changed paths. None when not given.
+   * Harness test files that read a changed file outside their imports (`harnessInputTests`): the plain gate's
+   * `changed` run and gate:full's related run of the tooling projects take them beside the changed paths, and a
+   * gate:full that runs those projects whole keeps them. None when not given.
    */
   inputReaders?: string[] | undefined
   /** The paths that run hands `vitest related`: `changed` with both sides of each rename. `changed` when not given. */
@@ -1408,15 +1276,30 @@ function checkedShard(shard: Shard): Shard {
   return shard
 }
 
-/** What every gate run writes: each step's status and milliseconds, in plan order, and the first red step. */
+/**
+ * What every gate run writes: each step's status and milliseconds, in plan order, and the first red step; and, for
+ * the steps that ran, the one-minute load at each start and the caps each ran under.
+ */
 export type LastRun = {
   sha: string
   steps: Record<string, StepStatus>
   stepsMs: Record<string, number>
   redStep: string | null
+  loads: Record<string, number>
+  caps: Record<string, Partial<Record<Tool, number>>>
 }
 
 const LAST_RUN = 'reports/last-run.json'
+/** Every run's record, one line each: last-run.json keeps only the latest, and a run can end while nobody reads it. */
+const RUN_LOG = 'reports/gate-runs.jsonl'
+
+/** A run's record as written: the last-run fields, when it started and ended, whether it was gate:full, and its failed tests. */
+export type RunRecord = LastRun & {
+  startedMs: number
+  endedMs: number
+  full: boolean
+  failed: string[]
+}
 
 const SCRIPT = 'node_modules/.bin/tsx scripts/gate.ts'
 /** The `test` script's filters (package.json), which the plain gate's `vitest related` run repeats. */
@@ -1424,29 +1307,6 @@ const TEST_SCRIPT_FILTERS =
   "--project '!integration-*' --exclude 'packages/proof-kit/tests/services/**'"
 /** The `perf` project's timing-bound file, which `pnpm test` would collect too; the Postgres one is apart already. */
 const PERF_FILE = 'packages/platform/tests/integration/search-performance.test.ts'
-/** The steps that load the CPU, besides the E2E steps: each holds a shared hold of the quiet lock while it runs. */
-const SHARED_HOLD_STEPS = new Set([
-  'tests',
-  'integration-postgres',
-  'proof-kit-services',
-  'integration-stores',
-  'stryker',
-  'sentinels',
-  'tests-fail-on-base',
-  'perf-bytes',
-])
-const EXCLUSIVE_HOLD_STEPS = new Set(['perf', 'perf-postgres'])
-
-/** Marks each step with the hold it takes while it runs. */
-function withHolds(steps: StepSpec[]): StepSpec[] {
-  return steps.map((step) =>
-    EXCLUSIVE_HOLD_STEPS.has(step.name)
-      ? { ...step, hold: 'exclusive' }
-      : SHARED_HOLD_STEPS.has(step.name) || step.name.startsWith('e2e ')
-        ? { ...step, hold: 'shared' }
-        : step,
-  )
-}
 /** Where the tests step's Vitest JSON goes: test-quality reads it. */
 const VITEST_REPORT = 'reports/vitest.json'
 const VITEST_JSON = `--reporter=default --reporter=json --outputFile.json=${VITEST_REPORT}`
@@ -1628,37 +1488,42 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
   // The plain gate never runs the slow harness projects, unless `--harness all` asks for every one.
   const plainApart = (projects: string[]): string[] =>
     full || input.harness === 'all' ? projects : [...projects, ...SLOW_HARNESS_PROJECTS]
-  // A harness test that reads a changed file keeps its project: gate:full runs that project whole, the plain gate's
-  // `vitest related` is handed the test itself.
+  // A harness test that reads a changed file keeps its project: gate:full runs that project whole or hands the test to
+  // its related run (below), the plain gate's `vitest related` is handed the test itself.
   const readers = input.inputReaders ?? []
-  const readerProjects = new Set<string>(
-    readers.map((file) => (file.startsWith('tests/architecture/') ? 'architecture' : 'tooling')),
-  )
+  const readerProject = (file: string): string =>
+    file.startsWith('tests/architecture/') ? 'architecture' : 'tooling'
+  const readerProjects = new Set<string>(readers.map(readerProject))
   const readersKept = harnessSkipped.filter((project) => !readerProjects.has(project))
-  const harnessApart = skipEnv(plainApart(full ? readersKept : harnessSkipped))
+  // gate:full takes from the tooling projects what the plain gate takes for the change: the tests its paths reach by
+  // import and those whose `// Reads:` matches them, in a `vitest related` run of their own after every other test
+  // (architecture runs whole in every gate:full). The projects run whole for a configuration change (the plain gate
+  // runs the whole suite then), with no base, under `--harness all` (dev CI's dispatch and nightly), and in a sharded
+  // run (dev CI's push), which a related run cannot split.
+  const toolingReaders = readers.filter((file) => readerProject(file) === 'tooling')
+  const harnessRelated =
+    full &&
+    input.harness !== 'all' &&
+    input.noBase !== true &&
+    shard === undefined &&
+    selectTests(changed).mode !== 'all' &&
+    (harnessKept || toolingReaders.length > 0)
+  const harnessApart = skipEnv(
+    plainApart(full ? (harnessRelated ? FULL_GATE_HARNESS_PROJECTS : readersKept) : harnessSkipped),
+  )
   const changedApart = skipEnv(plainApart(readersKept))
   // CI exports the pushed branch's previous tip as GATE_BASE to every step; the plain gate hands its Vitest runs its
   // own base the same way, so a script that reads it fails here as it would there.
   const baseEnv = full || input.noBase === true ? '' : `GATE_BASE=${shellWord(base)} `
-  const related = [...new Set([...(input.relatedPaths ?? changed), ...readers])]
-    .sort()
-    .map(shellWord)
-    .join(' ')
-  const perfPackages = input.perfPackages ?? ['packages/platform']
-  const perfReached =
-    selection.mode === 'all' ||
-    (selection.mode === 'changed' &&
-      changed.some(
-        (path) => !isDocumentation(path) && perfPackages.some((dir) => path.startsWith(`${dir}/`)),
-      ))
-  const perf: StepSpec = perfReached
+  const relatedTo = (files: string[]): string =>
+    [...new Set([...(input.relatedPaths ?? changed), ...files])].sort().map(shellWord).join(' ')
+  const related = relatedTo(readers)
+  const harnessRelatedPaths = relatedTo(toolingReaders)
+  // The plain gate leaves the timing-bound tests to gate:full, the nightly and dev CI, and its tests step still leaves
+  // the file out (`perfApart`), as a loaded machine is no place for it.
+  const perf: StepSpec = full
     ? { name: 'perf', command: 'pnpm exec vitest run --project perf', ...buildNeeds }
-    : {
-        name: 'perf',
-        command: 'true',
-        skip: 'no change reaches the timing-bound tests',
-        idle: true,
-      }
+    : { name: 'perf', command: 'true', skip: 'left to gate:full and dev CI' }
   const tests: StepSpec =
     selection.mode === 'none'
       ? { name: 'tests', command: 'true', skip: selection.reason, idle: true }
@@ -1673,7 +1538,11 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
           }
         : {
             name: 'tests',
-            command: `${baseEnv}${harnessApart}pnpm run test${perfApart} ${VITEST_JSON}${shardPart}`,
+            command:
+              `${baseEnv}${harnessApart}pnpm run test${perfApart} ${VITEST_JSON}${shardPart}` +
+              (harnessRelated
+                ? ` && pnpm exec vitest related --run ${FULL_GATE_HARNESS_PROJECTS.map((p) => `--project ${p}`).join(' ')} --passWithNoTests ${harnessRelatedPaths}`
+                : ''),
             ...buildNeeds,
           }
   const steps: StepSpec[] = [
@@ -1695,7 +1564,7 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
     perf,
     { name: 'census trend', command: `${SCRIPT} census-trend ${base}` },
   ]
-  if (!full) return { steps: select(withHolds(steps), input), budgetMs: GATE_BUDGET_MS }
+  if (!full) return { steps: select(steps, input), budgetMs: GATE_BUDGET_MS }
 
   const external = input.services === 'external'
   const block = input.stack ?? stackBlock(0)
@@ -1862,12 +1731,17 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
           },
       { name: 'e2e astro-custom', command: e2e('astro-custom'), needs: mailpitNeeds },
       { name: 'e2e nextjs-custom', command: e2e('nextjs-custom'), needs: mailpitNeeds },
-      { name: 'e2e mail-outage', command: e2e('mail-outage'), needs: mailpitNeeds },
       { name: 'e2e astro-nosearch', command: e2e('astro-nosearch'), needs: e2eNeeds },
       { name: 'e2e nextjs-nosearch', command: e2e('nextjs-nosearch'), needs: e2eNeeds },
       { name: 'e2e astro-override', command: e2e('astro-override'), needs: e2eNeeds },
       { name: 'e2e nextjs-override', command: e2e('nextjs-override'), needs: e2eNeeds },
     )
+    // Only when `--only` names it (the nightly's job): most of its 40 s waits on the real retry delay, and integration
+    // tests hold what it proves (packages/platform/tests/integration/email-outage.test.ts, order-email-retry.test.ts):
+    // no mail refused in an outage is lost, and each is sent once after it.
+    if (input.only?.includes('e2e mail-outage') === true) {
+      steps.push({ name: 'e2e mail-outage', command: e2e('mail-outage'), needs: mailpitNeeds })
+    }
     // Off by default: one more image set and target against a full run already over budget. `--only` naming a step
     // must find it (`select` throws on an absent one), so naming either turns both on.
     if (
@@ -1899,7 +1773,7 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
           idle: true,
         },
   )
-  return { steps: select(withHolds(steps), input), budgetMs: FULL_BUDGET_MS }
+  return { steps: select(steps, input), budgetMs: FULL_BUDGET_MS }
 }
 
 /** Build outputs outside `packages/` that the E2E steps serve: both templates and the admin SPA. */
@@ -2094,21 +1968,39 @@ export function releaseInUse(root: string, stopHolder = true): InUse | undefined
 // The last run
 // ---------------------------------------------------------------------------------------------------------------
 
-/** reports/last-run.json's record; the Stop hook reads its `stepsMs` and `redStep` (.claude/hooks/lib.sh). */
+/**
+ * reports/last-run.json's record; the Stop hook reads its `sha`, `steps`, `stepsMs` and `redStep`
+ * (.claude/hooks/lib.sh). The rest is for the reader of a slow run.
+ */
 export function lastRunRecord(sha: string, steps: Step[]): LastRun {
   return {
     sha,
     steps: Object.fromEntries(steps.map((s) => [s.name, s.status])),
     stepsMs: Object.fromEntries(steps.map((s) => [s.name, s.ms])),
     redStep: steps.find((s) => s.status === 'red')?.name ?? null,
+    loads: Object.fromEntries(
+      steps.flatMap((s) => (s.load === undefined ? [] : [[s.name, s.load]])),
+    ),
+    caps: Object.fromEntries(
+      steps.flatMap((s) => (s.caps === undefined ? [] : [[s.name, s.caps]])),
+    ),
   }
 }
 
-function writeLastRun(root: string, steps: Step[]): void {
-  const last = lastRunRecord(git(root, ['rev-parse', 'HEAD']).trim(), steps)
+/** The Vitest tests a report saw fail, `<file>::<full name>`, the file relative to the checkout. */
+export function failedTests(root: string, report: VitestReport | undefined): string[] {
+  return (report?.testResults ?? []).flatMap((file) =>
+    (file.assertionResults ?? [])
+      .filter((test) => test.status === 'failed')
+      .map((test) => `${relative(root, file.name)}::${test.fullName ?? test.title ?? ''}`),
+  )
+}
+
+export function writeLastRun(root: string, record: RunRecord): void {
   const target = resolve(root, LAST_RUN)
   mkdirSync(dirname(target), { recursive: true })
-  writeFileSync(target, `${JSON.stringify(last, null, 2)}\n`)
+  writeFileSync(target, `${JSON.stringify(record, null, 2)}\n`)
+  appendFileSync(resolve(root, RUN_LOG), `${JSON.stringify(record)}\n`)
 }
 
 /**
@@ -2301,7 +2193,7 @@ async function main(argv: string[]): Promise<number> {
   const inputReaders = harnessInputTests(root, relatedPaths)
   const forStryker =
     values.full && strykerMode !== 'off'
-      ? await strykerChanges(root, base, changed)
+      ? strykerChanges(root, base, changed)
       : { changed: [], moved: [] }
   const moved = forStryker.moved
   const readsChanged =
@@ -2356,7 +2248,6 @@ async function main(argv: string[]): Promise<number> {
     noBuild: values['no-build'],
     artefactPresent: values['no-build'] && artefactPresent(root),
     proofKitPackages: workspaceClosure(root, 'packages/proof-kit'),
-    perfPackages: workspaceClosure(root, 'packages/platform'),
     sentinels,
     stryker: strykerMode,
     perfBytes,
@@ -2386,7 +2277,13 @@ async function main(argv: string[]): Promise<number> {
     process.stderr.write(text)
   }
   const result = await run(steps, { cwd: root, budgetMs, log })
-  writeLastRun(root, result.steps)
+  writeLastRun(root, {
+    ...lastRunRecord(git(root, ['rev-parse', 'HEAD']).trim(), result.steps),
+    startedMs,
+    endedMs: Date.now(),
+    full: values.full,
+    failed: failedTests(root, freshReport<VitestReport>(resolve(root, VITEST_REPORT), startedMs)),
+  })
   // A selected step skipped because a precondition failed (a URL unset, the artefact missing, a need left out)
   // proves nothing: the run is red, and the rows say why. A skip with nothing to do (no changed file to mutate,
   // services or build supplied from outside) is not.

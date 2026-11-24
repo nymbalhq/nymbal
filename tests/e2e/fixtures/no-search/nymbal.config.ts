@@ -33,6 +33,7 @@ export default {
       // Every checkout and order link request of the suite comes from one IP; the built-in limits are proven in the
       // http package.
       '/api/checkout': { requests: 1000, window: '1m', action: 'block' },
+      '/api/checkout/quote': { requests: 1000, window: '1m', action: 'block' },
       '/api/orders/link': { requests: 1000, window: '1m', action: 'block' },
     },
     botProtection: { mode: 'managed', allowList: [] },

@@ -1,4 +1,11 @@
-import type { Cart, Order, ShippingOption } from '@nymbalhq/types'
+import {
+  cartCodeMessage,
+  type Cart,
+  type CartCodeStatus,
+  type Order,
+  type PromotionEffect,
+  type ShippingOption,
+} from '@nymbalhq/types'
 import type { AcpAddress } from './address.js'
 
 /** The statuses this store answers a session with, of the protocol's. */
@@ -56,8 +63,9 @@ export type AcpMessage =
   | {
       type: 'warning'
       code: string
-      severity: 'high'
-      resolution: 'requires_buyer_review'
+      severity: 'medium' | 'high'
+      resolution: 'requires_buyer_input' | 'requires_buyer_review'
+      param?: string
       content_type: 'plain'
       content: string
     }
@@ -98,12 +106,103 @@ export interface SessionTotals {
 }
 
 /**
- * What a session is charged: priced (a quote, or the order's columns) at an option the totals used; or unpriced, its
- * lines' sum with the options it can show and the agent's stored choice.
+ * What a session is charged: priced (a quote, or the order's columns) at an option the totals used; or unpriced, with
+ * the options it can show and the agent's stored choice, at its cart's totals (no shipping or tax) or else its lines'
+ * sum.
  */
 export type SessionPricing =
   | { kind: 'priced'; options: ShippingOption[]; optionId: string; totals: SessionTotals }
-  | { kind: 'unpriced'; options: ShippingOption[] }
+  | { kind: 'unpriced'; options: ShippingOption[]; totals?: SessionTotals }
+
+/** ACP's `DiscountErrorCode`, of which this store answers these. */
+export type DiscountErrorCode =
+  | 'discount_code_expired'
+  | 'discount_code_invalid'
+  | 'discount_code_combination_disallowed'
+  | 'discount_code_minimum_not_met'
+  | 'discount_code_usage_limit_reached'
+
+const DISCOUNT_ERROR_CODES: Readonly<Record<string, DiscountErrorCode>> = {
+  expired: 'discount_code_expired',
+  below_minimum: 'discount_code_minimum_not_met',
+  cap_reached: 'discount_code_usage_limit_reached',
+  one_code_per_order: 'discount_code_combination_disallowed',
+}
+
+/** The protocol's reason for an engine's refusal of a code; one it has no word for is invalid. */
+export function discountErrorCode(reason: string): DiscountErrorCode {
+  return Object.hasOwn(DISCOUNT_ERROR_CODES, reason)
+    ? DISCOUNT_ERROR_CODES[reason]!
+    : 'discount_code_invalid'
+}
+
+/** ACP's `DiscountsResponse`. */
+export interface AcpDiscounts {
+  codes: string[]
+  applied: Array<{
+    id: string
+    code: string
+    coupon: { id: string; name: string }
+    amount: number
+  }>
+  rejected: Array<{ code: string; reason: DiscountErrorCode; message: string }>
+}
+
+/**
+ * A session's `discounts`: the cart's codes; one applied entry per code among the money effects its totals applied, at
+ * the sum of that code's effects, named as the cart spells it; each refused code with its reason. A pending code is in
+ * neither list.
+ */
+export function acpDiscounts(
+  codes: readonly CartCodeStatus[],
+  applied: readonly PromotionEffect[],
+): AcpDiscounts {
+  const entries = new Map<string, AcpDiscounts['applied'][number]>()
+  for (const effect of applied) {
+    if (effect.kind !== 'line' && effect.kind !== 'order' && effect.kind !== 'shipping') continue
+    if (effect.code === undefined) continue
+    const key = effect.code.toLowerCase()
+    const entry = entries.get(key)
+    if (entry !== undefined) {
+      entry.amount += effect.amountMinor
+      continue
+    }
+    const code = codes.find((c) => c.code.toLowerCase() === key)?.code ?? effect.code
+    entries.set(key, {
+      id: code,
+      code,
+      coupon: { id: code, name: effect.label },
+      amount: effect.amountMinor,
+    })
+  }
+  return {
+    codes: codes.map((c) => c.code),
+    applied: [...entries.values()],
+    rejected: codes
+      .filter((c) => c.status === 'rejected')
+      .map((c) => ({
+        code: c.code,
+        reason: discountErrorCode(c.reason ?? ''),
+        message: cartCodeMessage(c),
+      })),
+  }
+}
+
+/** A warning per refused code, pointing at it in `discounts.codes`; a refused code does not hold up payment. */
+export function discountWarnings(discounts: AcpDiscounts): AcpMessage[] {
+  return discounts.rejected.map((rejected) => ({
+    type: 'warning',
+    code: rejected.reason,
+    severity: 'medium',
+    resolution: 'requires_buyer_input',
+    param: `$.discounts.codes[${discounts.codes.indexOf(rejected.code)}]`,
+    content_type: 'plain',
+    content: rejected.message,
+  }))
+}
+
+/** The extension a session's `discounts` belongs to, declared on every session. */
+const DISCOUNT_EXTENSION = { name: 'discount', extends: ['$.CheckoutSession.discounts'] }
 
 /** An order's money columns. */
 export function orderTotals(order: Order): SessionTotals {
@@ -185,9 +284,24 @@ function pricedTotals(t: SessionTotals) {
   ]
 }
 
+/** ACP's totals before an address: the cart's goods less its discount, no shipping or tax. */
+function unpricedTotals(t: SessionTotals | undefined, sum: number) {
+  const subtotal = t?.subtotalMinor ?? sum
+  const discount = t?.discountTotalMinor ?? 0
+  return [
+    total('items_base_amount', 'Item(s) total', subtotal),
+    ...(discount > 0 ? [total('discount', 'Discount', discount)] : []),
+    total('subtotal', 'Subtotal', subtotal - discount),
+    total('fulfillment', 'Shipping', 0),
+    total('tax', 'Tax', 0),
+    total('total', 'Total', t?.totalMinor ?? sum),
+  ]
+}
+
 /**
  * A session in ACP's `CheckoutSession` shape. Money is in minor units, unconverted: a priced session's totals are its
- * checkout quote's (or its order's), an unpriced one's the sum of its lines with no shipping or tax.
+ * checkout quote's (or its order's), an unpriced one's its cart's (the lines less the codes' discount) with no shipping
+ * or tax.
  */
 export function acpSession(input: {
   id: string
@@ -201,6 +315,7 @@ export function acpSession(input: {
   handler: Record<string, unknown>
   order?: AcpOrder | undefined
   pricing: SessionPricing
+  discounts: AcpDiscounts
 }): Record<string, unknown> {
   const { stored } = input
   const lineItems = input.lines.map((line) => {
@@ -246,16 +361,11 @@ export function acpSession(input: {
     totals:
       pricing.kind === 'priced'
         ? pricedTotals(pricing.totals)
-        : [
-            total('items_base_amount', 'Item(s) total', sum),
-            total('subtotal', 'Subtotal', sum),
-            total('fulfillment', 'Shipping', 0),
-            total('tax', 'Tax', 0),
-            total('total', 'Total', sum),
-          ],
+        : unpricedTotals(pricing.totals, sum),
     messages: input.messages,
     links: input.links.map((link) => ({ ...(link as Record<string, unknown>) })),
-    capabilities: { payment: { handlers: [input.handler] } },
+    discounts: input.discounts,
+    capabilities: { payment: { handlers: [input.handler] }, extensions: [DISCOUNT_EXTENSION] },
     ...(input.expiresAt !== undefined && { expires_at: input.expiresAt }),
     ...(input.order !== undefined && { order: input.order }),
   }

@@ -27,7 +27,8 @@ import {
 import { shopper } from '../support/shopper.js'
 
 // GET /api/admin/reports over a kernel whose rollups the live handler filled. What the route must keep true: a figure
-// a model reads cannot be misread, a series ships only when asked for, a part day never enters a total.
+// a model reads cannot be misread, a series ships only when asked for, a part day enters only a money total (marked
+// partial) and never a rate, a funnel total or top products.
 
 const ROUTE = '/api/admin/reports'
 
@@ -80,8 +81,7 @@ describe('AC-21: the route refuses what it must, and ships series only when aske
   it('AC-21: no token is 401, a customer 403; from after to, 32 days of grain=day and 8 of grain=hour are 400, while 31 and 7 are served', async () => {
     const anonymous = await shopper(served.baseUrl).call('GET', ROUTE)
     const customer = await (await customerSession(served.baseUrl)).send('GET', ROUTE)
-    const statusOf = async (query: string) =>
-      (await admin.call('GET', `${ROUTE}?${query}`)).status
+    const statusOf = async (query: string) => (await admin.call('GET', `${ROUTE}?${query}`)).status
 
     expect([anonymous.status, customer.status]).toEqual([401, 403])
     expect(await statusOf('from=2026-02-02&to=2026-02-01')).toBe(400)
@@ -103,8 +103,8 @@ describe('AC-21: the route refuses what it must, and ships series only when aske
   })
 })
 
-describe('AC-22: money by currency, closed days only', () => {
-  it('AC-22: one row per currency with bySource summing to it and no conversion; today is in no total but is the partial day of grain=day; since is the earliest day with a row, and synthetic appears nowhere', async () => {
+describe('AC-22: money by currency', () => {
+  it('AC-22: one row per currency with bySource summing to it and no conversion; today is in the money total, marked partial, and is the partial day of grain=day; since is the earliest day with a row, and synthetic appears nowhere', async () => {
     const gbp = await orderOf('storefront')
     const gbpImport = await orderOf('import')
     const eur = await orderOf('storefront', 'EUR')
@@ -123,14 +123,15 @@ describe('AC-22: money by currency, closed days only', () => {
     ])
 
     const body = await report()
-    expect(body.window.to).toBe(closed)
+    expect(body.window.to).toBe(today())
     expect(body.window.closedThrough).toBe(closed)
     expect(body.since).toBe(earlier)
 
     const rowFor = (c: string) => body.money.totals.find((row) => row.currency === c)!
     expect(body.money.totals.map((r) => r.currency).sort()).toEqual(['EUR', 'GBP'])
     const gbpRow = rowFor('GBP')
-    expect(gbpRow.capturedMinor).toBe(3_000)
+    expect(gbpRow.capturedMinor).toBe(1_000 + 2_000 + 77_777)
+    expect(gbpRow.partial).toBe(true)
     expect(gbpRow.refundedMinor).toBe(300)
     expect(gbpRow.netCapturedMinor).toBe(gbpRow.capturedMinor - gbpRow.refundedMinor)
     expect(gbpRow.paidOrders).toBe(1)
@@ -149,13 +150,225 @@ describe('AC-22: money by currency, closed days only', () => {
   })
 })
 
+/** A money figure set, so a total and a sum of series rows compare as one value. */
+const figuresOf = (
+  row: Pick<MoneyRow, 'capturedMinor' | 'refundedMinor' | 'netCapturedMinor' | 'paidOrders'>,
+) => ({
+  capturedMinor: row.capturedMinor,
+  refundedMinor: row.refundedMinor,
+  netCapturedMinor: row.netCapturedMinor,
+  paidOrders: row.paidOrders,
+})
+
+/** Each source's figures summed over `rows`, by source. */
+function bySourceSum(rows: MoneyRow['bySource']): Record<string, ReturnType<typeof figuresOf>> {
+  const out: Record<string, ReturnType<typeof figuresOf>> = {}
+  for (const row of rows) {
+    const sum = out[row.source] ?? {
+      capturedMinor: 0,
+      refundedMinor: 0,
+      netCapturedMinor: 0,
+      paidOrders: 0,
+    }
+    out[row.source] = {
+      capturedMinor: sum.capturedMinor + row.capturedMinor,
+      refundedMinor: sum.refundedMinor + row.refundedMinor,
+      netCapturedMinor: sum.netCapturedMinor + row.netCapturedMinor,
+      paidOrders: sum.paidOrders + row.paidOrders,
+    }
+  }
+  return out
+}
+
+describe('money totals run through today, marked partial; rates and the funnel stay on closed days', () => {
+  it('AC-1: a default read, a read to today and a read to a later day each total money from from through today, today’s captures and refunds so far included, with window.to today and partial true; the header ends today, closedThrough is yesterday, and a capture dated after today reaches no total', async () => {
+    const gbp = await orderOf('storefront')
+    const eur = await orderOf('import', 'EUR')
+    const closed = closedThrough()
+    const now = new Date()
+    await deliverAll([
+      events.captured(gbp, 1_000, noonOf(closed)),
+      events.captured(gbp, 4_000, now),
+      events.refunded(gbp, 600, now),
+      events.paid(gbp, now),
+      events.captured(eur, 2_500, now),
+      events.captured(gbp, 9_999, noonOf(addDays(today(), 1))),
+    ])
+
+    for (const query of ['', `to=${today()}`, `to=${addDays(today(), 3)}`]) {
+      const body = await report(query)
+      const gbpRow = body.money.totals.find((row) => row.currency === 'GBP')
+      const eurRow = body.money.totals.find((row) => row.currency === 'EUR')
+
+      expect(gbpRow && figuresOf(gbpRow), query).toEqual({
+        capturedMinor: 1_000 + 4_000,
+        refundedMinor: 600,
+        netCapturedMinor: 1_000 + 4_000 - 600,
+        paidOrders: 1,
+      })
+      expect(eurRow?.capturedMinor, query).toBe(2_500)
+      expect({ to: body.window.to, closedThrough: body.window.closedThrough }, query).toEqual({
+        to: today(),
+        closedThrough: closed,
+      })
+      for (const row of [gbpRow, eurRow]) {
+        expect({ partial: row?.partial, window: row?.window }, query).toEqual({
+          partial: true,
+          window: { from: body.window.from, to: today(), timezone: body.window.timezone },
+        })
+      }
+    }
+  })
+
+  it('AC-2: a read whose to is before today totals money through to alone, as before: partial false, and the total’s and the header’s window.to are that to', async () => {
+    const gbp = await orderOf('storefront')
+    const closed = closedThrough()
+    const end = addDays(closed, -2)
+    await deliverAll([
+      events.captured(gbp, 1_500, noonOf(addDays(end, -1))),
+      events.captured(gbp, 700, noonOf(end)),
+      events.refunded(gbp, 200, noonOf(end)),
+      events.captured(gbp, 3_000, noonOf(closed)),
+      events.captured(gbp, 8_000, new Date()),
+    ])
+
+    for (const [to, capturedMinor] of [
+      [end, 1_500 + 700],
+      [closed, 1_500 + 700 + 3_000],
+    ] as const) {
+      const body = await report(`to=${to}`)
+      const row = body.money.totals.find((r) => r.currency === 'GBP')
+
+      expect(body.window.to, to).toBe(to)
+      expect(row && { ...figuresOf(row), partial: row.partial, to: row.window['to'] }, to).toEqual({
+        capturedMinor,
+        refundedMinor: 200,
+        netCapturedMinor: capturedMinor - 200,
+        paidOrders: 0,
+        partial: false,
+        to,
+      })
+    }
+  })
+
+  it('AC-3: property: for a range ending today, each currency’s money total (captured, refunded, net, paidOrders and each bySource row) equals the sum of the grain=day series over the same range, its partial row for today included', async () => {
+    const orders = pool.orders.filter((o) => o.source === 'storefront' || o.source === 'import')
+    const DAYS = 6
+    const order = fc.constantFrom(...orders)
+    const amount = fc.integer({ min: 1, max: 40_000 })
+    const figure = fc.record({
+      kind: fc.constantFrom('captured', 'refunded', 'paid'),
+      order,
+      amount,
+      daysBack: fc.integer({ min: 0, max: DAYS }),
+      minutes: fc.integer({ min: 0, max: 300 }),
+    })
+    const todayCapture = fc.record({ order, amount })
+
+    await fc.assert(
+      fc.asyncProperty(todayCapture, fc.array(figure, { maxLength: 20 }), async (first, rest) => {
+        await clearReports(k)
+        const day = today()
+        const at = (daysBack: number, minutes: number) =>
+          daysBack === 0 ? new Date() : noonOf(addDays(day, -daysBack), minutes)
+        await deliverAll([
+          events.captured(first.order, first.amount, new Date()),
+          ...rest.map((f) =>
+            f.kind === 'captured'
+              ? events.captured(f.order, f.amount, at(f.daysBack, f.minutes))
+              : f.kind === 'refunded'
+                ? events.refunded(f.order, f.amount, at(f.daysBack, f.minutes))
+                : events.paid(f.order, at(f.daysBack, f.minutes)),
+          ),
+        ])
+
+        const range = `from=${addDays(day, -DAYS)}&to=${day}`
+        const totals = (await report(range)).money.totals
+        const series = (await grained(`grain=day&${range}`)).money.series
+
+        expect(series.filter((row) => row.partial).map((row) => row.bucket)).toContain(day)
+        expect(totals.map((t) => t.currency).sort()).toEqual(
+          [...new Set(series.map((row) => row.currency))].sort(),
+        )
+        for (const total of totals) {
+          const rows = series.filter((row) => row.currency === total.currency)
+          const sum = (pick: (row: MoneyRow) => number) => rows.reduce((s, row) => s + pick(row), 0)
+          expect(figuresOf(total), total.currency).toEqual({
+            capturedMinor: sum((r) => r.capturedMinor),
+            refundedMinor: sum((r) => r.refundedMinor),
+            netCapturedMinor: sum((r) => r.netCapturedMinor),
+            paidOrders: sum((r) => r.paidOrders),
+          })
+          expect(bySourceSum(total.bySource), total.currency).toEqual(
+            bySourceSum(rows.flatMap((row) => row.bySource)),
+          )
+        }
+      }),
+      { numRuns: 8 },
+    )
+  }, 120_000)
+
+  it('AC-4: a capture, a payment with a line sold, a checkout start, a cart and a viewer today leave every rate, every funnel total (paidOrders too) and top products as they were, each window ending at closedThrough', async () => {
+    const closed = closedThrough()
+    const product = await seedVariant(k, 500)
+    const lineOrder = (qty: number) =>
+      seedOrder(k, { lines: [[product.variantId, product.productId, qty, 100]] })
+    const closedDay = []
+    for (let i = 0; i < 3; i += 1)
+      closedDay.push(events.paid(await lineOrder(2), noonOf(closed, i)))
+    for (let i = 0; i < 5; i += 1)
+      closedDay.push(events.intent(await orderOf('storefront'), noonOf(closed, i)))
+    for (let i = 0; i < 5; i += 1)
+      closedDay.push(events.cartAdded(await seedCart(k), noonOf(closed, i)))
+    for (let i = 0; i < 20; i += 1)
+      closedDay.push(events.viewed(`viewer-${randomUUID()}`, noonOf(closed, i)))
+    await deliverAll(closedDay)
+    const before = await report()
+
+    const now = new Date()
+    await deliverAll([
+      events.captured(await orderOf('storefront'), 4_200, now),
+      events.paid(await lineOrder(7), now),
+      events.intent(await orderOf('storefront'), now),
+      events.cartAdded(await seedCart(k), now),
+      events.viewed(`viewer-${randomUUID()}`, now),
+    ])
+    const after = await report()
+    const todayRow = (await grained('grain=day')).funnel?.series.find(
+      (row) => row.bucket === today() && row.source === 'storefront',
+    )
+
+    // Today's figures reached the rollups, so a section left as it was is not an empty delivery.
+    expect({
+      checkoutsStarted: todayRow?.['checkoutsStarted'],
+      paidOrders: todayRow?.['paidOrders'],
+    }).toEqual({
+      checkoutsStarted: 1,
+      paidOrders: 1,
+    })
+    expect(after.rates).toEqual(before.rates)
+    expect(after.funnel.totals).toEqual(before.funnel.totals)
+    expect(after.topProducts).toEqual(before.topProducts)
+    expect(after.topProducts.items.map((item) => item.units)).toEqual([3 * 2])
+    const windows = [
+      ...Object.values(after.rates).map((rate) => rate.window),
+      ...after.funnel.totals.map((total) => total.window),
+      after.topProducts.window,
+    ]
+    expect(windows.map((w) => w['to'])).toEqual(windows.map(() => closed))
+  })
+})
+
 describe('AC-17: an hour is part of its day', () => {
   it('AC-17: Σ hours of the UK fall-back day equals the day for every currency and source, and that day has 25 hours', async () => {
     const day = '2026-10-25'
     const first = Date.parse('2026-10-24T23:30:00.000Z')
     const orders = {
       GBP: { storefront: await orderOf('storefront'), import: await orderOf('import') },
-      EUR: { storefront: await orderOf('storefront', 'EUR'), import: await orderOf('import', 'EUR') },
+      EUR: {
+        storefront: await orderOf('storefront', 'EUR'),
+        import: await orderOf('import', 'EUR'),
+      },
     }
     const toDeliver = []
     for (let hour = 0; hour < 25; hour += 1) {
@@ -190,15 +403,22 @@ describe('AC-23: rates', () => {
   async function fillFunnel(paid: number, checkouts: number, carts: number, viewers: number) {
     const day = closedThrough()
     const toDeliver = []
-    for (let i = 0; i < paid; i += 1) toDeliver.push(events.paid(await orderOf('storefront'), noonOf(day, i)))
-    for (let i = 0; i < checkouts; i += 1) toDeliver.push(events.intent(await orderOf('storefront'), noonOf(day, i)))
-    for (let i = 0; i < carts; i += 1) toDeliver.push(events.cartAdded(await seedCart(k), noonOf(day, i)))
-    for (let i = 0; i < viewers; i += 1) toDeliver.push(events.viewed(`viewer-${randomUUID()}`, noonOf(day, i)))
+    for (let i = 0; i < paid; i += 1)
+      toDeliver.push(events.paid(await orderOf('storefront'), noonOf(day, i)))
+    for (let i = 0; i < checkouts; i += 1)
+      toDeliver.push(events.intent(await orderOf('storefront'), noonOf(day, i)))
+    for (let i = 0; i < carts; i += 1)
+      toDeliver.push(events.cartAdded(await seedCart(k), noonOf(day, i)))
+    for (let i = 0; i < viewers; i += 1)
+      toDeliver.push(events.viewed(`viewer-${randomUUID()}`, noonOf(day, i)))
     await deliverAll(toDeliver)
     return day
   }
 
-  function expectRate(rate: Rate, denominatorKey: 'checkoutsStarted' | 'cartsWithItems' | 'viewers') {
+  function expectRate(
+    rate: Rate,
+    denominatorKey: 'checkoutsStarted' | 'cartsWithItems' | 'viewers',
+  ) {
     expect(rate.rate).not.toBeNull()
     expect(rate.rate!).toBeCloseTo(rate.paidOrders / rate[denominatorKey]!, 10)
     expect(rate.basis).toMatch(/storefront/i)
@@ -258,7 +478,13 @@ describe('AC-23: rates', () => {
 })
 
 describe('AC-24: nothing a model reads can be misstated', () => {
-  const RATE_PARTS = new Set(['rate', 'paidOrders', 'checkoutsStarted', 'cartsWithItems', 'viewers'])
+  const RATE_PARTS = new Set([
+    'rate',
+    'paidOrders',
+    'checkoutsStarted',
+    'cartsWithItems',
+    'viewers',
+  ])
 
   function walk(
     value: unknown,
@@ -315,7 +541,9 @@ describe('AC-24: nothing a model reads can be misstated', () => {
               expect(/revenue/i.test(key), `${path}.${key}`).toBe(false)
             }
             const namesMoney = Object.keys(o).some((key) => key.endsWith('Minor'))
-            expect(namesMoney && typeof o['currency'] !== 'string', `${path} has a currency`).toBe(false)
+            expect(namesMoney && typeof o['currency'] !== 'string', `${path} has a currency`).toBe(
+              false,
+            )
           },
         )
       }),
@@ -388,7 +616,10 @@ describe('AC-25: the lists', () => {
     const steadyRow = stockRunway.items.find((i) => i.variantId === steady.variantId)!
     expect(steadyRow.unitsSold).toBe(10)
     expect(steadyRow.windowDays).toBe(28)
-    expect(steadyRow.daysLeft).toBeCloseTo(steadyRow.stock / (steadyRow.unitsSold / steadyRow.windowDays), 5)
+    expect(steadyRow.daysLeft).toBeCloseTo(
+      steadyRow.stock / (steadyRow.unitsSold / steadyRow.windowDays),
+      5,
+    )
     expect(stockRunway.items.find((i) => i.variantId === out.variantId)?.daysLeft).toBe(0)
     expect(stockRunway.items.map((i) => i.variantId)).not.toContain(unsold.variantId)
     expect(stockRunway.items.map((i) => i.variantId)[0]).toBe(out.variantId)

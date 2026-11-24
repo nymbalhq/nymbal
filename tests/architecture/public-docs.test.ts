@@ -2,7 +2,7 @@
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { join, posix } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import { ROOT } from './adapter-table'
 import {
   cliTree,
@@ -174,6 +174,10 @@ function pathsIn(line: string): string[] {
 }
 
 describe('AC-1: public text names only commands, scripts, links and paths that exist', () => {
+  // The command tree loads every CLI command module once (seconds on a loaded runner); load it here, not inside a
+  // test's 5 s, so a test's time is its own checks.
+  beforeAll(() => cliTree(), 60_000)
+
   it('AC-1: the public docs are there to read: the root files, both template READMEs, a docs page per guide and the issue forms', () => {
     const expected = [
       'README.md',

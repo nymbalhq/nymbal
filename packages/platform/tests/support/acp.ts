@@ -9,23 +9,28 @@ import { createLogger } from '../../src/logger.js'
 import { serveWithAgents, type AgentStore } from './agents.js'
 import { createKernel, type Kernel } from './kernel.js'
 
-// An ACP agent over HTTP against a kernel served with its agent surfaces, `agents.acp` on: the store's key as a bearer,
+// An ACP agent over HTTP against a kernel served with its agent surfaces, `agents.acp` on: the rig's key as a bearer,
 // the pinned API-Version, a fresh Idempotency-Key on every POST unless the test names one, and the pinned ACP
 // shapes (tests/fixtures/acp). Beside it, a payments adapter that records what the checkout asks of it.
 
 export const ACP_PATH = '/api/acp'
 export const PINNED_VERSION = '2026-04-17'
-/** The store's ACP key: at least 32 characters. */
+/** The store's ACP key, named ACP_NAME in `agents.acp.keys`: at least 32 characters. */
 export const ACP_KEY = 'acp-acceptance-key-0123456789abcdefghij'
+export const ACP_NAME = 'chatgpt'
 export const ACP_LINKS = [
   { type: 'terms_of_use', url: 'https://shop.example/terms', title: 'Terms of use' },
   { type: 'return_policy', url: 'https://shop.example/returns' },
 ] as const
-/** What an agent's client sends unless the test says otherwise: its first product token names the agent. */
+/** What an agent's client sends unless the test says otherwise; it names nothing, the key does. */
 export const AGENT_UA = 'ChatGPT/2.0 (acceptance; +https://openai.com/bot)'
-export const AGENT_SOURCE = 'agent:chatgpt'
+/** The source of a cart and order opened under ACP_KEY: its name. */
+export const AGENT_SOURCE = `agent:${ACP_NAME}`
 
-/** The kernel config with `agents.acp` on under the test key, and its own rule high enough for a suite's requests. */
+/**
+ * The kernel config with `agents.acp` on under the test key (`acp.keys` replaces the list), and its own rule high
+ * enough for a suite's requests.
+ */
 export function withAcp(
   config: NymbalConfig,
   acp: Record<string, unknown> = {},
@@ -43,7 +48,12 @@ export function withAcp(
     },
     agents: {
       ...config.agents,
-      acp: { enabled: true, apiKey: ACP_KEY, links: [...ACP_LINKS], ...acp },
+      acp: {
+        enabled: true,
+        keys: [{ name: ACP_NAME, key: ACP_KEY }],
+        links: [...ACP_LINKS],
+        ...acp,
+      },
     },
   } as NymbalConfig
 }

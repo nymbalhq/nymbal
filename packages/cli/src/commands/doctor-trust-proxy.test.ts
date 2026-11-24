@@ -10,14 +10,14 @@ import {
   doctorJson,
   doctorLines,
   migratedSqlite,
-  runCli,
   type CliRun,
 } from '../../../../tests/support/doctor.js'
+import { runInProcess } from './fixtures/in-process.js'
 
 // doctor reads the trusted proxy list the server would resolve, and where it came from, and says before the first
 // shopper arrives when every shopper would share one rate-limit bucket: the list left at its default while the store
 // has a public, non-loopback origin. Stating any list clears it; a list or setting the server refuses is down, with
-// the server's own message. Spawns the built CLI (`pnpm build` first).
+// the server's own message. Runs the command in this process (fixtures/in-process.ts).
 
 const LIST_VAR = 'NYMBAL_TRUSTED_PROXIES'
 const HEADER_VAR = 'NYMBAL_CLIENT_IP_HEADER'
@@ -54,7 +54,7 @@ interface Case {
   publicUrl?: string
 }
 
-/** `nymbal doctor --json` (or the text form) in a fresh project for the case; NODE_ENV is unset in the child. */
+/** `nymbal doctor --json` (or the text form) in a fresh project for the case; NODE_ENV is unset for the command. */
 async function doctor(c: Case, json = true): Promise<CliRun> {
   const project = mkdtempSync(join(dir, 'project-'))
   writeFileSync(
@@ -75,7 +75,7 @@ async function doctor(c: Case, json = true): Promise<CliRun> {
     [HOPS_VAR]: c.hops,
     NYMBAL_PUBLIC_URL: c.publicUrl,
   })
-  return runCli(json ? ['doctor', '--json'] : ['doctor'], { cwd: project, env })
+  return runInProcess(json ? ['doctor', '--json'] : ['doctor'], { cwd: project, env })
 }
 
 const trustProxyCheck = (run: CliRun) =>

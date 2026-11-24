@@ -37,7 +37,7 @@ const BUDGETS = JSON.parse(readFileSync(join(REPO, 'perf-budgets.json'), 'utf8')
   Record<string, { scriptBytes: number }>
 >
 const RUN_TIMEOUT_MS = 20 * 60_000
-// CI's job adds its own arguments here (`--runs 5`); a local run measures as perf:budgets does by default.
+// CI's job adds its own arguments here (`--runs 7`); a local run measures as perf:budgets does by default.
 const FROM_ENV = (process.env.NYMBAL_PERF_BUDGETS_ARGS ?? '').split(/\s+/).filter(Boolean)
 const baseline = JSON.parse(
   readFileSync(

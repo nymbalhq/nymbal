@@ -35,6 +35,12 @@ export interface LoggedEvent {
   createdAt: Date
 }
 
+/** A row as a record's history reads it: with the command it was appended under, if any. */
+export interface SubjectEvent extends LoggedEvent {
+  /** The id of that command's `applied` audit entry; null for an event appended outside a command, or before 0033. */
+  commandId: string | null
+}
+
 /** Filters for reading the log. A type glob's `*` matches any run of characters, dots included (`order.*`). */
 export interface EventLogFilter {
   /** Type globs; an event matches when its type matches any of them. */
@@ -70,8 +76,8 @@ export function retryFloor(now: Date, retentionDays: number): Date {
 }
 
 export interface EventLogRepository extends StoreRepository {
-  /** Appends in array order, so `seq` follows publish order. */
-  append(tx: Tx, events: NymbalEvent<unknown>[]): Promise<void>
+  /** Appends in array order, so `seq` follows publish order; `commandId` is the command they were published in. */
+  append(tx: Tx, events: NymbalEvent<unknown>[], commandId?: string | null): Promise<void>
   /**
    * Neither delivered nor dead, by `seq`; `afterSeq` pages through one pass without re-reading rows it just tried.
    * Given `now`, a row whose `retry_at` is after it is left out.
@@ -114,10 +120,12 @@ export interface EventLogRepository extends StoreRepository {
   listAfter(
     tx: ReadTx,
     seq: number,
-    filter: Pick<EventLogFilter, 'types' | 'limit'>,
+    filter: Pick<EventLogFilter, 'types' | 'since' | 'limit'>,
   ): Promise<LoggedEvent[]>
   /** The highest `seq` in the log, or 0 when it is empty. */
   maxSeq(tx: ReadTx): Promise<number>
+  /** When the oldest event still in the log was appended, in any state; null when the log is empty. */
+  oldestCreatedAt(tx: ReadTx): Promise<Date | null>
   /**
    * What a read-model rebuild re-applies after its swap: every event that is not dead and was delivered at or after
    * `since`, or not yet delivered, by `seq`. `afterSeq` and `limit` page through them.
@@ -139,14 +147,14 @@ export interface EventLogRepository extends StoreRepository {
     tx: ReadTx,
     subjects: EventSubject[],
     page: { until?: Date; afterSeq?: number; limit: number },
-  ): Promise<LoggedEvent[]>
+  ): Promise<SubjectEvent[]>
 }
 
-// SQLite's bound-parameter limit is per statement; seven columns a row keep a chunk well under it.
+// SQLite's bound-parameter limit is per statement; eight columns a row keep a chunk well under it.
 const APPEND_CHUNK = 100
 const DELETE_CHUNK = 500
 const APPEND_INTO =
-  'INSERT INTO events (id, type, envelope, correlation_id, subject_type, subject_id, created_at) VALUES'
+  'INSERT INTO events (id, type, envelope, correlation_id, subject_type, subject_id, created_at, command_id) VALUES'
 /** The page `listForCatchUp` reads when it is given none. */
 const CATCH_UP_LIMIT = 10_000
 
@@ -284,9 +292,9 @@ export function createEventLogRepository(store: CommandStore): EventLogRepositor
 
   return {
     store,
-    // The columns are named, not taken from the schema: a store a migration behind, before a later column of the log
-    // (retry_at), still takes appends.
-    async append(tx, events) {
+    // Appends write command_id, so a store must be migrated through 0033 to take them; `nymbal start` refuses one that
+    // is behind.
+    async append(tx, events, commandId = null) {
       const now = new Date()
       for (let i = 0; i < events.length; i += APPEND_CHUNK) {
         const chunk = events.slice(i, i + APPEND_CHUNK)
@@ -296,14 +304,14 @@ export function createEventLogRepository(store: CommandStore): EventLogRepositor
           sqliteDb(tx).run(
             sql`${sql.raw(APPEND_INTO)} ${rows((e) => {
               const { subjectType, subjectId } = subjectColumns(e)
-              return sql`(${e.id}, ${e.type}, ${JSON.stringify(e)}, ${e.correlationId}, ${subjectType}, ${subjectId}, ${at})`
+              return sql`(${e.id}, ${e.type}, ${JSON.stringify(e)}, ${e.correlationId}, ${subjectType}, ${subjectId}, ${at}, ${commandId})`
             })}`,
           )
         } else {
           await postgresDb(tx).execute(
             sql`${sql.raw(APPEND_INTO)} ${rows((e) => {
               const { subjectType, subjectId } = subjectColumns(e)
-              return sql`(${e.id}, ${e.type}, ${JSON.stringify(e)}::jsonb, ${e.correlationId}, ${subjectType}, ${subjectId}, ${now.toISOString()}::timestamptz)`
+              return sql`(${e.id}, ${e.type}, ${JSON.stringify(e)}::jsonb, ${e.correlationId}, ${subjectType}, ${subjectId}, ${now.toISOString()}::timestamptz, ${commandId})`
             })}`,
           )
         }
@@ -505,6 +513,23 @@ export function createEventLogRepository(store: CommandStore): EventLogRepositor
         .from(p)
       return Number(row?.max ?? 0)
     },
+    async oldestCreatedAt(tx) {
+      if (tx.kind === 'sqlite') {
+        const row = sqliteDb(tx)
+          .select({ createdAt: s.createdAt })
+          .from(s)
+          .orderBy(asc(s.createdAt))
+          .limit(1)
+          .get()
+        return toDate(row?.createdAt)
+      }
+      const [row] = await postgresDb(tx)
+        .select({ createdAt: p.createdAt })
+        .from(p)
+        .orderBy(asc(p.createdAt))
+        .limit(1)
+      return toDate(row?.createdAt)
+    },
     // Only the columns a LoggedEvent maps: a boot rebuild runs this on a store not yet migrated past 0007.
     async listForCatchUp(tx, since, page = {}) {
       const afterSeq = page.afterSeq ?? 0
@@ -567,25 +592,42 @@ export function createEventLogRepository(store: CommandStore): EventLogRepositor
       }
       return deleted
     },
+    // The only read of command_id: every other read keeps to the columns a store behind 0033 has.
     async listBySubjects(tx, subjects, page) {
       if (subjects.length === 0) return []
       const afterSeq = page.afterSeq ?? 0
-      return select(
-        tx,
-        {
-          sqlite: [
-            or(...subjects.map((x) => and(eq(s.subjectType, x.type), eq(s.subjectId, x.id))))!,
-            gt(s.seq, afterSeq),
-            ...(page.until === undefined ? [] : [lte(s.createdAt, page.until.toISOString())]),
-          ],
-          postgres: [
+      const withCommand = (
+        row: Parameters<typeof rowToLogged>[0] & { commandId: string | null },
+      ): SubjectEvent => ({ ...rowToLogged(row), commandId: row.commandId })
+      if (tx.kind === 'sqlite') {
+        return sqliteDb(tx)
+          .select({ ...sqliteLogged, commandId: s.commandId })
+          .from(s)
+          .where(
+            and(
+              or(...subjects.map((x) => and(eq(s.subjectType, x.type), eq(s.subjectId, x.id))))!,
+              gt(s.seq, afterSeq),
+              ...(page.until === undefined ? [] : [lte(s.createdAt, page.until.toISOString())]),
+            ),
+          )
+          .orderBy(asc(s.seq))
+          .limit(page.limit)
+          .all()
+          .map(withCommand)
+      }
+      const rows = await postgresDb(tx)
+        .select({ ...postgresLogged, commandId: p.commandId })
+        .from(p)
+        .where(
+          and(
             or(...subjects.map((x) => and(eq(p.subjectType, x.type), eq(p.subjectId, x.id))))!,
             gt(p.seq, afterSeq),
             ...(page.until === undefined ? [] : [lte(p.createdAt, page.until)]),
-          ],
-        },
-        page.limit,
-      )
+          ),
+        )
+        .orderBy(asc(p.seq))
+        .limit(page.limit)
+      return rows.map(withCommand)
     },
   }
 }

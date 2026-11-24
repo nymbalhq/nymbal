@@ -16,7 +16,6 @@ import {
   shipThroughAdmin,
 } from '../support/shipping-orders.js'
 import { createTestShipAdapter, type TestShipAdapter } from '../support/test-ship.js'
-import { unaudited } from '../support/write-audit.js'
 
 // A tracking number the carrier refuses leaves one system note on the order, read through the admin's notes route:
 // once however often the event is delivered, beside whatever notes the order holds, and never in the document its
@@ -68,15 +67,10 @@ async function notesOf(orderId: string): Promise<Note[]> {
   return res.body.data!
 }
 
-/** The `notes` column as the admin notes route leaves it, written directly: that route's own write is not this test's. */
-function storedNotes(notes: Array<{ body: string; actor: string }>): string {
-  return JSON.stringify(notes.map((note) => ({ ...note, at: '2026-11-01T10:00:00.000Z' })))
-}
-
-async function setStoredNotes(orderId: string, notes: string): Promise<void> {
-  await unaudited(() =>
-    k.store.transaction((tx) => k.repos.order.setNotes(tx, orderId, notes, new Date())),
-  )
+/** An admin's note on the order, through the admin's notes route. */
+async function adminNote(orderId: string, body: string): Promise<void> {
+  const res = await admin.call('POST', `/api/admin/orders/${orderId}/notes`, { body })
+  expect(res.status, JSON.stringify(res.body)).toBe(200)
 }
 
 describe('a tracking number the carrier refuses', () => {
@@ -122,18 +116,8 @@ describe('a tracking number the carrier refuses', () => {
         async ({ redeliveries, refuses, prior }) => {
           const hasShopper = prior === 'shopper' || prior === 'both'
           const hasAdmin = prior === 'admin' || prior === 'both'
-          // Alone, the shopper's note stays the plain string checkout writes; beside an admin note it is the JSON the
-          // route leaves.
-          const order = await processingOrder(k, prior === 'shopper' ? { notes: SHOPPER_WORDS } : {})
-          if (hasAdmin) {
-            await setStoredNotes(
-              order.id,
-              storedNotes([
-                ...(hasShopper ? [{ body: SHOPPER_WORDS, actor: 'customer' }] : []),
-                { body: ADMIN_WORDS, actor: 'admin:u-1' },
-              ]),
-            )
-          }
+          const order = await processingOrder(k, hasShopper ? { notes: SHOPPER_WORDS } : {})
+          if (hasAdmin) await adminNote(order.id, ADMIN_WORDS)
           ship.refuse(refuses ? REASON : null)
 
           try {

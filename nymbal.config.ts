@@ -1,5 +1,8 @@
 import { env, envOptional } from '@nymbalhq/config'
 
+// Agentic checkout (beta) is on when the E2E harness sets its key, served as the key named e2e-agent.
+const acpKey = envOptional('NYMBAL_ACP_API_KEY_E2E')
+
 // The stores come from the environment so that one E2E suite runs on every store set (scripts/gate.ts --stores, the
 // nightly matrix); unset, they are SQLite, in-memory and in-process. The Redis URL is REDIS_URL.
 export default {
@@ -31,6 +34,7 @@ export default {
       '/api/auth/resend-verification': { requests: 1000, window: '1m', action: 'block' },
       '/api/recently-viewed': { requests: 1000, window: '1m', action: 'block' },
       '/api/checkout': { requests: 1000, window: '1m', action: 'block' },
+      '/api/checkout/quote': { requests: 1000, window: '1m', action: 'block' },
       '/api/orders/link': { requests: 1000, window: '1m', action: 'block' },
       '/api/reviews': { requests: 1000, window: '1m', action: 'block' },
       // Order reads that carry the order's email beside an expired key; key-only reads are never limited.
@@ -74,8 +78,10 @@ export default {
   deployment: {
     strategy: 'standard',
   },
-  // Agentic checkout (beta) is on when its key is set: the E2E harness sets one, and attachHttp reads it from there.
   agents: {
-    acp: { enabled: envOptional('NYMBAL_ACP_API_KEY') !== undefined },
+    acp: {
+      enabled: acpKey !== undefined,
+      keys: acpKey === undefined ? [] : [{ name: 'e2e-agent', key: acpKey }],
+    },
   },
 }

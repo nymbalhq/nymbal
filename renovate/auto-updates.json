@@ -1,0 +1,11 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Nymbal stores: security updates merge themselves a day after release once the store's checks pass.",
+  "extends": ["github>nymbalhq/nymbal//renovate/store"],
+  "platformAutomerge": false,
+  "vulnerabilityAlerts": {
+    "automerge": true,
+    "groupName": "Nymbal security",
+    "minimumReleaseAge": "1 day"
+  }
+}

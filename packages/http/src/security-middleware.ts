@@ -70,7 +70,8 @@ const PASSWORD_SET_ROUTES = new Set([
   'POST /api/auth/reset-password',
   'PATCH /api/customers/me/password',
 ])
-const CHECKOUT_PATH = '/api/checkout'
+/** Checkout and its quote: each counted per (address, cart) and per address, under its own rule. */
+const CHECKOUT_PATHS = new Set(['/api/checkout', '/api/checkout/quote'])
 const CART_COOKIE = 'nymbal.cart'
 
 function csrfCookie(token: string, secure: boolean): ResponseCookie {
@@ -115,7 +116,7 @@ function signedInAccount(envelope: ResponseEnvelope): string | null {
 }
 
 function isCheckout(ctx: RequestContext): boolean {
-  return ctx.method === 'POST' && ctx.path === CHECKOUT_PATH
+  return ctx.method === 'POST' && CHECKOUT_PATHS.has(ctx.path)
 }
 
 export interface SecurityGuardOptions {

@@ -8,6 +8,7 @@ import fc from 'fast-check'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { NymbalConfig } from '@nymbalhq/config'
 import {
+  currencyExponent,
   renderEmailTemplate,
   type EmailAdapter,
   type NymbalEvent,
@@ -595,9 +596,9 @@ async function reprice(s: Store, p: Seeded, priceMinor: number): Promise<void> {
 
 /** An amount in minor units as money in `currency`, independently of the kernel's formatter. */
 function money(minor: number, currency: string): string {
-  const format = new Intl.NumberFormat('en-GB', { style: 'currency', currency })
-  const digits = format.resolvedOptions().maximumFractionDigits ?? 2
-  return format.format(minor / 10 ** digits)
+  return new Intl.NumberFormat('en-GB', { style: 'currency', currency }).format(
+    minor / 10 ** currencyExponent(currency),
+  )
 }
 
 /** The price events the log holds for a variant, by id. */

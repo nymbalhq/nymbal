@@ -67,16 +67,18 @@ const ADDRESS = {
 }
 
 describe('nymbal-address-book', () => {
-  it('property: Enter in any add-address field saves the address once, with the fields typed', async () => {
+  // The country is a select, where Enter submits nothing (as in a native form): Enter is pressed in the text fields.
+  it('property: Enter in any add-address text field saves the address once, with the fields entered', async () => {
     const names = [
       'firstName',
       'lastName',
       'addressLine1',
       'city',
+      'country',
       'region',
       'postalCode',
-      'country',
     ] as const
+    const typed = names.filter((name) => name !== 'country')
     await fc.assert(
       fc.asyncProperty(
         fc.record({
@@ -88,7 +90,7 @@ describe('nymbal-address-book', () => {
           postalCode: fc.stringMatching(/^E[1-9] [1-9]AN$/),
           country: fc.constantFrom('GB', 'FR'),
         }),
-        fc.constantFrom(...names),
+        fc.constantFrom(...typed),
         async (address, pressedIn) => {
           client = setupMockClient()
           const create = vi.fn(async (a: Record<string, unknown>) => ({

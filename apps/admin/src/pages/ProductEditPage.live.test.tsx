@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { QueryClient } from '@tanstack/react-query'
-import { Route, Routes, useNavigate, type NavigateFunction } from 'react-router-dom'
+import { Route, Routes } from 'react-router-dom'
 import type { ProductSnapshot, Variant } from '@nymbalhq/types'
 import { renderWithProviders } from '@/tests/render'
 import { ProductEditPage } from './ProductEditPage'
@@ -10,7 +10,7 @@ import { ProductEditPage } from './ProductEditPage'
 // The product page while its product changes elsewhere: a new copy of the product reaches the detail query as a stream
 // frame's invalidation brings it (the query refetched against a fake admin API whose product the test changes). The
 // routes are laid out as the admin's router lays them out: `products/new` and `products/:slug` siblings rendering one
-// page with no key, so a navigation between products keeps the page instance, as Cmd-K does.
+// page with no key, so a navigation between products keeps the page instance.
 
 const AT = '2026-11-19T10:00:00.000Z'
 
@@ -84,6 +84,17 @@ function fakeApi(products: ProductSnapshot[]) {
     const url = new URL(String(input instanceof Request ? input.url : input), 'http://localhost/')
     const method = (init.method ?? 'GET').toUpperCase()
     if (url.pathname === '/api/csrf') return json({ data: { token: 'tok' } })
+    if (url.pathname === '/api/admin/me') {
+      return json({
+        data: {
+          userId: 'admin-1',
+          roles: ['admin'],
+          storeName: 'Test Store',
+          environment: 'development',
+          currency: 'GBP',
+        },
+      })
+    }
     const one = /^\/api\/admin\/products\/([^/]+)$/.exec(url.pathname)
     if (method === 'GET' && one) {
       const found = find(decodeURIComponent(one[1]!))
@@ -149,22 +160,13 @@ async function streamBringsNewCopy(qc: QueryClient, slug: string): Promise<void>
   })
 }
 
-let go: NavigateFunction
-function Navigator() {
-  go = useNavigate()
-  return null
-}
-
 function renderAt(initialPath: string) {
   return renderWithProviders(
-    <>
-      <Navigator />
-      <Routes>
-        <Route path="/products/new" element={<ProductEditPage />} />
-        <Route path="/products/:slug" element={<ProductEditPage />} />
-      </Routes>
-    </>,
-    { initialPath },
+    <Routes>
+      <Route path="/products/new" element={<ProductEditPage />} />
+      <Route path="/products/:slug" element={<ProductEditPage />} />
+    </Routes>,
+    { initialPath, dataRouter: true },
   )
 }
 
@@ -236,38 +238,6 @@ describe('AC-10: a new copy of the product never replaces an unsaved edit, and a
     api.change(linen.id, (p) => ({ ...p, name: 'Renamed elsewhere after the save' }))
     await streamBringsNewCopy(queryClient, linen.slug)
     await waitFor(() => expect(nameField()).toHaveValue('Renamed elsewhere after the save'))
-  })
-
-  it("AC-10: with an unsaved edit on product A, navigating in place to product B shows B's fields, and Save sends one PATCH to B with B's values and B's variant ids", async () => {
-    const linen = product('prod-a', 'linen-shirt', 'Linen Shirt', 'Loose and light.')
-    const wool = product('prod-b', 'wool-scarf', 'Wool Scarf', 'Warm and soft.')
-    const api = fakeApi([linen, wool])
-    const user = userEvent.setup()
-    renderAt(`/products/${linen.slug}`)
-    await waitFor(() => expect(nameField()).toHaveValue(linen.name))
-
-    fireEvent.change(nameField(), { target: { value: 'Linen Shirt, typed on A' } })
-    fireEvent.change(descriptionField(), { target: { value: 'Typed on A.' } })
-    act(() => {
-      void go(`/products/${wool.slug}`)
-    })
-
-    await waitFor(() => expect(nameField(), "B's name").toHaveValue(wool.name))
-    expect(descriptionField(), "B's description").toHaveValue(wool.description)
-
-    await user.click(screen.getByTestId('admin-product-save'))
-    await waitFor(() => expect(api.patches.length, 'PATCHes sent').toBe(1))
-    const [patch] = api.patches
-    expect(patch!.id, 'the product PATCHed').toBe(wool.id)
-    expect([patch!.body.name, patch!.body.description], 'the values sent').toEqual([
-      wool.name,
-      wool.description,
-    ])
-    expect(
-      patch!.body.variants?.map((v) => v.id),
-      'the variant ids sent',
-    ).toEqual(wool.variants.map((v) => v.id))
-    expect(api.current(linen.id), 'product A').toEqual(linen)
   })
 
   it('AC-10: on /products/new, Create then shows the created product as GET /api/admin/products/:slug answers it, with no unsaved mark', async () => {

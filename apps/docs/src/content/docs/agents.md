@@ -36,6 +36,11 @@ shipping postcode with case and spaces ignored (`SW1` matches `SW1A 1AA` and `SW
 shipping country's two-letter ISO code (`UK` is read as `GB`); a store whose orders hold country names instead of
 codes, as an import may leave them, matches none.
 
+Discount codes go on a cart with `cart_addCode { cart, code }` and come off with `cart_removeCode { cart, code }`, the
+cart's handle from `cart_addItem` or `cart_get`; each answers the cart with its `totals` and, in `promotions.codes`, what
+the store said of each code (`accepted`, `rejected` with a `reason`, or `pending` while it cannot check codes). Without
+a handle they answer `cart.missing`. The admin's assistant is not offered them.
+
 ### Customer details agents are not sent
 
 An admin agent's tool results carry no customer email, phone, street line or postcode, over `POST /api/mcp` and
@@ -87,6 +92,70 @@ data](../assistant-data/) says what it sends to your AI provider.
 In one message Ask makes at most three deletions, archives, cancellations or refunds, does not carry out such a change
 to many records at once, and is not offered the store's settings.
 
+## Night shift guidance
+
+When the store has an AI provider (`commerce.ai`) whose adapter can call tools, the night shift asks it what you might
+do about each new insight on searches that found nothing, paid orders or checkouts, and refunds. Stock and store health
+insights are never sent. Under the insight's sentence in the Inbox you then see a few sentences headed "Suggested next
+step · written by AI".
+
+The provider is sent the insight's sentence and figures, and what the read tools answer when it asks: the same reads
+Ask makes, without the ones that carry a customer's email, phone or address. It is offered no tool that changes
+anything. Text that quotes a figure the store did not give it, or runs past 600 characters, is not shown: the card
+says the guidance was withheld.
+
+At most `nightShift.ai.maxInsightsPerNight` insights a night are sent, 5 by default, up to 20; 0 turns guidance off.
+
+```ts
+nightShift: { ai: { maxInsightsPerNight: 5 } },
+```
+
+## Content role
+
+The content role reviews your products' SEO titles and descriptions once a week, on Monday's night shift, and proposes
+new copy for the Inbox. It is off until you turn it on, and needs an AI provider (`commerce.ai`) and the night shift.
+
+```ts
+agents: {
+  roles: {
+    content: {
+      enabled: true,
+      schedule: 'weekly', // or 'daily'
+      fields: ['seoTitle', 'seoDescription'],
+      prompt: 'Warm and plain; British spelling.', // your voice, added to the role's instructions
+      maxProducts: 20,
+      maxTokensPerRun: 100_000,
+    },
+  },
+},
+```
+
+It picks up to `maxProducts` active products whose declared fields are blank, too long, a title without the product's
+name, or a description under 70 characters, both blank first, oldest first. For each it sends the model the product's
+own text: name, description, short description, variant names and options, metadata values and the current SEO
+fields. The model is offered no tools and never writes to a product.
+
+Each answer is checked before you see it. A title is at most 60 characters and holds the product name (its first three
+words when the name is longer); a description is 70 to 155. No emoji, markup, line breaks, all-caps words the product
+does not use, words repeated three times, or stock phrases such as "look no further". The claim guard withholds an
+answer naming a material, origin, certification, number, superlative, guarantee or free offer your product's own text
+does not state ("organic" for a cotton tee, "Italian" for a bag that names no country). The claim words are English: an
+answer in another language is checked only where it uses them.
+
+An answer that passes waits in the Inbox as a proposal by "the content role" until you approve it, whatever
+`agents.autoApprove` or `agents.mcp.writes` say. A withheld answer, or one the model skipped, is in the Inbox's decided
+list as rejected by `policy agents.roles.content`, with the reason. Each product version is asked about once: it is
+asked again only after it changes, and not while one of the role's proposals for it still waits. Withheld answers, the
+token cap and a provider failure appear in the morning's insights.
+
+A run makes one request per product, at most 512 tokens out each, and stops at the first request after
+`maxTokensPerRun` (about 2,000 tokens a product). Once approved, `seoTitle` is the product page's whole `<title>` and
+`seoDescription` its meta description; a blank field keeps the default. A WooCommerce delta import rewrites `seoTitle`
+and `seoDescription` on every product not marked enriched, so an approved title there lasts until the next delta.
+
+`nymbal eval content` scores the role on nine seeded cases with your provider, on a throwaway store; `--only <ids>`
+runs some of them.
+
 ## UCP
 
 The store publishes a Universal Commerce Protocol profile at `/.well-known/ucp`, and its UCP tools at
@@ -103,29 +172,67 @@ agents: {
 
 `nymbal doctor` warns when UCP checkout has no privacy or terms link, or the public URL is plain http.
 
+A UCP checkout takes no code itself; its totals carry the cart's discount (a negative `discount` entry) once the
+handed-over buyer, or an MCP agent with the cart's handle, adds one.
+
 ## ACP (beta)
 
-With `agents.acp` on, a shopping agent holding the store's key buys over the Agentic Commerce Protocol (2026-04-17) at
-`/api/acp`: it reads the product feed (`GET /api/acp/feed`), opens and updates a checkout session, and completes it
-with a delegated payment token (a Stripe Shared Payment Token), which the store charges through its payments provider.
-The order is the one the storefront's checkout makes, with its source `agent:<name>`. It is off by default:
+With `agents.acp` on, a shopping agent holding one of the store's keys buys over the Agentic Commerce Protocol
+(2026-04-17) at `/api/acp`: it reads the product feed (`GET /api/acp/feed`), opens and updates a checkout session, and
+completes it with a delegated payment token (a Stripe Shared Payment Token), which the store charges through its
+payments provider. The order is the one the storefront's checkout makes. It is off by default. Give each assistant its
+own key, by name:
 
 ```ts
+import { env } from '@nymbalhq/config'
+
 agents: {
-  acp: { enabled: true, links: [{ type: 'terms_of_use', url: 'https://example.com/terms' }] },
+  acp: {
+    enabled: true,
+    keys: [
+      { name: 'muse', key: env('NYMBAL_ACP_API_KEY_MUSE') },
+      { name: 'dots', key: env('NYMBAL_ACP_API_KEY_DOTS') },
+    ],
+    links: [{ type: 'terms_of_use', url: 'https://example.com/terms' }],
+  },
 },
 ```
 
-The key is `NYMBAL_ACP_API_KEY` (or `agents.acp.apiKey`), at least 32 characters (`openssl rand -base64 32`); the
-store refuses to start without it, or on a payments provider that cannot charge a delegated token (Stripe can).
+Each key is at least 32 characters (`openssl rand -base64 32`), and no two entries share a name or a key. A name is a
+lower-case letter or digit followed by up to 39 of `a-z`, `0-9`, `.`, `_` and `-`. Keep `_API_KEY` in the variable's
+name and `nymbal doctor` never prints its value. The store refuses to start with ACP on and no key, or on a payments
+provider that cannot charge a delegated token (Stripe can).
+
+What each name records:
+
+- The activity log's actor is `acp:<name>` of the key that sent the request (filter it with `?actor=acp:muse`). Only a
+  request under that key writes it, so it is the record of which assistant acted.
+- The cart and order carry the source `agent:<name>` of the key that opened the session. It is a label, not proof: a
+  UCP caller can name itself the same.
+- A replayed `Idempotency-Key` answers only the key that sent it first.
+
+Removing an entry and restarting revokes that assistant alone. A name reused for a new key takes over the old key's
+actor and its stored replays. `nymbal doctor`'s agents line lists the keys by name (`acp keys: muse, dots`), or
+`acp off`.
+
+A session takes discount codes as `discounts.codes` (or the deprecated `coupons` when `discounts` is absent), at most
+five, each replacing the codes sent before; `[]` clears them. Every session answers `discounts` with the codes held,
+`applied` (one entry per code, at the discount it gives) and `rejected` (with a `discount_code_*` reason), and a warning
+per rejected code; a rejected code does not stop payment. When codes cannot be checked just now the session is
+`not_ready_for_payment` with a message to send `discounts.codes` again.
 
 ## Reports
 
 `GET /api/admin/reports` serves the store's daily figures to the admin assistant and MCP (`admin_reports_get`):
 sales by day and hour, the funnel, top products, what shoppers searched for and did not find, and stock runway. Viewers
 are counted as aggregates; no visitor or customer id is stored in a report.
+`admin_insights_list` reads the night shift's open insights, the most serious first; only an admin dismisses one.
 
 ## Crawlers
 
 `agents.crawl` sets what `robots.txt`, `llms.txt` and the product feed (`/agents/products.json`) serve, and which AI
 crawlers are allowed.
+A product's brand and each variant's GTIN (the number under its barcode: UPC, EAN or ISBN-13; an ISBN-10 is not one)
+are set in the admin's product form. The product feed and UCP catalogue answers carry the brand as `metadata.brand` and
+the GTIN as the variant's `barcodes`, the ACP feed carries the barcodes alone, and the product page's JSON-LD carries
+the brand and, for a product with one variant, its `gtin`.

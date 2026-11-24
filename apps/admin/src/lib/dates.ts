@@ -24,6 +24,28 @@ export function formatDateShort(iso: string): string {
   }).format(date)
 }
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+/**
+ * formatStoreDay('2026-11-21') -> "21 Nov 2026" in every browser zone: a store day is a calendar day, not an instant,
+ * so it is written from its own parts (and with three-letter months, which ICU's en-GB does not keep for September).
+ */
+export function formatStoreDay(day: string): string {
+  const [year, month, date] = day.split('-')
+  return `${Number(date)} ${MONTHS[Number(month) - 1]} ${year}`
+}
+
+const DAY_MS = 86_400_000
+
+/**
+ * addStoreDays('2026-11-20', -30) -> '2026-10-21': whole days moved on UTC parts, so no clock change in the browser's
+ * zone can slip a day.
+ */
+export function addStoreDays(day: string, n: number): string {
+  const [year, month, date] = day.split('-').map(Number)
+  return new Date(Date.UTC(year!, month! - 1, date!) + n * DAY_MS).toISOString().slice(0, 10)
+}
+
 /**
  * formatRelative('2026-04-24T12:00:00Z') -> "2 hours ago", "just now", "yesterday"
  */

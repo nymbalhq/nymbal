@@ -16,7 +16,7 @@ import * as manifests from './workspace-manifests'
 
 // AC-1, the repo half: every workspace member under packages/ that `pnpm -r list` finds on the disk is in each tool's
 // view of the workspace, and those tools read it from one module, scripts/workspace-packages.ts. A tool left at
-// `packages/*` would otherwise drop a nested package's tests, typecheck, coverage, artefact or sandbox in silence.
+// `packages/*` would otherwise drop a nested package's tests, typecheck, artefact or sandbox in silence.
 
 const exec = promisify(execFile)
 
@@ -130,24 +130,6 @@ describe("AC-1: every member under packages/ is in each tool's view", () => {
 
     expect(missed).toEqual([])
     expect(sources.filter((f) => included.has(f)).length).toBe(sources.length)
-  })
-
-  it("AC-1: coverage reads every member's src, apart from the packages it leaves out by name, and never its src/index.ts", async () => {
-    const config = (await import('../../vitest.config')).default as {
-      test?: { coverage?: { include?: string[]; exclude?: string[] } }
-    }
-    const include = config.test?.coverage?.include ?? []
-    const exclude = config.test?.coverage?.exclude ?? []
-    const byName = (dir: string): boolean => exclude.some((g) => g.startsWith(`${dir}/`))
-    const read = members.filter((d) => !byName(d))
-
-    expect(
-      read.filter(
-        (d) => !(globMatch(`${d}/src/a.ts`, include) && !globMatch(`${d}/src/a.ts`, exclude)),
-      ),
-    ).toEqual([])
-    expect(members.filter((d) => !globMatch(`${d}/src/index.ts`, exclude))).toEqual([])
-    expect(read.length).toBeLessThan(members.length)
   })
 
   it.each(['.github/workflows/ci.yml', '.github/workflows/nightly.yml'])(

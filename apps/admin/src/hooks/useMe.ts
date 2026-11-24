@@ -9,3 +9,8 @@ export function useMe() {
     staleTime: 5 * 60_000,
   })
 }
+
+/** The store's currency from the session answer; undefined until it is in, or when it failed. */
+export function useStoreCurrency(): string | undefined {
+  return useMe().data?.currency
+}

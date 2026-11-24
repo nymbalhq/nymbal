@@ -324,12 +324,14 @@ function addTo<T>(rows: Map<string, T>, key: string, row: T, add: (held: T, next
   else add(held, row)
 }
 
-/** The tables a fold of each distinct event id once leaves: what the live handler's deliveries must leave too. */
-export function recompute(
-  events: readonly NymbalEvent<unknown>[],
-  lookup: RollupLookup,
-  timeZone: string,
-): RollupRows {
+/** Adds deltas up into rows, event by event, so a long log can be folded a page at a time. */
+export interface RollupAccumulator {
+  /** One event's deltas; a second call with an id already added adds nothing. */
+  add(eventId: string, deltas: readonly RollupDelta[]): void
+  rows(): RollupRows
+}
+
+export function rollupAccumulator(): RollupAccumulator {
   const seen = new Set<string>()
   const members = new Map<string, RollupMember>()
   const salesHours = new Map<string, SalesHourRow>()
@@ -337,61 +339,75 @@ export function recompute(
   const productDays = new Map<string, ProductDayRow>()
   const searchDays = new Map<string, SearchDayRow>()
 
-  for (const event of events) {
-    if (seen.has(event.id)) continue
-    seen.add(event.id)
-    for (const delta of foldEvent(event, lookup, timeZone)) {
-      switch (delta.table) {
-        case 'salesHours': {
-          const { table: _table, ...row } = delta
-          const key = `${row.hourStart.toISOString()}|${row.currency}|${row.source}`
-          addTo(salesHours, key, row, (held, next) => {
-            held.capturedMinor += next.capturedMinor
-            held.refundedMinor += next.refundedMinor
-            held.paidOrders += next.paidOrders
-          })
-          break
-        }
-        case 'funnelDays': {
-          if (delta.member !== undefined) {
-            const memberKey = `${delta.member.kind}|${delta.member.localDay}|${delta.member.member}`
-            if (members.has(memberKey)) break
-            members.set(memberKey, delta.member)
+  return {
+    add(eventId, deltas) {
+      if (seen.has(eventId)) return
+      seen.add(eventId)
+      for (const delta of deltas) {
+        switch (delta.table) {
+          case 'salesHours': {
+            const { table: _table, ...row } = delta
+            const key = `${row.hourStart.toISOString()}|${row.currency}|${row.source}`
+            addTo(salesHours, key, row, (held, next) => {
+              held.capturedMinor += next.capturedMinor
+              held.refundedMinor += next.refundedMinor
+              held.paidOrders += next.paidOrders
+            })
+            break
           }
-          const { table: _table, member: _member, ...row } = delta
-          addTo(funnelDays, `${row.localDay}|${row.source}`, row, (held, next) => {
-            held.viewers += next.viewers
-            held.cartsWithItems += next.cartsWithItems
-            held.checkoutsStarted += next.checkoutsStarted
-            held.paymentsFailed += next.paymentsFailed
-          })
-          break
-        }
-        case 'productDays': {
-          const { table: _table, ...row } = delta
-          const key = `${row.localDay}|${row.variantId}|${row.currency}|${row.source}`
-          addTo(productDays, key, row, (held, next) => {
-            held.units += next.units
-            held.lineSubtotalMinor += next.lineSubtotalMinor
-          })
-          break
-        }
-        case 'searchDays': {
-          const { table: _table, ...row } = delta
-          addTo(searchDays, `${row.localDay}|${row.term}`, row, (held, next) => {
-            held.searches += next.searches
-          })
-          break
+          case 'funnelDays': {
+            if (delta.member !== undefined) {
+              const memberKey = `${delta.member.kind}|${delta.member.localDay}|${delta.member.member}`
+              if (members.has(memberKey)) break
+              members.set(memberKey, delta.member)
+            }
+            const { table: _table, member: _member, ...row } = delta
+            addTo(funnelDays, `${row.localDay}|${row.source}`, row, (held, next) => {
+              held.viewers += next.viewers
+              held.cartsWithItems += next.cartsWithItems
+              held.checkoutsStarted += next.checkoutsStarted
+              held.paymentsFailed += next.paymentsFailed
+            })
+            break
+          }
+          case 'productDays': {
+            const { table: _table, ...row } = delta
+            const key = `${row.localDay}|${row.variantId}|${row.currency}|${row.source}`
+            addTo(productDays, key, row, (held, next) => {
+              held.units += next.units
+              held.lineSubtotalMinor += next.lineSubtotalMinor
+            })
+            break
+          }
+          case 'searchDays': {
+            const { table: _table, ...row } = delta
+            addTo(searchDays, `${row.localDay}|${row.term}`, row, (held, next) => {
+              held.searches += next.searches
+            })
+            break
+          }
         }
       }
-    }
+    },
+    rows() {
+      return {
+        salesHours: [...salesHours.values()],
+        funnelDays: [...funnelDays.values()],
+        productDays: [...productDays.values()],
+        searchDays: [...searchDays.values()],
+        members: [...members.values()],
+      }
+    },
   }
+}
 
-  return {
-    salesHours: [...salesHours.values()],
-    funnelDays: [...funnelDays.values()],
-    productDays: [...productDays.values()],
-    searchDays: [...searchDays.values()],
-    members: [...members.values()],
-  }
+/** The tables a fold of each distinct event id once leaves: what the live handler's deliveries must leave too. */
+export function recompute(
+  events: readonly NymbalEvent<unknown>[],
+  lookup: RollupLookup,
+  timeZone: string,
+): RollupRows {
+  const rows = rollupAccumulator()
+  for (const event of events) rows.add(event.id, foldEvent(event, lookup, timeZone))
+  return rows.rows()
 }

@@ -1,16 +1,20 @@
 import { screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { fakeOrderApi, orderIn, polyfillRadix, refusal, renderOrderPage } from '@/tests/order-page'
+import {
+  fakeOrderApi,
+  orderIn,
+  polyfillRadix,
+  refusal,
+  renderOrderPage,
+  STATUS_LABEL,
+} from '@/tests/order-page'
 
-// The order page against a fake admin API: the Order Note panel over each shape of the order's `notes` column, and
-// an order's lines where imported lines share a variant id.
+// The order page against a fake admin API: the Order Note panel over each shape of shopper text in the order's `notes`
+// column, beside the Notes tab the notes route feeds, and an order's lines where imported lines share a variant id.
 
 const SHOPPER = 'Leave it with the neighbour at number 3'
-const REFUSAL =
-  'Tracking was not registered with test-ship: unknown. Carrier updates will not arrive.'
 const AT = '2026-11-01T10:00:00.000Z'
 
-const entry = (body: string, actor: string) => ({ body, actor, at: AT })
 const unwritten = () => refusal(500, 'test.unexpected', 'no write expected')
 
 beforeAll(polyfillRadix)
@@ -21,16 +25,37 @@ afterEach(() => {
 })
 
 const PANEL = 'Order Note'
+const BADGE = 'admin-order-status-badge'
+const NOTES_TAB = 'admin-order-notes'
+const EMPTY = 'No notes yet.'
 
-async function panelOf(notes: string) {
+/** The text of each paragraph in the Notes tab: one per listed note, or the empty state. */
+function listedNotes(): string[] {
+  const tab = screen.queryByTestId(NOTES_TAB)
+  return tab === null ? [] : [...tab.querySelectorAll('p')].map((p) => p.textContent ?? '')
+}
+
+/** The page for an order placed with `notes`, the notes route answering it as the customer's one entry. */
+async function pageOf(notes: string) {
   const order = { ...orderIn('shipped'), notes }
-  fakeOrderApi(order, unwritten)
+  fakeOrderApi(order, unwritten, {
+    notes: [{ body: notes, actor: 'customer', at: order.createdAt }],
+  })
   const view = renderOrderPage(order)
-  await screen.findByTestId('admin-order-status-badge', undefined, { timeout: 5000 })
+  const badge = await screen
+    .findByTestId(BADGE, undefined, { timeout: 5000 })
+    .then((node) => node.textContent)
+    .catch(() => null)
+  const listed = await waitFor(() => {
+    const seen = listedNotes()
+    if (seen.length === 0 || seen[0] === EMPTY) throw new Error('the notes have not loaded')
+    return seen
+  }).catch(() => listedNotes())
   const heading = screen.queryByText(PANEL)
   const seen = {
+    badge,
     panel: heading === null ? null : heading.parentElement!.querySelector('p')!.textContent,
-    hasJson: /"actor"|\[\{/.test(view.container.textContent ?? ''),
+    listed,
   }
   view.unmount()
   vi.unstubAllGlobals()
@@ -38,23 +63,27 @@ async function panelOf(notes: string) {
 }
 
 describe('the Order Note panel', () => {
-  it('AC-18: notes holding a shopper’s entry and a refusal show the shopper’s words and no JSON; only system or admin entries show no panel; a plain string shows the string', async () => {
-    const withShopper = JSON.stringify([entry(SHOPPER, 'customer'), entry(REFUSAL, 'system')])
-    const systemOnly = JSON.stringify([entry(REFUSAL, 'system')])
-    const adminOnly = JSON.stringify([entry('Called the buyer', 'admin:u-1')])
-
-    const cells: Array<[string, { panel: string | null; hasJson: boolean }]> = [
-      [withShopper, { panel: SHOPPER, hasJson: false }],
-      [systemOnly, { panel: null, hasJson: false }],
-      [adminOnly, { panel: null, hasJson: false }],
-      [SHOPPER, { panel: SHOPPER, hasJson: false }],
+  it('AC-3: whatever text the shopper placed the order with, JSON or plain, the Order Note panel holds exactly that text, the status badge renders, and the Notes tab lists the one customer note', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const cases = [
+      '[null]',
+      '[]',
+      '[{"actor":"customer","body":{"a":1}}]',
+      JSON.stringify([
+        { body: 'Refund agreed', actor: 'admin:u-1', at: AT },
+        { body: SHOPPER, actor: 'customer', at: AT },
+        { body: 'Tracking was not registered', actor: 'system', at: AT },
+      ]),
+      SHOPPER,
     ]
 
     const seen: unknown[] = []
-    for (const [notes] of cells) seen.push(await panelOf(notes))
+    for (const notes of cases) seen.push(await pageOf(notes))
 
-    expect(seen).toEqual(cells.map(([, expected]) => expected))
-  }, 30_000)
+    expect(seen).toEqual(
+      cases.map((notes) => ({ badge: STATUS_LABEL.shipped, panel: notes, listed: [notes] })),
+    )
+  }, 60_000)
 })
 
 describe('an order’s lines', () => {

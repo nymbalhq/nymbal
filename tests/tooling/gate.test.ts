@@ -197,10 +197,14 @@ describe('the tooling projects run in the plain gate only when the tooling or an
     }
   })
 
-  it('gate:full negates only tooling for a product change, so architecture runs on every change; dev CI asks for both with harness: all', () => {
+  it('gate:full negates only tooling for a product change, so architecture runs on every change, and for a harness change but configuration, which keeps both, hands tooling to a related run; dev CI asks for both with harness: all', () => {
     expect(negated(testsStep(PRODUCT, true).command)).toEqual(['tooling'])
     for (const path of HARNESS) {
-      expect(negated(testsStep([...PRODUCT, path], true).command), path).toEqual([])
+      const command = testsStep([...PRODUCT, path], true).command
+      const configuration = selectTests([path]).mode === 'all'
+      expect([negated(command), / && pnpm exec vitest related /.test(command)], path).toEqual(
+        configuration ? [[], false] : [['tooling'], true],
+      )
     }
     const ci = plan({ full: true, base: 'abc1234', changed: PRODUCT, mutated: [], harness: 'all' })
     expect(negated((ci.steps.find((s) => s.name === 'tests') as StepSpec).command)).toEqual([])
@@ -791,7 +795,7 @@ describe('AC-18: run skips a step whose needs are red or skipped, and names them
     }
 
     // The custom-providers store mails through Mailpit, so its two steps also need `mailpit up`, which compose meets.
-    const MAILPIT_E2E = ['e2e astro-custom', 'e2e nextjs-custom', 'e2e mail-outage']
+    const MAILPIT_E2E = ['e2e astro-custom', 'e2e nextjs-custom']
 
     it('AC-18: the E2E steps run iff build is ok, whatever compose up does, but for the Mailpit store’s, which also need compose; a red build skips each, naming build', async () => {
       expect(e2eSteps().length).toBeGreaterThanOrEqual(2)

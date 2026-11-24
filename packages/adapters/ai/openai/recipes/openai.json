@@ -1,0 +1,18 @@
+{
+  "name": "openai",
+  "summary": "Run the store's AI features on OpenAI or any OpenAI-compatible server.",
+  "install": ["@nymbalhq/ai-openai"],
+  "set": [{ "path": "commerce.ai", "value": { "provider": "openai" } }],
+  "env": [
+    {
+      "name": "OPENAI_API_KEY",
+      "example": "",
+      "required": false,
+      "comment": "Your OpenAI API key; a keyless OpenAI-compatible server (commerce.ai.config.baseUrl) needs none"
+    }
+  ],
+  "next": [
+    "Set commerce.ai.config.model in nymbal.config.ts to the model the provider serves (for example gpt-4o-mini): the store does not start until it is set.",
+    "For an OpenAI-compatible server (a gateway, Ollama, vLLM), set commerce.ai.config.baseUrl to its API URL."
+  ]
+}

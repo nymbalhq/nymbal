@@ -52,7 +52,8 @@ export function declaredVersions(manifest: ProjectManifest): Map<string, string>
   return out
 }
 
-function blockersIn(stack: string, row: MatrixRow, manifest: ProjectManifest): Blocked[] {
+/** The adapters `manifest.dependencies` declares that `row` marks failing or suspended. */
+export function blockersIn(stack: string, row: MatrixRow, manifest: ProjectManifest): Blocked[] {
   const dependencies = manifest.dependencies ?? {}
   const blocked: Blocked[] = []
   for (const [adapter, entry] of Object.entries(row.adapters)) {

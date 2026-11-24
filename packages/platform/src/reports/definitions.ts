@@ -1,3 +1,5 @@
+import type { ReportDefinitions } from '@nymbalhq/types'
+
 // What every figure in a report counts, stated so a model reading it cannot misstate it, and the rules for a rate.
 
 export const DEFINITIONS = {
@@ -10,7 +12,7 @@ export const DEFINITIONS = {
   netCapturedMinor:
     "Captured less refunded, in minor units of the row's currency. It includes any tax and shipping the customer paid. A refund counts on its own day, so a day's figure can be negative.",
   paidOrders:
-    'Orders paid, counted on the day they were paid; an imported order counts on the day it was placed.',
+    "Orders paid, counted on the day they were paid; an imported order counts on the day it was placed. In a money total it runs through the window's to, today included; in a funnel total and a rate it stops at closedThrough.",
   viewers:
     'Browsers that ran the storefront script and viewed a product, once per browser per store day and summed per day across a range, so the same browser on two days counts twice. A visitor and the customer it signs in as are two.',
   cartsWithItems: 'Carts that had an item added, each counted once per store day.',
@@ -28,8 +30,10 @@ export const DEFINITIONS = {
   daysLeft: 'stock divided by unitsSold per day over windowDays; 0 when no stock is left.',
   since:
     'The earliest day with any figure. A day before it has no row; a day after it with no row had none of that figure.',
+  partial:
+    'True when the row or total holds today, a store day still open, so its figures may still change (a refund lowers them).',
   rate: 'A ratio computed for this response and never stored; quote it with its basis.',
-} as const
+} as const satisfies ReportDefinitions
 
 export const RATE_FLOORS = { viewers: 20, checkoutsStarted: 5, cartsWithItems: 5 } as const
 

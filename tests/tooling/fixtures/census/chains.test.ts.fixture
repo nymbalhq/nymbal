@@ -1,4 +1,4 @@
-// AC-5: 8 assertions, each counted once by its final matcher: C1 3, C3 3, C4 2. 1 test.
+// AC-5: 8 assertions, each counted once by its final matcher: C1 3, C3 4, C4 1. 1 test.
 import { expect, test } from 'vitest'
 
 test('chains', async () => {

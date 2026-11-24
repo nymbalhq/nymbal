@@ -1,5 +1,11 @@
-import { and, asc, desc, eq, lt, ne, or, sql, type SQL } from 'drizzle-orm'
-import type { ProposalDecider, ProposalStatus, ProposalView } from '@nymbalhq/types'
+import { and, asc, desc, eq, gte, lt, ne, or, sql, type SQL } from 'drizzle-orm'
+import {
+  PROPOSAL_OUTCOME_UNKNOWN,
+  type ProposalDecider,
+  type ProposalPolicyRule,
+  type ProposalStatus,
+  type ProposalView,
+} from '@nymbalhq/types'
 import {
   postgresDb,
   sqliteDb,
@@ -72,6 +78,8 @@ export interface ProposalCursor {
 
 export interface ProposalQuery {
   status: 'pending' | 'decided' | 'all'
+  proposerId?: string
+  tool?: string
   cursor?: ProposalCursor
   limit: number
 }
@@ -95,6 +103,8 @@ export interface ProposalRepository extends StoreRepository {
   countPending(tx: ReadTx): Promise<number>
   /** Rows still `approved` that were decided before `decidedBefore`, oldest decision first, at most `limit`. */
   listStuck(tx: ReadTx, q: { decidedBefore: Date; limit: number }): Promise<ProposalRecord[]>
+  /** When each proposal settled `failed` with an unknown outcome at or after `since` was settled, oldest first. */
+  outcomeUnknownSettledSince(tx: ReadTx, since: Date): Promise<string[]>
 }
 
 type Table = typeof sqliteSchema.proposals | typeof postgresSchema.proposals
@@ -154,7 +164,7 @@ export function proposalView(row: ProposalRecord): ProposalView {
     row.decidedByKind === 'admin'
       ? { kind: 'admin', id: row.decidedBy ?? '' }
       : row.decidedByKind === 'policy'
-        ? { kind: 'policy', rule: row.decidedBy as 'agents.mcp.writes' | 'agents.autoApprove' }
+        ? { kind: 'policy', rule: row.decidedBy as ProposalPolicyRule }
         : undefined
   return {
     id: row.id,
@@ -206,6 +216,8 @@ function listWhere(
   return and(
     q.status === 'pending' ? eq(t.status, 'pending') : undefined,
     q.status === 'decided' ? ne(t.status, 'pending') : undefined,
+    q.proposerId === undefined ? undefined : eq(t.proposerId, q.proposerId),
+    q.tool === undefined ? undefined : eq(t.tool, q.tool),
     cursor === undefined
       ? undefined
       : or(
@@ -354,6 +366,29 @@ export function createProposalRepository(store: CommandStore): ProposalRepositor
         .orderBy(asc(p.decidedAt), asc(p.id))
         .limit(q.limit)
       return rows.map((row) => toRecord('postgres', row))
+    },
+    async outcomeUnknownSettledSince(tx, since) {
+      const unknown = (t: Table, at: string | Date) =>
+        and(
+          eq(t.status, 'failed'),
+          eq(t.outcomeCode, PROPOSAL_OUTCOME_UNKNOWN),
+          gte(t.settledAt, at),
+        )
+      if (tx.kind === 'sqlite') {
+        return sqliteDb(tx)
+          .select({ at: s.settledAt })
+          .from(s)
+          .where(unknown(s, since.toISOString()))
+          .orderBy(asc(s.settledAt))
+          .all()
+          .map((row) => fromTimestamp(row.at))
+      }
+      const rows = await postgresDb(tx)
+        .select({ at: p.settledAt })
+        .from(p)
+        .where(unknown(p, since))
+        .orderBy(asc(p.settledAt))
+      return rows.map((row) => fromTimestamp(row.at))
     },
   }
 }

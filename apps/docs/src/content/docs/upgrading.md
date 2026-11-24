@@ -43,8 +43,8 @@ npx nymbal verify
 ```
 
 Stores made with `create-nymbal-app` include a workflow, `nymbal.yml` in `.github/workflows`, which installs from your
-lockfile and runs `nymbal verify` on every pull request and every push to `main`. An older store can add it there by
-hand:
+lockfile and runs `nymbal verify` on every pull request and every push to `main`, and `nymbal update-check` on every
+pull request (see below). An older store can add it there by hand:
 
 ```yaml
 name: Nymbal
@@ -69,7 +69,50 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx nymbal verify
+
+  auto-update:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - run: npx nymbal update-check
 ```
 
 The workflow reads the Node version from `.node-version`: add that file (for example `22`) if your project has none.
 `nymbal verify` loads your `nymbal.config.ts`, so an `env('X')` there with no default needs `X` set as a CI variable.
+
+### Updates that merge themselves
+
+Stores made with `create-nymbal-app` also include `renovate.json`, which extends Nymbal's Renovate preset. Install the
+[Renovate app](https://github.com/apps/renovate) on the repository and you get one pull request per Nymbal release, with
+every Nymbal package moved together, checked by the workflow above. A person merges it.
+
+```json
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["github>nymbalhq/nymbal//renovate/store"]
+}
+```
+
+To let security updates merge themselves, extend the auto-updates preset instead:
+`"extends": ["github>nymbalhq/nymbal//renovate/auto-updates"]`. This is the only switch. Renovate then merges a security
+update, one day after its release, once both `verify` and `update-check` pass. `nymbal update-check` treats auto-updates
+as off only when every `extends` entry is the store preset or a `config:` preset and no `automerge` is `true`; any other
+preset counts as on. It passes at once when auto-updates are off or no dependency changed, and otherwise refuses, naming each reason, when:
+
+- the project has its own migrations folder;
+- the update adds or removes a dependency, moves one to a new major version, or changes a value semver cannot read;
+- the compatibility matrix cannot be read or has no row for the installed `nymbal` version;
+- a Nymbal package is installed at another version than that row certifies;
+- an adapter the store declares is failing or suspended in that row;
+- the update adds a migration, or the migrations of the version it moves from cannot be read from the npm registry.
+
+Every other update, and every security update it refuses, stays an open pull request for a person to merge.

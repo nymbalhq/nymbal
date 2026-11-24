@@ -1,0 +1,1 @@
+ALTER TABLE `events` ADD `command_id` text;

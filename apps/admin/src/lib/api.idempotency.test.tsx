@@ -253,7 +253,7 @@ describe('AC-4: the admin sends one Idempotency-Key per intent', () => {
       <Routes>
         <Route path="/products/:slug" element={<ProductEditPage />} />
       </Routes>,
-      { initialPath: '/products/widget' },
+      { initialPath: '/products/widget', dataRouter: true },
     )
     const name = await screen.findByTestId('admin-product-name', undefined, { timeout: 5000 })
     await waitFor(() => expect(name).toHaveValue(PRODUCT.name))

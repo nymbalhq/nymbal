@@ -1,33 +1,49 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
-import { currencyExponent, toMinorUnits } from '../../src/woocommerce/mappers/money.js'
+import { CURRENCY_MINOR_UNITS, currencyExponent } from '@nymbalhq/types'
+import { toMinorUnits } from '../../src/woocommerce/mappers/money.js'
 import { decimal } from './support/wc.js'
 
 // WooCommerce prices are decimal strings in the store currency; Nymbal holds integers in that currency's minor units,
-// whose exponent is the platform's own (Intl's fraction digits: JPY 0, GBP 2, KWD 3).
+// whose exponent is ISO 4217's, from the table in @nymbalhq/types (JPY 0, GBP 2, HUF 2, KWD 3, IQD 3).
 
 const CURRENCIES = ['GBP', 'USD', 'JPY', 'KWD'] as const
 
-/** The platform's rule for a currency's minor-unit exponent (packages/platform/src/money.ts). */
+/** Intl's fraction digits, which agree with ISO 4217's for the four currencies the older properties use. */
 const platformDigits = (currency: string): number =>
   new Intl.NumberFormat('en-GB', { style: 'currency', currency }).resolvedOptions()
     .maximumFractionDigits ?? 2
 
-describe('currencyExponent', () => {
-  it("AC-1: a currency's exponent is the one the platform formats its minor units with", () => {
-    for (const currency of [
-      ...CURRENCIES,
-      'EUR',
-      'KRW',
-      'CLP',
-      'ISK',
-      'BHD',
-      'TND',
-      'CHF',
-      'INR',
-    ]) {
-      expect(currencyExponent(currency), currency).toBe(platformDigits(currency))
-    }
+describe('toMinorUnits reads ISO 4217 digits', () => {
+  it('AC-3: property: for every listed currency, an integer amount written with that currency’s ISO digits comes back as that integer', () => {
+    const codes = Object.keys(CURRENCY_MINOR_UNITS)
+    fc.assert(
+      fc.property(
+        fc.constantFrom(...codes),
+        fc.integer({ min: 0, max: 1_000_000_000 }),
+        (currency, n) => {
+          const text = decimal(n, currencyExponent(currency))
+          expect(toMinorUnits(text, currency), `${text} ${currency}`).toBe(n)
+        },
+      ),
+      {
+        numRuns: 1000,
+        examples: [
+          ['HUF', 1999],
+          ['IQD', 1999],
+          ['IDR', 1_000_000_000],
+          ['CLF', 1],
+        ],
+      },
+    )
+  })
+
+  it('AC-3: "19.99" HUF is 1999, "1.999" IQD is 1999 and "1500" JPY is 1500', () => {
+    expect([
+      toMinorUnits('19.99', 'HUF'),
+      toMinorUnits('1.999', 'IQD'),
+      toMinorUnits('1500', 'JPY'),
+    ]).toEqual([1999, 1999, 1500])
   })
 })
 

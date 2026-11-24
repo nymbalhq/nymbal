@@ -1,5 +1,10 @@
-import { describe, expect, it } from 'vitest'
-import type { ProposalView } from '@nymbalhq/types'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import type { Caller, ProposalView } from '@nymbalhq/types'
+import {
+  goldenAdmin,
+  goldenView as viewOfGolden,
+  type GoldenStoreView,
+} from '../../src/assistant/golden.js'
 import * as platform from '../../src/index.js'
 import { GoldenAdapterError } from '../../src/index.js'
 import {
@@ -66,6 +71,11 @@ interface TracedReport {
 }
 const GOLDEN_QUESTIONS = platform.GOLDEN_QUESTIONS as readonly GoldenQuestion[]
 const goldenStore = platform.goldenStore as (app: AssistantStore['kernel']['app']) => Promise<void>
+const goldenView = viewOfGolden as unknown as (
+  app: AssistantStore['kernel']['app'],
+  caller: Caller,
+  currency: string,
+) => GoldenStoreView
 const runGolden = platform.runGolden as unknown as (
   app: AssistantStore['kernel']['app'],
   opts?: { only?: string[]; onResult?: (result: TracedReport['results'][number]) => void },
@@ -146,13 +156,10 @@ describe('AC-28: the golden set asks how the store converted last week', () => {
 
   const convert = () => GOLDEN_QUESTIONS.find((q) => q.id === CONVERT)
 
-  it('AC-28: convert-last-week asks "How did we convert last week?", a read, row 28 of the scripted model, and sales-30-days keeps its two tools', () => {
+  it('AC-28: convert-last-week asks "How did we convert last week?", a read, row 28 of the scripted model', () => {
     const question = convert()
     expect(question).toMatchObject({ ask: 'How did we convert last week?', kind: 'read' })
     expect(rowOf(question!.ask)?.row).toBe(28)
-    expect(platform.GOLDEN_QUESTIONS.find((q) => q.id === 'sales-30-days')?.calls).toEqual([
-      'admin_dashboard|admin_orders_list',
-    ])
   })
 
   async function convertRun(deviate?: Deviation) {
@@ -759,5 +766,57 @@ describe('AC-5: the scripted golden set answers the 30-day question from the ord
     } finally {
       await store.close()
     }
+  }, 120_000)
+})
+
+describe('AC-5: the 30-day sales question can be answered from the reports', () => {
+  const SALES = 'sales-30-days'
+  const DAY = 24 * 60 * 60 * 1000
+  let store: AssistantStore
+  let caller: Caller
+
+  beforeAll(async () => {
+    ;({ store } = await goldenReady({ deviate: { 10: 'sales-from-reports' } }))
+    caller = { auth: await goldenAdmin(store.kernel.app), agent: { name: 'acceptance' } }
+  }, 120_000)
+
+  afterAll(async () => {
+    await store?.close()
+  })
+
+  it('AC-5: admin_reports_get with no arguments, read as the golden admin, answers a money total in the store’s currency whose netCapturedMinor is the sales-30-days fact: the orders’ captured less refunded over the last 30 days', async () => {
+    const currency = store.kernel.config.store.currency
+    const view = goldenView(store.kernel.app, caller, currency)
+    const since = new Date(Date.now() - 30 * DAY).toISOString()
+    const orders = (await view.read('admin_orders_list', { limit: '200' }))['items'] as Array<
+      Record<string, unknown>
+    >
+    const kept = orders
+      .filter((o) => String(o['createdAt']) >= since)
+      .reduce((sum, o) => sum + Number(o['capturedMinor']) - Number(o['refundedMinor']), 0)
+    const fact = await platform.GOLDEN_QUESTIONS.find((q) => q.id === SALES)!.answer!(view)
+
+    const report = await view.read('admin_reports_get')
+    const totals = (report['money'] as { totals: Array<Record<string, unknown>> }).totals
+    const total = totals.find((t) => t['currency'] === currency)
+
+    expect(fact).toEqual([view.money(kept)])
+    expect(kept).not.toBe(0)
+    expect(total?.['netCapturedMinor'] ?? null).toBe(kept)
+  })
+
+  it('AC-5: sales-30-days accepts admin_dashboard, admin_orders_list or admin_reports_get, and the scripted model answering it through admin_reports_get passes with no reasons', async () => {
+    // Soft, so a question that still demands the older tools also shows what the stamp would say.
+    expect.soft(platform.GOLDEN_QUESTIONS.find((q) => q.id === SALES)?.calls).toEqual([
+      'admin_dashboard|admin_orders_list|admin_reports_get',
+    ])
+
+    const report = await runGolden(store.kernel.app, { only: [SALES] })
+    const result = resultOf(report, SALES)
+
+    expect(store.standIn.scriptErrors).toEqual([])
+    expect(report.results.map((r) => r.id)).toEqual([SALES])
+    expect(result.calls).toContain('admin_reports_get')
+    expect({ reasons: result.reasons, ok: result.ok }).toEqual({ reasons: [], ok: true })
   }, 120_000)
 })

@@ -71,6 +71,7 @@
     "@nymbalhq/event-bus-redis-streams": "workspace:*",
     "@nymbalhq/media-s3": "workspace:*",
     "@nymbalhq/payments-stripe": "workspace:*",
+    "@nymbalhq/promotions-talon-one": "workspace:*",
     "@nymbalhq/search-algolia": "workspace:*",
     "@nymbalhq/security-cloudflare": "workspace:*",
     "@nymbalhq/shipping-aftership": "workspace:*",
@@ -84,6 +85,6 @@
     "stripe": "^17.4.0",
     "tsup": "^9.0.0",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
-    "vitest": "^3.0.0"
+    "vitest": "^3.2.7"
   }
 }

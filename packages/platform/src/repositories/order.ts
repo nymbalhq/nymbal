@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, gte, inArray, lt, lte, notInArray, or, sql, type SQL } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, gte, inArray, lt, lte, ne, notInArray, or, sql, type SQL } from 'drizzle-orm'
 import type {
   Address,
   CaptureMethod,
@@ -19,6 +19,7 @@ import {
 } from '../db/command-store.js'
 import * as sqliteSchema from '../db/schema/sqlite.js'
 import * as postgresSchema from '../db/schema/postgres.js'
+import type { NoteEntry } from '../order-notes.js'
 import type { KeysetPage } from './page.js'
 import { parseJson, fromTimestamp } from './json.js'
 
@@ -66,6 +67,8 @@ export interface OrderListFilter {
   customer?: string
   /** The orderNumber or the email holds it, case-insensitive, every character literal. */
   q?: string
+  /** The orderNumber equals it, case-insensitive. */
+  number?: string
   /**
    * The shipping postalCode, upper-cased without spaces (U+0020 only), starts with this upper-cased without spaces,
    * every character literal; a missing or empty shipping postalCode matches nothing.
@@ -73,6 +76,8 @@ export interface OrderListFilter {
   postcode?: string
   /** The shipping country equals this, case-insensitive; a missing or empty shipping country matches nothing. */
   country?: string
+  /** `synthetic`: only the heartbeat's orders. Absent: every order but those. */
+  source?: 'synthetic'
 }
 
 type OrdersTable = typeof sqliteSchema.orders | typeof postgresSchema.orders
@@ -102,11 +107,14 @@ function listWhere(
   const at = (bound: string) =>
     kind === 'sqlite' ? new Date(bound).toISOString() : new Date(bound)
   const text = (value: string) => sql`cast(${value} as text)`
+  // SQLite's own lower() folds ASCII alone, so that side goes through the store connection's unicode_lower.
+  const fold = (value: SQL) =>
+    kind === 'sqlite' ? sql`unicode_lower(${value})` : sql`lower(${value})`
   // instr and strpos compare characters, so a % or _ in the needle matches only itself.
   const holds = (column: SQL, needle: string) =>
     kind === 'sqlite'
-      ? sql`instr(lower(${column}), lower(${text(needle)})) > 0`
-      : sql`strpos(lower(${column}), lower(${text(needle)})) > 0`
+      ? sql`instr(${fold(column)}, ${fold(text(needle))}) > 0`
+      : sql`strpos(${fold(column)}, ${fold(text(needle))}) > 0`
   const shipped = (key: 'postalCode' | 'country') =>
     kind === 'sqlite'
       ? sql`json_extract(${t.shippingAddress}, ${sql.raw(`'$.${key}'`)})`
@@ -121,6 +129,10 @@ function listWhere(
       ? undefined
       : or(holds(sql`coalesce(${t.customerId}, '')`, f.customer), holds(email, f.customer)),
     f.q === undefined ? undefined : or(holds(sql`${t.orderNumber}`, f.q), holds(email, f.q)),
+    f.number === undefined
+      ? undefined
+      : sql`${fold(sql`${t.orderNumber}`)} = ${fold(text(f.number))}`,
+    f.source === 'synthetic' ? eq(t.source, 'synthetic') : ne(t.source, 'synthetic'),
   ]
   if (f.postcode !== undefined) {
     const stored = shipped('postalCode')
@@ -251,7 +263,10 @@ export interface OrderRepository extends StoreRepository {
   setPaymentIntent(tx: Tx, id: string, paymentIntentId: string, updatedAt: Date): Promise<void>
   recordCapture(tx: Tx, id: string, capture: OrderCapture): Promise<void>
   setRefunded(tx: Tx, id: string, refundedMinor: number, updatedAt: Date): Promise<void>
-  setNotes(tx: Tx, id: string, notes: string, updatedAt: Date): Promise<void>
+  /** The staff and system notes on the order, in the order they were added; empty for an unknown id. */
+  staffNotes(tx: ReadTx, id: string): Promise<NoteEntry[]>
+  /** Appends one staff or system note in a single statement, so two notes added at once both land. */
+  addStaffNote(tx: Tx, id: string, note: NoteEntry, updatedAt: Date): Promise<void>
   /** Deletes the order's row alone: the rows that reference it go first. */
   delete(tx: Tx, id: string): Promise<void>
   /** Ids of the orders created at or after `since`. */
@@ -718,19 +733,40 @@ export function createOrderRepository(store: CommandStore): OrderRepository {
         .set({ refundedMinor, updatedAt })
         .where(eq(postgresSchema.orders.id, id))
     },
-    async setNotes(tx, id, notes, updatedAt) {
+    async staffNotes(tx, id) {
       if (tx.kind === 'sqlite') {
-        sqliteDb(tx)
-          .update(sqliteSchema.orders)
-          .set({ notes, updatedAt: updatedAt.toISOString() })
+        const row = sqliteDb(tx)
+          .select({ staffNotes: sqliteSchema.orders.staffNotes })
+          .from(sqliteSchema.orders)
           .where(eq(sqliteSchema.orders.id, id))
+          .get()
+        return parseJson<NoteEntry[]>('sqlite', row?.staffNotes, [])
+      }
+      const [row] = await postgresDb(tx)
+        .select({ staffNotes: postgresSchema.orders.staffNotes })
+        .from(postgresSchema.orders)
+        .where(eq(postgresSchema.orders.id, id))
+      return parseJson<NoteEntry[]>('postgres', row?.staffNotes, [])
+    },
+    async addStaffNote(tx, id, note, updatedAt) {
+      const entry = JSON.stringify(note)
+      if (tx.kind === 'sqlite') {
+        const s = sqliteSchema.orders
+        sqliteDb(tx)
+          .update(s)
+          .set({
+            staffNotes: sql`json_insert(${s.staffNotes}, '$[#]', json(${entry}))`,
+            updatedAt: updatedAt.toISOString(),
+          })
+          .where(eq(s.id, id))
           .run()
         return
       }
+      const p = postgresSchema.orders
       await postgresDb(tx)
-        .update(postgresSchema.orders)
-        .set({ notes, updatedAt })
-        .where(eq(postgresSchema.orders.id, id))
+        .update(p)
+        .set({ staffNotes: sql`${p.staffNotes} || jsonb_build_array(${entry}::jsonb)`, updatedAt })
+        .where(eq(p.id, id))
     },
     async delete(tx, id) {
       if (tx.kind === 'sqlite') {

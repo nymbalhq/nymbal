@@ -1,4 +1,4 @@
-// Reads: package.json, vitest.config.ts
+// Reads: package.json, vitest.config.ts, tests/tooling/**/*.test.ts
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -15,6 +15,7 @@ import {
   type PlanInput,
 } from '../../scripts/gate'
 import { leftOut, listedProjects, vitestFilters, words } from './vitest-filters'
+import { removeCopies, selectedFiles } from './work-tree-copy'
 
 // A harness test file names, on `// Reads:` lines, the checkout files it reads or runs outside its imports. The gate
 // finds the files whose globs match a change and hands them to the tests step beside the changed paths, in one Vitest
@@ -23,6 +24,7 @@ import { leftOut, listedProjects, vitestFilters, words } from './vitest-filters'
 const created: string[] = []
 afterAll(() => {
   for (const d of created.splice(0)) rmSync(d, { recursive: true, force: true })
+  removeCopies()
 })
 
 function git(cwd: string, ...args: string[]): string {
@@ -261,9 +263,9 @@ const envWords = (command: string): Array<Array<[string, string]>> =>
     return out
   })
 
-/** The positional arguments of the first command's `vitest related`: the paths it is handed. */
-function relatedArgs(command: string): string[] {
-  const argv = words(command.split(' && ')[0] ?? '')
+/** The positional arguments of the `vitest related` in a command's `&&`-joined part (the first): the paths it is handed. */
+function relatedArgs(command: string, part = 0): string[] {
+  const argv = words(command.split(' && ')[part] ?? '')
   const at = argv.indexOf('related')
   if (at === -1 || argv[at - 1] !== 'vitest') return []
   const out: string[] = []
@@ -374,10 +376,7 @@ describe('AC-5: readers change no other command, and gate:full carries no GATE_B
   const commands = (input: PlanInput): string[] =>
     plan(input).steps.map((s) => `${s.name}: ${s.command}`)
 
-  const projectOf = (file: string): string =>
-    file.startsWith('tests/architecture/') ? 'architecture' : 'tooling'
-
-  it('AC-5: for any readers, the all and none commands, every --harness all command and every gate:full command whose readers’ projects run anyway equal those with none; a gate:full that leaves a reader’s project out keeps it and changes nothing else; the plain ones carry GATE_BASE and gate:full’s do not', () => {
+  it('AC-5: for any readers, the all and none commands, every --harness all command and and a gate:full one for a configuration change equal those with none; any other gate:full hands its tooling readers, beside the changed paths, to its related run of the tooling projects and changes nothing else; the plain ones carry GATE_BASE and gate:full’s do not', () => {
     fc.assert(
       fc.property(
         fc.subarray(READER_POOL, { minLength: 1 }),
@@ -404,16 +403,21 @@ describe('AC-5: readers change no other command, and gate:full carries no GATE_B
           const withReaders = commands({ ...input, inputReaders: readers })
           const tests = testsOf(without)
           const left = leftOut(tests, HARNESS_PROJECTS)
-          // Only a gate:full that runs the changed harness keeps a reader's project it would leave out.
-          const kept =
-            shape === 'full'
-              ? [...new Set(readers.map(projectOf))].filter((p) => left.includes(p))
-              : []
+          // Only gate:full's related run of the tooling projects takes readers, its own: it runs for a harness change
+          // or a tooling reader, unless a configuration change runs those projects whole. Architecture runs whole in
+          // every gate:full.
+          const toolingReaders = readers.filter((f) => f.startsWith('tests/tooling/'))
+          const harnessChange = changed.some((p) => /^(?:scripts|\.github)\//.test(p))
+          const related =
+            shape === 'full' &&
+            !changed.includes('package.json') &&
+            (harnessChange || toolingReaders.length > 0)
           expect(othersOf(withReaders)).toEqual(othersOf(without))
-          expect(leftOut(testsOf(withReaders), HARNESS_PROJECTS)).toEqual(
-            left.filter((p) => !kept.includes(p)),
+          expect(leftOut(testsOf(withReaders), HARNESS_PROJECTS)).toEqual(left)
+          expect(testsOf(withReaders) === tests).toBe(!related || toolingReaders.length === 0)
+          expect(relatedArgs(testsOf(withReaders), 1)).toEqual(
+            related ? [...new Set([...changed, ...toolingReaders])].sort() : [],
           )
-          expect(testsOf(withReaders) === tests).toBe(kept.length === 0)
           // The plain gate's Vitest run starts with the base; gate:full's commands carry none at all.
           const runs = !input.full && tests !== 'true'
           const first = envWords(tests)[0] ?? []
@@ -429,11 +433,16 @@ describe('AC-5: readers change no other command, and gate:full carries no GATE_B
   })
 })
 
-describe('AC-5: a gate:full that runs only the changed harness keeps the projects of the tests reading the change', () => {
+describe('AC-5: gate:full runs the tooling tests a change reaches or a reader declares, as Vitest selects them', () => {
   const REPO = fileURLToPath(new URL('../../', import.meta.url))
 
-  /** The projects gate:full's tests step collects, through vitest list, for a change in this checkout. */
-  async function fullProjects(changed: string[]): Promise<{ readers: string[]; listed: string[] }> {
+  /**
+   * For a change in this checkout, the projects gate:full's run of every test collects (vitest list) and the files its
+   * related run of the tooling projects collects (the command itself, running no test).
+   */
+  async function fullRun(
+    changed: string[],
+  ): Promise<{ readers: string[]; listed: string[]; tooling: string[] }> {
     const readers = harnessInputTests(REPO, changed)
     const step = plan({
       full: true,
@@ -444,23 +453,43 @@ describe('AC-5: a gate:full that runs only the changed harness keeps the project
       inputReaders: readers,
     }).steps.find((s) => s.name === 'tests')
     if (step === undefined) throw new Error('no tests step')
-    const { env, projects, excludes } = vitestFilters(step.command)
+    const [product = '', harness] = step.command.split(' && ')
+    const { env, projects, excludes } = vitestFilters(product)
     const listed = await listedProjects(
       [...projects.flatMap((p) => ['--project', p]), ...excludes.flatMap((e) => ['--exclude', e])],
       env,
     )
-    return { readers, listed }
+    return {
+      readers,
+      listed,
+      tooling: harness === undefined ? [] : await selectedFiles(REPO, harness),
+    }
   }
 
-  it('AC-5: through vitest list, a change to registry/adapters.json keeps tooling, and a kernel change no tooling test reads leaves it out', async () => {
-    const registry = await fullProjects(['registry/adapters.json'])
-    const kernel = await fullProjects([KERNEL])
-    expect(registry.readers.filter((f) => f.startsWith('tests/tooling/'))).toContain(
-      'tests/tooling/adapter-list.test.ts',
-    )
-    expect(registry.listed).toContain('tooling')
-    expect(kernel.readers.filter((f) => f.startsWith('tests/tooling/'))).toEqual([])
+  it('AC-5: through Vitest, a change to registry/adapters.json and one to scripts/sentinels.ts each run every project a kernel change runs, and of the tooling projects their readers and the tests importing the change, fewer than all; the kernel change, which no tooling test reads, runs none', async () => {
+    const registry = await fullRun(['registry/adapters.json'])
+    const sentinels = await fullRun(['scripts/sentinels.ts'])
+    const kernel = await fullRun([KERNEL])
+    const all = git(REPO, 'ls-files', ':(glob)tests/tooling/**/*.test.ts')
+      .split('\n')
+      .filter((f) => f !== '' && !f.includes('/fixtures/'))
+
+    expect(kernel.listed).toContain('architecture')
     expect(kernel.listed).not.toContain('tooling')
-    expect(kernel.listed).toEqual(registry.listed.filter((p) => p !== 'tooling'))
-  }, 120_000)
+    expect(kernel.tooling).toEqual([])
+    for (const [label, run] of Object.entries({ registry, sentinels })) {
+      expect(run.listed, label).toEqual(kernel.listed)
+      expect(
+        run.readers.filter((f) => f.startsWith('tests/tooling/') && !run.tooling.includes(f)),
+        label,
+      ).toEqual([])
+      expect(
+        run.tooling.filter((f) => !all.includes(f)),
+        label,
+      ).toEqual([])
+      expect(run.tooling.length, label).toBeLessThan(all.length)
+    }
+    expect(registry.tooling).toContain('tests/tooling/adapter-list.test.ts')
+    expect(sentinels.tooling).toContain('tests/tooling/sentinel-select.test.ts')
+  }, 240_000)
 })

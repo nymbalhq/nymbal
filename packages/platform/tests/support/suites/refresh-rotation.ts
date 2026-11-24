@@ -465,8 +465,8 @@ export function refreshRotationSuite(
 
     describe('AC-5: logout whatever the state of the token', () => {
       // Defect: the branch for a rotated token fires on a live or logged-out row and ends other devices; or the
-      // logout of a rotated token matches no row and the successor stays live.
-      it('AC-5: a logout of a live or already logged-out token ends only that token, and a logout of a rotated token (R0 → R1) refuses R1 and leaves no live row', async () => {
+      // logout of a rotated token matches no row and the successor stays live, or ends the other device too.
+      it('AC-5: a logout of a live or already logged-out token ends only that token, and a logout of a rotated token (R0 → R1) refuses R1 and leaves the other device’s token the one live row', async () => {
         const devices = await customerOnTwoDevices()
         await main.auth.logout(devices.first)
         const afterLive = await main.auth.refresh(devices.second)
@@ -478,7 +478,7 @@ export function refreshRotationSuite(
         const afterLoggedOut = await outcomeOf(main.auth.refresh(afterLive.refreshToken))
         expect(afterLoggedOut, 'the other device after a repeated logout').toBe('ok')
 
-        const { customerId, first } = await customerOnTwoDevices()
+        const { customerId, first, second } = await customerOnTwoDevices()
         const r1 = await main.auth.refresh(first)
 
         await main.auth.logout(first)
@@ -486,12 +486,13 @@ export function refreshRotationSuite(
         expect(await outcomeOf(main.auth.refresh(r1.refreshToken)), 'R1 after the logout').toBe(
           'auth.token_invalid',
         )
-        expect(await liveOf(customerId)).toEqual([])
+        expect(await liveOf(customerId)).toEqual([jtiOf(second)])
       })
 
-      // Defect: the logout walks replaced_by_jti and misses the fork the pointer no longer names.
-      it('AC-5: with R0 re-rotated inside the window (R1 and R1′), a logout of R0 refuses both and leaves no live row', async () => {
-        const { customerId, first } = await customerOnTwoDevices()
+      // Defect: the logout walks replaced_by_jti and misses the fork the pointer no longer names, or ends the other
+      // device with the forks.
+      it('AC-5: with R0 re-rotated inside the window (R1 and R1′), a logout of R0 refuses both and leaves the other device’s token the one live row', async () => {
+        const { customerId, first, second } = await customerOnTwoDevices()
         const r1 = await main.auth.refresh(first)
         const r1Prime = await main.auth.refresh(first)
 
@@ -501,31 +502,28 @@ export function refreshRotationSuite(
           await outcomeOf(main.auth.refresh(r1.refreshToken)),
           await outcomeOf(main.auth.refresh(r1Prime.refreshToken)),
         ]).toEqual(['auth.token_invalid', 'auth.token_invalid'])
-        expect(await liveOf(customerId)).toEqual([])
+        expect(await liveOf(customerId)).toEqual([jtiOf(second)])
       })
 
       // Defect: the write stays inside the try that swallows an invalid token, so a failed revoke answers 200 and the
       // shopper's session survives a sign-out reported as done.
-      it('AC-5: a repository write that throws during logout rejects the logout rather than resolving', async () => {
+      it('AC-5: a session write that throws during logout rejects the logout rather than resolving, for a live and for a rotated token', async () => {
         const { refreshToken } = main.repos
-        const failing = (write: 'revoke' | 'revokeAllForCustomer') =>
-          authOver(main.store, {
-            ...main.repos,
-            refreshToken: {
-              ...refreshToken,
-              [write]: async () => {
-                throw new Error(`${write} refused`)
-              },
+        const failing = authOver(main.store, {
+          ...main.repos,
+          refreshToken: {
+            ...refreshToken,
+            revokeSession: async () => {
+              throw new Error('revokeSession refused')
             },
-          })
+          },
+        })
         const { first } = await customerOnTwoDevices()
         const rotated = await customerOnTwoDevices()
         await main.auth.refresh(rotated.first)
 
-        await expect(failing('revoke').logout(first)).rejects.toThrow('revoke refused')
-        await expect(failing('revokeAllForCustomer').logout(rotated.first)).rejects.toThrow(
-          'revokeAllForCustomer refused',
-        )
+        await expect(failing.logout(first)).rejects.toThrow('revokeSession refused')
+        await expect(failing.logout(rotated.first)).rejects.toThrow('revokeSession refused')
       })
     })
 

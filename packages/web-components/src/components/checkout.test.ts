@@ -1109,8 +1109,7 @@ describe('AC-11: requires_action with nothing on the page to take the payment', 
 
 // ─── The quote on the page ──────────────────────────────────────────────────
 
-const NO_SHIPPING =
-  "We don't deliver to this address. Enter the country as its two-letter code, such as GB."
+const NO_SHIPPING = "We don't deliver to this address."
 const TOTAL_UNAVAILABLE = "We couldn't work out your total just now. Please try again."
 const TOTAL_CHANGED = 'The total has changed. Please check it and place your order again.'
 const EXPIRED = 'Your session has expired. Sign in again to place your order.'
@@ -1721,5 +1720,218 @@ describe('AC-26: Back after an order', () => {
 
     expect(r.created.slice(createdBefore).map((c) => c['expectedTotalMinor'])).toEqual([undefined])
     expect(details[1]).toStrictEqual({ orderNumber, orderKey: laterKey })
+  })
+})
+
+// ─── Discount codes in the checkout summary ─────────────────────────────────
+
+interface CartDouble {
+  setState(partial: Record<string, unknown>): void
+  addCode?: (code: string) => Promise<void>
+  removeCode?: (code: string) => Promise<void>
+}
+
+/** A cart of one line at `subtotalMinor` with its codes and the totals the API gave for them, as the store holds it. */
+function codedCart(
+  r: Rig,
+  p: { subtotalMinor: number; discountMinor: number; codes: Array<{ code: string; status: string }> },
+): void {
+  const cart = r.client['cart'] as CartDouble
+  cart.setState({
+    currency: 'GBP',
+    subtotalMinor: p.subtotalMinor,
+    itemCount: 1,
+    items: [
+      {
+        variantId: 'v-1',
+        productId: 'p-1',
+        productName: 'Lamp',
+        variantName: '',
+        priceMinor: p.subtotalMinor,
+        imageUrl: '',
+        qty: 1,
+      },
+    ],
+    loading: false,
+    error: null,
+    errorCode: null,
+    totals: {
+      currency: 'GBP',
+      subtotalMinor: p.subtotalMinor,
+      discountTotalMinor: p.discountMinor,
+      shippingTotalMinor: 0,
+      shippingDiscountMinor: 0,
+      taxTotalMinor: 0,
+      totalMinor: p.subtotalMinor - p.discountMinor,
+      pricesIncludeTax: false,
+      lines: [],
+      applied: [],
+    },
+    promotions: { codes: p.codes, unavailable: false },
+  })
+}
+
+const noSpace = (text: string | null | undefined): string => (text ?? '').replace(/\s+/g, '')
+const summaryDiscounts = (el: HTMLElement): string[] =>
+  inSummary(el, 'checkout-summary-discount').map((n) => noSpace(n.textContent))
+const summaryTotal = (el: HTMLElement): string => {
+  const totals = inSummary(el, 'checkout-summary-total')
+  expect(totals, 'checkout-summary-total in the summary').toHaveLength(1)
+  return noSpace(totals[0]!.textContent)
+}
+
+/** Whether Apply and each Remove of the summary's code block are disabled. */
+function codeControls(el: HTMLElement): { apply: boolean[]; removes: boolean[] } {
+  return {
+    apply: inSummary(el, 'discount-code-apply').map((b) => (b as HTMLButtonElement).disabled),
+    removes: inSummary(el, 'discount-code-remove').map((b) => (b as HTMLButtonElement).disabled),
+  }
+}
+
+describe('AC-16: the checkout summary shows a cart’s discount at every step', () => {
+  // Kills: the undiscounted total shown before the address (the summary reading the subtotal), a quote's own discount
+  // replaced by the cart's after it answers, or a code block missing from a step.
+  it('AC-16: property: before a quote the summary shows "−<cart discountTotalMinor>" and checkout-summary-total = the cart’s totalMinor; after the quote, the quote’s discount and total; the code block is in the summary on the contact, shipping and payment steps', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.integer({ min: 1_000, max: 200_000 }),
+        fc.integer({ min: 1, max: 50 }),
+        async (subtotalMinor, share) => {
+          document.body.innerHTML = ''
+          const r = await rig()
+          const discount = Math.floor((subtotalMinor * share) / 100)
+          codedCart(r, {
+            subtotalMinor,
+            discountMinor: discount,
+            codes: [{ code: 'SAVE10', status: 'accepted' }],
+          })
+          await settle(r.el)
+          const blocks: number[] = [inSummary(r.el, 'discount-code-input').length]
+
+          expect(summaryDiscounts(r.el), 'before a quote').toEqual([
+            expect.stringContaining(`−${formatPrice(discount, 'GBP')}`),
+          ])
+          expect(summaryTotal(r.el), 'before a quote').toContain(
+            formatPrice(subtotalMinor - discount, 'GBP'),
+          )
+
+          // The quote evaluates the codes again: its discount, not the cart's, is the one it charges.
+          const quoted = quoteOf('standard', { subtotalMinor, discountMinor: discount + 1 })
+          r.answerQuote(() => Promise.resolve(quoted))
+          await afterFrame(r.el)
+          type(byTestId<HTMLInputElement>(r.el, 'contact-email'), SHOPPER.email)
+          rapid(r.el, 'contact-continue', 1)
+          await afterFrame(r.el)
+          blocks.push(inSummary(r.el, 'discount-code-input').length)
+          fillAddress(r.el, 'shipping', SHOPPER.shipping)
+          rapid(r.el, 'shipping-continue', 1)
+          await untilStep(r.el, 'payment')
+          await settle(r.el)
+          blocks.push(inSummary(r.el, 'discount-code-input').length)
+
+          expect(blocks, 'the code block on contact, shipping and payment').toEqual([1, 1, 1])
+          expect(summaryDiscounts(r.el), 'after the quote').toEqual([
+            expect.stringContaining(`−${formatPrice(quoted.totals.discountTotalMinor, 'GBP')}`),
+          ])
+          expect(summaryTotal(r.el), 'after the quote').toContain(
+            formatPrice(quoted.totals.totalMinor, 'GBP'),
+          )
+        },
+      ),
+      { numRuns: 5 },
+    )
+  }, 60_000)
+
+  // Kills: a code added or removed while the order is being placed, or after it was.
+  it('AC-16: Apply and every Remove of the code block are enabled on the payment step, disabled while Place Order is in flight, and stay disabled once the order is placed', async () => {
+    const r = await rig()
+    codedCart(r, {
+      subtotalMinor: 1_800,
+      discountMinor: 180,
+      codes: [{ code: 'SAVE10', status: 'accepted' }],
+    })
+    r.answerQuote((ask) =>
+      Promise.resolve(
+        quoteOf(ask.shippingOptionId ?? 'standard', { subtotalMinor: 1_800, discountMinor: 180 }),
+      ),
+    )
+    await walkToPayment(r, SHOPPER)
+    await vi.waitFor(() => expect(r.pay.status).toBe('ready'))
+    let release: () => void = () => undefined
+    r.answerCreate(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve(result('NYM-CODES-PLACED', 'succeeded'))
+        }),
+    )
+    const before = codeControls(r.el)
+
+    click(byTestId(r.el, 'place-order'), 1)
+    await vi.waitFor(() => expect(r.creates()).toBe(1))
+    await settle(r.el)
+    const placing = codeControls(r.el)
+    release()
+    await vi.waitFor(() => expect(names(r.log)).toContain('placed'))
+    await settle(r.el)
+    const placed = codeControls(r.el)
+
+    expect({ before, placing, placed }).toEqual({
+      before: { apply: [false], removes: [false] },
+      placing: { apply: [true], removes: [true] },
+      placed: { apply: [true], removes: [true] },
+    })
+  })
+})
+
+describe('AC-17: a code changed on the payment step quotes again', () => {
+  // Kills: a cart key that ignores codes, so Place Order sends the old quote's total and the shopper meets
+  // total_changed after pressing it.
+  it('AC-17: a code applied, then removed, through the summary’s code block on the payment step each quotes again with Place Order disabled until the new quote answers; the summary shows each new quote and one press sends the last quote’s total', async () => {
+    const r = await rig()
+    codedCart(r, { subtotalMinor: 2_000, discountMinor: 0, codes: [] })
+    r.answerQuote((ask) =>
+      Promise.resolve(quoteOf(ask.shippingOptionId ?? 'standard', { subtotalMinor: 2_000 })),
+    )
+    await walkToPayment(r, SHOPPER)
+    await vi.waitFor(() => expect(r.pay.status).toBe('ready'))
+    expect(r.quotes).toHaveLength(1)
+    const cart = r.client['cart'] as CartDouble
+    cart.addCode = async (code) =>
+      codedCart(r, { subtotalMinor: 2_000, discountMinor: 200, codes: [{ code, status: 'accepted' }] })
+    cart.removeCode = async () => codedCart(r, { subtotalMinor: 2_000, discountMinor: 0, codes: [] })
+    const placeOrder = () => byTestId<HTMLButtonElement>(r.el, 'place-order')
+
+    const discounted = quoteOf('standard', { subtotalMinor: 2_000, discountMinor: 200 })
+    const added = heldQuote(() => discounted)
+    r.answerQuote(added.respond)
+    type(byTestId<HTMLInputElement>(r.el, 'discount-code-input'), 'SAVE10')
+    byTestId<HTMLButtonElement>(r.el, 'discount-code-apply').click()
+    await vi.waitFor(() => expect(r.quotes).toHaveLength(2))
+    await settle(r.el)
+    expect(placeOrder().disabled, 'the add’s quote in flight').toBe(true)
+    added.release()
+    await vi.waitFor(() =>
+      expect(summaryTotal(r.el)).toContain(formatPrice(discounted.totals.totalMinor, 'GBP')),
+    )
+    expect(summaryDiscounts(r.el)).toEqual([expect.stringContaining(`−${formatPrice(200, 'GBP')}`)])
+
+    const full = quoteOf('standard', { subtotalMinor: 2_000, discountMinor: 0 })
+    const removed = heldQuote(() => full)
+    r.answerQuote(removed.respond)
+    byTestId<HTMLButtonElement>(r.el, 'discount-code-remove').click()
+    await vi.waitFor(() => expect(r.quotes).toHaveLength(3))
+    await settle(r.el)
+    expect(placeOrder().disabled, 'the remove’s quote in flight').toBe(true)
+    removed.release()
+    await vi.waitFor(() =>
+      expect(summaryTotal(r.el)).toContain(formatPrice(full.totals.totalMinor, 'GBP')),
+    )
+    expect(summaryDiscounts(r.el)).toEqual([])
+
+    await afterFrame(r.el)
+    expect(placeOrder().disabled).toBe(false)
+    click(placeOrder(), 1)
+    await vi.waitFor(() => expect(r.creates()).toBe(1))
+    expect(r.created[0]!['expectedTotalMinor']).toBe(full.totals.totalMinor)
   })
 })

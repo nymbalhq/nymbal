@@ -200,6 +200,15 @@ describe('AC-1: agents.ucp and agents.crawl in the config', () => {
         others: 'allow',
       },
       assistant: { customerData: true, mask: ['email', 'phone', 'address', 'postcode'] },
+      roles: {
+        content: {
+          enabled: false,
+          schedule: 'weekly',
+          fields: ['seoTitle', 'seoDescription'],
+          maxProducts: 20,
+          maxTokensPerRun: 100_000,
+        },
+      },
     })
     expect(DEFAULT_AGENT_CRAWLERS.length).toBeGreaterThan(0)
     expect(NAMED_CRAWLERS).toEqual(expect.arrayContaining([...DEFAULT_AGENT_CRAWLERS]))
@@ -266,8 +275,8 @@ describe('AC-1: agents.ucp and agents.crawl in the config', () => {
   })
 })
 
-// AC-1: `agents.acp`, beside the other agents blocks: off unless a store turns it on, a key of at least 32 characters
-// when one is given, links only of the types ACP's Link names, and nothing else.
+// AC-1: `agents.acp`, beside the other agents blocks: off unless a store turns it on, links only of the types ACP's
+// Link names, and nothing else. Its keys are acp-keys-config.test.ts's.
 
 /** The link types the pinned ACP 2026-04-17 schema's `Link` allows. */
 function pinnedLinkTypes(): string[] {
@@ -283,19 +292,14 @@ function pinnedLinkTypes(): string[] {
   return schema.$defs.Link.properties.type.enum
 }
 
-const acpKey = fc.string({ minLength: 32, maxLength: 64 })
-
 describe('AC-1: agents.acp in the config', () => {
   // Kills: the config's link types drifting from the protocol's.
   it("AC-1: ACP_LINK_TYPES are exactly the link types of the pinned ACP schema's Link", () => {
     expect([...ACP_LINK_TYPES].sort()).toEqual(pinnedLinkTypes().sort())
   })
 
-  // Kills: a short key accepted; an off-protocol link type accepted; an unknown key stripped instead of refused.
-  it('AC-1: an apiKey of 31 characters, a link type outside ACP_LINK_TYPES, a link url that is not a URL and an unknown key are each refused at the field they name; a 32-character key and a link of each allowed type are accepted', () => {
-    expect(refusals({ acp: { apiKey: 'k'.repeat(31) } })).toEqual([
-      expect.stringMatching(/^agents\.acp\.apiKey: /),
-    ])
+  // Kills: an off-protocol link type accepted; an unknown key stripped instead of refused.
+  it('AC-1: a link type outside ACP_LINK_TYPES, a link url that is not a URL and an unknown key are each refused at the field they name; a link of each allowed type is accepted', () => {
     expect(
       refusals({ acp: { links: [{ type: 'refund_policy', url: 'https://x.example/r' }] } }),
     ).toEqual([expect.stringMatching(/^agents\.acp\.links\.0\.type: /)])
@@ -309,7 +313,6 @@ describe('AC-1: agents.acp in the config', () => {
       refusals({
         acp: {
           enabled: true,
-          apiKey: 'k'.repeat(32),
           links: ACP_LINK_TYPES.map((type: string) => ({
             type,
             url: `https://shop.example/${type}`,
@@ -317,19 +320,6 @@ describe('AC-1: agents.acp in the config', () => {
         },
       }),
     ).toEqual([])
-  })
-
-  // Kills: the length bound off by one on either side.
-  it('AC-1: property: an apiKey is refused at agents.acp.apiKey exactly when it is shorter than 32 characters', () => {
-    fc.assert(
-      fc.property(fc.string({ maxLength: 64 }), (apiKey) => {
-        const refused = refusals({ acp: { apiKey } }).some((r) =>
-          r.startsWith('agents.acp.apiKey: '),
-        )
-
-        expect(refused).toBe(apiKey.length < 32)
-      }),
-    )
   })
 
   // Kills: ACP on by default; a set part dropped; a part left out not given its default; the other blocks disturbed.
@@ -347,7 +337,6 @@ describe('AC-1: agents.acp in the config', () => {
       fc.property(
         fc.record({
           enabled: optional(fc.boolean()),
-          apiKey: optional(acpKey),
           links: optional(fc.array(acpLink, { maxLength: 3 })),
           merchantId: optional(fc.string({ minLength: 1, maxLength: 30 })),
         }),
@@ -359,7 +348,6 @@ describe('AC-1: agents.acp in the config', () => {
           expect(parsed.agents.acp).toEqual({
             enabled: set.enabled ?? false,
             links: set.links ?? [],
-            ...(set.apiKey !== undefined && { apiKey: set.apiKey }),
             ...(set.merchantId !== undefined && { merchantId: set.merchantId }),
           })
           expect({ ...parsed.agents, acp: undefined }).toEqual({ ...bare.agents, acp: undefined })

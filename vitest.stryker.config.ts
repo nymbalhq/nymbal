@@ -6,6 +6,9 @@ export default defineConfig({
   test: {
     name: 'platform-unit',
     environment: 'node',
+    // One worker, as Stryker's runner sets it: each of its runners is a process of its own, and their number is the
+    // cap (`concurrency` in stryker.config.mjs).
+    maxWorkers: 1,
     // A fixed fast-check seed, so a property test kills the same mutants on every run.
     setupFiles: ['vitest.stryker.setup.ts'],
     include: [
@@ -16,6 +19,7 @@ export default defineConfig({
     // support modules or fixtures, cannot load there, and a test file that cannot load fails Stryker's initial run.
     exclude: [
       'packages/platform/tests/**',
+      'packages/platform/src/agents/acp/discounts.test.ts',
       'packages/platform/src/agents/agent-cart-source.test.ts',
       'packages/platform/src/agents/readiness.test.ts',
       'packages/platform/src/agents/ucp-surface.test.ts',

@@ -1,4 +1,9 @@
-import type { HttpAdapter, Review, ReviewsAdapter } from '@nymbalhq/types'
+import type {
+  AdminReview,
+  HttpAdapter,
+  ReviewModerationStatus,
+  ReviewsAdapter,
+} from '@nymbalhq/types'
 import type { ProductRepository } from '../repositories/product.js'
 import type { ReviewRepository } from '../repositories/review.js'
 import { ok, fail, renderError } from './envelope.js'
@@ -11,26 +16,21 @@ export interface RegisterAdminReviewsRoutesDeps {
   productRepo: ProductRepository
 }
 
-/** A pending review with its product as it is now; both null when the product was deleted. */
-export interface PendingReview extends Review {
-  productName: string | null
-  productSlug: string | null
-}
-
 export function registerAdminReviewsRoutes(
   adapter: HttpAdapter,
   deps: RegisterAdminReviewsRoutesDeps,
 ): void {
   const { reviewRepo, productRepo } = deps
 
-  // GET /api/admin/reviews — list pending reviews
+  // GET /api/admin/reviews — list the reviews of one status, pending by default
   adapter.registerRoute(
     'GET',
     '/api/admin/reviews',
     requireRole('admin', async (ctx) => {
       try {
-        const pending = await reviewRepo.store.read(async (tx): Promise<PendingReview[]> => {
-          const reviews = await reviewRepo.listByStatus(tx, 'pending')
+        const status = (ctx.query.status as ReviewModerationStatus | undefined) ?? 'pending'
+        const listed = await reviewRepo.store.read(async (tx): Promise<AdminReview[]> => {
+          const reviews = await reviewRepo.listByStatus(tx, status)
           const products = new Map<string, { name: string; slug: string } | null>()
           for (const id of new Set(reviews.map((r) => r.productId))) {
             products.set(id, await productRepo.findById(tx, id))
@@ -44,7 +44,7 @@ export function registerAdminReviewsRoutes(
             }
           })
         })
-        return ok(pending)
+        return ok(listed)
       } catch (err) {
         return renderError(err, ctx.logger)
       }
@@ -64,16 +64,19 @@ export function registerAdminReviewsRoutes(
           return fail('reviews.invalid', 'status must be approved|rejected', 400)
         }
         const status = body.status
-        await reviewRepo.store.transaction((tx) => {
+        const found = await reviewRepo.store.transaction(async (tx) => {
+          if ((await reviewRepo.findById(tx, id)) === null) return false
           audit.note('review.moderate', [{ type: 'review', id }])
-          return reviewRepo.setModerationStatus(
+          await reviewRepo.setModerationStatus(
             tx,
             id,
             status,
             `admin:${ctx.auth!.userId}`,
             new Date(),
           )
+          return true
         })
+        if (!found) return fail('not_found', `review not found: ${id}`, 404)
         return ok({ ok: true })
       } catch (err) {
         return renderError(err, ctx.logger)

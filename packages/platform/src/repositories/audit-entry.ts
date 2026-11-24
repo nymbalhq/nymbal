@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, gte, lt, or, sql, type SQL } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, gte, inArray, lt, or, sql, type SQL } from 'drizzle-orm'
 import type { AuditActor, AuditEntry, AuditOutcome, AuditSubject } from '@nymbalhq/types'
 import {
   postgresDb,
@@ -61,9 +61,10 @@ const ACTOR_KINDS = new Set<string>(['admin', 'customer', 'guest', 'system', 'im
 
 type Table = typeof sqliteSchema.auditEntries | typeof postgresSchema.auditEntries
 
+/** `kind:id`, a kind alone, or an id alone: an id may hold a colon itself (`acp:muse`), so only a known kind splits. */
 function actorFilter(t: Table, actor: string): SQL | undefined {
   const colon = actor.indexOf(':')
-  if (colon > 0) {
+  if (colon > 0 && ACTOR_KINDS.has(actor.slice(0, colon))) {
     return and(eq(t.actorKind, actor.slice(0, colon)), eq(t.actorId, actor.slice(colon + 1)))
   }
   return ACTOR_KINDS.has(actor) ? eq(t.actorKind, actor) : eq(t.actorId, actor)
@@ -225,6 +226,26 @@ export async function listAuditEntries(tx: ReadTx, q: AuditQuery): Promise<Audit
   return rows.map((r) => toEntry(r as Record<string, unknown>))
 }
 
+/** The entries with these ids, in no order; never a stored response body. */
+export async function auditEntriesByIds(tx: ReadTx, ids: readonly string[]): Promise<AuditEntry[]> {
+  if (ids.length === 0) return []
+  if (tx.kind === 'sqlite') {
+    const t = sqliteSchema.auditEntries
+    const rows = sqliteDb(tx)
+      .select(pick(t))
+      .from(t)
+      .where(inArray(t.id, [...ids]))
+      .all()
+    return rows.map((r) => toEntry(r as Record<string, unknown>))
+  }
+  const t = postgresSchema.auditEntries
+  const rows = await postgresDb(tx)
+    .select(pick(t))
+    .from(t)
+    .where(inArray(t.id, [...ids]))
+  return rows.map((r) => toEntry(r as Record<string, unknown>))
+}
+
 function pick<T extends Table>(t: T) {
   return Object.fromEntries(Object.keys(listed).map((k) => [k, t[k as keyof typeof listed]])) as {
     [K in keyof typeof listed]: T[K]
@@ -266,6 +287,7 @@ export interface AuditEntryRepository extends StoreRepository {
     key: string,
   ): Promise<AppliedEntry | null>
   list(tx: ReadTx, query: AuditQuery): Promise<AuditEntry[]>
+  byIds(tx: ReadTx, ids: readonly string[]): Promise<AuditEntry[]>
 }
 
 export function createAuditEntryRepository(store: CommandStore): AuditEntryRepository {
@@ -274,5 +296,6 @@ export function createAuditEntryRepository(store: CommandStore): AuditEntryRepos
     append: appendAuditEntry,
     findAppliedByKey,
     list: listAuditEntries,
+    byIds: auditEntriesByIds,
   }
 }

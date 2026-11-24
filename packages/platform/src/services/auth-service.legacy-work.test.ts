@@ -64,9 +64,35 @@ const counting = vi.hoisted(() => {
         if (ledger.on) ledger.compares.push({ rounds: r, candidate: String(s) })
         return r
       }
+      // bcrypt is a pure function of the string and the hash, and the probes repeat (every padding compare, every
+      // password past 72 bytes), so a repeat is answered from the first without the work. The ledger still counts it.
+      // A compare is counted when it settles, and a repeat settles no sooner than the next turn of the event loop, so
+      // a compare the sign-in does not wait for lands after the sign-in's ledger has closed and is missing from it.
+      const answers = new Map<string, Promise<unknown>>()
+      const nextTurn = () => new Promise<void>((resolve) => setImmediate(resolve))
       const compare = (s: unknown, hash: unknown, ...rest: unknown[]) => {
-        if (record(s, hash) > 12) return Promise.reject(new Error('bcrypt over any store’s cost'))
-        return (real['compare'] as Fn)(s, hash, ...rest)
+        if (rest.length > 0)
+          throw new Error('the ledger counts the promise form of bcrypt.compare only')
+        const key = `${String(hash)}\u0000${String(s)}`
+        let work: Promise<unknown>
+        if (rounds(hash) > 12) {
+          work = nextTurn().then(() => Promise.reject(new Error('bcrypt over any store’s cost')))
+        } else if (answers.has(key)) {
+          work = nextTurn().then(() => answers.get(key))
+        } else {
+          work = (real['compare'] as Fn)(s, hash) as Promise<unknown>
+          answers.set(key, work)
+        }
+        return work.then(
+          (ok) => {
+            record(s, hash)
+            return ok
+          },
+          (error: unknown) => {
+            record(s, hash)
+            throw error
+          },
+        )
       }
       const compareSync = (s: unknown, hash: unknown) => {
         if (record(s, hash) > 12) throw new Error('bcrypt over any store’s cost')

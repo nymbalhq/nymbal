@@ -38,6 +38,20 @@ function classifyOne(chain: string): Counts {
   return classifySource(source, 'packages/sdk/src/one.test.ts').assertions
 }
 
+/** Classify a test file whose one test body is `lines`, below file-level `head` declarations. */
+function classifyBody(lines: string[], head: string[] = []): Counts {
+  const source = [
+    "import { expect, test } from 'vitest'",
+    ...head,
+    '',
+    "test('one test', async () => {",
+    ...lines.map((line) => `  ${line}`),
+    '})',
+    '',
+  ].join('\n')
+  return classifySource(source, 'packages/sdk/src/body.test.ts').assertions
+}
+
 function assertionSum(c: Counts): number {
   return c.C1 + c.C2 + c.C3 + c.C4 + c.other
 }
@@ -69,7 +83,7 @@ describe('AC-1: presence checks are C1', () => {
   })
 })
 
-describe('AC-2: exact matchers with a literal or plain reference are C4', () => {
+describe('AC-2: exact matchers with a written-out value are C4', () => {
   const C4_CALLS = [
     '.toBe(3)',
     ".toEqual({ status: 'pending' })",
@@ -86,12 +100,111 @@ describe('AC-2: exact matchers with a literal or plain reference are C4', () => 
     ".toThrow('boom')",
     '.toThrow(AuthError)',
     '.toThrow(errors.NotFound)',
-    '.toBe(expected)',
-    '.toBe(fixture.priceMinor)',
+    '.toBe(`Pending`)',
+    '.toEqual(new Money(1250))',
   ]
 
   it.each(C4_CALLS)('AC-2: expect(subject)%s is one C4', (chain) => {
     expect(classifyOne(chain)).toEqual({ ...ZERO, C4: 1 })
+  })
+
+  // Each would read as C3 if a name standing for a written-out value counted as a read of another binding.
+  it.each([
+    [
+      'a const bound to a literal',
+      ["const EXPECTED = 'Pending'"],
+      ['expect(status).toBe(EXPECTED)'],
+    ],
+    [
+      'a property of a const bound to a literal object',
+      ['const fixture = { priceMinor: 1250 }'],
+      ['expect(line.priceMinor).toBe(fixture.priceMinor)'],
+    ],
+    ['a template substituting only a literal', [], ['expect(label).toBe(`${3} | N`)']],
+    [
+      'a key named like a binding',
+      ['const title = await read()'],
+      ["expect(view).toEqual({ title: 'Dune' })"],
+    ],
+    [
+      "a table test's parameter",
+      [],
+      [
+        "test.each([[2, 4]])('doubles', (input, expected) => {",
+        '  expect(double(input)).toBe(expected)',
+        '})',
+      ],
+    ],
+    [
+      'an imported constant',
+      ["import { DEFAULT_JWT_SECRET } from '../src/config'"],
+      ['expect(config.secret).toBe(DEFAULT_JWT_SECRET)'],
+    ],
+    [
+      'a member of an imported enum',
+      ["import { OrderStatus } from '../src/orders'"],
+      ['expect(order.status).toBe(OrderStatus.Paid)'],
+    ],
+    [
+      'a member of a file-local enum',
+      ['enum OrderStatus { Pending, Paid }'],
+      ['expect(order.status).toBe(OrderStatus.Paid)'],
+    ],
+    [
+      'a loop over a literal array',
+      [],
+      [
+        'for (const [input, expected] of [[2, 4], [3, 6]] as const) {',
+        '  expect(double(input)).toBe(expected)',
+        '}',
+      ],
+    ],
+    [
+      'a forEach over a literal array',
+      [],
+      [
+        '[[2, 4], [3, 6]].forEach(([input, expected]) => {',
+        '  expect(double(input)).toBe(expected)',
+        '})',
+      ],
+    ],
+    [
+      'a map over a literal array',
+      [],
+      [
+        '[[2, 4], [3, 6]].map(([input, expected]) => {',
+        '  expect(double(input)).toBe(expected)',
+        '})',
+      ],
+    ],
+    [
+      'a const spreading a const bound to a literal',
+      ['const BASE = { a: 1 }', 'const EXPECTED = { ...BASE, b: 2 }'],
+      ['expect(view).toEqual(EXPECTED)'],
+    ],
+  ])('AC-2: an expectation from %s is C4', (_, head, lines) => {
+    expect(classifyBody(lines, head)).toEqual({ ...ZERO, C4: 1 })
+  })
+
+  it('AC-2: a name is resolved to its nearest declaration, not to another one of the same name in the file', () => {
+    const source = [
+      "import { expect, test } from 'vitest'",
+      '',
+      "test('literal id', () => {",
+      "  const id = 'a'",
+      "  expect(row('a').id).toBe(id)",
+      '})',
+      '',
+      "test('created id', async () => {",
+      '  const id = await create()',
+      "  expect(typeof id).toBe('string')",
+      '})',
+      '',
+    ].join('\n')
+    expect(classifySource(source, 'packages/sdk/src/scope.test.ts').assertions).toEqual({
+      ...ZERO,
+      C4: 2,
+    })
   })
 
   it('AC-2: a file of 17 exact assertions counts 17 C4 and has no strong assertion', () => {
@@ -130,6 +243,50 @@ describe('AC-3: ordering matchers and computed expectations are C3', () => {
     },
   )
 
+  // Each read as C4 while only operators and calls counted as computing the expectation.
+  it.each([
+    [
+      'a value read before the act',
+      [],
+      [
+        'const before = cart.totalMinor',
+        'await cart.add(item)',
+        'expect(cart.totalMinor).toBe(before)',
+      ],
+    ],
+    [
+      'a template with a substitution',
+      [],
+      ['const n = rows.length', 'expect(label).toBe(`${n} | N`)'],
+    ],
+    [
+      'a property of another binding',
+      [],
+      ['const b = await getBook()', 'expect(view).toEqual({ x: b.title })'],
+    ],
+    [
+      'a shorthand property',
+      [],
+      ['const { title } = await getBook()', 'expect(view).toEqual({ title })'],
+    ],
+    [
+      'a binding inside expect.objectContaining',
+      [],
+      ['const id = await create()', 'expect(row).toEqual(expect.objectContaining({ id }))'],
+    ],
+  ])('AC-3: an expectation from %s is C3', (_, head, lines) => {
+    expect(classifyBody(lines, head)).toEqual({ ...ZERO, C3: 1 })
+  })
+
+  it('AC-3: an imported or enum-bound function called for the expectation is C3', () => {
+    expect(
+      classifyBody(
+        ['expect(total).toBe(sumOf(lines))', 'expect(status).toBe(Status.parse(raw))'],
+        ["import { sumOf } from './sum'", 'enum Status { Paid }'],
+      ),
+    ).toEqual({ ...ZERO, C3: 2 })
+  })
+
   it('AC-3: a file of 11 relational and 2 expect.* assertions counts 11 C3, 2 C4 and has a strong assertion', () => {
     const file = classifyFixture('c3-relational.test.ts.fixture')
     expect(file.assertions).toEqual({ ...ZERO, C3: 11, C4: 2 })
@@ -151,7 +308,7 @@ describe('AC-5: chains are classified by their final matcher and counted once', 
   it('AC-5: .not, .resolves, .rejects, expect.soft, await expect(locator) and a multi-line chain count once each', () => {
     const file = classifyFixture('chains.test.ts.fixture')
     expect(assertionSum(file.assertions)).toBe(8)
-    expect(file.assertions).toEqual({ ...ZERO, C1: 3, C3: 3, C4: 2 })
+    expect(file.assertions).toEqual({ ...ZERO, C1: 3, C3: 4, C4: 1 })
   })
 })
 

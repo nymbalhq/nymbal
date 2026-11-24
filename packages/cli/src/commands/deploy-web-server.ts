@@ -4,7 +4,6 @@ import { dirname, join } from 'node:path'
 import { defineCommand } from 'citty'
 import pc from 'picocolors'
 import { trustedProxyProblem, type NymbalConfig } from '@nymbalhq/config'
-import { importAdapterModule } from '@nymbalhq/platform'
 import { loadProject } from '../utils/project.js'
 
 export type WebServer = 'nginx' | 'apache' | 'caddy'
@@ -363,6 +362,8 @@ interface CloudflareRanges {
 
 /** The published ranges the store's Cloudflare adapter ships, which its web server admits and believes. */
 async function cloudflareRanges(security: NymbalConfig['security']): Promise<CloudflareRanges> {
+  // Imported here so `nymbal deploy` starts without the platform (src/main.ts).
+  const { importAdapterModule } = await import('@nymbalhq/platform')
   const mod = (await importAdapterModule(
     'security',
     {

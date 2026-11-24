@@ -140,9 +140,10 @@ describe('AC-20: the ticket check refuses a wrong signature without throwing', (
   })
 })
 
-// What the admin stream carries: the groups it always has, and the seven product types an admin write publishes. Not
-// `product.viewed.v1`, one per storefront page view with the viewer's id, nor any other group.
-const STREAMED_GROUPS = ['order.', 'payment.', 'inventory.', 'adapter.', 'proposal.']
+// What the admin stream carries: the groups it always has, the night shift's insights, and the seven product types an
+// admin write publishes. Not `product.viewed.v1`, one per storefront page view with the viewer's id, nor any other group.
+const STREAMED_GROUPS = ['order.', 'payment.', 'inventory.', 'adapter.', 'proposal.', 'insight.']
+const INSIGHT_TYPES = ['insight.created.v1', 'insight.dismissed.v1']
 const STREAMED_PRODUCT_TYPES = [
   'product.created.v1',
   'product.updated.v1',
@@ -168,12 +169,16 @@ function event(type: string, n: number): NymbalEvent<{ n: number }> {
 }
 
 describe('AC-2: the admin stream carries product changes and no storefront views', () => {
-  it('AC-2: over any sequence of standard events, a ticketed stream sends one frame per order, payment, inventory, adapter, proposal or admin product event, in publish order, each named by its type with { id, type, timestamp, payload }, and none for product.viewed.v1 or any other type (property)', async () => {
+  it('AC-2: over any sequence of standard events, a ticketed stream sends one frame per order, payment, inventory, adapter, proposal, insight or admin product event, in publish order, each named by its type with { id, type, timestamp, payload }, and none for product.viewed.v1 or any other type (property)', async () => {
     const store = mounted()
     expect(
       STREAMED_PRODUCT_TYPES.every((type) => (STANDARD_EVENT_TYPES as readonly string[]).includes(type)),
       'the seven product types are standard types',
     ).toBe(true)
+    expect(
+      INSIGHT_TYPES.filter((type) => !(STANDARD_EVENT_TYPES as readonly string[]).includes(type)),
+      'insight types the property cannot draw',
+    ).toEqual([])
 
     await fc.assert(
       fc.asyncProperty(

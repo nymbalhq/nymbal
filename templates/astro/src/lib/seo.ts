@@ -3,6 +3,27 @@ import { descriptionText } from '@nymbalhq/web-components/ssr'
 
 export { descriptionText, serializeJsonLd } from '@nymbalhq/web-components/ssr'
 
+/**
+ * The product page's <title> and meta description: the product's own SEO title, whole and with no store suffix, and its
+ * SEO description, when set; today's strings when either is blank.
+ */
+export function productHead(
+  product: Pick<
+    DenormalisedProduct,
+    'name' | 'shortDescription' | 'description' | 'seoTitle' | 'seoDescription'
+  >,
+): { title: string; description: string; absolute: boolean } {
+  const absolute = product.seoTitle.trim() !== ''
+  return {
+    title: absolute ? product.seoTitle : `${product.name} | Nymbal`,
+    description:
+      product.seoDescription.trim() !== ''
+        ? product.seoDescription
+        : descriptionText(product.shortDescription || product.description),
+    absolute,
+  }
+}
+
 export function productJsonLd(product: DenormalisedProduct, baseUrl: string) {
   // The SDK types `media` as unknown: the projection stores either URLs or `{ url }` objects.
   const media: unknown[] = Array.isArray(product.media) ? product.media : []
@@ -17,6 +38,7 @@ export function productJsonLd(product: DenormalisedProduct, baseUrl: string) {
     .filter((url): url is string => url !== null)
 
   const sku = product.variants?.[0]?.sku ?? product.id
+  const gtin = product.variants.length === 1 ? product.variants[0]?.gtin : null
 
   const lowPrice = (product.priceRange?.minMinor ?? product.priceMinor ?? 0) / 100
   const highPrice = (product.priceRange?.maxMinor ?? product.priceMinor ?? 0) / 100
@@ -28,6 +50,9 @@ export function productJsonLd(product: DenormalisedProduct, baseUrl: string) {
     description: descriptionText(product.description),
     image: images,
     sku,
+    ...(product.brand.trim() !== '' && { brand: { '@type': 'Brand', name: product.brand } }),
+    // One page with several variants is several trade items, so only a single variant's GTIN is stated.
+    ...(gtin && { gtin }),
     url: `${baseUrl}/product/${product.slug}`,
     offers: {
       '@type': 'AggregateOffer',

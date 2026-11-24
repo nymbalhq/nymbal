@@ -346,3 +346,31 @@ describe('customer repository: never-confirmed accounts', () => {
     )
   })
 })
+
+describe('customer repository: list', () => {
+  // Defect: the page ignores `limit` or `offset` when one is given (a default that replaces the caller's value), so a
+  // page answers more rows than asked or starts from the first row.
+  it('a page answers `limit` rows starting at `offset` of the whole list', async () => {
+    const at = new Date(SINCE)
+    const ids = [
+      await account('never-asked', at),
+      await account('never-asked', at),
+      await account('never-asked', at),
+    ]
+    try {
+      const [all, firstTwo, second] = await store.read(async (tx) => [
+        (await repo.list(tx)).map((c) => c.id),
+        (await repo.list(tx, { limit: 2 })).map((c) => c.id),
+        (await repo.list(tx, { limit: 1, offset: 1 })).map((c) => c.id),
+      ])
+      expect(all.length).toBeGreaterThanOrEqual(ids.length)
+      expect(all).toEqual(expect.arrayContaining(ids))
+      expect(firstTwo).toEqual(all.slice(0, 2))
+      expect(second).toEqual(all.slice(1, 2))
+    } finally {
+      await store.transaction(async (tx) => {
+        for (const id of ids) await repo.delete(tx, id)
+      })
+    }
+  })
+})

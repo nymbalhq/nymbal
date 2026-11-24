@@ -20,6 +20,8 @@ const checkoutStatus: Record<CheckoutCode, number> = {
   tax_unavailable: 503,
   no_shipping: 422,
   shipping_option_unavailable: 409,
+  shipping_unavailable: 503,
+  synthetic: 409,
 }
 
 interface Rendered {

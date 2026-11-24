@@ -259,14 +259,7 @@ const RUNS_TESTS =
   /scripts\/gate\.ts|\bgate:full\b|\bvitest\b|\bplaywright\s+test\b|\bstryker\b|\bpnpm\s+(?:run\s+)?(?:test|mutation|sentinels)\b|create-nymbal-app/
 
 /** The CI jobs that must use the build artefact (besides build itself). */
-const SPEC_JOBS = [
-  'gate-tests',
-  'integration',
-  'sentinels',
-  'e2e-astro',
-  'e2e-nextjs',
-  'e2e-admin',
-]
+const SPEC_JOBS = ['gate-tests', 'integration', 'sentinels', 'e2e-astro', 'e2e-nextjs', 'e2e-admin']
 
 function uploadsOf(job: Job): Step[] {
   return (job.steps ?? []).filter((s) => s.uses?.startsWith('actions/upload-artifact@'))
@@ -997,6 +990,56 @@ describe('AC-13: the custom-store E2E jobs have the Mailpit their journeys read'
     expect(problems).toEqual([])
     expect(planned).toBe(Object.keys(MAILPIT_E2E_JOBS).length)
   })
+
+  it('AC-13: the mail outage journey runs in the nightly alone, in a job whose Mailpit has Chaos on and is given to gate.ts under --services external, and no push job runs it', () => {
+    const nightly = loadWorkflow(NIGHTLY)
+    const github = nightlyDispatch('dev', 'f')
+    const runners = gateCalls(nightly, github).filter((c) =>
+      onlyOf(c.args).includes('e2e mail-outage'),
+    )
+    const pushRunners = gateCalls(loadWorkflow(WORKFLOW), DEV_PUSH).filter((c) =>
+      onlyOf(c.args).includes('e2e mail-outage'),
+    )
+    const rows = runners.map((call) => {
+      const job = nightly.jobs[call.job]!
+      const mailpit = Object.values(job.services ?? {}).find((svc) =>
+        (svc?.image ?? '').startsWith('axllent/mailpit'),
+      )
+      const published = publishedPorts(mailpit)
+      const run = execute(nightly, github).find((r) => r.job === call.job)!
+      const api = run.env.NYMBAL_TEST_MAILPIT_URL
+      const steps = plan({
+        full: true,
+        base: 'HEAD',
+        changed: [],
+        mutated: [],
+        only: onlyOf(call.args),
+        services: flag(call.args, '--services') === 'external' ? 'external' : 'compose',
+        mailpitUrl: api || undefined,
+        noBuild: call.args.includes('--no-build'),
+        artefactPresent: true,
+      } as PlanInput).steps
+      return {
+        only: onlyOf(call.args),
+        chaos: text(
+          (mailpit as { env?: Record<string, unknown> } | undefined)?.env?.['MP_ENABLE_CHAOS'],
+        ),
+        api: portOf(api ?? '') === published.get('8025'),
+        smtp: portOf(run.env.NYMBAL_TEST_MAILPIT_SMTP ?? '') === published.get('1025'),
+        runs: steps.filter((s) => s.skip === undefined).map((s) => s.name),
+      }
+    })
+    expect(rows).toEqual([
+      {
+        only: ['e2e mail-outage'],
+        chaos: 'true',
+        api: true,
+        smtp: true,
+        runs: ['e2e mail-outage'],
+      },
+    ])
+    expect(pushRunners).toEqual([])
+  })
 })
 
 /** The projects a `playwright test` command selects: `--project a`, `--project=a`, or `--project a b`. */
@@ -1219,7 +1262,9 @@ function perfCalls(workflow: Workflow, github: Ctx): PerfCall[] {
   return calls
 }
 
-describe('perf:budgets takes the median of at least five Lighthouse runs a page', () => {
+// LCP is judged on the lower quartile of a page's runs: of five, the second fastest of five fails by chance when four
+// are slow; seven need six, so a page whose runs are slow two times in five fails a release about one time in fifty.
+describe('perf:budgets judges at least seven Lighthouse runs a page', () => {
   it('the tests/perf suite passes NYMBAL_PERF_BUDGETS_ARGS to every perf:budgets it spawns', () => {
     const source = readFileSync(PERF_SUITE, 'utf8')
     const spawns = [...source.matchAll(/spawn\('pnpm', \[([^\]]*)\]/g)].map((m) => m[1])
@@ -1245,14 +1290,14 @@ describe('perf:budgets takes the median of at least five Lighthouse runs a page'
       lighthouse: true,
     })),
   ])(
-    'AC-3: $label, every perf:budgets call but a --bytes one passes --runs 5 or more',
+    'AC-3: $label, every perf:budgets call but a --bytes one passes --runs 7 or more',
     ({ file, github, lighthouse }) => {
       const calls = perfCalls(loadWorkflow(file), github)
       expect(calls.length, 'perf:budgets calls that run').toBeGreaterThan(0)
       const timed = calls.filter((c) => !isBytes(c))
       expect(timed.length > 0, 'any Lighthouse call runs').toBe(lighthouse)
       const short = timed
-        .filter((c) => !(Number(flag(c.args, '--runs')) >= 5))
+        .filter((c) => !(Number(flag(c.args, '--runs')) >= 7))
         .map((c) => `${c.where}: perf:budgets ${c.args.join(' ')}`.trim())
       expect(short).toEqual([])
     },
@@ -1553,8 +1598,13 @@ const HARNESS = [...new Set([...HARNESS_PROJECTS, ...FULL_GATE_HARNESS_PROJECTS]
 const PRODUCT_CHANGE = 'packages/sdk/src/client.ts'
 const HARNESS_CHANGE = 'scripts/gate.ts'
 
-/** For each gate.ts call that runs the tests step on an event, the harness projects its plan leaves out. */
-function harnessLeftOut(file: string, github: Ctx, changed: string): string[][] {
+/** For each gate.ts call that runs the tests step on an event, the projects of `names` (the harness ones) its plan leaves out. */
+function harnessLeftOut(
+  file: string,
+  github: Ctx,
+  changed: string,
+  names: string[] = HARNESS,
+): string[][] {
   return gateCalls(loadWorkflow(file), github)
     .filter((call) => onlyOf(call.args).includes('tests'))
     .map((call) => {
@@ -1562,6 +1612,8 @@ function harnessLeftOut(file: string, github: Ctx, changed: string): string[][] 
       if (harness !== 'all' && harness !== 'changed') {
         throw new Error(`${call.job}: --harness ${harness}`)
       }
+      // A sharded call (the push's) runs the harness projects whole; gate:full's related run is for an unsharded one.
+      const shard = flag(call.args, '--shard')?.split('/').map(Number)
       const tests = plan({
         full: call.args.includes('--full'),
         base: 'HEAD',
@@ -1569,8 +1621,9 @@ function harnessLeftOut(file: string, github: Ctx, changed: string): string[][] 
         mutated: [],
         only: onlyOf(call.args),
         harness,
+        ...(shard === undefined ? {} : { shard: { index: shard[0]!, count: shard[1]! } }),
       }).steps.find((s) => s.name === 'tests')
-      return leftOut(tests?.command ?? '', HARNESS)
+      return leftOut(tests?.command ?? '', names)
     })
 }
 
@@ -1620,11 +1673,15 @@ describe('the harness projects run on a push when a harness path changed, and on
 
 // The integration job's service-backed gate steps each take a combination of their own, so they run side by side.
 const INTEGRATION_STEPS = ['integration-postgres', 'integration-stores', 'proof-kit-services']
-const SERVICE_FREE = /\bvitest\s+run\b[^\n;&|]*--project(?:=|\s+)platform-integration\b/
+// Projects that read no service: the push's tests step runs them, so the integration job does not run them again.
+const SERVICE_FREE_PROJECTS = ['contracts-native', 'importers-integration', 'platform-integration']
+const SERVICE_FREE = new RegExp(
+  `\\bvitest\\s+run\\b[^\\n;&|]*--project(?:=|\\s+)(?:${SERVICE_FREE_PROJECTS.join('|')})\\b`,
+)
 const STARTS_MINIO = /\bdocker\s+run\b[^\n]*--name\s+minio\b/
 
 describe('the integration job runs its service-backed gate steps side by side', () => {
-  it('on a push to dev, each integration combination runs one gate.ts call naming one of those steps, each step once, under --services external; MinIO starts in a combination exactly when its step reads S3, and the service-free projects run in one combination', () => {
+  it('on a push to dev, each integration combination runs one gate.ts call naming one of those steps, each step once, under --services external; MinIO starts in a combination exactly when its step reads S3, and no combination runs the service-free projects, which every tests call of the push runs', () => {
     const ci = loadWorkflow(WORKFLOW)
     const job = ci.jobs.integration
     expect(job, 'ci.yml has an integration job').toBeDefined()
@@ -1671,7 +1728,10 @@ describe('the integration job runs its service-backed gate steps side by side', 
     expect(rows.filter((r) => !r.external)).toEqual([])
     expect(rows.some((r) => r.readsS3)).toBe(true)
     expect(rows.map((r) => r.minio)).toEqual(rows.map((r) => r.readsS3))
-    expect(rows.reduce((n, r) => n + r.serviceFree, 0)).toBe(1)
+    expect(rows.reduce((n, r) => n + r.serviceFree, 0)).toBe(0)
+    const testsCalls = harnessLeftOut(WORKFLOW, DEV_PUSH, PRODUCT_CHANGE, SERVICE_FREE_PROJECTS)
+    expect(testsCalls.length, 'gate.ts calls that run the tests step').toBeGreaterThan(0)
+    expect(testsCalls).toEqual(testsCalls.map(() => []))
   })
 })
 

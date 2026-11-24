@@ -45,7 +45,7 @@ import {
   write as writeIn,
   type Scratch,
 } from './scratch-gate'
-import { leftOut, listedProjects, vitestFilters } from './vitest-filters'
+import { leftOut, listedProjects, vitestFilters, words } from './vitest-filters'
 
 // What a local run of the full gate leaves to dev CI, and what it refuses to do: the sentinels, Stryker and the
 // script bytes per page run only when asked (`--sentinels`, `--stryker`, `--perf-bytes`, or `--only` naming them),
@@ -209,7 +209,7 @@ describe('AC-4: the perf-bytes step of gate:full', () => {
     }
   })
 
-  it('AC-4: on, it runs pnpm perf:budgets --bytes after the build under a shared hold, after every e2e step of each store set; the plain gate has none', () => {
+  it('AC-4: on, it runs pnpm perf:budgets --bytes after the build, after every e2e step of each store set; the plain gate has none', () => {
     for (const stores of STORES) {
       const steps = fullPlan({ perfBytes: true, stores })
       const names = steps.map((s) => s.name)
@@ -217,7 +217,6 @@ describe('AC-4: the perf-bytes step of gate:full', () => {
       expect(s.skip, stores).toBeUndefined()
       expect(s.command, stores).toMatch(COMMAND)
       expect(s.needs ?? [], stores).toContain('build')
-      expect(s.hold, stores).toBe('shared')
       const lastE2e = Math.max(...names.flatMap((n, i) => (n.startsWith('e2e ') ? [i] : [])))
       expect(lastE2e, `${stores} has e2e steps`).toBeGreaterThan(names.indexOf('build'))
       expect(names.indexOf('perf-bytes'), stores).toBeGreaterThan(lastE2e)
@@ -346,8 +345,20 @@ describe('AC-15: the WordPress steps of the full run', () => {
 describe('the harness projects run only when a harness path or an input one of their tests declares changed; gate:full runs architecture always', () => {
   /** The harness projects a tests command leaves out (`leftOut`). */
   const negated = (command: string): string[] => leftOut(command, HARNESS_PROJECTS)
+  /** The projects of a tests command's related run of the tooling projects (gate:full's second command), if any. */
+  const relatedProjects = (command: string): string[] =>
+    vitestFilters(command.split(' && ')[1] ?? '').projects
   const KERNEL = 'packages/platform/src/services/cart-service.ts'
   // Every kind of path the harness projects read besides their own files and scripts/.
+  const CONFIGURATION = [
+    'package.json',
+    'pnpm-lock.yaml',
+    'vitest.config.ts',
+    'vitest.stryker.config.ts',
+    'tsconfig.json',
+    'packages/platform/tsconfig.json',
+    'packages/platform/package.json',
+  ]
   const HARNESS_INPUTS = [
     '.github/workflows/ci.yml',
     '.github/workflows/nightly.yml',
@@ -368,16 +379,26 @@ describe('the harness projects run only when a harness path or an input one of t
     expect(negated(step(plainPlan(['scripts/gate.ts']), 'tests').command)).toEqual([])
   })
 
-  it('gate:full leaves out only tooling for a kernel change, so the architecture guard runs; a scripts/ change keeps both', () => {
-    expect(negated(step(fullPlan({ changed: [KERNEL] }), 'tests').command)).toEqual(['tooling'])
-    expect(negated(step(fullPlan({ changed: ['scripts/gate.ts'] }), 'tests').command)).toEqual([])
+  it('gate:full leaves out only tooling for a kernel change, so the architecture guard runs; a scripts/ change hands tooling to a related run', () => {
+    const kernel = step(fullPlan({ changed: [KERNEL] }), 'tests').command
+    const scripts = step(fullPlan({ changed: ['scripts/gate.ts'] }), 'tests').command
+    expect([negated(kernel), relatedProjects(kernel)]).toEqual([['tooling'], []])
+    expect([negated(scripts), relatedProjects(scripts)]).toEqual([
+      ['tooling'],
+      FULL_GATE_HARNESS_PROJECTS,
+    ])
   })
 
+  // A configuration change runs the whole suite in the plain gate, so gate:full runs the harness projects whole for it.
   it.each(HARNESS_INPUTS.flatMap((path) => [false, true].map((full) => ({ path, full }))))(
-    'a change to $path keeps every harness project (full: $full)',
+    'a change to $path keeps every harness project, in gate:full whole for configuration and through its related run otherwise (full: $full)',
     ({ path, full }) => {
       const steps = full ? fullPlan({ changed: [KERNEL, path] }) : plainPlan([KERNEL, path])
-      expect(negated(step(steps, 'tests').command)).toEqual([])
+      const command = step(steps, 'tests').command
+      const related = full && !CONFIGURATION.includes(path)
+      expect([negated(command), relatedProjects(command)]).toEqual(
+        related ? [['tooling'], FULL_GATE_HARNESS_PROJECTS] : [[], []],
+      )
     },
   )
 
@@ -391,7 +412,7 @@ describe('the harness projects run only when a harness path or an input one of t
     expect(negated(step(root, 'tests').command)).toEqual([])
   })
 
-  it('property: every harness project runs iff harness is all, there is no base, or a harness path changed; else the plain gate leaves both out and gate:full tooling', () => {
+  it('property: every harness project runs iff harness is all, there is no base, or a harness path changed, gate:full taking tooling through a related run unless harness is all, there is no base or configuration changed; else the plain gate leaves both out and gate:full tooling', () => {
     const harnessPaths = [
       'scripts/gate.ts',
       'tests/tooling/gate.test.ts',
@@ -425,9 +446,15 @@ describe('the harness projects run only when a harness path or an input one of t
           }).steps
           const tests = step(steps, 'tests')
           if (tests.skip !== undefined) return
-          const every = all || noBase || changed.some((p) => harnessPaths.includes(p))
-          const expected = every ? [] : full ? ['tooling'] : [...HARNESS_PROJECTS].sort()
-          expect(negated(tests.command)).toEqual(expected)
+          const harness = changed.some((p) => harnessPaths.includes(p))
+          const whole = all || noBase || (harness && changed.includes('package.json'))
+          const related = full && harness && !whole
+          const expected =
+            whole || (harness && !full) ? [] : full ? ['tooling'] : [...HARNESS_PROJECTS].sort()
+          expect([negated(tests.command), relatedProjects(tests.command)]).toEqual([
+            expected,
+            related ? FULL_GATE_HARNESS_PROJECTS : [],
+          ])
         },
       ),
     )
@@ -489,13 +516,11 @@ describe('a rename out of a harness directory keeps the harness projects, as Vit
   // `git mv scripts/x.ts tools/x.ts`: the rename-detected list holds only the new name; `relatedPaths` holds both.
   const renamed = { changed: ['tools/x.ts'], relatedPaths: ['scripts/x.ts', 'tools/x.ts'] }
 
-  it('the plain gate and gate:full both run tooling and architecture for it', async () => {
-    const commands = [
-      step(plainPlan(renamed.changed, { relatedPaths: renamed.relatedPaths }), 'tests').command,
-      step(fullPlan(renamed), 'tests').command,
-    ]
+  it('the plain gate runs tooling and architecture for it; gate:full runs architecture and hands both names to its related run of tooling', async () => {
+    const plain = step(plainPlan(renamed.changed, { relatedPaths: renamed.relatedPaths }), 'tests')
+    const full = step(fullPlan(renamed), 'tests')
     const listed = await Promise.all(
-      commands.map((command) => {
+      [plain.command, full.command].map((command) => {
         const { env, projects, excludes } = vitestFilters(command)
         return listedProjects(
           [
@@ -506,9 +531,10 @@ describe('a rename out of a harness directory keeps the harness projects, as Vit
         )
       }),
     )
-    for (const [i, projects] of listed.entries()) {
-      expect(projects, commands[i]).toEqual(expect.arrayContaining([...HARNESS_PROJECTS]))
-    }
+    const harnessRun = words(full.command.split(' && ')[1] ?? '')
+    expect(listed[0], plain.command).toEqual(expect.arrayContaining([...HARNESS_PROJECTS]))
+    expect(listed[1], full.command).toContain('architecture')
+    expect(harnessRun.slice(-renamed.relatedPaths.length)).toEqual(renamed.relatedPaths)
   }, 60_000)
 })
 
@@ -595,7 +621,9 @@ exit 0
       const run = await gateCli(repo, [...args], { FAIL_ADMIN_BUILD: '1' })
       expect(run.steps.find((s) => s.name === 'build')?.status, run.output).toBe('red')
       expect(buildCalls(repo), run.output).toContain('pnpm --filter @nymbalhq/admin build')
-      expect(stampText(repo), 'the stamp still names the inputs of the last good build').toBe(before)
+      expect(stampText(repo), 'the stamp still names the inputs of the last good build').toBe(
+        before,
+      )
       expect(JSON.parse(stampText(repo)).admin).not.toBe(adminInputsStamp(repo.root))
     }, 60_000)
   }

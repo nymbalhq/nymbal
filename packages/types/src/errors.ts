@@ -26,7 +26,7 @@ export class ConfigError extends NymbalError {
     options: {
       cause?: unknown
       context?: ErrorContext
-      code?: `config.${string}` | `adapter.${string}`
+      code?: `config.${string}` | `adapter.${string}` | `auth.${string}`
     } = {},
   ) {
     super(options.code ?? 'config.invalid', message, options)
@@ -123,7 +123,8 @@ export class OrderConflictError extends NymbalError {
       | 'order.payment_in_progress'
       | 'refund.not_captured'
       | 'refund.exceeds_captured'
-      | 'refund.request_reused',
+      | 'refund.request_reused'
+      | 'refund.line_unknown',
     message: string,
     options: { cause?: unknown; context?: ErrorContext } = {},
   ) {
@@ -145,7 +146,9 @@ export class CheckoutError extends NymbalError {
       | 'promotions_unavailable'
       | 'tax_unavailable'
       | 'no_shipping'
-      | 'shipping_option_unavailable',
+      | 'shipping_option_unavailable'
+      | 'shipping_unavailable'
+      | 'synthetic',
     message: string,
     options: { cause?: unknown; context?: ErrorContext } = {},
   ) {

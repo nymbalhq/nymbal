@@ -30,6 +30,7 @@ import {
   type Budgets,
   type Metrics,
   type PageResult,
+  summarize,
   type ScriptReference,
 } from './perf-budgets-check.js'
 import { stack } from './stack.js'
@@ -38,7 +39,8 @@ import { stack } from './stack.js'
 //
 // Builds the templates for production, serves them (Astro `preview`, Next `start`) against an API seeded with
 // images the store serves itself, runs Lighthouse (mobile preset) `--runs` times a page, and compares each metric's
-// median with perf-budgets.json. Writes reports/perf-budgets.json and exits 1 when any page is over budget.
+// median (LCP's lower quartile once five runs measured, `summarize`) with perf-budgets.json. Writes
+// reports/perf-budgets.json and exits 1 when any page is over budget.
 // --update rewrites the budgets from this run: the absolute limits, and scriptBytes at the measured value plus 5%,
 // rounded up to the next KiB. --dir measures a copy of one template. The templates are always built here: the seed
 // images must be in a template's public directory when it is built.
@@ -230,7 +232,9 @@ function listening(port: number): Promise<boolean> {
 async function assertPortsFree(ports: number[]): Promise<void> {
   for (const port of ports) {
     if (await listening(port)) {
-      fail(`port ${port} is in use: stop what is listening there (lsof -i :${port}), then run again`)
+      fail(
+        `port ${port} is in use: stop what is listening there (lsof -i :${port}), then run again`,
+      )
     }
   }
 }
@@ -251,14 +255,6 @@ async function waitFor(url: string, timeoutMs: number, server: ChildProcess): Pr
     if (Date.now() > deadline) fail(`${url} did not answer within ${timeoutMs / 1000} s`)
     await new Promise((r) => setTimeout(r, 500))
   }
-}
-
-/** The median of the runs that measured; NaN only when none did. */
-function median(values: number[]): number {
-  const sorted = values.filter((v) => !Number.isNaN(v)).sort((a, b) => a - b)
-  if (sorted.length === 0) return Number.NaN
-  const mid = Math.floor(sorted.length / 2)
-  return sorted.length % 2 === 1 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2
 }
 
 /** One line in the cart, added from the product page as a shopper would, then the HTTP cache emptied again. */
@@ -499,7 +495,9 @@ async function measureBytes(
         `${template} / ${spec.page}: failed: ${error instanceof Error ? error.message : String(error)}\n`,
       )
     }
-    process.stdout.write(`${template} / ${spec.page}: scriptBytes ${format('scriptBytes', bytes)}\n`)
+    process.stdout.write(
+      `${template} / ${spec.page}: scriptBytes ${format('scriptBytes', bytes)}\n`,
+    )
     results.push({
       template,
       page: spec.page,
@@ -533,9 +531,7 @@ async function measure(
         samples.push(nanMetrics())
       }
     }
-    const measured = Object.fromEntries(
-      METRICS.map((m) => [m, median(samples.map((s) => s[m]))]),
-    ) as Metrics
+    const measured = summarize(samples)
     process.stdout.write(
       `${template} / ${spec.page}: ${METRICS.map((m) => `${m} ${format(m, measured[m])}`).join(', ')}\n`,
     )
@@ -589,12 +585,7 @@ const templateEnv = (api: string): NodeJS.ProcessEnv => ({
   NEXT_PUBLIC_NYMBAL_API_URL: api,
 })
 
-function startStorefront(
-  template: Template,
-  dir: string,
-  port: number,
-  api: string,
-): ChildProcess {
+function startStorefront(template: Template, dir: string, port: number, api: string): ChildProcess {
   const env = templateEnv(api)
   // --ignore-lock: Astro backgrounds `astro preview` under an agent, as it does `astro dev`.
   return template === 'astro'
@@ -696,7 +687,9 @@ function reportBytes(results: PageResult[], templates: Template[]): number {
   mkdirSync(join(REPO, 'reports'), { recursive: true })
   writeFileSync(BYTES_REPORT_FILE, `${JSON.stringify(rows, null, 2)}\n`)
 
-  process.stdout.write(`\n${'template / page'.padEnd(27)}${'scriptBytes (measured/budget)'.padEnd(32)}\n`)
+  process.stdout.write(
+    `\n${'template / page'.padEnd(27)}${'scriptBytes (measured/budget)'.padEnd(32)}\n`,
+  )
   for (const r of rows) {
     process.stdout.write(
       `${`${r.template} / ${r.page}`.padEnd(27)}${`${format('scriptBytes', r.scriptBytes)}/${format('scriptBytes', r.budget ?? undefined)}`.padEnd(32)}${r.ok ? 'ok' : 'FAIL'}\n`,

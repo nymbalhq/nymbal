@@ -20,7 +20,8 @@ import type { AiScript, ScriptReply, ScriptView } from './ai-stand-in.js'
 //  8 read  "Has anything been refunded?"                     admin_orders_list; the numbers of orders with refunds
 //  9 read  "What is waiting in my inbox?"                    admin_proposals_list { status: pending }; each command
 // 10 read  "How did sales do over the last 30 days?"         admin_orders_list { dateFrom: 30 days ago, limit: 200 };
-//           the sum of the orders' keptMinor (captured less refunded)
+//           the sum of the orders' keptMinor (captured less refunded); with 'sales-from-reports', admin_reports_get
+//           with no arguments and the netCapturedMinor of its money total in the store's currency
 // 11 write "Raise the price of the Stoneware Mug to 21.00."  admin_products_list { q }, admin_products_update
 // 12 write "Add 40 Runner Socks to stock."                   admin_inventory_list { q }, admin_inventory_adjust
 // 13 write "Unpublish Shape Up."                             admin_products_list { q }, admin_products_unpublish
@@ -88,6 +89,8 @@ export type Deviation =
   | 'inbox-product'
   /** Row 10: answers today's revenue from admin_dashboard instead of the last 30 days' orders. */
   | 'sales-from-dashboard'
+  /** Row 10: answers from admin_reports_get, no arguments: the store currency's money total's netCapturedMinor. */
+  | 'sales-from-reports'
   /** Row 21: names the reviewed product by its slug, not its name. */
   | 'review-slug'
   /** Row 21: reads only admin_products_get of the Stoneware Mug (ceramic-mug) and says the review is of it. */
@@ -257,7 +260,7 @@ export function goldenScript(opts: GoldenScriptOptions = {}): AiScript {
         ? ({ fail: 'status:400' } as const)
         : p.first && deviation === 'provider-overloaded'
           ? ({ fail: 'status:529' } as const)
-          : answer(row?.row, p, view, money, deviation)
+          : answer(row?.row, p, view, money, deviation, currency)
     return opts.delayMs === undefined ? reply : { ...reply, delayMs: opts.delayMs }
   }
 }
@@ -308,6 +311,7 @@ function answer(
   view: ScriptView,
   money: (minor: number) => string,
   deviation: Deviation | undefined,
+  currency: string,
 ): ScriptReply {
   const noFact = deviation === 'no-fact' ? NO_FACT : undefined
   switch (row) {
@@ -501,8 +505,29 @@ function answer(
           p,
           'admin_dashboard',
           {},
-          (r) =>
-            `Sales came to ${money(num(recOf(r['today'])['revenueMinor']))} over the last 30 days.`,
+          (r) => {
+            // The store currency's row comes first.
+            const rows = recOf(r['today'])['money']
+            const store = recOf(Array.isArray(rows) ? rows[0] : undefined)
+            return `Sales came to ${money(num(store['netCapturedMinor']))} over the last 30 days.`
+          },
+          noFact,
+        )
+      }
+      if (deviation === 'sales-from-reports') {
+        return lookup(
+          p,
+          'admin_reports_get',
+          {},
+          (r) => {
+            const totals = recOf(r['money'])['totals']
+            const total = (Array.isArray(totals) ? totals.map(recOf) : []).find(
+              (t) => String(t['currency']).toUpperCase() === currency.toUpperCase(),
+            )
+            return total === undefined
+              ? 'There were no sales over the last 30 days.'
+              : `Sales came to ${money(num(total['netCapturedMinor']))} over the last 30 days.`
+          },
           noFact,
         )
       }
@@ -802,7 +827,8 @@ function convertAnswer(result: Body, deviation: Deviation | undefined): string {
   const rates = recOf(result['rates'])
   const rate = recOf(rates['paidPerCheckoutStarted'])
   const reason = String(rate['reason'] ?? '')
-  if (deviation === 'convert-no-basis') return `There is no conversion rate for last week: ${reason}.`
+  if (deviation === 'convert-no-basis')
+    return `There is no conversion rate for last week: ${reason}.`
   const basis = String(rate['basis'] ?? '')
   const window = recOf(rate['window'])
   return `There is no conversion rate for last week: ${reason}. Basis: ${basis} Window: ${String(window['from'])} to ${String(window['to'])}, ${String(window['timezone'])}.`

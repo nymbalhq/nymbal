@@ -1,4 +1,5 @@
 import {
+  EVT_ORDER_NOTE_ADDED,
   OrderConflictError,
   canTransitionOrder,
   type HttpAdapter,
@@ -8,6 +9,7 @@ import {
   type PaymentState,
 } from '@nymbalhq/types'
 import type { ReadTx } from '../db/command-store.js'
+import type { EventPublisher } from '../events/publisher.js'
 import type { OrderService } from '../services/order-service.js'
 import type { CheckoutService, ManualPayments } from '../services/checkout-service.js'
 import { orderPayment, type RefundService } from '../services/refund-service.js'
@@ -18,7 +20,7 @@ import { idempotencyKeyOf } from '../audit/idempotency.js'
 import { requireRole } from './role-middleware.js'
 import { answerAsOf, answerHistory, atOf } from '../history/http.js'
 import type { HistoryReader, HistorySubject } from '../history/read.js'
-import { parseNotes, type NoteEntry } from '../order-notes.js'
+import { orderNotes, type NoteEntry } from '../order-notes.js'
 
 export interface RegisterAdminOrdersRoutesDeps {
   order: OrderService
@@ -26,6 +28,7 @@ export interface RegisterAdminOrdersRoutesDeps {
   refund: RefundService
   repos: Repositories
   history: HistoryReader
+  publisher: EventPublisher
 }
 
 /** An order as the admin reads it: with what was actually paid and refunded. */
@@ -35,7 +38,7 @@ export function registerAdminOrdersRoutes(
   adapter: HttpAdapter,
   deps: RegisterAdminOrdersRoutesDeps,
 ): void {
-  const { order, checkout, refund, repos, history } = deps
+  const { order, checkout, refund, repos, history, publisher } = deps
   const { store } = repos.order
 
   async function withPayments(tx: ReadTx, orders: Order[]): Promise<AdminOrder[]> {
@@ -92,6 +95,13 @@ export function registerAdminOrdersRoutes(
         if (status !== undefined) filter.status = status as OrderStatus
         const payment = one('payment')
         if (payment !== undefined) filter.payment = payment as PaymentState
+        const source = one('source')
+        if (source !== undefined) {
+          if (source !== 'synthetic') {
+            return fail('admin.invalid', `source must be synthetic, got ${source}`, 400)
+          }
+          filter.source = source
+        }
         for (const [key, into] of [
           ['dateFrom', 'from'],
           ['dateTo', 'to'],
@@ -274,7 +284,12 @@ export function registerAdminOrdersRoutes(
       try {
         const id = ctx.params.id
         if (!id) return fail('admin.invalid', 'id required', 400)
-        const body = ctx.body as { amountMinor: number; reason?: string; requestId?: string }
+        const body = ctx.body as {
+          amountMinor: number
+          reason?: string
+          requestId?: string
+          variantId?: string
+        }
         // A keyed refund runs outside the key's transaction, so a retry whose first attempt moved money but never
         // recorded its key must still find that refund: the key stands in for a requestId the caller did not send.
         const keyed = idempotencyKeyOf(ctx)
@@ -284,6 +299,7 @@ export function registerAdminOrdersRoutes(
           amountMinor: body.amountMinor,
           ...(body.reason !== undefined && { reason: body.reason }),
           ...(requestId !== undefined && { requestId }),
+          ...(body.variantId !== undefined && { variantId: body.variantId }),
           actor: `admin:${ctx.auth!.userId}`,
         })
         return ok(result)
@@ -332,9 +348,11 @@ export function registerAdminOrdersRoutes(
       try {
         const id = ctx.params.id
         if (!id) return fail('admin.invalid', 'id required', 400)
-        const found = await store.read((tx) => findOrder(tx, id))
-        if (!found) return fail('orders.not_found', `Order not found: ${id}`, 404)
-        const notes = parseNotes(found.notes, found.createdAt)
+        const notes = await store.read(async (tx) => {
+          const found = await findOrder(tx, id)
+          return found ? orderNotes(found, await repos.order.staffNotes(tx, found.id)) : null
+        })
+        if (!notes) return fail('orders.not_found', `Order not found: ${id}`, 404)
         return ok(notes)
       } catch (err) {
         return renderError(err, ctx.logger)
@@ -363,8 +381,12 @@ export function registerAdminOrdersRoutes(
           const found = await findOrder(tx, id)
           if (!found) return false
           audit.note('order.addNote', [{ type: 'order', id: found.id }])
-          const updated = [...parseNotes(found.notes, found.createdAt), newNote]
-          await repos.order.setNotes(tx, found.id, JSON.stringify(updated), new Date())
+          await repos.order.addStaffNote(tx, found.id, newNote, new Date())
+          await publisher.publish(EVT_ORDER_NOTE_ADDED, {
+            orderId: found.id,
+            orderNumber: found.orderNumber,
+            actor: newNote.actor,
+          })
           return true
         })
         if (!noted) return fail('orders.not_found', `Order not found: ${id}`, 404)

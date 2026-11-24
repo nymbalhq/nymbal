@@ -9,7 +9,10 @@ export const PROPOSAL_OUTCOME_UNKNOWN = 'proposal.outcome_unknown'
 /** Who decided a proposal: an admin, or a policy the store's config sets. */
 export type ProposalDecider =
   | { kind: 'admin'; id: string }
-  | { kind: 'policy'; rule: 'agents.mcp.writes' | 'agents.autoApprove' }
+  | { kind: 'policy'; rule: ProposalPolicyRule }
+
+/** The config rules that decide a proposal without an admin; `agents.roles.content` only ever rejects its own. */
+export type ProposalPolicyRule = 'agents.mcp.writes' | 'agents.autoApprove' | 'agents.roles.content'
 
 /** One proposal as the admin reads it. A handle's value (a cart id) is never served: only its argument's name. */
 export interface ProposalView {

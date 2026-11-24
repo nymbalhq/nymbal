@@ -30,6 +30,7 @@ function productWith(variantOptions: unknown[]): DenormalisedProduct {
     shortDescription: '',
     status: 'active',
     type: 'variable',
+    brand: '',
     media: [],
     variantCount: variantOptions.length,
     inStock: true,
@@ -47,6 +48,7 @@ function productWith(variantOptions: unknown[]): DenormalisedProduct {
       priceMinor: 1000 + i,
       stock: 5,
       options: options as VariantOption[],
+      gtin: null,
     })),
   } as unknown as DenormalisedProduct
 }

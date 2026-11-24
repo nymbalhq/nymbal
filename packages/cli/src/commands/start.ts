@@ -15,6 +15,7 @@ import {
   migrationState,
   readSecretsKey,
   resolveAuthSecret,
+  resolveLegacyRemoteSecret,
   runMigrations,
   type CommandStore,
 } from '@nymbalhq/platform'
@@ -82,8 +83,8 @@ export function checkStartEnv(config: NymbalConfig, env: NodeJS.ProcessEnv): str
   } else if (publicOrigin(env['NYMBAL_PUBLIC_URL']) === null) {
     problems.push('NYMBAL_PUBLIC_URL must be an http or https origin with no path')
   }
-  // The app refuses a malformed NYMBAL_JWT_SECRET, trusted proxy setting or origin secret under any NODE_ENV, by the
-  // same check.
+  // The app refuses a malformed NYMBAL_JWT_SECRET, trusted proxy setting, origin secret or old-platform secret under any
+  // NODE_ENV, by the same check.
   const refusal = <T>(check: () => T): T | undefined => {
     try {
       return check()
@@ -96,6 +97,7 @@ export function checkStartEnv(config: NymbalConfig, env: NodeJS.ProcessEnv): str
   const jwt = refusal(() => resolveAuthSecret(config, env))
   refusal(() => resolveTrustedProxies(config, env))
   refusal(() => resolveOriginLock(config, env))
+  refusal(() => resolveLegacyRemoteSecret(config, env))
   if (env['NODE_ENV'] === 'development') {
     problems.push('NODE_ENV is development: nymbal start runs in production; unset it')
   }
@@ -318,7 +320,7 @@ export const startCommand = defineCommand({
       ...(loaded.adapters !== undefined && { adapters: loaded.adapters }),
     }).catch((error: unknown) => {
       if (!(error instanceof ConfigError)) throw error
-      return fail([error.message])
+      return fail([`${error.message} [${error.code}]`])
     })
     const { platform } = app
 

@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, inArray, lt, min } from 'drizzle-orm'
+import { and, asc, eq, gte, inArray, isNotNull, lt, min, ne, notInArray } from 'drizzle-orm'
 import type { OrderRefund, OrderRefundStatus } from '@nymbalhq/types'
 import {
   postgresDb,
@@ -24,6 +24,15 @@ export interface OrderRefundInsert {
   createdAt: Date
   /** The client's key for the request that made the refund; unique per order. */
   requestId?: string | null
+  /** The order line the refund is for and that line's product; absent or null when it names none. */
+  variantId?: string | null
+  productId?: string | null
+}
+
+/** A refund the refund-rate figure counts: when it was made and the product it names, if any. */
+export interface CountedRefund {
+  at: Date
+  productId: string | null
 }
 
 function rowToRefund(row: Record<string, unknown>): OrderRefund {
@@ -37,6 +46,8 @@ function rowToRefund(row: Record<string, unknown>): OrderRefund {
     reason: (row.reason as string | null) ?? null,
     actor: String(row.actor),
     createdAt: fromTimestamp(row.createdAt),
+    variantId: (row.variantId as string | null) ?? null,
+    productId: (row.productId as string | null) ?? null,
   }
 }
 
@@ -59,7 +70,19 @@ export interface OrderRefundRepository extends StoreRepository {
   orderIdsSince(tx: ReadTx, since: Date): Promise<string[]>
   /** The orders holding a `pending` refund made before `before`, the one waiting longest first, at most `limit`. */
   pendingOrderIds(tx: ReadTx, before: Date, limit: number): Promise<string[]>
+  /**
+   * When each refund a shopper of a real order got was made, at or after `since`: succeeded, not a capture returned on
+   * a cancelled order (`system:checkout`), and not of a synthetic or imported order, with the product each names.
+   * Oldest first.
+   */
+  countedRefunds(tx: ReadTx, since: Date): Promise<CountedRefund[]>
+  /** When the earliest refund that names a product was made, or null when none does. */
+  namedSince(tx: ReadTx): Promise<Date | null>
 }
+
+/** Orders whose refunds say nothing about shoppers: the heartbeat's own and those an import brought in. */
+const UNCOUNTED_SOURCES = ['synthetic', 'import']
+const CHECKOUT_ACTOR = 'system:checkout'
 
 export function createOrderRefundRepository(store: CommandStore): OrderRefundRepository {
   async function list(tx: ReadTx, orderIds: string[]): Promise<OrderRefund[]> {
@@ -189,6 +212,59 @@ export function createOrderRefundRepository(store: CommandStore): OrderRefundRep
         .orderBy(asc(min(t.createdAt)), asc(t.orderId))
         .limit(limit)
       return rows.map((r) => r.orderId)
+    },
+    async countedRefunds(tx, since) {
+      if (tx.kind === 'sqlite') {
+        const r = sqliteSchema.orderRefunds
+        const o = sqliteSchema.orders
+        return sqliteDb(tx)
+          .select({ at: r.createdAt, productId: r.productId })
+          .from(r)
+          .innerJoin(o, eq(o.id, r.orderId))
+          .where(
+            and(
+              eq(r.status, 'succeeded'),
+              gte(r.createdAt, since.toISOString()),
+              ne(r.actor, CHECKOUT_ACTOR),
+              notInArray(o.source, UNCOUNTED_SOURCES),
+            ),
+          )
+          .orderBy(asc(r.createdAt))
+          .all()
+          .map((row) => ({ at: new Date(row.at), productId: row.productId }))
+      }
+      const r = postgresSchema.orderRefunds
+      const o = postgresSchema.orders
+      return postgresDb(tx)
+        .select({ at: r.createdAt, productId: r.productId })
+        .from(r)
+        .innerJoin(o, eq(o.id, r.orderId))
+        .where(
+          and(
+            eq(r.status, 'succeeded'),
+            gte(r.createdAt, since),
+            ne(r.actor, CHECKOUT_ACTOR),
+            notInArray(o.source, UNCOUNTED_SOURCES),
+          ),
+        )
+        .orderBy(asc(r.createdAt))
+    },
+    async namedSince(tx) {
+      if (tx.kind === 'sqlite') {
+        const r = sqliteSchema.orderRefunds
+        const row = sqliteDb(tx)
+          .select({ at: min(r.createdAt) })
+          .from(r)
+          .where(isNotNull(r.productId))
+          .get()
+        return row?.at == null ? null : new Date(row.at)
+      }
+      const r = postgresSchema.orderRefunds
+      const [row] = await postgresDb(tx)
+        .select({ at: min(r.createdAt) })
+        .from(r)
+        .where(isNotNull(r.productId))
+      return row?.at ?? null
     },
   }
 }

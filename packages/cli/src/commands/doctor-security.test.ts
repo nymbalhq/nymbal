@@ -13,14 +13,14 @@ import {
   cliEnv,
   doctorLines,
   migratedSqlite,
-  runCli,
   type CliRun,
 } from '../../../../tests/support/doctor.js'
+import { runInProcess } from './fixtures/in-process.js'
 import { install, workspace } from '../../../../tests/support/project.js'
 
 // doctor checks the security slot as it checks a commerce slot, against a fake Cloudflare API: a refused token or a
 // missing package is down and exits 1. Each project's node_modules holds the security package unless the case leaves it
-// out. Spawns the built CLI (`pnpm build` first).
+// out. Runs the command in this process (fixtures/in-process.ts).
 
 const TOKEN = 'cf-doctor-token-accepted-3Rk9'
 const SECURITY_PACKAGE = conventionPackage('security', 'cloudflare')
@@ -66,7 +66,7 @@ async function doctor(
   const sqlitePath = join(project, 'nymbal.db')
   await migratedSqlite(sqlitePath)
   const env = cliEnv({ NYMBAL_SQLITE_PATH: sqlitePath })
-  return { ...(await runCli(['doctor'], { cwd: project, env })), project, env }
+  return { ...(await runInProcess(['doctor'], { cwd: project, env })), project, env }
 }
 
 const line = (run: CliRun, name: string) => doctorLines(run.out).find((l) => l.name === name)

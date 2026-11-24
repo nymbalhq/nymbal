@@ -10,6 +10,7 @@ import {
   type CommerceSlot,
   type HealthReport,
   type PaymentsAdapter,
+  type ShippingAdapter,
   type TaxAdapter,
   type ResolvedNetwork,
 } from '@nymbalhq/types'
@@ -31,8 +32,9 @@ import { createLogger } from './logger.js'
 import { loadBootSettings } from './settings/load.js'
 import { addSecret, scrubbingLogger } from './settings/secret-set.js'
 import { isLoopbackHost, JWT_SECRET_ENV, resolveAuthSecret } from './auth-secret.js'
-import { buildServices, type ServiceRegistry } from './services/index.js'
+import { buildServices, filesTaxDocuments, type ServiceRegistry } from './services/index.js'
 import { legacyUntilOf } from './services/legacy-passwords.js'
+import { REMOTE_SECRET_ENV, REMOTE_SECRET_MIN_LENGTH } from './services/legacy-remote.js'
 import { createEventPublisher, type EventPublisher } from './events/publisher.js'
 import { createRelay, deliveringBus, type CreateRelayOptions, type Relay } from './events/relay.js'
 import { createOutageProbe, type OutageSubject } from './events/outage.js'
@@ -46,10 +48,15 @@ import {
   startRefreshTokenSweeper,
   startRefundReconcileSweeper,
   startStuckProposalSweeper,
+  startTaxDocumentSweeper,
   startUnconfirmedAccountSweeper,
   type EventArchiveWriter,
   type SweeperHandle,
 } from './sweepers/index.js'
+import { NIGHT_SHIFT_JOBS } from './night-shift/jobs.js'
+import { guidanceDeps } from './night-shift/guidance.js'
+import { startNightShift } from './night-shift/runner.js'
+import { contentRoleDeps, contentRoleJob } from './roles/content.js'
 import { importAdapterModule, resolveChoice } from './adapters/resolve.js'
 import type { AgentSurfaces, HttpAdapter, ToolSurface } from '@nymbalhq/types'
 import { RouteTable, recordingAdapter } from './mcp/route-table.js'
@@ -119,10 +126,11 @@ export interface CreateAppOptions extends ResolvePrimitivesOptions {
   proposalSweep?: { intervalMs?: number; stuckAfterMs?: number }
   /** How often accounts never confirmed are looked for; tests shorten it. The 30 days they are kept is fixed. */
   unconfirmedAccountSweep?: { intervalMs?: number }
+  /** How often what is owed to a tax provider that files documents is retried; tests shorten it. */
+  taxDocumentSweep?: { intervalMs?: number }
+  /** How often the night shift looks whether its night is due (5 minutes), and its clock, read on every tick. */
+  nightShift?: { intervalMs?: number; now?: () => Date }
 }
-
-/** Who an ACP agent's keyed requests are recorded as: the agent's own name is a label anyone holding the key can set. */
-const ACP_ACTOR: Actor = { kind: 'system', id: 'acp' }
 
 /** Prices that hold their tax need an engine that extracts it: one that only adds tax would tax them twice. */
 function refuseTaxOnTopOfInclusivePrices(config: NymbalConfig, tax: TaxAdapter): void {
@@ -133,6 +141,51 @@ function refuseTaxOnTopOfInclusivePrices(config: NymbalConfig, tax: TaxAdapter):
       "'inclusive', so it would add tax on top of prices that already hold it; set pricesIncludeTax to false or use " +
       'a provider that extracts tax from prices.',
     { code: 'config.tax_not_inclusive', context: { provider } },
+  )
+}
+
+/**
+ * Carrier pricing needs an adapter that rates (one that cannot would refuse every checkout) and a parcel to rate: the
+ * schema asks for both fields, but an embedder may hand createApp a config edited after parsing.
+ */
+function refuseCarrierPricingWithoutRates(config: NymbalConfig, shipping: ShippingAdapter): void {
+  if (config.commerce.shipping.pricing !== 'carrier') return
+  const provider = config.commerce.shipping.provider
+  const missing = [
+    ...(config.store.shipFrom === undefined ? ['store.shipFrom'] : []),
+    ...(config.commerce.shipping.defaultWeightGrams === undefined
+      ? ['commerce.shipping.defaultWeightGrams']
+      : []),
+  ]
+  if (missing.length > 0) {
+    throw new ConfigError(
+      `commerce.shipping.pricing is 'carrier', but ${missing.join(' and ')} ${missing.length > 1 ? 'are' : 'is'} ` +
+        "not set, so no parcel can be rated; set them or set pricing to 'table'.",
+      { code: 'config.shipping_cannot_rate', context: { provider, missing } },
+    )
+  }
+  if (shipping.capabilities().includes('rates') && typeof shipping.rate === 'function') return
+  throw new ConfigError(
+    `commerce.shipping.pricing is 'carrier', but the shipping provider "${provider}" (${shipping.providerName}) does ` +
+      "not declare 'rates', so it cannot price a parcel; set pricing to 'table' or configure a provider that rates " +
+      '(EasyPost with an apiKey).',
+    { code: 'config.shipping_cannot_rate', context: { provider } },
+  )
+}
+
+/** The old platform's shared secret, when `security.auth.legacy.remote` is set: without one the check cannot run. */
+export function resolveLegacyRemoteSecret(
+  config: NymbalConfig,
+  env: NodeJS.ProcessEnv,
+): string | undefined {
+  if (config.security.auth.legacy?.remote === undefined) return undefined
+  const secret = env[REMOTE_SECRET_ENV]
+  if (secret !== undefined && secret.length >= REMOTE_SECRET_MIN_LENGTH) return secret
+  throw new ConfigError(
+    `security.auth.legacy.remote is set, but ${REMOTE_SECRET_ENV} is ${secret === undefined ? 'not set' : 'too short'}; ` +
+      `set it to the secret the old platform's endpoint expects, at least ${REMOTE_SECRET_MIN_LENGTH} characters ` +
+      '(`openssl rand -base64 32`).',
+    { code: 'auth.legacy_remote_secret', context: { variable: REMOTE_SECRET_ENV } },
   )
 }
 
@@ -272,6 +325,8 @@ export async function createApp(
   })
   const jwt = resolveAuthSecret(config, process.env)
   addSecret(jwt.secret)
+  const legacyRemoteSecret = resolveLegacyRemoteSecret(config, process.env)
+  if (legacyRemoteSecret !== undefined) addSecret(legacyRemoteSecret)
   const shadowed = process.env[JWT_SECRET_ENV]
   if (jwt.source === 'config' && shadowed !== undefined && shadowed !== jwt.secret) {
     logger.warn(
@@ -334,6 +389,7 @@ export async function createApp(
       ...(options.adapters !== undefined && { injected: options.adapters }),
     })
     refuseTaxOnTopOfInclusivePrices(config, adapters.tax)
+    refuseCarrierPricingWithoutRates(config, adapters.shipping)
     const relay = createRelay({
       store: platform.commandStore,
       eventLog: repos.eventLog,
@@ -374,12 +430,15 @@ export async function createApp(
       reviews: adapters.reviews,
       promotions: adapters.promotions,
       tax: adapters.tax,
+      shipping: adapters.shipping,
       jwtSecret: jwt.secret,
+      ...(legacyRemoteSecret !== undefined && { legacyRemoteSecret }),
       executeProposal: (row, auth) => {
         if (mcp === undefined)
           throw new Error('a proposal runs through the routes attachHttp registers')
         return mcp.execute(row, auth)
       },
+      ...(options.nightShift?.now !== undefined && { nightShiftNow: options.nightShift.now }),
     })
 
     await registerHandlers({
@@ -391,6 +450,7 @@ export async function createApp(
       alerts: services.alert,
       orders: services.order,
       publisher,
+      taxDocuments: services.taxDocuments,
       logger,
     })
 
@@ -486,6 +546,64 @@ export async function createApp(
         }),
       }),
     ]
+    if (filesTaxDocuments(adapters.tax)) {
+      sweepers.push(
+        startTaxDocumentSweeper({
+          store: platform.commandStore,
+          repo: repos.orderTaxDocument,
+          documents: services.taxDocuments,
+          providerName: adapters.tax.providerName,
+          logger,
+          ...(options.taxDocumentSweep?.intervalMs !== undefined && {
+            intervalMs: options.taxDocumentSweep.intervalMs,
+          }),
+        }),
+      )
+    }
+    if (config.nightShift.enabled) {
+      const content = config.agents.roles.content
+      const roleJobs =
+        content.enabled && adapters.ai !== null
+          ? [
+              contentRoleJob(
+                contentRoleDeps({
+                  store: platform.commandStore,
+                  proposalRepository: repos.proposal,
+                  products: services.product,
+                  proposals: services.proposals,
+                  ai: adapters.ai,
+                  role: content,
+                  config,
+                  logger,
+                }),
+              ),
+            ]
+          : []
+      const ai = adapters.ai
+      const guided = ai !== null && ai.capabilities().includes('tools')
+      sweepers.push(
+        startNightShift({
+          store: platform.commandStore,
+          repos,
+          publisher,
+          logger,
+          timeZone: config.store.timezone,
+          at: config.nightShift.at,
+          jobs: [...NIGHT_SHIFT_JOBS, ...roleJobs],
+          ...(guided && {
+            guidance: guidanceDeps({
+              store: platform.commandStore,
+              insights: repos.insight,
+              ai,
+              tools: () => assistantTools,
+              config,
+              logger,
+            }),
+          }),
+          ...options.nightShift,
+        }),
+      )
+    }
 
     let agents: AgentSurfaces | undefined
     const app: NymbalApp = {
@@ -506,7 +624,7 @@ export async function createApp(
         }
         const acp = resolveAcpSettings(config, adapters.payments)
         if (acp !== null) {
-          addSecret(acp.apiKey)
+          for (const { key } of acp.keys) addSecret(key)
           logger.warn(
             {},
             'agents.acp is on: Agentic Commerce Protocol checkout is beta, and its API may change',
@@ -578,15 +696,24 @@ export async function createApp(
               sessions: platform.documentStore,
               checkout: services.checkout,
               shippingRates: config.commerce.shipping.rates,
-              idempotent: (command, { key, hash }, run) =>
-                runAsActor(ACP_ACTOR, () =>
+              shippingPricing:
+                config.commerce.shipping.pricing === 'carrier'
+                  ? 'carrier'
+                  : config.commerce.shipping.rates.length > 0
+                    ? 'table'
+                    : 'free',
+              // The actor names the key that sent the request, which also keeps each key's Idempotency-Keys its own.
+              idempotent: (command, { key, hash, keyName }, run) => {
+                const actor: Actor = { kind: 'system', id: `acp:${keyName}` }
+                return runAsActor(actor, () =>
                   idempotentCommand(
                     platform.commandStore,
                     command,
-                    { actor: ACP_ACTOR, key, hash, provider: true },
+                    { actor, key, hash, provider: true },
                     run,
                   ),
-                ),
+                )
+              },
               payments: {
                 providerName: adapters.payments.providerName,
                 environment: acp.environment,

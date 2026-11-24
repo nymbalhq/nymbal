@@ -40,6 +40,13 @@ function deciderText(by: ProposalDecider, me: string | undefined): string {
   return by.id === me ? 'you' : `admin ${by.id}`
 }
 
+/** Who a proposal is for: a store role (proposer `role:<name>`) is named as the role, never as an admin account. */
+function proposerText(proposer: string | null, me: string | undefined): string {
+  if (proposer === null) return 'a shopper'
+  if (proposer.startsWith('role:')) return `the ${proposer.slice('role:'.length)} role`
+  return proposer === me ? 'you' : `admin ${proposer}`
+}
+
 interface ProposalCardProps {
   proposal: ProposalView
   /** The signed-in admin's user id. */
@@ -101,8 +108,7 @@ export function ProposalCard({ proposal, me, onReject }: ProposalCardProps) {
 
       <p className="text-xs break-words text-zinc-500">
         {agent.name}
-        {agent.version !== undefined && ` ${agent.version}`} for{' '}
-        {proposer === null ? 'a shopper' : proposer === me ? 'you' : `admin ${proposer}`},{' '}
+        {agent.version !== undefined && ` ${agent.version}`} for {proposerText(proposer, me)},{' '}
         {formatDate(proposal.createdAt)}
       </p>
 

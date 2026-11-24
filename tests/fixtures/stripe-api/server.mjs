@@ -11,6 +11,11 @@
 // secret key or by the intent's client_secret, as Stripe.js sends it) marks the intent succeeded, signs a
 // `payment_intent.succeeded` for it with the webhook secret and posts it to the webhook URL before it answers.
 //
+// A saved card is charged as Stripe charges one off-session: `POST /v1/payment_intents` with `confirm=true`, a
+// `customer` and a `payment_method` confirms at creation. The payment method picks the outcome, as Stripe's test
+// methods do (SAVED_CARD_OUTCOMES); any other method is captured in full. A request carrying `restrictedKey` (an option)
+// is refused 403, and every request is kept in `received`, in arrival order.
+//
 //   node tests/fixtures/stripe-api/server.mjs --host <addr> --port <n> [--secret-key <sk>]
 //                                             [--webhook-url <url> --webhook-secret <whsec>]
 //
@@ -36,6 +41,45 @@ export const SIGNATURE_HEADER = 'stripe-signature'
 const DEFAULT_SECRET_KEY = 'sk_test_mock'
 const API_VERSION = '2025-02-24.acacia'
 
+/**
+ * The payment methods whose off-session confirm does not capture, and how Stripe answers each: an HTTP error with its
+ * body, or a 200 intent left in a status other than succeeded.
+ */
+export const SAVED_CARD_OUTCOMES = {
+  pm_card_chargeDeclined: {
+    statusCode: 402,
+    error: {
+      type: 'card_error',
+      code: 'card_declined',
+      decline_code: 'insufficient_funds',
+      message: 'Your card has insufficient funds.',
+    },
+  },
+  pm_card_detached: {
+    statusCode: 400,
+    error: {
+      type: 'invalid_request_error',
+      code: 'resource_missing',
+      message: 'The PaymentMethod pm_card_detached is not attached to this Customer.',
+    },
+  },
+  pm_fake_api_error: {
+    statusCode: 500,
+    error: { type: 'api_error', message: 'An unknown error occurred at the provider.' },
+  },
+  // Stripe answers a rate limit as an invalid request, told apart only by its status and code.
+  pm_fake_rate_limited: {
+    statusCode: 429,
+    error: {
+      type: 'invalid_request_error',
+      code: 'rate_limit',
+      message: 'Too many requests hit the API too quickly.',
+    },
+  },
+  pm_card_authenticationRequired: { status: 'requires_action' },
+  pm_card_processing: { status: 'processing' },
+}
+
 async function readBody(req) {
   const chunks = []
   for await (const chunk of req) chunks.push(chunk)
@@ -58,6 +102,9 @@ function metadataFromParams(params) {
 export async function startStripeFake(options = {}) {
   const host = options.host ?? '127.0.0.1'
   const secretKey = options.secretKey ?? DEFAULT_SECRET_KEY
+  const { restrictedKey } = options
+  /** Every request, as the fake read it. */
+  const received = []
   const { webhookUrl, webhookSecret } = options
   if ((webhookUrl === undefined) !== (webhookSecret === undefined)) {
     throw new Error('stripe-api fake: --webhook-url and --webhook-secret go together')
@@ -159,6 +206,13 @@ export async function startStripeFake(options = {}) {
     const method = req.method ?? 'GET'
     const body = await readBody(req)
     const params = new URLSearchParams(body)
+    const keyHeader = req.headers['idempotency-key']
+    received.push({
+      method,
+      path,
+      params: Object.fromEntries(params),
+      idempotencyKey: Array.isArray(keyHeader) ? keyHeader[0] : keyHeader,
+    })
 
     const confirmMatch = /^\/v1\/payment_intents\/([^/]+)\/confirm$/.exec(path)
     if (method === 'POST' && confirmMatch) {
@@ -166,6 +220,15 @@ export async function startStripeFake(options = {}) {
       return
     }
 
+    if (restrictedKey !== undefined && req.headers.authorization === `Bearer ${restrictedKey}`) {
+      sendJson(res, 403, {
+        error: {
+          type: 'invalid_request_error',
+          message: 'The provided key does not have the required permissions for this endpoint.',
+        },
+      })
+      return
+    }
     if (req.headers.authorization !== `Bearer ${secretKey}`) {
       sendJson(res, 401, { error: { type: 'invalid_request_error', message: 'Invalid API key' } })
       return
@@ -198,6 +261,24 @@ export async function startStripeFake(options = {}) {
         currency,
         status: 'requires_payment_method',
         metadata: metadataFromParams(params),
+        customer: params.get('customer'),
+        payment_method: params.get('payment_method'),
+      }
+      if (params.get('confirm') === 'true') {
+        const outcome = SAVED_CARD_OUTCOMES[intent.payment_method ?? '']
+        if (outcome?.statusCode !== undefined) {
+          intent.last_payment_error = outcome.error
+          intents.set(id, intent)
+          sendJson(res, outcome.statusCode, {
+            error: {
+              ...outcome.error,
+              ...(outcome.statusCode === 402 && { payment_intent: intent }),
+            },
+          })
+          return
+        }
+        intent.status = outcome?.status ?? 'succeeded'
+        if (intent.status === 'succeeded') intent.amount_received = intent.amount
       }
       intents.set(id, intent)
       sendJson(res, 200, intent)
@@ -286,7 +367,9 @@ export async function startStripeFake(options = {}) {
     if (method === 'GET' && path === '/v1/refunds') {
       const query = new URL(req.url ?? '/', 'http://localhost').searchParams
       const paymentIntent = query.get('payment_intent')
-      const newestFirst = [...(paymentIntent === null ? [] : (refundsOf.get(paymentIntent) ?? []))].reverse()
+      const newestFirst = [
+        ...(paymentIntent === null ? [] : (refundsOf.get(paymentIntent) ?? [])),
+      ].reverse()
       const limit = Number(query.get('limit') ?? '10')
       const after = query.get('starting_after')
       const from = after === null ? 0 : newestFirst.findIndex((r) => r.id === after) + 1
@@ -328,6 +411,7 @@ export async function startStripeFake(options = {}) {
   return {
     port,
     url: `http://${urlHost}:${port}`,
+    received,
     async close() {
       server.closeAllConnections()
       server.close()

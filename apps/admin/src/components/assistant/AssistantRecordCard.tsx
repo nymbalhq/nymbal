@@ -4,6 +4,7 @@ import type { AssistantRecord } from '@nymbalhq/types'
 import { useCustomer } from '@/hooks/useCustomers'
 import { useOrder } from '@/hooks/useOrders'
 import { useCommandPalette } from '@/hooks/useCommandPalette'
+import { useStoreCurrency } from '@/hooks/useMe'
 import { ApiError } from '@/lib/api'
 import { formatMoney } from '@/lib/money'
 import { tid } from '@/lib/testid'
@@ -71,6 +72,7 @@ function OrderCard({ orderNumber }: { orderNumber: string }) {
 function CustomerCard({ id }: { id: string }) {
   const close = useCommandPalette((s) => s.close)
   const { data, isLoading, error } = useCustomer(id)
+  const currency = useStoreCurrency()
   const testId = tid('assistant', 'record', 'customer', id)
   if (data === undefined) {
     const notFound = isNotFound(error)
@@ -97,7 +99,8 @@ function CustomerCard({ id }: { id: string }) {
       {customer.phone && <p>{customer.phone}</p>}
       <p className="text-xs text-zinc-500">
         {stats.orderCount} {stats.orderCount === 1 ? 'order' : 'orders'},{' '}
-        {formatMoney(stats.lifetimeRevenueMinor, 'GBP')} lifetime
+        {currency !== undefined ? formatMoney(stats.lifetimeRevenueMinor, currency) : '—'}{' '}
+        lifetime
       </p>
     </Card>
   )

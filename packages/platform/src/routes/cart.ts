@@ -7,6 +7,7 @@ import {
   type RequestContext,
   type ResponseCookie,
   type ResponseEnvelope,
+  type ShopperCart,
 } from '@nymbalhq/types'
 import { isSellable, type CartService } from '../services/cart-service.js'
 import type { AfterSignIn, SecureCookies } from './auth.js'
@@ -26,10 +27,18 @@ interface UpdateBody {
   qty?: number
 }
 
-const CODE_MAX_LENGTH = 64
+export const CODE_MAX_LENGTH = 64
+
+/**
+ * A trimmed code a cart takes: 1 to 64 characters, and not `.` or `..`, which a browser resolves out of the DELETE's
+ * path, so a cart holding one could never be rid of it.
+ */
+export function isCartCode(code: string): boolean {
+  return code.length > 0 && code.length <= CODE_MAX_LENGTH && code !== '.' && code !== '..'
+}
 
 /** A cart as the routes answer it: its lines, what it comes to, and what the engine said of each code. */
-function pricedAt(cart: Cart, pricesIncludeTax: boolean) {
+function pricedAt(cart: Cart, pricesIncludeTax: boolean): ShopperCart {
   return {
     ...cart,
     totals: cartTotals(cart, pricesIncludeTax),
@@ -184,7 +193,7 @@ export function registerCartRoutes(adapter: HttpAdapter, deps: RegisterCartRoute
       const token = ctx.cookies[CART_COOKIE]
       if (!token) return fail('cart.missing', 'no active cart', 404)
       const code = (ctx.body as { code: string }).code.trim()
-      if (code.length === 0 || code.length > CODE_MAX_LENGTH) {
+      if (!isCartCode(code)) {
         return fail('cart.code_invalid', `a code is 1 to ${CODE_MAX_LENGTH} characters`, 400)
       }
       return ok(priced(await cart.addCode(token, code)))

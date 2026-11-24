@@ -51,6 +51,7 @@ export const products = sqliteTable(
     metadata: text('metadata').notNull().default('{}'),
     /** What a tax engine taxes the product's variants as, unless a variant has its own; null for the standard rate. */
     taxCode: text('tax_code'),
+    brand: text('brand').notNull().default(''),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },
@@ -80,6 +81,7 @@ export const variants = sqliteTable(
       .notNull()
       .default('active'),
     taxCode: text('tax_code'),
+    gtin: text('gtin'),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },
@@ -144,6 +146,10 @@ export const refreshTokens = sqliteTable(
     replacedByJti: text('replaced_by_jti'),
     expiresAt: text('expires_at').notNull(),
     createdAt: text('created_at').notNull(),
+    // The sign-in a row descends from; null on a row written before sessions, read as a session of its own.
+    sessionId: text('session_id'),
+    sessionStartedAt: text('session_started_at'),
+    device: text('device'),
   },
   (t) => ({
     customerIdx: index('refresh_tokens_customer_idx').on(t.customerId),
@@ -207,6 +213,8 @@ export const orders = sqliteTable(
     totalMinor: integer('total_minor').notNull(),
     currency: text('currency').notNull(),
     notes: text('notes').notNull().default(''),
+    /** Staff and system notes, a JSON list of `{ body, actor, at }`; `notes` is the shopper's own text. */
+    staffNotes: text('staff_notes').notNull().default('[]'),
     metadata: text('metadata').notNull().default('{}'),
     paymentIntentId: text('payment_intent_id'),
     /** The cart the order was placed from; null for imported orders. */
@@ -270,10 +278,39 @@ export const orderRefunds = sqliteTable(
     createdAt: text('created_at').notNull(),
     /** The client's key for one refund request: a repeat of it on the order answers the refund it made. */
     requestId: text('request_id'),
+    /** The order line the refund is for, by its variant, with that line's product; null when it names none. */
+    variantId: text('variant_id'),
+    productId: text('product_id'),
   },
   (t) => ({
     orderIdx: index('order_refunds_order_idx').on(t.orderId),
     requestIdx: uniqueIndex('order_refunds_order_request_idx').on(t.orderId, t.requestId),
+  }),
+)
+
+/** What an order owes the tax provider that quoted it: its filed document and the refunds filed against it. */
+export const orderTaxDocuments = sqliteTable(
+  'order_tax_documents',
+  {
+    orderId: text('order_id').primaryKey(),
+    provider: text('provider').notNull(),
+    status: text('status', { enum: ['pending', 'committed'] })
+      .notNull()
+      .default('pending'),
+    documentId: text('document_id'),
+    committedAt: text('committed_at'),
+    refundedMinor: integer('refunded_minor').notNull().default(0),
+    /** JSON array of the `order_refunds.id`s filed, in filing order. */
+    filedRefundIds: text('filed_refund_ids').notNull().default('[]'),
+    attempts: integer('attempts').notNull().default(0),
+    lastError: text('last_error'),
+    /** Since when the record has owed the provider a commit or a refund; null when nothing is owed. */
+    dueSince: text('due_since'),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (t) => ({
+    dueIdx: index('order_tax_documents_due_since_idx').on(t.dueSince),
   }),
 )
 
@@ -413,6 +450,8 @@ export const events = sqliteTable(
     deadAt: text('dead_at'),
     /** A failed event is not handed to the bus again before this. */
     retryAt: text('retry_at'),
+    /** The command whose `applied` audit entry has this id appended the event; null outside any command. */
+    commandId: text('command_id'),
   },
   (t) => ({
     idUnique: uniqueIndex('events_id_unique').on(t.id),
@@ -745,6 +784,52 @@ export const reportMembers = sqliteTable(
   }),
 )
 
+// --- Night shift ------------------------------------------------------------
+
+export const insights = sqliteTable(
+  'insights',
+  {
+    id: text('id').primaryKey(),
+    job: text('job').notNull(),
+    subject: text('subject').notNull(),
+    runDay: text('run_day').notNull(),
+    dataDay: text('data_day').notNull(),
+    status: text('status').notNull(),
+    severity: text('severity').notNull(),
+    summary: text('summary').notNull(),
+    facts: text('facts').notNull(),
+    createdAt: text('created_at').notNull(),
+    dismissedAt: text('dismissed_at'),
+    guidance: text('guidance'),
+    guidanceStatus: text('guidance_status'),
+  },
+  (t) => ({
+    keyUnique: uniqueIndex('insights_key_unique').on(t.job, t.subject, t.runDay),
+    subjectIdx: index('insights_subject_idx').on(t.job, t.subject, t.status),
+    statusCheck: check('insights_status', sql`${t.status} IN ('open', 'dismissed')`),
+  }),
+)
+
+export const nightShiftRuns = sqliteTable(
+  'night_shift_runs',
+  {
+    job: text('job').notNull(),
+    runDay: text('run_day').notNull(),
+    status: text('status').notNull(),
+    startedAt: text('started_at').notNull(),
+    finishedAt: text('finished_at'),
+    insights: integer('insights').notNull().default(0),
+    error: text('error'),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.job, t.runDay] }),
+    statusCheck: check(
+      'night_shift_runs_status',
+      sql`${t.status} IN ('running', 'done', 'failed')`,
+    ),
+  }),
+)
+
 export const schema = {
   categories,
   products,
@@ -777,4 +862,6 @@ export const schema = {
   reportProductDays,
   reportSearchDays,
   reportMembers,
+  insights,
+  nightShiftRuns,
 }

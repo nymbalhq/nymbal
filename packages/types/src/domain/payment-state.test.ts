@@ -137,6 +137,8 @@ describe('refundableMinor', () => {
             reason: 'requested by the buyer',
             actor: 'admin:test',
             createdAt: '2026-10-19T11:00:00.000Z',
+            variantId: null,
+            productId: null,
           }))
 
           expect(refundableMinor(order, refunds)).toBe(captured - succeeded - pending)

@@ -5,11 +5,12 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { cliEnv, runCli } from '../../../../tests/support/doctor.js'
 import { storeConfig, storeProject } from '../../../../tests/support/start.js'
 import { webServerRecipe } from './deploy-web-server.js'
+import { runInProcess } from './fixtures/in-process.js'
 
 // `nymbal deploy nginx|apache|caddy` writes a web server config for the store's own server from NYMBAL_PUBLIC_URL (the
 // server name) and PORT (the upstream on loopback), prints the steps and runs nothing. A setting it cannot use is
-// refused before anything is written. The CLI cases spawn the built CLI (`pnpm build` first); that the configs work
-// in front of a real API is tests/stores/web-servers.test.ts.
+// refused before anything is written. nginx's case spawns the built CLI (`pnpm build` first); the others run the
+// command in this process. That the configs work in front of a real API is tests/stores/web-servers.test.ts.
 
 const SERVERS = ['nginx', 'apache', 'caddy'] as const
 type WebServer = (typeof SERVERS)[number]
@@ -25,7 +26,7 @@ afterEach(() => {
   for (const fn of cleanup.splice(0).reverse()) fn()
 })
 
-/** A store project whose .env holds `dotEnv`; the child sees neither NYMBAL_PUBLIC_URL nor PORT from this shell. */
+/** A store project whose .env holds `dotEnv`; the command sees neither NYMBAL_PUBLIC_URL nor PORT from this shell. */
 function project(dotEnv: Record<string, string>) {
   const p = storeProject(storeConfig())
   cleanup.push(() => p.remove())
@@ -40,6 +41,8 @@ function project(dotEnv: Record<string, string>) {
     dir: p.dir,
     deploy: (server: WebServer, ...flags: string[]) =>
       runCli(['deploy', server, ...flags], { cwd: p.dir, env }),
+    deployInProcess: (server: WebServer, ...flags: string[]) =>
+      runInProcess(['deploy', server, ...flags], { cwd: p.dir, env }),
   }
 }
 
@@ -49,7 +52,8 @@ describe('AC-12: nymbal deploy writes the web server config', () => {
       const onDefault = project({ NYMBAL_PUBLIC_URL: PUBLIC })
       const onPort = project({ NYMBAL_PUBLIC_URL: PUBLIC, PORT: '8080' })
 
-      const runs = [await onDefault.deploy(server), await onPort.deploy(server)]
+      const run = server === 'nginx' ? 'deploy' : 'deployInProcess'
+      const runs = [await onDefault[run](server), await onPort[run](server)]
       const expected = ['127.0.0.1:3001', '127.0.0.1:8080'].map((upstream) =>
         webServerRecipe(server, { publicUrl: PUBLIC, upstream }),
       )
@@ -81,7 +85,7 @@ describe('AC-12: nymbal deploy writes the web server config', () => {
         [{ NYMBAL_PUBLIC_URL: PUBLIC }, ['--real-ip-from', '10.0.0.0/33'], '10.0.0.0/33'],
       ] as const) {
         const p = project(dotEnv)
-        const run = await p.deploy(server, ...flags)
+        const run = await p.deployInProcess(server, ...flags)
         outcomes.push({
           code: run.code,
           names: run.out.includes(named),
@@ -98,7 +102,7 @@ describe('AC-12: nymbal deploy writes the web server config', () => {
     for (const server of SERVERS) {
       for (const everyone of ['0.0.0.0/0', '::/0']) {
         const p = project({ NYMBAL_PUBLIC_URL: PUBLIC })
-        const run = await p.deploy(server, '--real-ip-from', `10.0.0.0/8,${everyone}`)
+        const run = await p.deployInProcess(server, '--real-ip-from', `10.0.0.0/8,${everyone}`)
         outcomes.push({
           code: run.code,
           names: run.out.includes(everyone),
@@ -107,7 +111,7 @@ describe('AC-12: nymbal deploy writes the web server config', () => {
       }
     }
     const ranged = project({ NYMBAL_PUBLIC_URL: PUBLIC })
-    const accepted = await ranged.deploy('nginx', '--real-ip-from', '10.0.0.0/8')
+    const accepted = await ranged.deployInProcess('nginx', '--real-ip-from', '10.0.0.0/8')
 
     expect(outcomes).toEqual(outcomes.map(() => ({ code: 1, names: true, wrote: false })))
     expect(accepted.code, accepted.out.slice(-2000)).toBe(0)

@@ -106,12 +106,52 @@ export {
   type RunGoldenOptions,
 } from './assistant/eval.js'
 export { assistantEvalHash, type AssistantEvalStamp } from './assistant/stamp.js'
+export {
+  CLAIM_TERMS,
+  ORIGIN_TERMS,
+  claimGuard,
+  contentSourceOf,
+  sourceText,
+  type ContentSource,
+} from './roles/claims.js'
+export {
+  FILLER_PHRASES,
+  SEO_DESCRIPTION_MAX,
+  SEO_DESCRIPTION_MIN,
+  SEO_TITLE_MAX,
+  checkSeoCopy,
+  needsReview,
+  type ContentRoleField,
+  type SeoFinding,
+} from './roles/seo-rules.js'
+export {
+  CONTENT_AGENT,
+  CONTENT_JOB,
+  CONTENT_PROPOSER,
+  contentDrafts,
+  contentKeyOf,
+  contentRoleJob,
+  proposalArgsOf,
+  runContentRole,
+  type ContentRoleConfig,
+  type ContentRoleDeps,
+  type ContentRunReport,
+} from './roles/content.js'
+export {
+  CONTENT_CASES,
+  contentStore,
+  runContentEval,
+  type ContentCase,
+  type ContentEvalReport,
+  type ContentEvalResult,
+} from './roles/content-eval.js'
 export { ucpProfile, UCP_VERSION } from './agents/profile.js'
 export { agentNameOf } from './agents/agent-name.js'
 export { createUcpSurface, type UcpSurfaceDeps } from './agents/ucp-surface.js'
 export { agentReadiness } from './agents/readiness.js'
 export {
   createApp,
+  resolveLegacyRemoteSecret,
   type NymbalApp,
   type CreateAppOptions,
   type AttachHttpOptions,
@@ -120,6 +160,7 @@ export {
   type SlotCapabilities,
 } from './app.js'
 export { isLoopbackHost, resolveAuthSecret, type AuthSecret } from './auth-secret.js'
+export { REMOTE_SECRET_ENV as LEGACY_REMOTE_SECRET_ENV } from './services/legacy-remote.js'
 export { secureCookies } from '@nymbalhq/config'
 export { registerAdminStaticRoute } from './routes/admin-static.js'
 export {
@@ -145,6 +186,7 @@ export {
   type DiagnosisStatus,
 } from './diagnose.js'
 export { runSeed, type SeedDeps, type SeedResult } from './seed/run.js'
+export { resolveStorePayments, type ResolveStorePaymentsOptions } from './heartbeat-payments.js'
 export {
   decrypt,
   encrypt,
@@ -178,6 +220,14 @@ export {
   type RebuildReportEntry,
 } from './read-models/index.js'
 export { openReadModels, type OpenReadModelsOptions } from './read-models/open.js'
+export {
+  heldFrom,
+  rebuildReports,
+  type RebuildReportsDeps,
+  type ReportRebuild,
+  type ReportTableName,
+  type ReportTableRebuild,
+} from './reports/rebuild.js'
 export { seedCategories, seedProducts, type SeedCategory, type SeedProduct } from './seed/data.js'
 export {
   createLocalFsMediaStorage,

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { v7 as uuidv7 } from 'uuid'
-import type { Address, OrderLineItem, OrderStatus } from '@nymbalhq/types'
+import type { Address, OrderLineItem, OrderSource, OrderStatus } from '@nymbalhq/types'
 import { address, type Kernel } from './kernel.js'
 import { unaudited } from './write-audit.js'
 
@@ -19,6 +19,8 @@ export interface OrderSpec {
   /** What was captured and refunded; nothing when absent. */
   capturedMinor?: number
   refundedMinor?: number
+  /** Where the order came from; the column's default when absent. */
+  source?: OrderSource
 }
 
 export interface WrittenOrder {
@@ -81,6 +83,7 @@ export async function insertOrders(
           notes: '',
           metadata: {},
           paymentIntentId: null,
+          ...(spec.source !== undefined && { source: spec.source }),
           ...((spec.capturedMinor ?? 0) > 0 && {
             capture: {
               amountMinor: spec.capturedMinor!,

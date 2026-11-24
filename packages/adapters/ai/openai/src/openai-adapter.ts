@@ -101,7 +101,8 @@ export function createOpenAiAdapter(config: OpenAiAdapterConfig): AiAdapter {
   const timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS
   const ownHost = hostOf(base) === OPENAI_HOST
   const tokenField = config.tokenField ?? (ownHost ? 'max_completion_tokens' : 'max_tokens')
-  const headers = { authorization: `Bearer ${config.apiKey}` }
+  const headers: Record<string, string> =
+    config.apiKey === '' ? {} : { authorization: `Bearer ${config.apiKey}` }
 
   function requestOf(
     messages: readonly ChatMessage[],

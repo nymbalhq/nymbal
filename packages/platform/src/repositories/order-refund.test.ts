@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import fc from 'fast-check'
 import pg from 'pg'
 import { v7 as uuidv7 } from 'uuid'
-import type { OrderRefundStatus } from '@nymbalhq/types'
+import type { OrderRefundStatus, OrderSource } from '@nymbalhq/types'
 import { InMemoryDocumentStore } from '../document-store/in-memory.js'
 import { createCommandStore } from '../db/command-store.js'
 import { runMigrations } from '../db/migrate.js'
@@ -27,7 +27,7 @@ async function setup() {
 type Env = Awaited<ReturnType<typeof setup>>
 
 let sequence = 0
-async function order(env: Env): Promise<string> {
+async function order(env: Env, source?: OrderSource): Promise<string> {
   const id = uuidv7()
   const now = new Date()
   sequence += 1
@@ -51,6 +51,7 @@ async function order(env: Env): Promise<string> {
       notes: '',
       metadata: {},
       paymentIntentId: null,
+      ...(source === undefined ? {} : { source }),
       createdAt: now,
       updatedAt: now,
     }),
@@ -122,9 +123,9 @@ describe('OrderRefundRepository', () => {
     await env.store.close()
   })
 
-  // Defect: a column is dropped or mangled on the way back (the reason, the provider id, the timestamp), so the admin
-  // shows a refund other than the one written.
-  it('a row reads back as written', async () => {
+  // Defect: a column is dropped or mangled on the way back (the reason, the provider id, the timestamp, the line), so
+  // the admin shows a refund other than the one written; or a row written with no line reads back with one.
+  it('AC-1: a row reads back as written, its line included, and a row written without a line reads back with none', async () => {
     const env = await setup()
     const orderId = await order(env)
     const written = row(orderId, {
@@ -134,9 +135,13 @@ describe('OrderRefundRepository', () => {
       status: 'succeeded',
       reason: 'damaged',
       actor: 'admin:7',
+      variantId: 'variant-7',
+      productId: 'product-7',
     })
+    const unlabelled = row(orderId, { createdAt: new Date('2026-10-01T10:00:01.000Z') })
     await insert(env, written)
-    const [read] = await listOf(env, orderId)
+    await insert(env, unlabelled)
+    const [read, readUnlabelled] = await listOf(env, orderId)
     expect(read).toEqual({
       id: written.id,
       orderId,
@@ -147,7 +152,11 @@ describe('OrderRefundRepository', () => {
       reason: written.reason,
       actor: written.actor,
       createdAt: written.createdAt.toISOString(),
+      variantId: written.variantId,
+      productId: written.productId,
     })
+    expect(readUnlabelled?.id).toBe(unlabelled.id)
+    expect([readUnlabelled?.variantId, readUnlabelled?.productId]).toEqual([null, null])
     await env.store.close()
   })
 
@@ -344,6 +353,198 @@ describe('OrderRefundRepository', () => {
 
       expect(got).toEqual(['order-a', 'order-b'])
       expect(sent).toEqual([['pending', before.toISOString(), 7]])
+    } finally {
+      connect.mockRestore()
+      await store.close()
+    }
+  })
+  // Defect: the refund-rate figure counts what says nothing about shoppers (a pending or failed refund, a capture
+  // checkout returned on a cancelled order, a synthetic or imported order's refund), the bound is strict or reversed,
+  // the times come back unordered or as strings, or a refund's product is dropped or given to another refund.
+  it('AC-1: countedRefunds answers each succeeded shopper refund at or after the time with the product it names, oldest first', async () => {
+    const env = await setup()
+    const sources: OrderSource[] = ['storefront', 'agent:shop-bot', 'synthetic', 'import']
+    const statuses: OrderRefundStatus[] = ['succeeded', 'pending', 'failed']
+    const actors = ['admin:1', 'system:checkout', 'system:webhook']
+    const products = [null, 'product-a', 'product-b']
+    let run = 0
+    await fc.assert(
+      fc.asyncProperty(
+        fc.array(
+          fc.record({
+            source: fc.integer({ min: 0, max: sources.length - 1 }),
+            status: fc.integer({ min: 0, max: statuses.length - 1 }),
+            actor: fc.integer({ min: 0, max: actors.length - 1 }),
+            product: fc.integer({ min: 0, max: products.length - 1 }),
+            at: fc.integer({ min: -3, max: 3 }),
+          }),
+          { maxLength: 8 },
+        ),
+        fc.integer({ min: -3, max: 3 }),
+        async (specs, sinceAt) => {
+          // Each run an hour after the last, so earlier runs' rows all fall before this run's time.
+          run += 1
+          const base = Date.UTC(2026, 9, 1, run, 0, 0)
+          for (const s of specs) {
+            const orderId = await order(env, sources[s.source])
+            const productId = products[s.product]!
+            await insert(
+              env,
+              row(orderId, {
+                status: statuses[s.status]!,
+                actor: actors[s.actor]!,
+                createdAt: new Date(base + s.at * 1000),
+                variantId: productId === null ? null : `variant-of-${productId}`,
+                productId,
+              }),
+            )
+          }
+          const since = new Date(base + sinceAt * 1000)
+          const got = await env.store.read((tx) => env.repo.countedRefunds(tx, since))
+          const expected = specs
+            .filter(
+              (s) =>
+                s.at >= sinceAt &&
+                statuses[s.status] === 'succeeded' &&
+                actors[s.actor] !== 'system:checkout' &&
+                (s.source === 0 || s.source === 1),
+            )
+            .map((s) => `${base + s.at * 1000}|${products[s.product]}`)
+          const times = got.map((r) => r.at.getTime())
+          for (let i = 1; i < times.length; i += 1) {
+            expect(times[i - 1]!).toBeLessThanOrEqual(times[i]!)
+          }
+          expect(got.map((r) => `${r.at.getTime()}|${r.productId}`).sort()).toEqual(
+            expected.sort(),
+          )
+        },
+      ),
+      { numRuns: 25 },
+    )
+    await env.store.close()
+  })
+
+  // Defect: the time is taken from any refund rather than one that names a product, the earliest is lost (max, or
+  // the first row inserted), or a store with no named refund answers a time, which would open the by-product rule on a
+  // store that has never labelled a refund.
+  it('AC-1: namedSince answers when the earliest refund naming a product was made, null when none does, and an earlier unnamed refund does not move it', async () => {
+    const env = await setup()
+    const named = () => env.store.read((tx) => env.repo.namedSince(tx))
+    expect(await named()).toBeNull()
+
+    const orderId = await order(env)
+    const at = (s: number) => new Date(Date.UTC(2026, 9, 1, 10, 0, s))
+    await insert(env, row(orderId, { status: 'succeeded', createdAt: at(1) }))
+    expect(await named()).toBeNull()
+
+    await insert(
+      env,
+      row(orderId, {
+        status: 'succeeded',
+        createdAt: at(9),
+        variantId: 'variant-late',
+        productId: 'product-late',
+      }),
+    )
+    await insert(
+      env,
+      row(orderId, {
+        status: 'succeeded',
+        createdAt: at(5),
+        variantId: 'variant-early',
+        productId: 'product-early',
+      }),
+    )
+    await insert(env, row(orderId, { status: 'succeeded', createdAt: at(0) }))
+
+    expect((await named())?.getTime()).toBe(at(5).getTime())
+    await env.store.close()
+  })
+
+  // Defect: as above, over any mix: the answer is not the minimum time of the named rows.
+  it('AC-1: property: namedSince is the minimum time of the refunds that name a product, whatever unnamed refunds lie around them', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.array(fc.record({ named: fc.boolean(), at: fc.integer({ min: 0, max: 50 }) }), {
+          maxLength: 8,
+        }),
+        async (specs) => {
+          const env = await setup()
+          try {
+            const orderId = await order(env)
+            for (const s of specs) {
+              await insert(
+                env,
+                row(orderId, {
+                  status: 'succeeded',
+                  createdAt: new Date(Date.UTC(2026, 9, 1, 10, 0, s.at)),
+                  ...(s.named ? { variantId: `v-${s.at}`, productId: `p-${s.at}` } : {}),
+                }),
+              )
+            }
+            const namedTimes = specs
+              .filter((s) => s.named)
+              .map((s) => Date.UTC(2026, 9, 1, 10, 0, s.at))
+            const got = await env.store.read((tx) => env.repo.namedSince(tx))
+            expect(got === null ? null : got.getTime()).toBe(
+              namedTimes.length === 0 ? null : Math.min(...namedTimes),
+            )
+          } finally {
+            await env.store.close()
+          }
+        },
+      ),
+      { numRuns: 15 },
+    )
+  })
+
+  // Defect: the Postgres half drops a filter (the status, the checkout actor, the uncounted sources), answers rows
+  // instead of times, or loses each refund's product; drizzle's real Postgres driver stands here against a connection
+  // that records and answers, each row in the order the statement selects its columns.
+  it('AC-1: countedRefunds on Postgres sends every filter and answers the time and product of each row returned', async () => {
+    const sent: unknown[][] = []
+    const returned = [
+      { at: '2026-10-01T10:00:01.000Z', productId: 'product-a' },
+      { at: '2026-10-01T10:00:04.000Z', productId: null },
+    ]
+    const connection = {
+      query: async (statement: { text?: string } | string, values: unknown[]) => {
+        sent.push(values)
+        const text = typeof statement === 'string' ? statement : (statement.text ?? '')
+        const selected = (/^select (.*?) from /is.exec(text)?.[1] ?? '').split(/,\s*/)
+        const column = (name: string) => selected.findIndex((c) => c.includes(`"${name}"`))
+        const [at, product] = [column('created_at'), column('product_id')]
+        return {
+          rows: returned.map((r) => {
+            const cells: unknown[] = selected.map(() => null)
+            cells[at] = r.at
+            cells[product] = r.productId
+            return cells
+          }),
+        }
+      },
+      release: () => undefined,
+    }
+    const connect = vi
+      .spyOn(pg.Pool.prototype, 'connect')
+      .mockImplementation(async () => connection as never)
+    const store = createCommandStore(
+      // @ts-expect-error minimal config
+      { infrastructure: { commandStore: 'postgres' }, store: { name: 'test', currency: 'GBP' } },
+      { postgresUrl: 'postgres://unused/none' },
+    )
+    const since = new Date('2026-10-01T10:00:00.000Z')
+    try {
+      const got = await store.read((tx) =>
+        createOrderRefundRepository(store).countedRefunds(tx, since),
+      )
+
+      expect(got.map((r) => [r.at.toISOString(), r.productId])).toEqual(
+        returned.map((r) => [r.at, r.productId]),
+      )
+      expect(sent.map((values) => [...values].map(String).sort())).toEqual([
+        ['succeeded', since.toISOString(), 'system:checkout', 'synthetic', 'import'].sort(),
+      ])
     } finally {
       connect.mockRestore()
       await store.close()

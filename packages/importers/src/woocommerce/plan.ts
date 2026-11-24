@@ -8,11 +8,17 @@ import type {
   ProgressCallback,
   WooCommerceImportOptions,
 } from '../types.js'
+import { errorText } from '@nymbalhq/types'
 import { WooCommerceClient, WooCommerceApiError } from './client.js'
 import type { WcCategory, WcCustomer, WcOrder, WcProduct, WcReview, WcVariation } from './client.js'
 import { mapCategory } from './mappers/category.js'
 import { mapProduct } from './mappers/product.js'
-import { DEFAULT_UNTRACKED_STOCK, storeContextFor } from './importer.js'
+import {
+  checkConcurrency,
+  currencyRefusal,
+  DEFAULT_UNTRACKED_STOCK,
+  storeContextFor,
+} from './importer.js'
 import { mapCustomer } from './mappers/customer.js'
 import { mapOrder } from './mappers/order.js'
 import { mapReview } from './mappers/review.js'
@@ -157,6 +163,7 @@ export async function planWooCommerceImport(
   opts: WooCommercePlanOptions,
   deps: WooCommercePlanDeps,
 ): Promise<ImportPlan> {
+  checkConcurrency(opts.concurrency)
   const emit = deps.onProgress ?? (() => undefined)
   const client = new WooCommerceClient(opts.credentials, deps.now ? { now: deps.now } : {})
   const selected = (e: ImportEntity) => opts.entities.includes(e)
@@ -240,6 +247,18 @@ export async function planWooCommerceImport(
   const claim = (kind: CollisionKind, key: string, sourceId: string) =>
     claimed.set(`${kind}\0${key}`, sourceId)
 
+  const errors: ImportPlan['errors'] = []
+  /** A record's refs or mapper; one that throws is refused and listed, and so claims nothing and maps no id. */
+  function readable<T>(entity: ImportEntity, sourceId: string, read: () => T): T | undefined {
+    try {
+      return read()
+    } catch (err) {
+      counts[entity].refused++
+      errors.push({ entity, sourceId, error: errorText(err) })
+      return undefined
+    }
+  }
+
   async function* records<T extends object>(entity: ImportEntity) {
     emit({ kind: 'phase', phase: entity })
     let done = 0
@@ -263,11 +282,12 @@ export async function planWooCommerceImport(
     if (err instanceof WooCommerceApiError) throw err
     throw new Error(`Cannot connect to ${opts.credentials.url}: ${String(err)}`)
   }
-  const store = storeContextFor(
-    await client.getStoreSettings(),
-    opts.currency,
-    DEFAULT_UNTRACKED_STOCK,
-  )
+  // The import's own refusal, so a dry run does not answer "ready" for a store the import will not write to.
+  const settings = await client.getStoreSettings()
+  if (settings !== null && settings.currency.toUpperCase() !== opts.currency.toUpperCase()) {
+    throw new Error(currencyRefusal(settings.currency, opts.currency))
+  }
+  const store = storeContextFor(settings, opts.currency, DEFAULT_UNTRACKED_STOCK)
 
   // WooCommerce id → the id the import would give the record; a placeholder, since nothing is written.
   const categoryIds = new Map<number, string>()
@@ -278,8 +298,11 @@ export async function planWooCommerceImport(
   if (selected('categories')) {
     for await (const wc of records<WcCategory>('categories')) {
       const sourceId = String(wc.id)
-      const { parentWcId } = categoryRefs(wc)
-      const input = mapCategory(wc, parentWcId ? categoryIds.get(parentWcId) : undefined)
+      const input = readable('categories', sourceId, () => {
+        const { parentWcId } = categoryRefs(wc)
+        return mapCategory(wc, parentWcId ? categoryIds.get(parentWcId) : undefined)
+      })
+      if (input === undefined) continue
       if (await taken('category-slug', input.slug, input.slug, sourceId)) {
         counts.categories.refused++
         continue
@@ -294,7 +317,8 @@ export async function planWooCommerceImport(
     const seenSlugs = new Set<string>()
     for await (const wc of records<WcProduct>('products')) {
       const sourceId = String(wc.id)
-      const refs = productRefs(wc, seenSlugs)
+      const refs = readable('products', sourceId, () => productRefs(wc, seenSlugs))
+      if (refs === undefined) continue
       let variations: WcVariation[] = []
       if (refs.isVariable && refs.variationCount > 0) {
         try {
@@ -309,18 +333,29 @@ export async function planWooCommerceImport(
         }
       }
       images += refs.imageSources.length
-      const input = mapProduct(
-        wc,
-        variations,
-        refs.categoryWcIds.flatMap((id) => categoryIds.get(id) ?? []),
-        refs.imageSources.map((img) => ({ url: img.src, altText: img.alt })),
-        refs.slugSuffix,
-        store,
+      const input = readable('products', sourceId, () =>
+        mapProduct(
+          wc,
+          variations,
+          refs.categoryWcIds.flatMap((id) => categoryIds.get(id) ?? []),
+          refs.imageSources.map((img) => ({ url: img.src, altText: img.alt })),
+          refs.slugSuffix,
+          store,
+        ),
       )
+      if (input === undefined) continue
       const skus = (input.variants ?? []).map((v) => v.sku)
       // Every clash is listed, though the import stops at the first.
       let refused = (await taken('product-slug', input.slug, input.slug, sourceId)) !== null
+      const own = new Set<string>()
       for (const sku of skus) {
+        if (own.has(sku)) {
+          // The store refuses a product whose own variants share a SKU.
+          clash('sku', 'source', sku, sku, [sourceId])
+          refused = true
+          continue
+        }
+        own.add(sku)
         if ((await taken('sku', sku, sku, sourceId)) !== null) refused = true
       }
       if (refused) {
@@ -338,7 +373,10 @@ export async function planWooCommerceImport(
     for await (const wc of records<WcCustomer>('customers')) {
       const sourceId = String(wc.id)
       // An email already held links to that customer: imported, not refused. The value is never reported.
-      const email = mapCustomer(wc, opts.gdpr).email.toLowerCase()
+      const email = readable('customers', sourceId, () =>
+        mapCustomer(wc, opts.gdpr).email.toLowerCase(),
+      )
+      if (email === undefined) continue
       if ((await taken('customer-email', email, '', sourceId)) === null) {
         claim('customer-email', email, sourceId)
       }
@@ -350,19 +388,22 @@ export async function planWooCommerceImport(
   if (selected('orders')) {
     for await (const wc of records<WcOrder>('orders')) {
       const sourceId = String(wc.id)
-      const { customerWcId, lineProductWcIds } = orderRefs(wc)
-      const lineProducts: Record<number, string> = {}
-      for (const id of lineProductWcIds) {
-        const planned = productIds.get(id)
-        if (planned) lineProducts[id] = planned
-      }
-      const input = mapOrder(
-        wc,
-        customerWcId ? (customerIds.get(customerWcId) ?? null) : null,
-        lineProducts,
-        opts.currency,
-        { gdpr: opts.gdpr },
-      )
+      const input = readable('orders', sourceId, () => {
+        const { customerWcId, lineProductWcIds } = orderRefs(wc)
+        const lineProducts: Record<number, string> = {}
+        for (const id of lineProductWcIds) {
+          const planned = productIds.get(id)
+          if (planned) lineProducts[id] = planned
+        }
+        return mapOrder(
+          wc,
+          customerWcId ? (customerIds.get(customerWcId) ?? null) : null,
+          lineProducts,
+          opts.currency,
+          { gdpr: opts.gdpr },
+        )
+      })
+      if (input === undefined) continue
       if (await taken('order-number', input.orderNumber, input.orderNumber, sourceId)) {
         counts.orders.refused++
         continue
@@ -374,12 +415,15 @@ export async function planWooCommerceImport(
 
   if (selected('reviews')) {
     for await (const wc of records<WcReview>('reviews')) {
-      const productId = productIds.get(reviewRefs(wc).productWcId)
+      const sourceId = String(wc.id)
+      const refs = readable('reviews', sourceId, () => reviewRefs(wc))
+      if (refs === undefined) continue
+      const productId = productIds.get(refs.productWcId)
       if (!productId) {
         counts.reviews.skipped++
         continue
       }
-      mapReview(wc, productId, null)
+      if (readable('reviews', sourceId, () => mapReview(wc, productId, null)) === undefined) continue
       counts.reviews.import++
     }
   }
@@ -434,6 +478,7 @@ export async function planWooCommerceImport(
       PLAN_ENTITIES.map((e) => [e, fields[e].unmapped()]),
     ) as ImportPlan['unmapped'],
     collisions: [...collisions.values()],
+    errors,
     estimate: {
       requests: { api, images },
       meanRequestMs,

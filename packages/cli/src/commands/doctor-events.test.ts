@@ -15,16 +15,16 @@ import {
   doctorLines,
   migratedSqlite,
   REPO_ROOT,
-  runCli,
   type CliRun,
 } from '../../../../tests/support/doctor.js'
+import { runInProcess } from './fixtures/in-process.js'
 import { sqliteProject, stdoutLines } from '../../../../tests/support/events-cli.js'
 import { createKernel, seedVariant } from '../../../platform/tests/support/kernel.js'
 
-// AC-10: `nymbal doctor` names dead events, and `nymbal events query --json` carries each event's attempts and
-// deadAt. The built CLI against SQLite stores whose events were made dead (or left waiting to retry) by a bus that
-// refuses their type: the relay counts every refusal, and the fifth makes an event dead. Each store is switched to a
-// rollback journal, so a command that writes changes the file's bytes. Needs `pnpm build`.
+// AC-10: `nymbal doctor` names dead events, and `nymbal events query --json` carries each event's attempts and deadAt.
+// The commands, run in this process (fixtures/in-process.ts), against SQLite stores whose events were made dead (or
+// left waiting to retry) by a bus that refuses their type: the relay counts every refusal, and the fifth makes an event
+// dead. Each store is switched to a rollback journal, so a command that writes changes the file's bytes.
 
 const MAX_ATTEMPTS = 5
 
@@ -131,7 +131,7 @@ async function fixture(dbPath: string): Promise<Fixture> {
 }
 
 const doctor = (f: Fixture, args: string[] = []) =>
-  runCli(['doctor', ...args], { cwd: f.project.dir, env: f.project.env })
+  runInProcess(['doctor', ...args], { cwd: f.project.dir, env: f.project.env })
 
 const eventsLine = (run: CliRun) => doctorLines(run.out).find((l) => l.name === 'events')
 
@@ -207,10 +207,13 @@ describe('AC-10: doctor and the log name dead events', { timeout: 60_000 }, () =
     const wanted = two.rows.filter((r) => r.attempts > 0)
     const printed = new Map<string, Record<string, unknown>>()
     for (const correlationId of new Set(wanted.map((r) => r.correlationId))) {
-      const run = await runCli(['events', 'query', '--correlation', correlationId, '--json'], {
-        cwd: two.project.dir,
-        env: two.project.env,
-      })
+      const run = await runInProcess(
+        ['events', 'query', '--correlation', correlationId, '--json'],
+        {
+          cwd: two.project.dir,
+          env: two.project.env,
+        },
+      )
       expect(run.code, run.out.slice(-3000)).toBe(0)
       for (const l of stdoutLines(run.stdout)) {
         const parsed = JSON.parse(l) as Record<string, unknown>

@@ -33,6 +33,20 @@ export function useOrders(filters: OrderFilters = {}) {
   })
 }
 
+/** How many orders are pending, as the API counts them under that filter. */
+export function usePendingOrderCount() {
+  return useQuery({
+    queryKey: ['orders', 'count', 'pending'],
+    queryFn: async () => {
+      const page = await api.getPage<AdminOrder[]>('/api/admin/orders', {
+        status: 'pending',
+        limit: 1,
+      })
+      return Number(page.meta?.['total'] ?? 0)
+    },
+  })
+}
+
 export function useOrder(orderNumber: string) {
   return useQuery({
     queryKey: ['orders', 'detail', orderNumber],
@@ -191,17 +205,22 @@ export function useRefundOrder() {
       amountMinor,
       reason,
       requestId,
+      variantId,
     }: {
       orderId: string
       amountMinor: number
       reason?: string
       /** Sent again on a retry of the same refund, so the server makes it once. */
       requestId: string
+      /** The order line the refund is for; absent for one not tied to a product. */
+      variantId?: string
     }) =>
-      api.post<RefundAnswer>(
-        `/api/admin/orders/${orderId}/refund`,
-        reason ? { amountMinor, reason, requestId } : { amountMinor, requestId },
-      ),
+      api.post<RefundAnswer>(`/api/admin/orders/${orderId}/refund`, {
+        amountMinor,
+        requestId,
+        ...(reason && { reason }),
+        ...(variantId !== undefined && { variantId }),
+      }),
     onSuccess: async (answer) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['orders', 'detail', answer.order.orderNumber] }),

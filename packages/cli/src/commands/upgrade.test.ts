@@ -13,10 +13,11 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cliEnv, closedPort, runCli, stripAnsi } from '../../../../tests/support/doctor.js'
+import { runInProcess } from './fixtures/in-process.js'
 
-// `nymbal upgrade` run for real against a store on disk: the built CLI (`pnpm build` first), a fake compatibility
-// matrix over NYMBAL_MATRIX_URL, recording fakes for the package managers on PATH and for the store's own
-// `node_modules/.bin/nymbal`. Nothing real is fetched or installed.
+// `nymbal upgrade` run for real against a store on disk: in this process (one case through the built CLI, `pnpm build`
+// first), a fake compatibility matrix over NYMBAL_MATRIX_URL, recording fakes for the package managers on PATH and for
+// the store's own `node_modules/.bin/nymbal`. Nothing real is fetched or installed.
 
 vi.setConfig({ testTimeout: 30_000 })
 
@@ -244,8 +245,14 @@ function store(options: StoreOptions = {}) {
 type Store = ReturnType<typeof store>
 
 /** Runs the command in the store and returns the run with its streams free of colour codes. */
-async function upgrade(s: Store, matrixUrl: string, args: string[] = [], extra = {}) {
-  const run = await runCli(['upgrade', ...args], {
+async function upgrade(
+  s: Store,
+  matrixUrl: string,
+  args: string[] = [],
+  extra = {},
+  how: 'in-process' | 'spawned' = 'in-process',
+) {
+  const run = await (how === 'spawned' ? runCli : runInProcess)(['upgrade', ...args], {
     cwd: s.dir,
     env: s.env(matrixUrl, extra),
   })
@@ -339,7 +346,7 @@ describe('AC-9: a compatible row moves the store to the new versions', () => {
     const s = store()
     const pageBefore = readFileSync(s.pageFile)
 
-    const run = await upgrade(s, matrix.url)
+    const run = await upgrade(s, matrix.url, [], {}, 'spawned')
 
     expect(run.code, run.out).toBe(0)
     expect(run.printed).toContain(`upgraded to ${TARGET}`)

@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto'
+import { createStoreClient, pageShows, StepFailed } from './store-client.js'
 
 // The smoke journey `nymbal verify` runs over HTTP against a store and its storefront: no browser, no project access.
 // Everything it needs comes through its arguments, so the command and its tests drive the same code.
@@ -38,9 +39,6 @@ export interface JourneyOptions {
   onStep?: (result: StepResult) => void
 }
 
-/** A step that cannot pass: its message is the step's detail. */
-class StepFailed extends Error {}
-
 const ADDRESS = {
   firstName: 'Verify',
   lastName: 'Journey',
@@ -51,37 +49,7 @@ const ADDRESS = {
   country: 'GB',
 }
 
-const JAVASCRIPT = /^(text|application)\/javascript\s*(;|$)/i
-const HTML = /^text\/html\s*(;|$)/i
-
-const ENTITIES: Record<string, string> = {
-  '&amp;': '&',
-  '&lt;': '<',
-  '&gt;': '>',
-  '&quot;': '"',
-  '&#39;': "'",
-  '&#x27;': "'",
-}
-const unescapeHtml = (html: string) =>
-  html.replace(/&(?:amp|lt|gt|quot|#39|#x27);/gi, (e) => ENTITIES[e.toLowerCase()] ?? e)
-
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
-
-const messageOf = (err: unknown): string => {
-  if (err instanceof Error) {
-    if (err.name === 'TimeoutError' || err.name === 'AbortError') return 'no answer in time'
-    const cause = (err as { cause?: unknown }).cause
-    const why = cause instanceof Error && cause.message !== err.message ? `: ${cause.message}` : ''
-    return `${err.message}${why}`
-  }
-  return String(err)
-}
-
-interface Answer {
-  status: number
-  type: string
-  text: string
-}
 
 interface Product {
   id: string
@@ -101,113 +69,10 @@ export async function runJourney(
   const requestTimeoutMs = options.requestTimeoutMs ?? 10_000
   const settleTimeoutMs = options.settleTimeoutMs ?? 15_000
   const pollIntervalMs = options.pollIntervalMs ?? 1_000
-  const storefrontOrigin = new URL(target.storefrontUrl).origin
-
-  // The API's double-submit CSRF pair, and the cart cookie it sets.
-  const csrf = randomBytes(32).toString('hex')
-  const jar = new Map<string, string>([['nymbal.csrf', csrf]])
-
-  /** One bounded request; the body is read within the same bound. */
-  async function request(url: URL, init: RequestInit = {}): Promise<Answer> {
-    const label = `${init.method ?? 'GET'} ${url.pathname}`
-    try {
-      const res = await doFetch(url, { ...init, signal: AbortSignal.timeout(requestTimeoutMs) })
-      const text = await res.text()
-      return { status: res.status, type: res.headers.get('content-type') ?? '', text }
-    } catch (err) {
-      throw new StepFailed(`${label}: ${messageOf(err)}`)
-    }
-  }
-
-  async function api(
-    method: 'GET' | 'POST',
-    path: string,
-    body?: unknown,
-    headers: Record<string, string> = {},
-  ): Promise<{ status: number; data: unknown }> {
-    const url = new URL(path, target.apiUrl)
-    const label = `${method} ${url.pathname}`
-    try {
-      const res = await doFetch(url, {
-        method,
-        headers: {
-          cookie: [...jar].map(([k, v]) => `${k}=${v}`).join('; '),
-          'x-csrf-token': csrf,
-          ...(body !== undefined && { 'content-type': 'application/json' }),
-          ...headers,
-        },
-        ...(body !== undefined && { body: JSON.stringify(body) }),
-        signal: AbortSignal.timeout(requestTimeoutMs),
-      })
-      for (const set of res.headers.getSetCookie()) {
-        const pair = set.split(';')[0] ?? ''
-        const eq = pair.indexOf('=')
-        if (eq > 0) jar.set(pair.slice(0, eq).trim(), pair.slice(eq + 1).trim())
-      }
-      const text = await res.text()
-      let data: unknown = null
-      try {
-        data = text === '' ? null : (JSON.parse(text) as { data?: unknown }).data
-      } catch {
-        data = null
-      }
-      return { status: res.status, data }
-    } catch (err) {
-      throw new StepFailed(`${label}: ${messageOf(err)}`)
-    }
-  }
-
-  /** An API call that must answer 200; its `data`. */
-  async function api200(
-    method: 'GET' | 'POST',
-    path: string,
-    body?: unknown,
-    headers?: Record<string, string>,
-  ): Promise<unknown> {
-    const answer = await api(method, path, body, headers)
-    if (answer.status !== 200) {
-      throw new StepFailed(
-        `${method} ${new URL(path, target.apiUrl).pathname} answered ${answer.status}`,
-      )
-    }
-    return answer.data
-  }
-
-  /** An HTML page that must answer 200 text/html. */
-  async function htmlPage(url: URL): Promise<string> {
-    const page = await request(url)
-    if (page.status !== 200) throw new StepFailed(`GET ${url.pathname} answered ${page.status}`)
-    if (!HTML.test(page.type)) {
-      throw new StepFailed(`GET ${url.pathname} is ${page.type || 'untyped'}, not text/html`)
-    }
-    return page.text
-  }
-
-  /** Every same-origin `<script src>` the page names must be served as JavaScript; another origin's is not fetched. */
-  async function scriptsServed(html: string, pageUrl: URL): Promise<number> {
-    const sources = new Set<string>()
-    for (const match of html.matchAll(
-      /<script\b[^>]*?\ssrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi,
-    )) {
-      const src = match[1] ?? match[2] ?? match[3] ?? ''
-      if (src === '') continue
-      const url = new URL(src, pageUrl)
-      if (url.origin === storefrontOrigin) sources.add(url.href)
-    }
-    for (const href of sources) {
-      const url = new URL(href)
-      const script = await request(url)
-      if (script.status !== 200) {
-        throw new StepFailed(`script ${url.pathname} answered ${script.status}`)
-      }
-      if (!JAVASCRIPT.test(script.type)) {
-        throw new StepFailed(
-          `script ${url.pathname} is ${script.type || 'untyped'}, not JavaScript`,
-        )
-      }
-    }
-    return sources.size
-  }
+  const { api200, htmlPage, scriptsServed, request } = createStoreClient(target, {
+    fetch: doFetch,
+    requestTimeoutMs,
+  })
 
   /** Reads at once, then every poll interval until `read` is satisfied or the settle bound passes. */
   async function settle(read: () => Promise<string | null>): Promise<void> {
@@ -259,7 +124,7 @@ export async function runJourney(
       chosen = { product, variantId: variant.id, stockBefore: variant.stock }
       const url = new URL(`/product/${encodeURIComponent(product.slug)}`, target.storefrontUrl)
       const html = await htmlPage(url)
-      if (!html.includes(product.name) && !unescapeHtml(html).includes(product.name)) {
+      if (!pageShows(html, product.name)) {
         throw new StepFailed(`GET ${url.pathname} does not show "${product.name}"`)
       }
       const scripts = await scriptsServed(html, url)

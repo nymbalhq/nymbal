@@ -46,8 +46,14 @@ interface Fixture {
   project: ReturnType<typeof sqliteProject>
 }
 
-/** A migrated SQLite store holding a suppression row for each of `emails`. */
-function fixture(emails: string[]): Fixture {
+interface Suppressed {
+  email: string
+  reason: string
+  createdAt: string
+}
+
+/** A migrated SQLite store holding `rows`, written in the order given. */
+function fixtureOf(rows: Suppressed[]): Fixture {
   const dir = mkdtempSync(join(tmpdir(), 'suppressions-'))
   dirs.push(dir)
   const path = join(dir, 'nymbal.db')
@@ -57,15 +63,24 @@ function fixture(emails: string[]): Fixture {
     const insert = db.prepare(
       'INSERT INTO email_suppressions (email, reason, event_id, created_at) VALUES (?, ?, ?, ?)',
     )
-    for (const email of emails) {
-      insert.run(email, 'hard_bounce', `event-${email}`, '2026-11-01T10:00:00.000Z')
-    }
+    for (const row of rows) insert.run(row.email, row.reason, `event-${row.email}`, row.createdAt)
   } finally {
     db.close()
   }
   const project = sqliteProject(path)
   dirs.push(project.dir)
   return { path, project }
+}
+
+/** A migrated SQLite store holding a hard-bounce suppression row for each of `emails`. */
+function fixture(emails: string[]): Fixture {
+  return fixtureOf(
+    emails.map((email) => ({
+      email,
+      reason: 'hard_bounce',
+      createdAt: '2026-11-01T10:00:00.000Z',
+    })),
+  )
 }
 
 function storedEmails(path: string): string[] {
@@ -144,5 +159,99 @@ describe('nymbal suppressions clear', () => {
     expect(run.code, run.out.slice(-1000)).toBe(2)
     expect(run.stderr).toContain('run `nymbal migrate`')
     expect(existsSync(missing), 'the command created the database').toBe(false)
+  }, 60_000)
+})
+
+const suppressionsRun = (f: Fixture, args: string[]) =>
+  runCli(['suppressions', ...args], { cwd: f.project.dir, env: f.project.env })
+
+describe('nymbal suppressions show', () => {
+  it('AC-12: for a suppressed address typed with spaces and mixed case it exits 0 and prints the normalised address, its reason and its date, and the store is unchanged', async () => {
+    const f = fixtureOf([
+      { email: 'bounced@example.com', reason: 'complaint', createdAt: '2026-10-15T08:30:00.000Z' },
+      { email: 'kept@example.com', reason: 'hard_bounce', createdAt: '2026-11-01T10:00:00.000Z' },
+    ])
+    const before = hashOf(f.path)
+
+    const run = await suppressionsRun(f, ['show', ' Bounced@Example.COM '])
+
+    expect([run.code, stdoutLines(run.stdout)], run.out.slice(-1000)).toEqual([
+      0,
+      ['bounced@example.com is suppressed (complaint, 2026-10-15)'],
+    ])
+    unchanged(f.path, before, run)
+  }, 60_000)
+
+  it('AC-12: for an address not suppressed it exits 1, names the normalised address on stderr, and the store is unchanged', async () => {
+    const f = fixture(['kept@example.com'])
+    const before = hashOf(f.path)
+
+    const run = await suppressionsRun(f, ['show', ' Nobody@Example.COM '])
+
+    expect([run.code, stdoutLines(run.stdout)], run.out.slice(-1000)).toEqual([1, []])
+    expect(run.stderr).toContain('nymbal suppressions: nobody@example.com is not suppressed')
+    unchanged(f.path, before, run)
+  }, 60_000)
+})
+
+describe('nymbal suppressions list', () => {
+  // Written oldest, newest, middle: the listing's order is the dates', never the rows'.
+  const THREE: Suppressed[] = [
+    { email: 'oldest@example.com', reason: 'hard_bounce', createdAt: '2026-09-01T12:00:00.000Z' },
+    { email: 'newest@example.com', reason: 'complaint', createdAt: '2026-11-05T07:15:00.000Z' },
+    { email: 'middle@example.com', reason: 'hard_bounce', createdAt: '2026-10-20T23:59:00.000Z' },
+  ]
+
+  it('AC-13: with three suppressions it prints three lines newest first, each the address, reason and date; --limit 2 prints the first two of them and a stderr line naming 2 of 3; the store is unchanged', async () => {
+    const f = fixtureOf(THREE)
+    const before = hashOf(f.path)
+
+    const all = await suppressionsRun(f, ['list'])
+    const two = await suppressionsRun(f, ['list', '--limit', '2'])
+
+    expect([all.code, stdoutLines(all.stdout)], all.out.slice(-1000)).toEqual([
+      0,
+      [
+        'newest@example.com  complaint  2026-11-05',
+        'middle@example.com  hard_bounce  2026-10-20',
+        'oldest@example.com  hard_bounce  2026-09-01',
+      ],
+    ])
+    expect([two.code, stdoutLines(two.stdout)], two.out.slice(-1000)).toEqual([
+      0,
+      stdoutLines(all.stdout).slice(0, 2),
+    ])
+    expect(two.stderr.trim().split('\n').at(-1)).toBe('2 of 3 shown: --limit 3 lists all')
+    unchanged(f.path, before, two)
+  }, 60_000)
+
+  it('AC-13: an empty store prints no suppressed addresses and exits 0', async () => {
+    const f = fixtureOf([])
+    const before = hashOf(f.path)
+
+    const run = await suppressionsRun(f, ['list'])
+
+    expect([run.code, stdoutLines(run.stdout)], run.out.slice(-1000)).toEqual([
+      0,
+      ['no suppressed addresses'],
+    ])
+    unchanged(f.path, before, run)
+  }, 60_000)
+
+  it('AC-13: --limit 0 and --limit x each exit 2 and list nothing, and the store is unchanged', async () => {
+    const f = fixtureOf(THREE)
+    const before = hashOf(f.path)
+
+    const zero = await suppressionsRun(f, ['list', '--limit', '0'])
+    const word = await suppressionsRun(f, ['list', '--limit', 'x'])
+
+    expect(
+      [zero, word].map((run) => [run.code, stdoutLines(run.stdout)]),
+      `${zero.out.slice(-500)}\n${word.out.slice(-500)}`,
+    ).toEqual([
+      [2, []],
+      [2, []],
+    ])
+    unchanged(f.path, before, word)
   }, 60_000)
 })

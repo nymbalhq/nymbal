@@ -2,13 +2,14 @@ import {
   ORDER_EMAIL_HEADER,
   ORDER_KEY_HEADER,
   type AlertKind,
-  type Cart,
   type CheckoutQuote,
   type Customer,
   type CustomerAddress,
+  type CustomerSession,
   type Order,
   type PublicReviewsResult,
   type ReviewResult,
+  type ShopperCart,
   type ShopperOrder,
   type StoreCapabilities,
 } from '@nymbalhq/types'
@@ -54,26 +55,35 @@ export function createNymbalApiAdapter(fetchClient: FetchClient): CommerceAdapte
 
     cart: {
       get() {
-        return fetchClient.request<Cart>('GET', '/api/cart')
+        return fetchClient.request<ShopperCart>('GET', '/api/cart')
       },
       addItem(variantId: string, qty: number) {
-        return fetchClient.request<Cart>('POST', '/api/cart/items', { variantId, qty })
+        return fetchClient.request<ShopperCart>('POST', '/api/cart/items', { variantId, qty })
       },
       removeItem(variantId: string) {
-        return fetchClient.request<Cart>(
+        return fetchClient.request<ShopperCart>(
           'DELETE',
           `/api/cart/items/${encodeURIComponent(variantId)}`,
         )
       },
       updateQuantity(variantId: string, qty: number) {
-        return fetchClient.request<Cart>(
+        return fetchClient.request<ShopperCart>(
           'PATCH',
           `/api/cart/items/${encodeURIComponent(variantId)}`,
           { qty },
         )
       },
       clear() {
-        return fetchClient.request<Cart>('DELETE', '/api/cart')
+        return fetchClient.request<ShopperCart>('DELETE', '/api/cart')
+      },
+      addCode(code: string) {
+        return fetchClient.request<ShopperCart>('POST', '/api/cart/codes', { code })
+      },
+      removeCode(code: string) {
+        return fetchClient.request<ShopperCart>(
+          'DELETE',
+          `/api/cart/codes/${encodeURIComponent(code)}`,
+        )
       },
     },
 
@@ -158,6 +168,23 @@ export function createNymbalApiAdapter(fetchClient: FetchClient): CommerceAdapte
       },
       async logout() {
         await fetchClient.request<{ ok: boolean }>('POST', '/api/auth/logout')
+      },
+      async listSessions() {
+        return (
+          await fetchClient.request<{ sessions: CustomerSession[] }>(
+            'GET',
+            '/api/customers/me/sessions',
+          )
+        ).sessions
+      },
+      endSession(id: string) {
+        return fetchClient.request<{ ended: true; current: boolean }>(
+          'DELETE',
+          `/api/customers/me/sessions/${encodeURIComponent(id)}`,
+        )
+      },
+      async endAllSessions() {
+        await fetchClient.request<{ ended: 'all' }>('DELETE', '/api/customers/me/sessions')
       },
       refresh() {
         return fetchClient.request<{ accessToken: string; expiresIn: number }>(

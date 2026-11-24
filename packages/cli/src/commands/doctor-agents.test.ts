@@ -8,13 +8,13 @@ import {
   doctorJson,
   doctorLines,
   migratedSqlite,
-  runCli,
   type CliRun,
 } from '../../../../tests/support/doctor.js'
+import { runInProcess } from './fixtures/in-process.js'
 
 // AC-2: `nymbal doctor` says, before an agent arrives, whether UCP checkout is advertised without the legal links an
 // agent shows the buyer. The line sits after `events` and before `trust proxy`, is a warning and never fails the run.
-// Spawns the built CLI (`pnpm build` first) in a fresh project per case, on the repository's config.
+// Runs the command in this process (fixtures/in-process.ts) in a fresh project per case, on the repository's config.
 
 const LINKS = [
   { type: 'privacy_policy', url: 'https://shop.example/privacy' },
@@ -75,8 +75,8 @@ async function doctor(
     NYMBAL_PUBLIC_URL: undefined,
   })
   return {
-    text: await runCli(['doctor'], { cwd: project, env }),
-    json: await runCli(['doctor', '--json'], { cwd: project, env }),
+    text: await runInProcess(['doctor'], { cwd: project, env }),
+    json: await runInProcess(['doctor', '--json'], { cwd: project, env }),
   }
 }
 
@@ -92,6 +92,7 @@ describe('AC-2: nymbal doctor reports how ready the agent surfaces are', () => {
     expect(names.slice(names.indexOf('events'), names.indexOf('trust proxy') + 1)).toEqual([
       'events',
       'legacy passwords',
+      'tax documents',
       'agents',
       'trust proxy',
     ])

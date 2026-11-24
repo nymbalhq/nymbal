@@ -274,7 +274,9 @@ test('AC-22: with stock=0 a notify-me subscribe puts one confirmation in Mailpit
 
   await page.getByTestId('notify-me').locator('input[name="email"]').fill(email)
   await page.getByTestId('notify-me-submit').click()
-  await expect(page.getByTestId('notify-me-notice')).toHaveText('Check your inbox to confirm.')
+  await expect(page.getByTestId('notify-me-notice')).toHaveText(
+    'Check your inbox to confirm. Nothing arrived? Check the address and subscribe again.',
+  )
 
   const [confirmation] = await mail.waitFor(email, 1)
   const links = linksIn(confirmation!)
@@ -360,7 +362,9 @@ test('AC-23: double-clicking Notify me puts one confirmation in Mailpit from one
   await expect.poll(hold.posts).toBe(1)
   hold.release()
 
-  await expect(page.getByTestId('notify-me-notice')).toHaveText('Check your inbox to confirm.')
+  await expect(page.getByTestId('notify-me-notice')).toHaveText(
+    'Check your inbox to confirm. Nothing arrived? Check the address and subscribe again.',
+  )
   await mail.waitFor(email, 1)
   expect(hold.posts(), 'k rapid clicks, one command').toBe(1)
   expect(await mail.messages(email)).toHaveLength(1)

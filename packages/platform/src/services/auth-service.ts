@@ -14,6 +14,7 @@ import {
   ValidationError,
   type Customer,
   type CustomerAddress,
+  type CustomerSession,
   type Logger,
   type Role,
 } from '@nymbalhq/types'
@@ -46,6 +47,8 @@ import {
   type LegacyRecipe,
   type LegacyWork,
 } from './legacy-passwords.js'
+import type { OldPlatformCheck, RemoteProfile } from './legacy-remote.js'
+import { describeDevice } from './device-label.js'
 
 export interface AuthTokens {
   accessToken: string
@@ -67,6 +70,13 @@ export interface CustomerJwtPayload extends JWTPayload {
   roles: Role[]
   type: 'access' | 'refresh'
   jti?: string
+  /** The session (sign-in) the token belongs to; absent on a token minted before sessions were named. */
+  sid?: string
+}
+
+/** What the request that signs a customer in says about its client; the device label is made from it. */
+export interface ClientInfo {
+  userAgent?: string
 }
 
 export interface ImportCustomerInput {
@@ -84,23 +94,40 @@ export interface AuthService {
   /** The sign-up policy the store runs: `required` asks a new address to follow a mailed link before it signs in. */
   readonly verification: VerificationPolicy
   /** The `off` policy's sign-up: a new address signs in at once; a taken one is refused. */
-  register(input: RegisterInput): Promise<{ customer: Customer; tokens: AuthTokens }>
+  register(
+    input: RegisterInput,
+    client?: ClientInfo,
+  ): Promise<{ customer: Customer; tokens: AuthTokens }>
   /**
    * The `required` policy's sign-up, alike for every address: a new one gets a pending account and a confirmation
    * link, a pending one takes this register's password and names, and any other account's owner is told by mail.
    */
   signUp(input: RegisterInput): Promise<void>
   /** Confirms the address with a mailed link's token, once, and signs the customer in. */
-  verifyEmail(token: string): Promise<{ customer: Customer; tokens: AuthTokens }>
+  verifyEmail(
+    token: string,
+    client?: ClientInfo,
+  ): Promise<{ customer: Customer; tokens: AuthTokens }>
   /** Mails a pending account's link again; any other address gets the same silence. */
   resendVerification(email: string): Promise<void>
   /** Support's send: a new link for a pending customer, whatever the age of the live one. */
   sendVerification(customerId: string): Promise<void>
   /** Support's confirm: a pending customer becomes verified; any other is answered as it is. */
   markVerified(customerId: string): Promise<Customer>
-  login(email: string, password: string): Promise<{ customer: Customer; tokens: AuthTokens }>
+  login(
+    email: string,
+    password: string,
+    client?: ClientInfo,
+  ): Promise<{ customer: Customer; tokens: AuthTokens }>
   refresh(refreshToken: string): Promise<AuthTokens>
+  /** Ends the session of a refresh token, every renewal of it included; any other token ends nothing. */
   logout(refreshToken: string): Promise<void>
+  /** The customer's signed-in devices, most recently active first; `currentSessionId` marks the caller's. */
+  listSessions(customerId: string, currentSessionId?: string): Promise<CustomerSession[]>
+  /** Ends one session of the customer; false when the customer has no such session still signed in. */
+  endSession(customerId: string, sessionId: string): Promise<boolean>
+  /** Ends every session of the customer. */
+  endAllSessions(customerId: string): Promise<void>
   verifyAccessToken(token: string): Promise<CustomerJwtPayload>
   importCustomer(input: ImportCustomerInput): Promise<Customer>
   /** Mails a reset link to a customer with this address; an address with none gets the same silence. */
@@ -109,12 +136,14 @@ export interface AuthService {
   resetPassword(
     token: string,
     password: string,
+    client?: ClientInfo,
   ): Promise<{ customer: Customer; tokens: AuthTokens }>
   /** Sets a new password given the current one, ends every earlier session and starts a fresh one. */
   changePassword(
     customerId: string,
     currentPassword: string,
     newPassword: string,
+    client?: ClientInfo,
   ): Promise<{ customer: Customer; tokens: AuthTokens }>
   /**
    * Attaches a password hash from the old platform to the customer with this email when they have no password of
@@ -142,8 +171,13 @@ export interface CreateAuthServiceDeps {
   issuer?: string
   /** `off` when absent. */
   verification?: VerificationPolicy
-  /** Imported password hashes are honoured while `now < until`; none are without an `until`. */
-  legacy?: { until?: Date; maxCost: LegacyMaxCost }
+  /**
+   * Imported password hashes are honoured while `now < until`; none are without an `until`. In that window `remote`
+   * is asked about an address with no customer or no password here.
+   */
+  legacy?: { until?: Date; maxCost: LegacyMaxCost; remote?: OldPlatformCheck }
+  /** How a refusal that asked the old platform nothing waits; a timer when absent. */
+  sleep?: (ms: number) => Promise<void>
 }
 
 export function parseDurationToMs(s: string): number {
@@ -264,6 +298,9 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
   const verification = deps.verification ?? 'off'
   const legacyUntil = deps.legacy?.until
   const maxCost = deps.legacy?.maxCost ?? 10
+  const remote = deps.legacy?.remote
+  const sleep =
+    deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
   const { store } = repos.customer
   const issuer = deps.issuer ?? 'nymbal'
   const secretKey = new TextEncoder().encode(jwtSecret)
@@ -271,12 +308,13 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
   const refreshTtlMs = parseDurationToMs(refreshTtl)
 
   /** Its own jti: the other claims are whole seconds, so two minted in one second for one customer would be one. */
-  async function mintAccess(customer: CustomerWithHash): Promise<string> {
+  async function mintAccess(customer: CustomerWithHash, sid: string): Promise<string> {
     return new SignJWT({
       sub: customer.id,
       email: customer.email,
       roles: customer.roles,
       type: 'access',
+      sid,
     } satisfies CustomerJwtPayload)
       .setProtectedHeader({ alg: 'HS256' })
       .setIssuedAt()
@@ -286,13 +324,14 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
       .sign(secretKey)
   }
 
-  async function mintRefresh(customer: Customer, jti: string): Promise<string> {
+  async function mintRefresh(customer: Customer, jti: string, sid: string): Promise<string> {
     return new SignJWT({
       sub: customer.id,
       email: customer.email,
       roles: ['customer'],
       type: 'refresh',
       jti,
+      sid,
     } satisfies CustomerJwtPayload)
       .setProtectedHeader({ alg: 'HS256' })
       .setIssuedAt()
@@ -302,19 +341,28 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
       .sign(secretKey)
   }
 
-  async function issueTokens(customer: CustomerWithHash): Promise<AuthTokens> {
+  /** Starts a session: its first refresh token's row names it, when it began and the device it began on. */
+  async function issueTokens(
+    customer: CustomerWithHash,
+    client: ClientInfo | undefined,
+  ): Promise<AuthTokens> {
     const jti = uuidv7()
-    const refreshToken = await mintRefresh(customer, jti)
+    const sessionId = uuidv7()
+    const refreshToken = await mintRefresh(customer, jti, sessionId)
+    const now = new Date()
     await store.transaction((tx) =>
       repos.refreshToken.insert(tx, {
         id: jti,
         customerId: customer.id,
         tokenHash: hashRefresh(refreshToken),
-        expiresAt: new Date(Date.now() + refreshTtlMs),
-        createdAt: new Date(),
+        expiresAt: new Date(now.getTime() + refreshTtlMs),
+        createdAt: now,
+        sessionId,
+        sessionStartedAt: now,
+        device: describeDevice(client?.userAgent),
       }),
     )
-    const accessToken = await mintAccess(customer)
+    const accessToken = await mintAccess(customer, sessionId)
     return {
       accessToken,
       refreshToken,
@@ -377,8 +425,9 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
 
   async function signedIn(
     customer: CustomerWithHash,
+    client: ClientInfo | undefined,
   ): Promise<{ customer: Customer; tokens: AuthTokens }> {
-    const tokens = await issueTokens(customer)
+    const tokens = await issueTokens(customer, client)
     logger.info({ customerId: customer.id }, 'customer login')
     return { customer: stripPassword(customer), tokens }
   }
@@ -422,12 +471,30 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
   }
 
   /**
-   * A right legacy password becomes a native hash of the password as typed. The write takes only where the row still
-   * holds the value that was checked, so a reset, a sweep or another import since the read wins over it.
+   * Another write took the row first. A native hash there is checked as any sign-in is (a concurrent write of the same
+   * password passes); anything else is refused without a second check.
+   */
+  async function afterLostWrite(
+    now: CustomerWithHash | null,
+    password: string,
+    client: ClientInfo | undefined,
+  ): Promise<{ customer: Customer; tokens: AuthTokens }> {
+    if (hasPassword(now) && (await bcryptCompare(bcryptCandidate(password), now.passwordHash))) {
+      return signedIn(now, client)
+    }
+    throw invalidCredentials()
+  }
+
+  /**
+   * A right legacy password, or one the old platform vouched for, becomes a native hash of the password as typed. The
+   * write takes only where the row still holds the value that was checked, so a reset, a sweep or another import since
+   * the read wins over it.
    */
   async function upgrade(
     customer: CustomerWithHash,
     password: string,
+    command: 'customer.upgradePassword' | 'customer.oldPlatformSignIn',
+    client: ClientInfo | undefined,
   ): Promise<{ customer: Customer; tokens: AuthTokens }> {
     const passwordHash = await bcryptHash(password, PASSWORD_HASH_ROUNDS)
     // The conditional write binds the imported hash it replaces, so a failed statement's error leaves without it.
@@ -439,7 +506,7 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
           requiresPasswordReset: false,
         })
         if (!wrote) return null
-        audit.note('customer.upgradePassword', [{ type: 'customer', id: customer.id }])
+        audit.note(command, [{ type: 'customer', id: customer.id }])
         const fresh = (await repos.customer.findById(tx, customer.id))!
         await publisher.publish(EVT_CUSTOMER_UPDATED, {
           customerId: customer.id,
@@ -450,20 +517,69 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
       .catch((err: unknown) => {
         throw withoutQueryParams(err)
       })
-    if (upgraded !== null) return signedIn(upgraded)
-    // Another write took the row first. A native hash there is checked as any sign-in is (a concurrent upgrade of the
-    // same password passes); anything else is refused without a second legacy check.
-    const now = await store.read((tx) => repos.customer.findById(tx, customer.id))
-    if (hasPassword(now) && (await bcryptCompare(bcryptCandidate(password), now.passwordHash))) {
-      return signedIn(now)
+    if (upgraded !== null) return signedIn(upgraded, client)
+    return afterLostWrite(
+      await store.read((tx) => repos.customer.findById(tx, customer.id)),
+      password,
+      client,
+    )
+  }
+
+  /**
+   * The old platform vouched for an address with no customer: one is made with the store's hash of the typed password
+   * and is held as an imported customer is (no confirmation asked, no welcome mailed). Of two first sign-ins at once one
+   * makes the row and the other is checked against it.
+   */
+  async function createVouched(
+    email: string,
+    password: string,
+    profile: RemoteProfile,
+    client: ClientInfo | undefined,
+  ): Promise<{ customer: Customer; tokens: AuthTokens }> {
+    const passwordHash = await bcryptHash(password, PASSWORD_HASH_ROUNDS)
+    const id = uuidv7()
+    let created: CustomerWithHash | null
+    try {
+      created = await store.transaction(async (tx) => {
+        if ((await repos.customer.findByEmail(tx, email)) !== null) return null
+        audit.note('customer.oldPlatformSignIn', [{ type: 'customer', id }])
+        const now = new Date()
+        await repos.customer.insert(tx, {
+          id,
+          email,
+          passwordHash,
+          ...profile,
+          createdAt: now,
+          updatedAt: now,
+        })
+        const inserted = (await repos.customer.findById(tx, id))!
+        await publisher.publish(EVT_CUSTOMER_CREATED, {
+          customerId: id,
+          email,
+          customer: toCustomerSnapshot(inserted),
+          origin: 'import',
+        })
+        return inserted
+      })
+    } catch (err) {
+      // On Postgres the other sign-in's row can commit between the read and the insert, which then fails on the unique
+      // email; with no row at the address the failure was something else.
+      const winner = await store.read((tx) => repos.customer.findByEmail(tx, email))
+      if (winner === null) throw withoutQueryParams(err)
+      return afterLostWrite(winner, password, client)
     }
-    throw invalidCredentials()
+    if (created !== null) return signedIn(created, client)
+    return afterLostWrite(
+      await store.read((tx) => repos.customer.findByEmail(tx, email)),
+      password,
+      client,
+    )
   }
 
   return {
     verification,
 
-    async register(input) {
+    async register(input, client) {
       audit.note('customer.register')
       checkRegisterInput(input)
       const email = input.email.toLowerCase()
@@ -496,7 +612,7 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
         })
         return inserted
       })
-      const tokens = await issueTokens(customer)
+      const tokens = await issueTokens(customer, client)
       logger.info({ customerId: id }, 'customer registered')
       return { customer: stripPassword(customer), tokens }
     },
@@ -564,7 +680,7 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
       })
     },
 
-    async verifyEmail(token) {
+    async verifyEmail(token, client) {
       const tokenHash = hashResetToken(token)
       const live = await store.read((tx) =>
         repos.emailVerificationToken.findLive(tx, tokenHash, new Date()),
@@ -577,7 +693,7 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
         audit.note('customer.verifyEmail', [{ type: 'customer', id: customerId }])
         return confirm(tx, customerId)
       })
-      const tokens = await issueTokens(customer)
+      const tokens = await issueTokens(customer, client)
       logger.info({ customerId: customer.id }, 'customer email verified')
       return { customer: stripPassword(customer), tokens }
     },
@@ -620,7 +736,7 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
       return stripPassword(customer)
     },
 
-    async login(email, password) {
+    async login(email, password, client) {
       const customer = await store.read((tx) => repos.customer.findByEmail(tx, email.toLowerCase()))
       // After the check and with the same refusal, so an unconfirmed account reads as a wrong password.
       const unconfirmed = verification === 'required' && customer?.emailVerification === 'pending'
@@ -632,16 +748,33 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
           real ? customer.passwordHash : DUMMY_PASSWORD_HASH,
         )
         if (!real || !ok || unconfirmed) throw invalidCredentials()
-        return signedIn(customer)
+        return signedIn(customer, client)
       }
       const input = legacyInput(password)
       const own = await checkOwn(customer, password, input)
+      // Only an address with no password here is asked about: a saved one, native or imported, is never sent anywhere.
+      const answer =
+        remote !== undefined &&
+        (customer === null || customer.passwordHash === IMPORTED_NO_PASSWORD)
+          ? await remote.check(email.toLowerCase(), password)
+          : undefined
+      if (answer?.status === 'ok') {
+        return customer === null
+          ? createVouched(email.toLowerCase(), password, answer.profile, client)
+          : upgrade(customer, password, 'customer.oldPlatformSignIn', client)
+      }
       if (customer === null || !own.ok || unconfirmed) {
         await padRefusal(own.work, password, input)
+        // A refusal that sent nothing waits as long as a recent check took, so its time does not say why it was refused.
+        if (remote !== undefined && (answer === undefined || answer.status === 'skipped')) {
+          await sleep(remote.decoyMs())
+        }
         throw invalidCredentials()
       }
-      if (isLegacyPasswordHash(customer.passwordHash)) return upgrade(customer, password)
-      return signedIn(customer)
+      if (isLegacyPasswordHash(customer.passwordHash)) {
+        return upgrade(customer, password, 'customer.upgradePassword', client)
+      }
+      return signedIn(customer, client)
     },
 
     async refresh(refreshToken) {
@@ -682,7 +815,7 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
       const customer = await store.read((tx) => repos.customer.findById(tx, customerId))
       if (!customer) throw new AuthError('token_invalid', 'customer missing')
       const nextJti = uuidv7()
-      const nextRefresh = await mintRefresh(customer, nextJti)
+      const nextRefresh = await mintRefresh(customer, nextJti, record.sessionId)
       const rotated = await store.transaction((tx) =>
         repos.refreshToken.rotate(tx, jti, {
           id: nextJti,
@@ -694,7 +827,7 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
       )
       // A sign-out committed after the read above. Losing to one is not theft, so nothing else is revoked.
       if (!rotated) throw new AuthError('token_invalid', 'refresh token revoked')
-      const accessToken = await mintAccess(customer)
+      const accessToken = await mintAccess(customer, record.sessionId)
       return {
         accessToken,
         refreshToken: nextRefresh,
@@ -710,15 +843,54 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
       } catch {
         return // already invalid
       }
-      const { jti } = payload
-      if (jti) {
-        await store.transaction(async (tx) => {
-          if (await repos.refreshToken.revoke(tx, jti)) return
-          // Already rotated: the pointer names only the last fork, so only ending every session leaves none live.
-          const row = await repos.refreshToken.findById(tx, jti)
-          if (row?.replacedByJti) await repos.refreshToken.revokeAllForCustomer(tx, row.customerId)
-        })
+      const { jti, sub, sid } = payload
+      if (payload.type !== 'refresh' || !jti || !sub) return
+      await store.transaction(async (tx) => {
+        // A token whose row was purged still names its session.
+        const session = (await repos.refreshToken.findById(tx, jti))?.sessionId ?? sid
+        if (session !== undefined) await repos.refreshToken.revokeSession(tx, sub, session)
+      })
+    },
+
+    async listSessions(customerId, currentSessionId) {
+      const rows = await store.read((tx) => repos.refreshToken.listLive(tx, customerId, new Date()))
+      const sessions = new Map<string, CustomerSession>()
+      for (const row of rows) {
+        const seen = sessions.get(row.sessionId)
+        if (seen === undefined) {
+          sessions.set(row.sessionId, {
+            id: row.sessionId,
+            device: row.device,
+            signedInAt: row.sessionStartedAt,
+            lastActiveAt: row.createdAt,
+            current: row.sessionId === currentSessionId,
+          })
+        } else if (Date.parse(row.createdAt) > Date.parse(seen.lastActiveAt)) {
+          seen.lastActiveAt = row.createdAt
+        }
       }
+      return [...sessions.values()].sort(
+        (a, b) => Date.parse(b.lastActiveAt) - Date.parse(a.lastActiveAt),
+      )
+    },
+
+    async endSession(customerId, sessionId) {
+      return store.transaction(async (tx) => {
+        const ended = await repos.refreshToken.revokeSession(tx, customerId, sessionId)
+        // Noted only once a session ended, so an unknown or another customer's id records no applied entry.
+        if (ended) audit.note('customer.endSession', [{ type: 'customer', id: customerId }])
+        return ended
+      })
+    },
+
+    async endAllSessions(customerId) {
+      await store.transaction(async (tx) => {
+        // A repeat, with no device left signed in, records nothing.
+        if ((await repos.refreshToken.listLive(tx, customerId, new Date())).length > 0) {
+          audit.note('customer.endAllSessions', [{ type: 'customer', id: customerId }])
+        }
+        await repos.refreshToken.revokeAllForCustomer(tx, customerId)
+      })
     },
 
     async verifyAccessToken(token) {
@@ -817,7 +989,7 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
       })
     },
 
-    async resetPassword(token, password) {
+    async resetPassword(token, password, client) {
       const tokenHash = hashResetToken(token)
       const live = await store.read((tx) =>
         repos.passwordResetToken.findLive(tx, tokenHash, new Date()),
@@ -833,12 +1005,12 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
         audit.note('customer.resetPassword', [{ type: 'customer', id: customerId }])
         return setPassword(tx, customerId, passwordHash)
       })
-      const tokens = await issueTokens(customer)
+      const tokens = await issueTokens(customer, client)
       logger.info({ customerId: customer.id }, 'customer password reset')
       return { customer: stripPassword(customer), tokens }
     },
 
-    async changePassword(customerId, currentPassword, newPassword) {
+    async changePassword(customerId, currentPassword, newPassword, client) {
       checkPasswordLength(newPassword)
       const current = await store.read((tx) => repos.customer.findById(tx, customerId))
       const ok = current !== null && (await bcryptCompare(currentPassword, current.passwordHash))
@@ -848,7 +1020,7 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
         audit.note('customer.changePassword', [{ type: 'customer', id: customerId }])
         return setPassword(tx, customerId, passwordHash)
       })
-      const tokens = await issueTokens(customer)
+      const tokens = await issueTokens(customer, client)
       logger.info({ customerId }, 'customer password changed')
       return { customer: stripPassword(customer), tokens }
     },

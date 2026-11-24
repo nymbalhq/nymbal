@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import fc from 'fast-check'
 import { v7 as uuidv7 } from 'uuid'
+import type { OrderSource } from '@nymbalhq/types'
 import { InMemoryDocumentStore } from '../document-store/in-memory.js'
 import { createCommandStore } from '../db/command-store.js'
 import { runMigrations } from '../db/migrate.js'
@@ -126,6 +127,7 @@ interface PlaceSpec {
   number?: string
   ship?: { postalCode?: string; country?: string }
   bill?: { postalCode?: string; country?: string }
+  source?: OrderSource
 }
 
 const AT = new Date('2026-11-01T09:00:00.000Z')
@@ -169,6 +171,7 @@ async function place(env: Env, spec: PlaceSpec = {}): Promise<Placed> {
       paymentIntentId: null,
       createdAt: p.createdAt,
       updatedAt: p.createdAt,
+      ...(spec.source !== undefined && { source: spec.source }),
     }),
   )
   return p
@@ -491,5 +494,50 @@ describe('OrderRepository: the admin list filters and count', () => {
     expect(await counted(env, {})).toBe(want.length)
     expect(await env.store.read((tx) => env.repo.count(tx))).toBe(want.length)
     await env.store.close()
+  })
+})
+
+describe('OrderRepository: synthetic orders in the admin list', () => {
+  // Defect: the default list keeps synthetic orders, `source: 'synthetic'` lists the others or every order, or count
+  // reads a different set from the list it pages.
+  it('property: the default list and the synthetic list split every order between them, each with its count', async () => {
+    const SOURCES: OrderSource[] = ['storefront', 'synthetic', 'import', 'agent:assistant']
+    await fc.assert(
+      fc.asyncProperty(
+        fc.array(
+          fc.record({
+            source: fc.option(fc.constantFrom(...SOURCES), { nil: undefined }),
+            status: fc.constantFrom('pending', 'confirmed', 'cancelled' as const),
+          }),
+          { minLength: 1, maxLength: 10 },
+        ),
+        async (drafts) => {
+          const env = await setup()
+          const all: Array<{ id: string; synthetic: boolean }> = []
+          for (const d of drafts) {
+            const p = await place(env, {
+              status: d.status,
+              ...(d.source !== undefined && { source: d.source }),
+            })
+            all.push({ id: p.id, synthetic: d.source === 'synthetic' })
+          }
+          const real = await listed(env, {}, { limit: 1000 })
+          const synthetic = await listed(env, { source: 'synthetic' }, { limit: 1000 })
+
+          expect(new Set(real)).toEqual(new Set(all.filter((o) => !o.synthetic).map((o) => o.id)))
+          expect(new Set(synthetic)).toEqual(
+            new Set(all.filter((o) => o.synthetic).map((o) => o.id)),
+          )
+          expect(real.filter((id) => synthetic.includes(id))).toEqual([])
+          expect([...real, ...synthetic].sort()).toEqual(all.map((o) => o.id).sort())
+          expect([await counted(env, {}), await counted(env, { source: 'synthetic' })]).toEqual([
+            real.length,
+            synthetic.length,
+          ])
+          await env.store.close()
+        },
+      ),
+      { numRuns: 30 },
+    )
   })
 })

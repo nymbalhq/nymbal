@@ -280,8 +280,9 @@ export async function runSeed(deps: SeedDeps): Promise<SeedResult> {
     shortDescription: '',
     status: 'active' as const,
     type: 'simple' as const,
-    seoTitle: p.title,
-    seoDescription: p.description.slice(0, 160),
+    // Blank, so a page title reads "Name | Nymbal" and the content role has products to propose copy for.
+    seoTitle: '',
+    seoDescription: '',
     media: [{ url: imageUrls.get(p.slug) ?? p.imageUrl, altText: p.title, position: 0 }],
     metadata: {},
     createdAt: now,

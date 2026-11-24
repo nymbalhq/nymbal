@@ -2,8 +2,11 @@ import { z, type ZodTypeAny } from 'zod'
 import { ASSISTANT_MASK_FIELDS } from '@nymbalhq/config'
 import {
   CART_LINE_MAX_QTY,
+  isCountryCode,
+  isGtin,
   ORDER_STATUS_TRANSITIONS,
   PRODUCT_SORT_KEYS,
+  US_STATES,
   type OrderStatus,
 } from '@nymbalhq/types'
 
@@ -87,6 +90,24 @@ const promotionPatchBody = z.object({
   kind: z.string().optional(),
   ...promotionFields,
 })
+const categoryFields = {
+  name: z.string().trim().min(1).max(120),
+  description: z.string().max(2000).optional(),
+  parentId: z.string().min(1).nullable().optional(),
+  position: z.number().int().min(0).optional(),
+}
+/** A slug the storefront's URLs can carry; the service refuses only an empty or taken one, as the importer's fit. */
+const categoryCreateBody = z.object({
+  slug: z
+    .string()
+    .max(80)
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+  ...categoryFields,
+})
+/** Strict, so a slug sent to be changed is refused rather than dropped: slugs do not change. */
+const categoryPatchBody = z
+  .object({ ...categoryFields, name: categoryFields.name.optional() })
+  .strict()
 /** A query value as the HTTP layer hands it over: repeated keys arrive as an array. */
 const queryValue = z.union([z.string(), z.array(z.string())]).optional()
 const paging = { limit: queryValue, offset: queryValue }
@@ -126,7 +147,7 @@ const variantIdParams = z.object({ variantId: id })
 const orderNumberParams = z.object({ orderNumber: id })
 const settingParams = z.object({ slot: id, path: id })
 
-const address = z.object({
+const addressFields = z.object({
   firstName: z.string(),
   lastName: z.string(),
   company: z.string().optional(),
@@ -135,9 +156,31 @@ const address = z.object({
   city: z.string(),
   region: z.string(),
   postalCode: z.string(),
-  country: z.string(),
+  /** Read in any case with spaces around it and passed on as the code, so the tax and shipping tables match it. */
+  country: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .refine(isCountryCode, 'country takes an ISO 3166-1 two-letter code, such as "GB"'),
   phone: z.string().optional(),
 })
+
+/** What the tax table reads as a US state: its code or its name, in any case with spaces around it. */
+const US_REGIONS = new Set(
+  Object.entries(US_STATES).flatMap(([code, name]) => [code, name.toUpperCase()]),
+)
+
+/** A US address names a state the tax table can place; its region is passed on as sent. */
+function usRegion(a: { country: string; region: string }, ctx: z.RefinementCtx): void {
+  if (a.country !== 'US' || US_REGIONS.has(a.region.trim().toUpperCase())) return
+  ctx.addIssue({
+    code: 'custom',
+    path: ['region'],
+    message: 'a US region is a state\'s two-letter code or name, such as "CA"',
+  })
+}
+
+const address = addressFields.superRefine(usRegion)
 
 const money = z.number().int()
 const productStatus = z.enum(['draft', 'active', 'archived'])
@@ -147,6 +190,14 @@ const variantDimensions = z.object({
   widthMm: z.number().optional(),
   heightMm: z.number().optional(),
 })
+/** A variant's GTIN as sent; '' clears it. */
+const gtin = z
+  .string()
+  .trim()
+  .refine(
+    (v) => v === '' || isGtin(v),
+    'a GTIN is 8, 12, 13 or 14 digits ending in its check digit',
+  )
 const productVariant = z.object({
   id: z.string().optional(),
   sku: z.string(),
@@ -159,12 +210,15 @@ const productVariant = z.object({
   lowStockThreshold: z.number().int().optional(),
   options: z.array(z.object({ name: z.string(), value: z.string() })),
   status: z.enum(['active', 'inactive']).optional(),
+  gtin: gtin.nullable().optional(),
 })
-/** A variant's prices in a product update: an omitted compare-at price keeps the stored one, null clears it. */
+/** A variant's prices and GTIN in a product update: an omitted compare-at price or GTIN keeps the stored one, null
+ *  clears it. */
 const variantPrices = z.object({
   id,
   priceMinor: money.min(0),
   compareAtPriceMinor: money.min(0).nullable().optional(),
+  gtin: gtin.nullable().optional(),
 })
 const productFields = {
   description: z.string().optional(),
@@ -175,6 +229,7 @@ const productFields = {
   seoDescription: z.string().optional(),
   media: z.array(productMedia).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
+  brand: z.string().trim().max(120).optional(),
   categoryIds: z.array(z.string()).optional(),
 }
 
@@ -254,6 +309,27 @@ export const routeSchemas: Record<string, RouteSchema> = {
     command: 'customer.changePassword',
     description: "Change the signed-in customer's password, ending every other session.",
     body: z.object({ currentPassword: z.string().min(1), newPassword: z.string().min(1) }),
+  },
+  'GET /api/customers/me/sessions': {
+    name: 'customers.sessions',
+    tool: false,
+    description:
+      "List the devices the signed-in customer is signed in on: each one's device, sign-in time and last activity, and which is this one.",
+  },
+  'DELETE /api/customers/me/sessions/:id': {
+    name: 'customers.endSession',
+    tool: false,
+    command: 'customer.endSession',
+    description:
+      "Sign one of the signed-in customer's devices out; ending this device's own session also clears its cookies.",
+    params: idParams,
+  },
+  'DELETE /api/customers/me/sessions': {
+    name: 'customers.endAllSessions',
+    tool: false,
+    command: 'customer.endAllSessions',
+    description:
+      "Sign the signed-in customer out on every device, this one included, and clear this one's cookies.",
   },
 
   // Store
@@ -393,15 +469,15 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'POST /api/cart/codes': {
     name: 'cart.addCode',
+    handles: cartHandle,
     command: null,
-    tool: false,
     description: 'Add a discount code to the cart.',
     body: z.object({ code: z.string() }),
   },
   'DELETE /api/cart/codes/:code': {
     name: 'cart.removeCode',
+    handles: cartHandle,
     command: null,
-    tool: false,
     description: 'Remove a discount code from the cart.',
     params: z.object({ code: z.string() }),
   },
@@ -491,10 +567,12 @@ export const routeSchemas: Record<string, RouteSchema> = {
     name: 'customers.addAddress',
     command: 'customer.addAddress',
     description: 'Save an address for the signed-in customer.',
-    body: address.extend({
-      isDefaultBilling: z.boolean().optional(),
-      isDefaultShipping: z.boolean().optional(),
-    }),
+    body: addressFields
+      .extend({
+        isDefaultBilling: z.boolean().optional(),
+        isDefaultShipping: z.boolean().optional(),
+      })
+      .superRefine(usRegion),
   },
   'DELETE /api/customers/me/addresses/:id': {
     name: 'customers.removeAddress',
@@ -540,12 +618,19 @@ export const routeSchemas: Record<string, RouteSchema> = {
   'GET /api/admin/reports': {
     name: 'admin.reports.get',
     description:
-      'Sales, conversion, top products, zero-result searches and stock runway over store days. Quote the basis with a rate; never divide fields yourself. Money is in minor units of the row’s currency. Ask with grain=day for a series or for today; for a long range or a busy store, narrow the range.',
+      'Sales, conversion, top products, zero-result searches and stock runway over store days. Money totals run through `to` (today by default) and include today so far, marked partial. Rates, the funnel, top products, zero-result searches (unless `to` is named) and stock runway count closed days only; each section’s window gives its days. Quote the basis with a rate; never divide fields yourself. Money is in minor units of the row’s currency. Ask with grain=day for a series; for a long range or a busy store, narrow the range.',
     query: z.object({
-      from: z.iso.date().optional().describe('First store day, YYYY-MM-DD; the last 30 closed days by default.'),
+      from: z.iso
+        .date()
+        .optional()
+        .describe(
+          'First store day, YYYY-MM-DD; 30 days before `to` by default, 6 with grain=hour.',
+        ),
       to: z.iso.date().optional().describe('Last store day, YYYY-MM-DD; today by default.'),
       grain: z.enum(['day', 'hour']).optional().describe('Asks for a series by day or hour.'),
-      limit: queryValue.describe('How many of each list to answer: 10 by default, at most 50; a large limit on a busy store may be cut.'),
+      limit: queryValue.describe(
+        'How many of each list to answer: 10 by default, at most 50; a large limit on a busy store may be cut.',
+      ),
     }),
   },
   'GET /api/admin/search': {
@@ -592,6 +677,9 @@ export const routeSchemas: Record<string, RouteSchema> = {
           'The shipping country as a two-letter ISO code: GB for the United Kingdom, DE for Germany, US for the United States.',
         )
         .optional(),
+      source: queryValue.describe(
+        'Only synthetic: the heartbeat checks, placed and cancelled at once, which the list otherwise leaves out.',
+      ),
       ...pagingOf(50, 200),
     }),
   },
@@ -672,6 +760,13 @@ export const routeSchemas: Record<string, RouteSchema> = {
       amountMinor: money.positive(),
       reason: z.string().optional(),
       requestId: z.string().uuid().optional(),
+      variantId: z
+        .string()
+        .min(1)
+        .optional()
+        .describe(
+          'The variant of the order line this refund is for. Leave it out for a refund not tied to one product, such as shipping.',
+        ),
     }),
   },
   'GET /api/admin/orders/:id/timeline': {
@@ -703,10 +798,10 @@ export const routeSchemas: Record<string, RouteSchema> = {
   'GET /api/admin/products': {
     name: 'admin.products.list',
     summary: 'product',
-    description: 'List products, filtered by status or name.',
+    description: 'List products, filtered by status, or by part of the name or slug.',
     query: z.object({
       status: productStatus.describe('draft, active or archived.').optional(),
-      q: queryValue.describe("Part of the product's name."),
+      q: queryValue.describe("Part of the product's name or slug."),
       ...pagingOf(50, 200),
     }),
   },
@@ -739,7 +834,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
     name: 'admin.products.update',
     command: 'product.update',
     description:
-      "Update a product's fields and its variants' prices; a variant left out keeps its prices, and stock moves only through inventory.",
+      "Update a product's fields and its variants' prices and GTINs; a variant left out keeps both, and stock moves only through inventory.",
     params: idParams,
     body: z.object({
       name: z.string().optional(),
@@ -776,7 +871,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   'POST /api/admin/products/:id/duplicate': {
     name: 'admin.products.duplicate',
     command: 'product.duplicate',
-    description: 'Copy a product as a draft.',
+    description: 'Copy a product as a draft, with no stock.',
     params: idParams,
   },
   'POST /api/admin/products/:id/enhance': {
@@ -917,11 +1012,57 @@ export const routeSchemas: Record<string, RouteSchema> = {
     params: idParams,
   },
 
+  // Admin: categories
+  'GET /api/admin/categories': {
+    name: 'admin.categories.list',
+    tool: false,
+    description: 'List every category, ordered by position, then name.',
+  },
+  'POST /api/admin/categories': {
+    name: 'admin.categories.create',
+    command: 'category.create',
+    tool: false,
+    description: 'Create a category, optionally under a parent.',
+    body: categoryCreateBody,
+  },
+  'POST /api/admin/categories/reorder': {
+    name: 'admin.categories.reorder',
+    command: 'category.reorder',
+    tool: false,
+    description: "Put one parent's children (parentId null for the top level) in the order of ids.",
+    body: z.object({ parentId: z.string().min(1).nullable(), ids: z.array(z.string().min(1)) }),
+  },
+  'PATCH /api/admin/categories/:id': {
+    name: 'admin.categories.update',
+    command: 'category.update',
+    tool: false,
+    description:
+      "Change a category's name, description, parent or position; its slug does not change.",
+    params: idParams,
+    body: categoryPatchBody,
+  },
+  'DELETE /api/admin/categories/:id': {
+    name: 'admin.categories.delete',
+    command: 'category.delete',
+    tool: false,
+    description:
+      'Delete a category: its products leave it, keeping their other categories, and its children move to its parent.',
+    params: idParams,
+  },
+
   // Admin: reviews
   'GET /api/admin/reviews': {
     name: 'admin.reviews.pending',
     description:
-      "List reviews awaiting moderation, each with its product's name and slug (null when the product was deleted), the rating, title and body.",
+      "List the reviews of one moderation status, newest first, at most 100, each with its product's name and slug (null when the product was deleted), the rating, title and body.",
+    query: z.object({
+      status: z
+        .enum(['pending', 'approved', 'rejected'])
+        .optional()
+        .describe(
+          'The moderation status to list: pending (the reviews awaiting moderation) by default.',
+        ),
+    }),
   },
   'POST /api/admin/reviews/:id/moderate': {
     name: 'admin.reviews.moderate',
@@ -1068,6 +1209,21 @@ export const routeSchemas: Record<string, RouteSchema> = {
     description: 'Reject a pending proposal, with an optional reason.',
     params: idParams,
     body: z.object({ reason: z.string().max(500).optional() }),
+  },
+
+  // Admin: the night shift's insights. Agents read the open list; only a person dismisses one.
+  'GET /api/admin/insights': {
+    name: 'admin.insights.list',
+    description:
+      "List the open insights the night shift found in the store's own figures, most serious first, then the newest night: each a sentence, its severity and the figures behind it. A dismissed insight is not listed.",
+  },
+  'POST /api/admin/insights/:id/dismiss': {
+    name: 'admin.insights.dismiss',
+    command: 'insight.dismiss',
+    tool: false,
+    description:
+      'Dismiss an open insight: it leaves the brief and its subject is not raised again for 7 days.',
+    params: idParams,
   },
 
   // Webhooks

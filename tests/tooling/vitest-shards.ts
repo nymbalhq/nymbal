@@ -109,8 +109,8 @@ async function resolve(argv: string[]): Promise<string[]> {
 if (process.argv[1] !== undefined && realpathSync(process.argv[1]) === realpathSync(SELF)) {
   resolve(JSON.parse(process.argv[2] ?? '[]') as string[]).then(
     (keys) => {
-      process.stdout.write(`${JSON.stringify(keys)}\n`)
-      process.exit(0)
+      // stdout to a pipe is written asynchronously: exit only once the list is out, or a list past 64 KiB is cut.
+      process.stdout.write(`${JSON.stringify(keys)}\n`, () => process.exit(0))
     },
     (error: unknown) => {
       process.stderr.write(

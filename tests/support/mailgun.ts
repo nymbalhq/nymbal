@@ -126,6 +126,66 @@ function event(
 export const permanentFailure = (recipient: string, opts: EventOptions = {}): MailgunEventData =>
   event(recipient, { event: 'failed', severity: 'permanent', reason: 'bounce' }, opts)
 
+/** `event-data['delivery-status']` of a failure: the receiving server's SMTP answer as Mailgun reports it. */
+export interface MailgunDeliveryStatus {
+  code?: number | undefined
+  'enhanced-code'?: string | undefined
+  message?: string | undefined
+  description?: string | undefined
+  [field: string]: unknown
+}
+
+/**
+ * A failure's `delivery-status`: Mailgun's fields, with `enhanced-code`, `message` and `description` empty unless
+ * given. A field given as `undefined` is left out of the post.
+ */
+export function deliveryStatus(fields: MailgunDeliveryStatus = {}): MailgunDeliveryStatus {
+  const merged: MailgunDeliveryStatus = {
+    'attempt-no': 1,
+    code: 550,
+    'enhanced-code': '',
+    message: '',
+    description: '',
+    'mx-host': 'mx.example.test',
+    'session-seconds': 0.4,
+    tls: true,
+    utf8: true,
+    'certificate-verified': true,
+    ...fields,
+  }
+  for (const [name, value] of Object.entries(merged)) if (value === undefined) delete merged[name]
+  return merged
+}
+
+/** A permanent failure whose `delivery-status` is `status`, or that carries none when `status` is null. */
+export const permanentFailureWith = (
+  recipient: string,
+  status: MailgunDeliveryStatus | null,
+  opts: EventOptions = {},
+): MailgunEventData =>
+  event(
+    recipient,
+    {
+      event: 'failed',
+      severity: 'permanent',
+      reason: 'bounce',
+      ...(status !== null && { 'delivery-status': status }),
+    },
+    opts,
+  )
+
+/** The recipient's server refusing the store's sending host (a blocklist), which Mailgun calls permanent. */
+export const policyRejection = (recipient: string, opts: EventOptions = {}): MailgunEventData =>
+  permanentFailureWith(
+    recipient,
+    deliveryStatus({
+      'enhanced-code': '5.7.1',
+      message:
+        '5.7.1 Service unavailable, Client host [203.0.113.7] blocked using Spamhaus. To request removal from this list see https://www.spamhaus.org/query/ip/203.0.113.7',
+    }),
+    opts,
+  )
+
 /** A temporary failure: the mailbox is full, or the host deferred. */
 export const temporaryFailure = (recipient: string, opts: EventOptions = {}): MailgunEventData =>
   event(recipient, { event: 'failed', severity: 'temporary', reason: 'generic' }, opts)

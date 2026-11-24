@@ -7,6 +7,7 @@ import { baseStyles, NymbalElement, propertiesOf, type ElementSchema } from '../
 import { renderField } from '../form-element.js'
 import { formatPrice } from '../format.js'
 import { shownCart } from '../cart-projection.js'
+import { CODE_PARTS, codeStyles, DiscountCodes } from '../discount-codes.js'
 import { buttonStyles, fieldStyles } from '../view-styles.js'
 import { NymbalAddressForm } from './address-form.js'
 import type { NymbalPaymentElement } from './payment-element.js'
@@ -65,6 +66,7 @@ const SCHEMA: ElementSchema = {
     'summary-row',
     'subtotal',
     'total',
+    ...CODE_PARTS,
   ],
   slots: [
     'payment',
@@ -93,8 +95,7 @@ const SESSION_EXPIRED = 'Your session has expired. Sign in again to place your o
 const SIGN_IN_HREF = '/account/login?redirect=%2Fcheckout'
 /** The refusals of a customer's order request whose token is gone: sent again, it would place a guest order. */
 const SESSION_ENDED = new Set(['auth.token_invalid', 'auth.token_expired'])
-const NO_SHIPPING =
-  "We don't deliver to this address. Enter the country as its two-letter code, such as GB."
+const NO_SHIPPING = "We don't deliver to this address."
 const TOTAL_UNAVAILABLE = "We couldn't work out your total just now. Please try again."
 const TOTAL_CHANGED = 'The total has changed. Please check it and place your order again.'
 /** Refusals at Place Order after which the store has quoted again: the summary shows the new total. */
@@ -125,6 +126,7 @@ export class NymbalCheckout extends NymbalElement {
     baseStyles,
     buttonStyles,
     fieldStyles,
+    codeStyles,
     css`
       [hidden] {
         display: none !important;
@@ -372,6 +374,8 @@ export class NymbalCheckout extends NymbalElement {
   declare cart: unknown
   declare signInHref: string | undefined
 
+  private readonly codes = new DiscountCodes(this, () => this.client.cart)
+
   protected override stores() {
     return [this.client.cart, this.client.checkout]
   }
@@ -382,19 +386,22 @@ export class NymbalCheckout extends NymbalElement {
     this.cartMoved()
   }
 
-  /** The lines and sums of the cart store: a quote priced another cart no longer holds. */
+  /** The lines, sums and codes of the cart store: a quote priced another cart no longer holds. */
   private cartKey(): string {
-    const { items, subtotalMinor, currency } = this.client.cart.getState()
+    const { items, subtotalMinor, currency, totals, promotions } = this.client.cart.getState()
     return JSON.stringify([
       currency,
       subtotalMinor,
       items.map((i) => [i.variantId, i.qty, i.priceMinor]),
+      totals?.discountTotalMinor ?? 0,
+      promotions.codes.map((c) => [c.code, c.status]),
     ])
   }
 
   /**
-   * The cart changed after this mount quoted (a cart drawer on the page): the payment step prices it again, so Place
-   * Order sends a total for the cart it orders; an earlier step hides the quote until the next shipping submit.
+   * The cart changed after this mount quoted (a cart drawer on the page, a code in the summary): the payment step prices
+   * it again, so Place Order sends a total for the cart it orders; an earlier step hides the quote until the next
+   * shipping submit.
    */
   private cartMoved(): void {
     if (this.quotedCart === null || this.placing || this.placed) return
@@ -848,6 +855,24 @@ export class NymbalCheckout extends NymbalElement {
     `
   }
 
+  /** Before a quote: the cart's discount, when it has one, and shipping still to come. */
+  private renderUnquoted(discountTotalMinor: number, currency: string) {
+    return html`
+      ${discountTotalMinor > 0
+        ? html`<div part="summary-row">
+            <dt>Discount</dt>
+            <dd data-testid="checkout-summary-discount">
+              −${formatPrice(discountTotalMinor, currency)}
+            </dd>
+          </div>`
+        : nothing}
+      <div part="summary-row">
+        <dt>Shipping</dt>
+        <dd>calculated at the next step</dd>
+      </div>
+    `
+  }
+
   /** The quote's rows: discount and tax only when there are any, tax marked when the prices hold it. */
   private renderQuoted(quote: CheckoutQuote) {
     const { totals, currency } = quote
@@ -883,7 +908,7 @@ export class NymbalCheckout extends NymbalElement {
     const quote = this.shownQuote()
     const currency = quote?.currency || cart.currency || 'GBP'
     const subtotalMinor = quote?.totals.subtotalMinor ?? cart.subtotalMinor
-    const totalMinor = quote?.totals.totalMinor ?? cart.subtotalMinor
+    const totalMinor = quote?.totals.totalMinor ?? cart.totalMinor
     return html`
       <aside part="summary" data-testid="checkout-summary">
         <h2 part="summary-title"><slot name="summary-title">Order Summary</slot></h2>
@@ -892,21 +917,19 @@ export class NymbalCheckout extends NymbalElement {
           : html`<div part="items">
               ${cart.items.map((item) => this.renderLine(item, currency))}
             </div>`}
+        ${this.codes.render(cart.codes, this.placing || this.placed)}
         <dl>
           <div part="summary-row subtotal">
             <dt>Subtotal</dt>
             <dd data-testid="cart-subtotal">${formatPrice(subtotalMinor, currency)}</dd>
           </div>
           ${quote === null
-            ? html`<div part="summary-row">
-                <dt>Shipping</dt>
-                <dd>calculated at the next step</dd>
-              </div>`
+            ? this.renderUnquoted(cart.discountTotalMinor, currency)
             : this.renderQuoted(quote)}
         </dl>
         <div part="total">
           <span>Total</span>
-          <span>${formatPrice(totalMinor, currency)}</span>
+          <span data-testid="checkout-summary-total">${formatPrice(totalMinor, currency)}</span>
         </div>
       </aside>
     `

@@ -58,34 +58,62 @@ const INTEGRATION_FILES = [
   'packages/platform/src/services/description.ts',
   'packages/platform/src/repositories/audit-entry.ts',
   'packages/platform/src/repositories/report-rollup.ts',
+  'packages/platform/src/repositories/insight.ts',
+  'packages/platform/src/services/insight-service.ts',
   'packages/platform/src/repositories/password-reset-token.ts',
   'packages/platform/src/assistant/loop.ts',
   'packages/platform/src/assistant/mask.ts',
   'packages/platform/src/mcp/invoke.ts',
   'packages/platform/src/mcp/withhold.ts',
+  'packages/platform/src/roles/content.ts',
+  'packages/platform/src/repositories/order-tax-document.ts',
+  'packages/platform/src/read-models/index.ts',
+  'packages/platform/src/read-models/catalogue.ts',
+  'packages/platform/src/read-models/customers.ts',
+  'packages/platform/src/read-models/orders.ts',
+  'packages/platform/src/read-models/search.ts',
+  'packages/platform/src/read-models/model.ts',
+  'packages/platform/src/read-models/settle.ts',
+  'packages/platform/src/read-models/sources.ts',
 ]
 
 /** The files no unit test reaches: the integration config alone mutates them, the unit config leaves them out. */
 const INTEGRATION_ONLY = [
   'packages/platform/src/repositories/alert-subscription.ts',
   'packages/platform/src/repositories/email-suppression.ts',
+  'packages/platform/src/repositories/order-tax-document.ts',
   'packages/platform/src/repositories/password-reset-token.ts',
   'packages/platform/src/repositories/proposal.ts',
+  'packages/platform/src/repositories/insight.ts',
   'packages/platform/src/repositories/report-rollup.ts',
   'packages/platform/src/repositories/review.ts',
   'packages/platform/src/services/alert-service.ts',
   'packages/platform/src/services/description.ts',
   'packages/platform/src/services/import-removal-service.ts',
+  'packages/platform/src/services/insight-service.ts',
   'packages/platform/src/services/proposal-service.ts',
   'packages/platform/src/services/recently-viewed-service.ts',
   'packages/platform/src/assistant/loop.ts',
   'packages/platform/src/assistant/mask.ts',
   'packages/platform/src/mcp/invoke.ts',
   'packages/platform/src/mcp/withhold.ts',
+  'packages/platform/src/roles/content.ts',
+  'packages/platform/src/read-models/index.ts',
+  'packages/platform/src/read-models/catalogue.ts',
+  'packages/platform/src/read-models/customers.ts',
+  'packages/platform/src/read-models/orders.ts',
+  'packages/platform/src/read-models/search.ts',
+  'packages/platform/src/read-models/model.ts',
 ]
 
 /** Integration tests that fail in Stryker's sandbox, or import from outside it. */
-const SANDBOX_UNSAFE = ['adapter-graph', 'security-adapter-selection', 'capabilities-route']
+const SANDBOX_UNSAFE = [
+  'adapter-graph',
+  'security-adapter-selection',
+  'capabilities-route',
+  'storefront-listed',
+  'integration/order-timeline.test',
+]
 
 type StrykerConfig = {
   mutate: string[]

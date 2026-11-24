@@ -74,6 +74,8 @@ export interface TestShipOptions {
   hooked?: boolean
   /** Defect: every buy of a rate id is a new label with a new tracking number, so a retried buy charges twice. */
   buysAgain?: boolean
+  /** Defect: what each rate's service is called, from its own name and the rate call's number (1 for the first). */
+  serviceOf?: (service: string, call: number) => string
 }
 
 export type ShipMethod = 'rate' | 'createLabel' | 'startTracking'
@@ -152,10 +154,14 @@ export function createTestShipAdapter(opts: TestShipOptions = {}): TestShipAdapt
   let refusal: Refusal | null = null
   let downDetail: string | null = null
   let labels = 0
+  let rateCalls = 0
 
   async function rate(params: ShippingRateParams) {
     const grams = params.parcel.weightGrams
-    return ['standard', 'express'].map((service, i) => {
+    rateCalls += 1
+    const call = rateCalls
+    return ['standard', 'express'].map((name, i) => {
+      const service = opts.serviceOf === undefined ? name : opts.serviceOf(name, call)
       const id = `tsr_${randomUUID()}`
       issued.add(id)
       return {

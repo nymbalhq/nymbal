@@ -1,6 +1,6 @@
 import type { EventBusAdapter, NymbalEvent, NymbalEventMap, NymbalEventType } from '@nymbalhq/types'
 import { outsideActor } from '../audit/actor.js'
-import { outsideCommand } from '../audit/audit.js'
+import { currentCommandId, outsideCommand } from '../audit/audit.js'
 import { afterCommit, type CommandStore } from '../db/command-store.js'
 import type { EventLogRepository } from '../repositories/event-log.js'
 import { createEventBuilder, type EventBuilderContext, type MakeEventOptions } from './builder.js'
@@ -57,16 +57,17 @@ export function createEventPublisher(opts: CreatePublisherOptions): EventPublish
   }
 
   /**
-   * Appends in the open transaction (same COMMIT, gone on rollback) or in one of its own. Once the outermost
-   * transaction has committed, these events reach the derived subscriptions (a read straight after the command sees
-   * its projections), outside the caller's correlation, actor and command as a pass runs them, and then a relay pass
-   * is asked for. Each append holds its own replay, so a savepoint that rolls back drops it with the rows; the pass
-   * is held once however many publishes the transaction made.
+   * Appends in the open transaction (same COMMIT, gone on rollback) or in one of its own, with the open command's id
+   * (null outside any command). Once the outermost transaction has committed, these events reach the derived
+   * subscriptions (a read straight after the command sees its projections), outside the caller's correlation, actor
+   * and command as a pass runs them, and then a relay pass is asked for. Each append holds its own replay, so a
+   * savepoint that rolls back drops it with the rows; the pass is held once however many publishes the transaction
+   * made.
    */
   async function append(events: NymbalEvent<unknown>[]): Promise<void> {
     if (events.length === 0) return
     await store.transaction(async (tx) => {
-      await eventLog.append(tx, events)
+      await eventLog.append(tx, events, currentCommandId())
       await afterCommit(() =>
         outsideCorrelation(() => outsideActor(() => outsideCommand(() => eventBus.replay(events)))),
       )

@@ -1,18 +1,21 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Search, Users } from 'lucide-react'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/common/EmptyState'
 import { useCustomers } from '@/hooks/useCustomers'
+import { useStoreCurrency } from '@/hooks/useMe'
 import { formatMoney } from '@/lib/money'
 import { formatDate, formatRelative } from '@/lib/dates'
 import { tid } from '@/lib/testid'
+import { cn } from '@/lib/utils'
 
 export function CustomersListPage() {
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
+  const currency = useStoreCurrency()
 
   const { data: customers, isLoading } = useCustomers({
     q: search || undefined,
@@ -35,6 +38,8 @@ export function CustomersListPage() {
         <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
         <Input
           placeholder="Search by name or email..."
+          aria-label="Search customers"
+          data-search-field
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="pl-9 h-8 text-sm"
@@ -71,9 +76,13 @@ export function CustomersListPage() {
                 return (
                   <TableRow
                     key={customer.id}
+                    data-row-id={customer.id}
                     data-testid={tid('customers', 'row', customer.id)}
                     className="cursor-pointer"
-                    onClick={() => navigate(`/customers/${customer.id}`)}
+                    onClick={(e) => {
+                      if ((e.target as Element).closest('a')) return
+                      navigate(`/customers/${customer.id}`)
+                    }}
                   >
                     <TableCell>
                       <div className="flex items-center gap-3">
@@ -81,8 +90,17 @@ export function CustomersListPage() {
                           {(customer.firstName?.[0] ?? customer.email[0] ?? '?').toUpperCase()}
                         </div>
                         <div>
-                          {fullName && <p className="text-sm font-medium text-zinc-800">{fullName}</p>}
-                          <p className="text-xs text-zinc-500">{customer.email}</p>
+                          <Link
+                            to={`/customers/${customer.id}`}
+                            data-row-link
+                            className={cn(
+                              'block rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2',
+                              fullName ? 'text-sm font-medium text-zinc-800' : 'text-xs text-zinc-500',
+                            )}
+                          >
+                            {fullName || customer.email}
+                          </Link>
+                          {fullName && <p className="text-xs text-zinc-500">{customer.email}</p>}
                         </div>
                       </div>
                     </TableCell>
@@ -90,7 +108,7 @@ export function CustomersListPage() {
                       {customer.orderCount}
                     </TableCell>
                     <TableCell className="text-right font-mono text-sm text-zinc-700">
-                      {formatMoney(customer.totalSpentMinor, 'GBP')}
+                      {currency !== undefined ? formatMoney(customer.totalSpentMinor, currency) : '—'}
                     </TableCell>
                     <TableCell className="text-sm text-zinc-500">
                       {formatDate(customer.createdAt)}

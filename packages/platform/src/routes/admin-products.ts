@@ -215,34 +215,7 @@ export function registerAdminProductsRoutes(
       try {
         const id = ctx.params.id
         if (!id) return fail('admin.invalid', 'id required', 400)
-        const original = await product.getById(id)
-
-        const newSlug = `${original.slug}-copy`
-        const snap = await product.create({
-          slug: newSlug,
-          name: `${original.name} (Copy)`,
-          description: original.description,
-          shortDescription: original.shortDescription,
-          status: 'draft',
-          type: original.type,
-          seoTitle: original.seoTitle,
-          seoDescription: original.seoDescription,
-          media: original.media,
-          metadata: original.metadata,
-          categoryIds: original.categoryIds,
-          variants: original.variants.map((v) => ({
-            sku: `${v.sku}-COPY`,
-            name: v.name,
-            priceMinor: v.priceMinor,
-            compareAtPriceMinor: v.compareAtPriceMinor,
-            weightGrams: v.weightGrams,
-            dimensions: v.dimensions,
-            stock: v.stock,
-            lowStockThreshold: v.lowStockThreshold,
-            options: v.options,
-            status: v.status,
-          })),
-        })
+        const snap = await product.duplicate(id)
         return ok(snap, undefined, 201)
       } catch (err) {
         return renderError(err, ctx.logger)

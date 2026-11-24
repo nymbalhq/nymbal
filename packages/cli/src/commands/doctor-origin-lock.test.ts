@@ -13,16 +13,17 @@ import {
   cliEnv,
   doctorJson,
   migratedSqlite,
-  runCli,
   type CliRun,
 } from '../../../../tests/support/doctor.js'
+import { runInProcess } from './fixtures/in-process.js'
 import { install, workspace } from '../../../../tests/support/project.js'
 
 // `nymbal doctor` has an `origin lock` line after `trust proxy`. With NYMBAL_ORIGIN_SECRET set on a Cloudflare store it
 // asks the zone whether it sends an entry of the secret under the lock header: a zone that sends none (its rule was
 // deleted, or holds another value) is the lockout, every request refused, and the line is down naming both ways out.
 // Without the secret a Cloudflare store answers requests that skip the CDN, which is a warning. No detail holds a
-// secret. Each project's node_modules holds the Cloudflare package; the zone is a fake. Spawns the built CLI.
+// secret. Each project's node_modules holds the Cloudflare package; the zone is a fake. Runs the command in this
+// process.
 
 const VAR = 'NYMBAL_ORIGIN_SECRET'
 const TOKEN = 'cf-doctor-origin-token-5Hs2Kq'
@@ -92,7 +93,7 @@ async function doctor(security: Record<string, unknown>, secret?: string): Promi
     NYMBAL_TRUSTED_PROXIES: undefined,
     NYMBAL_CLIENT_IP_HEADER: undefined,
   })
-  return runCli(['doctor', '--json'], { cwd: project, env })
+  return runInProcess(['doctor', '--json'], { cwd: project, env })
 }
 
 const checks = (run: CliRun) => doctorJson(run.stdout).checks

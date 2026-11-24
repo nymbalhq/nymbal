@@ -1,11 +1,12 @@
 import type {
   AlertKind,
-  Cart,
   CheckoutQuote,
   Customer,
   CustomerAddress,
+  CustomerSession,
   PublicReviewsResult,
   ReviewResult,
+  ShopperCart,
   ShopperOrder,
   StoreCapabilities,
 } from '@nymbalhq/types'
@@ -45,11 +46,13 @@ export interface CommerceAdapter {
     list(): Promise<{ items: DenormalisedProduct[] }>
   }
   cart: {
-    get(): Promise<Cart>
-    addItem(variantId: string, qty: number): Promise<Cart>
-    removeItem(variantId: string): Promise<Cart>
-    updateQuantity(variantId: string, qty: number): Promise<Cart>
-    clear(): Promise<Cart>
+    get(): Promise<ShopperCart>
+    addItem(variantId: string, qty: number): Promise<ShopperCart>
+    removeItem(variantId: string): Promise<ShopperCart>
+    updateQuantity(variantId: string, qty: number): Promise<ShopperCart>
+    clear(): Promise<ShopperCart>
+    addCode(code: string): Promise<ShopperCart>
+    removeCode(code: string): Promise<ShopperCart>
   }
   products: {
     getBySlug(slug: string): Promise<DenormalisedProduct>
@@ -76,6 +79,12 @@ export interface CommerceAdapter {
     /** Sets a new password given the current one; every other session ends and this one is renewed. */
     changePassword(currentPassword: string, newPassword: string): Promise<AuthResult>
     logout(): Promise<void>
+    /** The devices the customer is signed in on, most recently active first. */
+    listSessions(): Promise<CustomerSession[]>
+    /** Signs one device out; `current` says it was this one, whose cookies the answer cleared. */
+    endSession(id: string): Promise<{ ended: true; current: boolean }>
+    /** Signs every device out, this one included. */
+    endAllSessions(): Promise<void>
     refresh(): Promise<{ accessToken: string; expiresIn: number }>
     getProfile(): Promise<Customer>
     updateProfile(

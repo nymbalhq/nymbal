@@ -125,11 +125,13 @@ export function movedTo(order: OrderFixture, status: OrderStatus): Answer {
 
 /**
  * The admin API for one order. `answer` answers each write; it may change the server's copy (`setServer`) before it
- * answers, as another admin or a webhook would. `answered` counts the writes whose answer has been sent.
+ * answers, as another admin or a webhook would. `answered` counts the writes whose answer has been sent. The notes
+ * route answers `opts.notes`, none unless given.
  */
 export function fakeOrderApi(
   order: OrderFixture,
   answer: (write: Write) => Answer | Promise<Answer>,
+  opts: { notes?: unknown[] } = {},
 ) {
   let server = order
   let detailReads = 0
@@ -148,7 +150,7 @@ export function fakeOrderApi(
       detailReads += 1
       return json({ data: server })
     }
-    if (method === 'GET' && path === `${prefix}notes`) return json({ data: [] })
+    if (method === 'GET' && path === `${prefix}notes`) return json({ data: opts.notes ?? [] })
     if (method !== 'GET' && path.startsWith(prefix)) {
       const write: Write = {
         action: path.slice(prefix.length),

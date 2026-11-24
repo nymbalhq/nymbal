@@ -40,9 +40,9 @@ export function useCreateProduct() {
   })
 }
 
-/** The update's body: a variant is its id and prices, the only fields the update writes. */
+/** The update's body: a variant is its id, prices and GTIN, the only fields the update writes. */
 export type ProductPatch = Omit<Partial<ProductSnapshot>, 'variants'> & {
-  variants?: Array<Pick<Variant, 'id' | 'priceMinor' | 'compareAtPriceMinor'>>
+  variants?: Array<Pick<Variant, 'id' | 'priceMinor' | 'compareAtPriceMinor' | 'gtin'>>
 }
 
 export function useUpdateProduct() {
@@ -100,9 +100,14 @@ export function useUnpublishProduct() {
   })
 }
 
+/** Mutation keys of the row actions, so a page can tell which products have one in flight. */
+export const DUPLICATE_PRODUCT_KEY = ['products', 'duplicate'] as const
+export const ARCHIVE_PRODUCT_KEY = ['products', 'archive'] as const
+
 export function useDuplicateProduct() {
   const queryClient = useQueryClient()
   return useMutation({
+    mutationKey: DUPLICATE_PRODUCT_KEY,
     mutationFn: (id: string) => api.post<ProductSnapshot>(`/api/admin/products/${id}/duplicate`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products', 'list'] })
@@ -113,7 +118,8 @@ export function useDuplicateProduct() {
 export function useArchiveProduct() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (id: string) => api.post<{ ok: true }>(`/api/admin/products/${id}/archive`),
+    mutationKey: ARCHIVE_PRODUCT_KEY,
+    mutationFn: (id: string) => api.post<ProductSnapshot>(`/api/admin/products/${id}/archive`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products'] })
     },

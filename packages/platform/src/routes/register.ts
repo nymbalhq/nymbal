@@ -40,6 +40,7 @@ import { gateOf, withGate } from './role-middleware.js'
 import { routeSchemas } from './schemas.js'
 import { registerAdminActivityRoutes } from './admin-activity.js'
 import { registerAdminProposalRoutes } from './admin-proposals.js'
+import { registerAdminInsightRoutes } from './admin-insights.js'
 import { storePreviewReads } from '../services/proposal-preview.js'
 import { registerAdminAssistantRoutes } from './admin-assistant.js'
 import { foldViewsOnSignIn, registerRecentlyViewedRoutes } from './recently-viewed.js'
@@ -223,6 +224,7 @@ export function registerAllRoutes(deps: RegisterAllRoutesDeps): void {
       currency: config.store.currency,
     }),
   })
+  registerAdminInsightRoutes(adapter, { insights: services.insights })
   registerAdminAssistantRoutes(adapter, {
     config,
     ai: adapters.ai,

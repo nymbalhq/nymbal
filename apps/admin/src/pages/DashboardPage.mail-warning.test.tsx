@@ -29,7 +29,22 @@ function dashboardApi(warning: string | null): { healthReads: () => number } {
     if (url.pathname === '/api/admin/dashboard') {
       return json({
         data: {
-          today: { orderCount: 0, revenueMinor: 0, itemsShipped: 0 },
+          today: {
+            day: '2026-11-22',
+            timezone: 'Europe/London',
+            paidOrders: 0,
+            units: 0,
+            money: [
+              {
+                currency: 'GBP',
+                capturedMinor: 0,
+                refundedMinor: 0,
+                netCapturedMinor: 0,
+                paidOrders: 0,
+                bySource: [],
+              },
+            ],
+          },
           recentOrders: [],
           lowStock: [],
           agents: {
@@ -60,7 +75,7 @@ describe('AC-22: the dashboard shows the mail warning the API gives', () => {
     for (const warning of [TEXT, null]) {
       const api = dashboardApi(warning)
       const view = renderWithProviders(<DashboardPage />)
-      await screen.findByText('Revenue today', undefined, { timeout: 5000 })
+      await screen.findByText('Sales today', undefined, { timeout: 5000 })
       await waitFor(() => expect(api.healthReads()).toBeGreaterThan(0))
       if (warning !== null) await screen.findByTestId(WARNING, undefined, { timeout: 5000 })
       else await new Promise((resolve) => setTimeout(resolve, 0))

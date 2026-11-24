@@ -2,14 +2,15 @@ import { randomBytes } from 'node:crypto'
 import { createServer, type Server } from 'node:net'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { nymbalConfigSchema } from '@nymbalhq/config'
+import { ADAPTER_CATALOGUE, conventionPackage, nymbalConfigSchema } from '@nymbalhq/config'
+import { installLine } from '@nymbalhq/platform'
 import {
   saveSettings,
   setEnv,
   settingsConfig,
   settingsConfigInput,
 } from '../../../platform/tests/support/settings.js'
-import { runCli } from '../../../../tests/support/doctor.js'
+import { freePort, runCli, stripAnsi } from '../../../../tests/support/doctor.js'
 import { workspace } from '../../../../tests/support/project.js'
 import {
   secretsKey,
@@ -145,4 +146,36 @@ describe('AC-2: start refuses before it binds or builds', () => {
     expect(run.out).not.toMatch(/EADDRINUSE/)
     expect(stand.started()).toBe(0)
   }, 60_000)
+})
+
+describe('AC-8: start prints a config error with its code', () => {
+  it('AC-8: a ConfigError while the app is built (commerce.email on resend, its package not installed) exits 1 with one stderr line, the message holding the install hint then [adapter.package_missing], and starts no storefront', async () => {
+    const raw = storeConfig()
+    const project = storeProject({
+      ...raw,
+      commerce: { ...(raw['commerce'] as Record<string, unknown>), email: { provider: 'resend' } },
+    })
+    cleanup.push(() => project.remove())
+    const stand = await upstream(project.dir)
+    cleanup.push(() => stand.close())
+    const env = startEnv({
+      PORT: String(await freePort()),
+      NYMBAL_SQLITE_PATH: join(project.dir, 'nymbal.db'),
+      NYMBAL_STOREFRONT_ENTRY: stand.entry,
+    })
+    const sdk = ADAPTER_CATALOGUE.email['resend']?.sdk
+    const install = installLine([conventionPackage('email', 'resend'), sdk!], env, project.dir)
+
+    const run = await runCli(['start', '--migrate'], { cwd: project.dir, env, timeoutMs: 60_000 })
+
+    const lines = stripAnsi(run.stderr).split('\n')
+    const hinted = lines.filter((l) => l.includes(install))
+    expect(run.code, run.out).toBe(1)
+    expect(hinted, run.out).toHaveLength(1)
+    expect(
+      lines.filter((l) => l.endsWith(' [adapter.package_missing]')),
+      run.out,
+    ).toEqual(hinted)
+    expect(stand.started()).toBe(0)
+  }, 90_000)
 })

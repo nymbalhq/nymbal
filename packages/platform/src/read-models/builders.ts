@@ -54,6 +54,10 @@ export interface DenormalisedProduct {
   shortDescription: string
   status: string
   type: string
+  seoTitle: string
+  seoDescription: string
+  /** '' when the product has none. */
+  brand: string
   media: unknown
   variantCount: number
   inStock: boolean
@@ -67,6 +71,7 @@ export interface DenormalisedProduct {
     priceMinor: number
     stock: number
     options: VariantOption[]
+    gtin: string | null
   }>
   categoryIds: string[]
   categories: Array<{ id: string; name: string; slug: string }>
@@ -157,6 +162,10 @@ export function buildProductDoc(
     shortDescription: p.shortDescription,
     status: p.status,
     type: p.type,
+    // A snapshot replayed from an event older than the SEO or brand columns carries no such field.
+    seoTitle: p.seoTitle ?? '',
+    seoDescription: p.seoDescription ?? '',
+    brand: p.brand ?? '',
     media: p.media,
     variantCount: p.variants.length,
     inStock: p.variants.some((v) => v.stock > 0),
@@ -172,6 +181,7 @@ export function buildProductDoc(
       priceMinor: v.priceMinor,
       stock: v.stock,
       options: variantOptions(v.options, v.sku, ctx.logger),
+      gtin: v.gtin ?? null,
     })),
     categoryIds: p.categoryIds,
     categories: p.categoryIds.flatMap((id) => {

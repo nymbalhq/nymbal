@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { NymbalConfig } from '@nymbalhq/config'
-import { createCommandStore, rawClients } from '@nymbalhq/platform'
+import { currencyRefusal } from '@nymbalhq/importers'
+import { createCommandStore, rawClients, runMigrations } from '@nymbalhq/platform'
 import {
   cliEnv,
   MIGRATIONS_ROOT,
@@ -17,6 +18,7 @@ import {
   startWooCommerceServer,
   type WooCommerceServer,
 } from '../../../../tests/support/woocommerce-server.js'
+import { importCommand } from './import.js'
 import { openStoreReadOnly } from './import-plan.js'
 
 // `nymbal import --dry-run` through the built CLI (`pnpm build` first), against the WooCommerce fixture server. The
@@ -26,6 +28,7 @@ import { openStoreReadOnly } from './import-plan.js'
 const KEY = 'ck_dryrun_3f9a1c7e5b2d4086'
 const SECRET = 'cs_dryrun_8e2a4c6f1b3d5097'
 const ENTITIES = ['categories', 'products', 'customers', 'orders'] as const
+const ALL_ENTITIES = ['categories', 'products', 'customers', 'orders', 'reviews']
 const PLAN_JSON = 'nymbal-import-plan.json'
 const PLAN_MD = 'nymbal-import-plan.md'
 const IMPORT_LEFTOVERS = [
@@ -113,6 +116,21 @@ function stateOf(path: string): string {
 
 function readPlan(dir: string): PlanFile {
   return JSON.parse(readFileSync(join(dir, PLAN_JSON), 'utf8')) as PlanFile
+}
+
+/** The `--entities` help: the text before `(default: …)`, and the comma-separated names it states as the default. */
+async function entitiesHelp(): Promise<{ listed: string; defaults: string[] }> {
+  const args =
+    typeof importCommand.args === 'function' ? await importCommand.args() : await importCommand.args
+  const description = args?.entities?.description ?? ''
+  const stated = /\(default:\s*([^)]*)\)/i.exec(description)
+  return {
+    listed: stated === null ? description : description.slice(0, stated.index),
+    defaults: (stated?.[1] ?? '')
+      .split(',')
+      .map((e) => e.trim())
+      .filter((e) => e !== ''),
+  }
 }
 
 beforeAll(async () => {
@@ -238,13 +256,14 @@ describe('a dry-run against a store that already holds the source', () => {
     }
   })
 
-  it('AC-8: nymbal-import-plan.json holds every plan key and nymbal-import-plan.md the five sections in order', () => {
+  it('AC-8: nymbal-import-plan.json holds every plan key and nymbal-import-plan.md the six sections in order; a source the mappers all read has no errors, the .md says None. under Errors and stdout prints Errors: 0 under Collisions', () => {
     expect(existsSync(join(dir, PLAN_JSON)), run.out.slice(-3000)).toBe(true)
     const plan = readPlan(dir)
     const md = readFileSync(join(dir, PLAN_MD), 'utf8')
     const sections = [
       '## Counts',
       '## Collisions',
+      '## Errors',
       '## Unmapped fields',
       '## Estimate',
       "## Won't migrate",
@@ -253,6 +272,7 @@ describe('a dry-run against a store that already holds the source', () => {
     expect(Object.keys(plan).sort()).toEqual([
       'collisions',
       'counts',
+      'errors',
       'estimate',
       'existingStore',
       'resumeStateFound',
@@ -282,6 +302,29 @@ describe('a dry-run against a store that already holds the source', () => {
       'writes',
     ])
     expect(md.split('\n').filter((line) => sections.includes(line.trim()))).toEqual(sections)
+
+    const errors = plan['errors'] as unknown[]
+    expect(errors).toEqual([])
+    const mdLines = md.split('\n')
+    const afterHeading = mdLines
+      .slice(mdLines.indexOf('## Errors') + 1)
+      .find((l) => l.trim() !== '')
+    expect(afterHeading?.trim()).toBe('None.')
+    const out = stripAnsi(run.stdout).split('\n')
+    const collisionsAt = out.findIndex((l) => /\bCollisions:\s*\d+/.test(l))
+    expect(/\bErrors:\s*(\d+)/.exec(out[collisionsAt + 1] ?? '')?.[1]).toBe(String(errors.length))
+  })
+
+  it('AC-7: the default the --entities help states is the list of entities a dry-run without --entities plans', async () => {
+    expect(existsSync(join(dir, PLAN_JSON)), run.out.slice(-3000)).toBe(true)
+    const unselected = (plan: PlanFile) =>
+      (plan['wontMigrate'] as Array<{ item: string; why: string }>)
+        .filter((w) => w.why === 'Not selected with --entities')
+        .map((w) => w.item)
+    const left = unselected(readPlan(dir))
+    const planned = ALL_ENTITIES.filter((e) => !left.includes(e))
+
+    expect((await entitiesHelp()).defaults).toEqual(planned)
   })
 
   it("AC-8: stdout prints each selected entity's import / source as the plan file counts them", () => {
@@ -386,4 +429,145 @@ describe('a dry-run with an unknown entity', () => {
     expect([PLAN_JSON, PLAN_MD].filter((f) => existsSync(join(dir, f)))).toEqual([])
     expect(woo.requests.length).toBe(requestsBefore)
   }, 180_000)
+})
+
+describe('a dry-run of a source in another currency', () => {
+  it('AC-3: a GBP project planning a JPY store exits non-zero with the currency refusal on stderr, writes neither plan file and requests no product', async () => {
+    const jpy = await startWooCommerceServer({ recorded: 'store-b-jpy' })
+    try {
+      const dir = project()
+      const run = await runCli(
+        [
+          'import',
+          '--dry-run',
+          '--source',
+          'woocommerce',
+          '--url',
+          jpy.url,
+          '--key',
+          KEY,
+          '--secret',
+          SECRET,
+        ],
+        {
+          cwd: dir,
+          env: cliEnv({ NYMBAL_SQLITE_PATH: join(dir, 'nymbal.db') }),
+          timeoutMs: 120_000,
+        },
+      )
+
+      expect(run.code, run.out.slice(-3000)).not.toBe(0)
+      expect(stripAnsi(run.stderr), run.out.slice(-3000)).toContain(currencyRefusal('JPY', 'GBP'))
+      expect([PLAN_JSON, PLAN_MD].filter((f) => existsSync(join(dir, f)))).toEqual([])
+      expect(jpy.requests.filter((r) => r.path.startsWith('/wp-json/wc/v3/products'))).toEqual([])
+    } finally {
+      await jpy.close()
+    }
+  }, 180_000)
+})
+
+describe('a --concurrency that is not a whole number of 1 or more', () => {
+  const REFUSED = ['0', '-1', '2.5', 'abc', '4x']
+  const ACCEPTED = ['1', '8']
+  const WRITTEN = [PLAN_JSON, PLAN_MD, ...IMPORT_LEFTOVERS.slice(0, 3)]
+
+  /** One run in a project of its own, migrated for a real import; the requests are the ones the source saw during it. */
+  async function attempt(value: string, dryRunFlag: boolean) {
+    const dir = project()
+    if (!dryRunFlag) {
+      const config = { infrastructure: { commandStore: 'sqlite' } } as NymbalConfig
+      const store = createCommandStore(config, { sqlitePath: join(dir, 'nymbal.db') })
+      await runMigrations(store, { migrationsRoot: MIGRATIONS_ROOT })
+      await store.close()
+    }
+    const before = woo.requests.length
+    const run = await runCli(
+      [
+        'import',
+        ...(dryRunFlag ? ['--dry-run'] : []),
+        '--source',
+        'woocommerce',
+        '--url',
+        woo.url,
+        '--key',
+        KEY,
+        '--secret',
+        SECRET,
+        '--no-ai',
+        `--concurrency=${value}`,
+      ],
+      { cwd: dir, env: cliEnv({ NYMBAL_SQLITE_PATH: join(dir, 'nymbal.db') }), timeoutMs: 120_000 },
+    )
+    return { dir, run, requests: woo.requests.length - before }
+  }
+
+  async function refusals(dryRunFlag: boolean) {
+    const seen = []
+    for (const value of REFUSED) {
+      const { dir, run, requests } = await attempt(value, dryRunFlag)
+      const said = `--concurrency must be a whole number of 1 or more, got "${value}"`
+      seen.push({
+        value,
+        code: run.code,
+        said: stripAnsi(run.stderr).includes(said)
+          ? said
+          : stripAnsi(run.stderr).trim().slice(-300),
+        requests,
+        written: WRITTEN.filter((f) => existsSync(join(dir, f))),
+      })
+    }
+    return seen
+  }
+  const refused = (value: string) => ({
+    value,
+    code: 1,
+    said: `--concurrency must be a whole number of 1 or more, got "${value}"`,
+    requests: 0,
+    written: [],
+  })
+
+  it('AC-4: nymbal import --concurrency 0, -1, 2.5, abc or 4x exits 1 naming the flag and the value, requests nothing and writes no state or report; 1 and 8 import every source product', async () => {
+    expect(await refusals(false)).toEqual(REFUSED.map(refused))
+
+    const imported = []
+    for (const value of ACCEPTED) {
+      const { dir, run } = await attempt(value, false)
+      const statePath = join(dir, '.nymbal-migration.json')
+      const state = existsSync(statePath)
+        ? (JSON.parse(readFileSync(statePath, 'utf8')) as { importedIds: { products: string[] } })
+        : null
+      imported.push({
+        value,
+        code: run.code,
+        products: state?.importedIds.products.length ?? 'no state',
+      })
+    }
+    expect(imported).toEqual(
+      ACCEPTED.map((value) => ({ value, code: 0, products: woo.products.length })),
+    )
+  }, 600_000)
+
+  it('AC-4: nymbal import --dry-run --concurrency 0, -1, 2.5, abc or 4x exits 1 naming the flag and the value, requests nothing and writes no plan; 1 and 8 write a plan whose estimate is a whole number of seconds', async () => {
+    expect(await refusals(true)).toEqual(REFUSED.map(refused))
+
+    const planned = []
+    for (const value of ACCEPTED) {
+      const { dir, run } = await attempt(value, true)
+      const plan = existsSync(join(dir, PLAN_JSON)) ? readPlan(dir) : null
+      planned.push({
+        value,
+        code: run.code,
+        products: plan?.counts['products']?.source ?? 'no plan',
+        wholeSeconds: Number.isInteger(plan?.estimate['seconds']),
+      })
+    }
+    expect(planned).toEqual(
+      ACCEPTED.map((value) => ({
+        value,
+        code: 0,
+        products: woo.products.length,
+        wholeSeconds: true,
+      })),
+    )
+  }, 600_000)
 })

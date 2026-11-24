@@ -1,7 +1,21 @@
-import { ValidationError } from '@nymbalhq/types'
+import {
+  ValidationError,
+  type ReportFunnelCounts,
+  type ReportFunnelSeriesRow,
+  type ReportFunnelTotal,
+  type ReportGrain,
+  type ReportMoneySeriesRow,
+  type ReportMoneyTotal,
+  type ReportProductItem,
+  type ReportRate,
+  type ReportResponse,
+  type ReportRunwayItem,
+  type ReportSectionWindow,
+  type ReportSeries,
+  type ReportSummary,
+} from '@nymbalhq/types'
 import type { CommandStore, ReadTx } from '../db/command-store.js'
 import type {
-  FunnelCounts,
   ReportRollupRepository,
   SalesHourReadRow,
   SalesTotalRow,
@@ -10,13 +24,22 @@ import { DEFINITIONS, RATE_BASIS, RATE_FLOORS } from './definitions.js'
 import { addDays, daysBetween, localDayOf } from './time.js'
 
 // The answer to `GET /api/admin/reports`, built so a model reading it cannot misstate it: every figure says what it
-// counts, its period, its timezone and its currency, and a total never holds a part day.
+// counts, its period, its timezone and its currency. A money total may hold today, marked `partial`; a rate, a funnel
+// total and top products never hold a part day.
 
 const DEFAULT_DAYS: Record<'day' | 'hour', number> = { day: 31, hour: 7 }
 const RUNWAY_DAYS = 28
 const RATE_SOURCE = 'storefront'
 
-export type ReportGrain = 'day' | 'hour'
+/** The days a runway is read over: the last 28 closed days, or fewer from the first day with figures. */
+export function runwayWindow(
+  closedThrough: string,
+  since: string | null,
+): { from: string; windowDays: number } {
+  const earliest = addDays(closedThrough, -(RUNWAY_DAYS - 1))
+  const from = since !== null && since > earliest ? since : earliest
+  return { from, windowDays: daysBetween(from, closedThrough) }
+}
 
 export interface ReportDeps {
   store: CommandStore
@@ -32,133 +55,25 @@ export interface ReportQuery {
   limit: number
 }
 
-export interface SectionWindow {
-  from: string
-  to: string
-  timezone: string
-}
+type MoneyFigures = Pick<
+  ReportMoneyTotal,
+  'capturedMinor' | 'refundedMinor' | 'netCapturedMinor' | 'paidOrders'
+>
+type MoneyRow = Omit<ReportMoneyTotal, 'window' | 'partial'>
 
-export interface ReportWindow extends SectionWindow {
-  grain: ReportGrain | null
-  closedThrough: string
-}
-
-interface MoneyFigures {
-  capturedMinor: number
-  refundedMinor: number
-  netCapturedMinor: number
-  paidOrders: number
-}
-
-export interface MoneyBySource extends MoneyFigures {
-  source: string
-  currency: string
-}
-
-interface MoneyRow extends MoneyFigures {
-  currency: string
-  bySource: MoneyBySource[]
-}
-
-export interface MoneyTotal extends MoneyRow {
-  window: SectionWindow
-}
-
-export interface MoneySeriesRow extends MoneyRow {
-  bucket: string
-  partial: boolean
-  timezone: string
-}
-
-export interface FunnelTotal extends FunnelCounts {
-  source: string
-  window: SectionWindow
-  paidOrders: number
-}
-
-export interface FunnelSeriesRow extends FunnelCounts {
-  bucket: string
-  partial: boolean
-  timezone: string
-  source: string
-  paidOrders: number
-}
-
-export interface RateOf {
-  rate: number | null
-  paidOrders: number
-  basis: string
-  window: SectionWindow
-  reason?: string
-}
-
-export interface ProductSourceFigures {
-  source: string
-  currency: string
-  units: number
-  lineSubtotalMinor: number
-}
-
-export interface ProductItem {
-  productId: string
-  productName: string
-  currency: string
-  units: number
-  lineSubtotalMinor: number
-  bySource: ProductSourceFigures[]
-}
-
-export interface RunwayItem {
-  variantId: string
-  productId: string
-  productName: string
-  sku: string
-  stock: number
-  unitsSold: number
-  windowDays: number
-  daysLeft: number
-  reason?: string
-}
-
-interface ReportHeader {
-  window: ReportWindow
-  since: string | null
-  definitions: typeof DEFINITIONS
-}
-
-export interface DefaultReport extends ReportHeader {
-  money: { totals: MoneyTotal[] }
-  funnel: { totals: FunnelTotal[] }
-  rates: {
-    paidPerCheckoutStarted: RateOf & { checkoutsStarted: number }
-    paidPerCartWithItems: RateOf & { cartsWithItems: number }
-    paidPerMeasuredViewer: RateOf & { viewers: number }
-  }
-  topProducts: { window: SectionWindow; items: ProductItem[] }
-  zeroResultSearches: { window: SectionWindow; items: Array<{ term: string; searches: number }> }
-  stockRunway: { window: SectionWindow; items: RunwayItem[] }
-}
-
-export interface GrainReport extends ReportHeader {
-  money: { series: MoneySeriesRow[] }
-  funnel?: { series: FunnelSeriesRow[] }
-}
-
-export type ReportResponse = DefaultReport | GrainReport
-
-const NO_FIGURES = (): FunnelCounts => ({
+const NO_FIGURES = (): ReportFunnelCounts => ({
   viewers: 0,
   cartsWithItems: 0,
   checkoutsStarted: 0,
   paymentsFailed: 0,
 })
 
-function moneyFigures(capturedMinor: number, refundedMinor: number, paidOrders: number): MoneyFigures {
+export function moneyFigures(capturedMinor: number, refundedMinor: number, paidOrders: number): MoneyFigures {
   return { capturedMinor, refundedMinor, netCapturedMinor: capturedMinor - refundedMinor, paidOrders }
 }
 
 /** Each currency's row, its figures the sum of its sources. */
-function moneyRows(rows: readonly SalesTotalRow[]): MoneyRow[] {
+export function moneyRows(rows: readonly SalesTotalRow[]): MoneyRow[] {
   const byCurrency = new Map<string, SalesTotalRow[]>()
   for (const row of rows) {
     byCurrency.set(row.currency, [...(byCurrency.get(row.currency) ?? []), row])
@@ -182,7 +97,7 @@ function moneySeries(
   hours: readonly SalesHourReadRow[],
   bucketOf: (row: SalesHourReadRow) => string,
   today: string,
-): MoneySeriesRow[] {
+): ReportMoneySeriesRow[] {
   const groups = new Map<
     string,
     { bucket: string; day: string; timezone: string; bySource: Map<string, SalesTotalRow> }
@@ -217,9 +132,9 @@ function rateOf<K extends 'checkoutsStarted' | 'cartsWithItems' | 'viewers'>(
   basisKey: keyof typeof RATE_BASIS,
   denominator: number,
   paidOrders: number,
-  window: SectionWindow,
+  window: ReportSectionWindow,
   anyClosedDay: boolean,
-): RateOf & Record<K, number> {
+): ReportRate & Record<K, number> {
   const floor = RATE_FLOORS[key]
   const reason = !anyClosedDay
     ? 'No closed day in this range.'
@@ -233,7 +148,7 @@ function rateOf<K extends 'checkoutsStarted' | 'cartsWithItems' | 'viewers'>(
     basis: RATE_BASIS[basisKey],
     window,
     ...(reason !== undefined && { reason }),
-  } as RateOf & Record<K, number>
+  } as ReportRate & Record<K, number>
 }
 
 function assertRange(from: string, to: string, grain: ReportGrain | undefined): void {
@@ -247,7 +162,10 @@ function assertRange(from: string, to: string, grain: ReportGrain | undefined): 
   }
 }
 
-/** The report for `query`: only closed days reach a total or a rate; today appears only in a `grain` read's series. */
+/**
+ * The report for `query`: money totals run through today, marked `partial`; rates, the funnel and top products count
+ * closed days only.
+ */
 export async function readReport(deps: ReportDeps, query: ReportQuery): Promise<ReportResponse> {
   const { store, repo, timeZone, now } = deps
   const today = localDayOf(now(), timeZone)
@@ -278,10 +196,10 @@ async function grainReport(
   repo: ReportRollupRepository,
   tx: ReadTx,
   period: Period & { grain: ReportGrain },
-): Promise<GrainReport> {
+): Promise<ReportSeries> {
   const { from, to, today, closedThrough, since, grain, timeZone } = period
   const hours = await repo.salesHours(tx, from, to)
-  const header: ReportHeader = {
+  const header: Omit<ReportSeries, 'money' | 'funnel'> = {
     window: { from, to, timezone: timeZone, grain, closedThrough },
     since,
     definitions: DEFINITIONS,
@@ -290,7 +208,7 @@ async function grainReport(
     return { ...header, money: { series: moneySeries(hours, (r) => r.hourStart.toISOString(), today) } }
   }
   const days = await repo.funnelDays(tx, from, to)
-  const series = new Map<string, FunnelSeriesRow>()
+  const series = new Map<string, ReportFunnelSeriesRow>()
   const rowOf = (bucket: string, timezone: string, source: string) => {
     const key = `${bucket}|${source}`
     const row =
@@ -322,24 +240,30 @@ async function defaultReport(
   tx: ReadTx,
   period: Period,
   query: ReportQuery,
-): Promise<DefaultReport> {
+): Promise<ReportSummary> {
   const { from, today, closedThrough, since, timeZone } = period
   const closedTo = period.to < closedThrough ? period.to : closedThrough
-  const window: SectionWindow = { from, to: closedTo, timezone: timeZone }
+  const window: ReportSectionWindow = { from, to: closedTo, timezone: timeZone }
   const anyClosedDay = from <= closedTo
+  const moneyTo = period.to < today ? period.to : today
+  const moneyWindow: ReportSectionWindow = { from, to: moneyTo, timezone: timeZone }
 
+  const money = moneyRows(await repo.salesTotals(tx, from, moneyTo)).map((row) => ({
+    ...row,
+    window: moneyWindow,
+    partial: moneyTo === today,
+  }))
   const sales = await repo.salesTotals(tx, from, closedTo)
   const funnel = await repo.funnelTotals(tx, from, closedTo)
-  const money = moneyRows(sales).map((row) => ({ ...row, window }))
 
   const paidBySource = new Map<string, number>()
   for (const row of sales) {
     paidBySource.set(row.source, (paidBySource.get(row.source) ?? 0) + row.paidOrders)
   }
-  const countsBySource = new Map<string, FunnelCounts>()
+  const countsBySource = new Map<string, ReportFunnelCounts>()
   for (const { source, ...counts } of funnel) countsBySource.set(source, counts)
   const funnelSources = [...new Set([...countsBySource.keys(), ...paidBySource.keys()])].sort()
-  const funnelTotals: FunnelTotal[] = funnelSources.map((source) => ({
+  const funnelTotals: ReportFunnelTotal[] = funnelSources.map((source) => ({
     source,
     window,
     ...(countsBySource.get(source) ?? NO_FIGURES()),
@@ -349,7 +273,7 @@ async function defaultReport(
   const counted = countsBySource.get(RATE_SOURCE) ?? NO_FIGURES()
   const paid = paidBySource.get(RATE_SOURCE) ?? 0
 
-  const topItems = new Map<string, ProductItem>()
+  const topItems = new Map<string, ReportProductItem>()
   for (const row of await repo.productTotals(tx, from, closedTo)) {
     const key = `${row.productId}|${row.currency}`
     const item =
@@ -380,11 +304,9 @@ async function defaultReport(
   const searchesTo = query.to === undefined ? closedTo : period.to < today ? period.to : today
   const searches = await repo.zeroResultTerms(tx, from, searchesTo, query.limit)
 
-  const earliestRunway = addDays(closedThrough, -(RUNWAY_DAYS - 1))
-  const runwayFrom = since !== null && since > earliestRunway ? since : earliestRunway
-  const windowDays = daysBetween(runwayFrom, closedThrough)
+  const { from: runwayFrom, windowDays } = runwayWindow(closedThrough, since)
   const sold = windowDays > 0 ? await repo.unitsSold(tx, runwayFrom, closedThrough) : []
-  const runway: RunwayItem[] = sold
+  const runway: ReportRunwayItem[] = sold
     .map((row) => ({
       variantId: row.variantId,
       productId: row.productId,
@@ -400,7 +322,7 @@ async function defaultReport(
     .slice(0, query.limit)
 
   return {
-    window: { ...window, grain: null, closedThrough },
+    window: { ...moneyWindow, grain: null, closedThrough },
     since,
     definitions: DEFINITIONS,
     money: { totals: money },

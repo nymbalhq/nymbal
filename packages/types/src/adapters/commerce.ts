@@ -6,6 +6,8 @@ import type {
   ProviderRefund,
   Refund,
   PaymentStatus,
+  SavedCardCharge,
+  SavedCardOutcome,
   WebhookResult,
 } from '../domain/payment.js'
 import type { CustomerProfile } from '../domain/customer.js'
@@ -90,6 +92,11 @@ export interface PaymentsAdapter extends CommerceAdapter {
    *  (the intent is processing or already captured). */
   cancelPaymentIntent(intentId: string): Promise<void>
   parseWebhook(rawBody: Buffer | string, signature: string): Promise<WebhookResult>
+  /**
+   * Charges a saved card and captures it, behind the `saved-card` capability. Answers every outcome the provider gives,
+   * never throwing for one; a captured charge is refunded through `refund`.
+   */
+  chargeSavedCard?(charge: SavedCardCharge): Promise<SavedCardOutcome>
 }
 
 // --- Email -----------------------------------------------------------------

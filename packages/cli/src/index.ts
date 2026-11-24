@@ -1,6 +1,5 @@
 import { runMain, showUsage } from 'citty'
 import { getCliVersion } from './utils/version.js'
-import { addCommand, addUsage } from './commands/add.js'
 import { main } from './main.js'
 
 export { resolveAdminRoot } from './admin.js'
@@ -14,7 +13,8 @@ if (rest.length === 0 && (flag === '--version' || flag === '-v')) {
     // `nymbal add --help` lists the forms, the slots with their providers, and the recipes.
     showUsage: async (cmd, parent) => {
       await showUsage(cmd, parent)
-      if ((cmd as unknown) === addCommand) process.stdout.write(`${addUsage()}\n`)
+      const add = await import('./commands/add.js')
+      if ((cmd as unknown) === add.addCommand) process.stdout.write(`${add.addUsage()}\n`)
     },
   })
 }

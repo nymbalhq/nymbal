@@ -168,9 +168,9 @@ export async function walkToPayment(page: Page, email: string): Promise<void> {
   await page.getByTestId('shipping-lastName').fill('Shopper')
   await page.getByTestId('shipping-addressLine1').fill('12 Checkout Row')
   await page.getByTestId('shipping-city').fill('Leeds')
+  await page.getByTestId('shipping-country').selectOption('GB')
   await page.getByTestId('shipping-region').fill('West Yorkshire')
   await page.getByTestId('shipping-postalCode').fill('LS1 4AP')
-  await page.getByTestId('shipping-country').fill('GB')
   await page.getByTestId('shipping-continue').click()
   await expect(page.getByTestId('place-order')).toBeEnabled({ timeout: 10_000 })
 }

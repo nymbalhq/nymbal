@@ -82,7 +82,11 @@ export function missingSecrets(
 ): string[] {
   return declared
     .filter(
-      (decl) => decl.secret && decl.optional !== true && !isPresent(getPath(config, decl.path)),
+      (decl) =>
+        decl.secret &&
+        decl.optional !== true &&
+        !(decl.optionalWith !== undefined && isPresent(getPath(config, decl.optionalWith))) &&
+        !isPresent(getPath(config, decl.path)),
     )
     .map((decl) => decl.path)
 }

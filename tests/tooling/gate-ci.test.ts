@@ -47,7 +47,7 @@ const NEED_FREE = fullPlan()
   .map((s) => s.name)
 const E2E_NAMES = DEFAULT_NAMES.filter((n) => n.startsWith('e2e'))
 /** The custom-providers store's E2E steps: its email is SMTP into Mailpit, so they need `mailpit up` beside the build. */
-const MAILPIT_E2E = ['e2e astro-custom', 'e2e nextjs-custom', 'e2e mail-outage']
+const MAILPIT_E2E = ['e2e astro-custom', 'e2e nextjs-custom']
 /** Every other E2E step, which needs the build alone. */
 const BUILD_ONLY_E2E = E2E_NAMES.filter((n) => !MAILPIT_E2E.includes(n))
 
@@ -506,6 +506,28 @@ describe('AC-13: the custom store’s E2E steps need mailpit up', () => {
       const step = stepNamed(red.steps, name)
       expect([step?.status, /mailpit up/.test(step?.detail ?? '')], name).toEqual(['skipped', true])
     }
+  })
+
+  it('AC-13: the mail outage journey runs only when --only names it (the nightly’s job): never in a default run; named, it runs alone over the artefact with CI’s Mailpit, and without NYMBAL_TEST_MAILPIT_URL it skips naming the variable', async () => {
+    const asked = {
+      only: ['e2e mail-outage'],
+      services: 'external' as const,
+      noBuild: true,
+      artefactPresent: true,
+    }
+    const local = await rehearsal({})
+    const nightly = await rehearsal({ ...asked, mailpitUrl: CI_MAILPIT_URL })
+    const unset = await rehearsal({ ...asked, mailpitUrl: undefined })
+
+    expect(local.ran.filter((n) => n.startsWith('e2e'))).toEqual(E2E_NAMES)
+    expect(E2E_NAMES).not.toContain('e2e mail-outage')
+    expect(nightly.ran).toEqual(['e2e mail-outage'])
+    const skipped = stepNamed(unset.steps, 'e2e mail-outage')
+    expect([
+      unset.ran,
+      skipped?.status,
+      /NYMBAL_TEST_MAILPIT_URL/.test(skipped?.detail ?? ''),
+    ]).toEqual([[], 'skipped', true])
   })
 
   it('AC-13: under --services external, NYMBAL_TEST_MAILPIT_URL meets mailpit up but not the Postgres steps’ compose up; unset, the custom store’s E2E steps skip naming the variable, and every other E2E step runs', async () => {

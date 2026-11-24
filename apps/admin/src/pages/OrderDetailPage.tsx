@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import {
   ArrowLeft,
@@ -25,6 +25,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { OrderStatusBadge } from '@/components/orders/OrderStatusBadge'
 import { OrderStatusSelect } from '@/components/orders/OrderStatusSelect'
 import { OrderTimeline } from '@/components/orders/OrderTimeline'
+import { OrderBulkDialog } from '@/components/orders/OrderBulkDialog'
 import { OrderNotesPanel } from '@/components/orders/OrderNotesPanel'
 import { OrderRefundDialog } from '@/components/orders/OrderRefundDialog'
 import { ShipOrderDialog } from '@/components/orders/ShipOrderDialog'
@@ -36,10 +37,13 @@ import {
   useCancelOrder,
   useMarkDeliveredOrder,
   useResendConfirmation,
+  useUpdateOrderStatus,
 } from '@/hooks/useOrders'
+import { usePageCommands } from '@/hooks/usePageCommands'
 import { ApiError } from '@/lib/api'
 import { formatMoney } from '@/lib/money'
 import { formatDate } from '@/lib/dates'
+import { ORDER_COMMAND_LABELS, orderCommands, type OrderCommandId } from '@/lib/palette-commands'
 import { tid } from '@/lib/testid'
 import { cn } from '@/lib/utils'
 import type {
@@ -50,7 +54,6 @@ import type {
   OrderSource,
   OrderStatus,
 } from '@nymbalhq/types'
-import type { NoteEntry } from '@/types'
 
 /** No confirmation is due before payment, and a cancelled order was never paid: the server refuses both. */
 const NO_CONFIRMATION_DUE: readonly OrderStatus[] = ['pending', 'cancelled']
@@ -151,20 +154,32 @@ function PaymentPanel({ order }: { order: Order & { payment: OrderPayment } }) {
       </dl>
       {payment.refunds.length > 0 && (
         <ul className="space-y-1 border-t border-zinc-100 pt-2 text-sm">
-          {payment.refunds.map((refund) => (
-            <li
-              key={refund.id}
-              className="flex justify-between gap-2"
-              data-testid={tid('order', 'refund-row', refund.id)}
-            >
-              <span className="text-zinc-500">
-                {REFUND_STATUS_LABELS[refund.status]} · {formatDate(refund.createdAt)}
-              </span>
-              <span className="font-mono text-zinc-700">
-                {formatMoney(refund.amountMinor, refund.currency)}
-              </span>
-            </li>
-          ))}
+          {payment.refunds.map((refund) => {
+            const line =
+              refund.variantId === null
+                ? undefined
+                : order.lineItems.find((l) => l.variantId === refund.variantId)
+            return (
+              <li
+                key={refund.id}
+                className="flex justify-between gap-2"
+                data-testid={tid('order', 'refund-row', refund.id)}
+              >
+                <span className="text-zinc-500">
+                  {REFUND_STATUS_LABELS[refund.status]} · {formatDate(refund.createdAt)}
+                  {line && (
+                    <span data-testid={tid('order', 'refund-row-line', refund.id)}>
+                      {' '}
+                      · for {line.productName}
+                    </span>
+                  )}
+                </span>
+                <span className="font-mono text-zinc-700">
+                  {formatMoney(refund.amountMinor, refund.currency)}
+                </span>
+              </li>
+            )
+          })}
         </ul>
       )}
     </div>
@@ -197,23 +212,11 @@ function shippingNameOf(metadata: unknown): string | null {
   return typeof shipping?.name === 'string' ? shipping.name : null
 }
 
-/** The shopper's checkout note: the column as it stands, or the shopper's entry once staff or system notes joined it. */
-function shopperNoteOf(notes: string): string | null {
-  try {
-    const parsed = JSON.parse(notes) as unknown
-    if (Array.isArray(parsed)) {
-      return (parsed as NoteEntry[]).find((entry) => entry.actor === 'customer')?.body ?? null
-    }
-  } catch {
-    // Not JSON: a plain string is the note itself.
-  }
-  return notes
-}
-
 export function OrderDetailPage() {
   const { orderNumber } = useParams<{ orderNumber: string }>()
   const [showRefund, setShowRefund] = useState(false)
   const [showShip, setShowShip] = useState(false)
+  const [confirmCancel, setConfirmCancel] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   // Set in the click itself: `isPending` reaches the button only after a render, too late for a double click.
   const acting = useRef(false)
@@ -225,6 +228,28 @@ export function OrderDetailPage() {
   const cancelOrder = useCancelOrder()
   const markDelivered = useMarkDeliveredOrder()
   const resend = useResendConfirmation()
+  const updateStatus = useUpdateOrderStatus()
+  const runOrderCommand = useRef<(id: OrderCommandId) => void>(() => {})
+
+  // The palette lists this order's commands only while the order on screen is the route's: during an in-place move to
+  // another order the previous one's data must not be acted on.
+  const shown = order !== undefined && order.orderNumber === orderNumber ? order : null
+  useEffect(() => {
+    const { setScope, clearScope } = usePageCommands.getState()
+    if (shown === null) {
+      clearScope()
+      return
+    }
+    setScope({
+      title: `Order #${shown.orderNumber}`,
+      commands: orderCommands(shown).map((id) => ({
+        id: `order-${id}`,
+        label: ORDER_COMMAND_LABELS[id],
+        run: () => runOrderCommand.current(id),
+      })),
+    })
+    return clearScope
+  }, [shown])
 
   /** Runs one order action at a time and says why the server refused it. */
   const runAction = async (send: () => Promise<unknown>) => {
@@ -272,7 +297,6 @@ export function OrderDetailPage() {
     )
   }
 
-  const shopperNote = order.notes ? shopperNoteOf(order.notes) : null
   const shippingName = shippingNameOf(order.metadata)
 
   const primaryAction = () => {
@@ -295,6 +319,26 @@ export function OrderDetailPage() {
         action: () => void runAction(() => markDelivered.mutateAsync(order.id)),
       }
     return null
+  }
+
+  // The resend line reports the answer, refusal included, from the mutation's own state.
+  const resendConfirmation = () =>
+    void runAction(
+      () =>
+        new Promise<void>((resolve) => {
+          resend.mutate({ orderId: order.id }, { onSettled: () => resolve() })
+        }),
+    )
+
+  runOrderCommand.current = (id) => {
+    if (id === 'record-payment') void runAction(() => markPaid.mutateAsync({ orderId: order.id }))
+    if (id === 'process')
+      void runAction(() => updateStatus.mutateAsync({ orderId: order.id, action: 'process' }))
+    if (id === 'ship') setShowShip(true)
+    if (id === 'deliver') void runAction(() => markDelivered.mutateAsync(order.id))
+    if (id === 'refund') setShowRefund(true)
+    if (id === 'cancel') setConfirmCancel(true)
+    if (id === 'resend-confirmation') resendConfirmation()
   }
 
   const primary = primaryAction()
@@ -361,7 +405,7 @@ export function OrderDetailPage() {
             <DropdownMenuContent align="end" className="w-44">
               <DropdownMenuItem
                 onSelect={() => {
-                  if (!resendDisabled) resend.mutate({ orderId: order.id })
+                  if (!resendDisabled) resendConfirmation()
                 }}
                 className="gap-2"
                 disabled={resendDisabled}
@@ -594,12 +638,12 @@ export function OrderDetailPage() {
           <PaymentPanel order={order} />
 
           {/* Notes */}
-          {shopperNote && (
+          {order.notes !== '' && (
             <div className="rounded-lg border border-zinc-200 bg-amber-50 p-4">
               <h3 className="text-xs font-semibold uppercase tracking-wider text-amber-600 mb-1.5">
                 Order Note
               </h3>
-              <p className="text-sm text-amber-800">{shopperNote}</p>
+              <p className="text-sm text-amber-800">{order.notes}</p>
             </div>
           )}
         </div>
@@ -611,6 +655,11 @@ export function OrderDetailPage() {
         orderNumber={order.orderNumber}
         open={showShip}
         onOpenChange={setShowShip}
+      />
+      <OrderBulkDialog
+        action={confirmCancel ? 'cancel' : null}
+        orders={[order]}
+        onClose={() => setConfirmCancel(false)}
       />
     </div>
   )

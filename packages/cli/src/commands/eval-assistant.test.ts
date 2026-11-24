@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
   startAiStandIn,
@@ -10,8 +11,9 @@ import {
   type ScriptView,
 } from '../../../../tests/support/ai-stand-in.js'
 import { GOLDEN_ROWS, goldenScript, rowOf } from '../../../../tests/support/assistant-golden.js'
-import { cliEnv, migratedSqlite, runCli, type CliRun } from '../../../../tests/support/doctor.js'
-import { project, workspace } from '../../../../tests/support/project.js'
+import { cliEnv, migratedSqlite, type CliRun } from '../../../../tests/support/doctor.js'
+import { runInProcess } from './fixtures/in-process.js'
+import { project, workspace, workspacePackage } from '../../../../tests/support/project.js'
 import { currentAssistantEvalHash } from '../../../platform/tests/support/eval-hash.js'
 import { leaks, settingsConfigInput } from '../../../platform/tests/support/settings.js'
 
@@ -19,7 +21,7 @@ import { leaks, settingsConfigInput } from '../../../platform/tests/support/sett
 // AC-18: `nymbal eval assistant` in a store project whose `ai` block points at a provider stand-in in `script` mode
 // (tests/support/assistant-golden.ts, the scripted model of the golden set). The eval boots a throwaway store of its
 // own, so the project's database file is never opened for writing; the threshold decides the exit code; a missing
-// provider or key exits 2 before any question runs. Spawns the built CLI (`pnpm build` first).
+// provider or key exits 2 before any question runs. Runs the command in this process (fixtures/in-process.ts).
 // AC-9, AC-11, AC-12, AC-14: `--verbose` prints each call with its arguments and outcome; `--runs <n>` asks the set n
 // times, each on a fresh throwaway store, and judges each question by majority; a bad `--runs` and a permanent provider
 // error exit 2 before any summary.
@@ -51,12 +53,24 @@ interface Project {
   db: string
 }
 
-/** A store project whose config's `ai` block is `ai`, its database migrated, with both ai packages installed. */
-async function storeProject(ai: Record<string, unknown>): Promise<Project> {
-  const dir = project(workspace('@nymbalhq/ai-anthropic', '@nymbalhq/ai-openai'), {
-    prefix: 'nymbal-eval-',
-  })
+/**
+ * A store project whose config's `ai` block is `ai`, its database migrated, with both ai packages installed. With
+ * `requiredKeyOpenAi`, its @nymbalhq/ai-openai is the workspace one with the declaration of a release before keyless
+ * hosts: `apiKey` a secret with no `optionalWith`.
+ */
+async function storeProject(
+  ai: Record<string, unknown>,
+  options: { requiredKeyOpenAi?: boolean } = {},
+): Promise<Project> {
+  const dir = project(
+    workspace(
+      '@nymbalhq/ai-anthropic',
+      ...(options.requiredKeyOpenAi ? [] : ['@nymbalhq/ai-openai']),
+    ),
+    { prefix: 'nymbal-eval-' },
+  )
   dirs.push(dir)
+  if (options.requiredKeyOpenAi) installRequiredKeyOpenAi(dir)
   const config = settingsConfigInput('sqlite', { ai })
   writeFileSync(
     join(dir, 'nymbal.config.ts'),
@@ -65,6 +79,28 @@ async function storeProject(ai: Record<string, unknown>): Promise<Project> {
   const db = join(dir, 'nymbal.db')
   await migratedSqlite(db)
   return { dir, db }
+}
+
+/** @nymbalhq/ai-openai in `dir`'s node_modules: the workspace build, with `settings` as an older release declares it. */
+function installRequiredKeyOpenAi(dir: string): void {
+  const at = join(dir, 'node_modules', '@nymbalhq', 'ai-openai')
+  mkdirSync(at, { recursive: true })
+  const real = pathToFileURL(join(workspacePackage('@nymbalhq/ai-openai'), 'dist', 'index.js')).href
+  writeFileSync(
+    join(at, 'package.json'),
+    `${JSON.stringify({ name: '@nymbalhq/ai-openai', version: '0.3.1', type: 'module', exports: { '.': { import: './index.js' } } }, null, 2)}\n`,
+  )
+  writeFileSync(
+    join(at, 'index.js'),
+    [
+      `export * from ${JSON.stringify(real)}`,
+      'export const settings = [',
+      "  { path: 'apiKey', label: 'API key', secret: true, env: 'OPENAI_API_KEY' },",
+      "  { path: 'baseUrl', label: 'API base URL', secret: false },",
+      ']',
+      '',
+    ].join('\n'),
+  )
 }
 
 const block = (wire: AiWire, standIn: AiStandIn, apiKey?: string) => ({
@@ -77,14 +113,13 @@ const block = (wire: AiWire, standIn: AiStandIn, apiKey?: string) => ({
 })
 
 function evalAssistant(p: Project, args: string[] = []): Promise<CliRun> {
-  return runCli(['eval', 'assistant', ...args], {
+  return runInProcess(['eval', 'assistant', ...args], {
     cwd: p.dir,
     env: cliEnv({
       NYMBAL_SQLITE_PATH: p.db,
       ANTHROPIC_API_KEY: undefined,
       OPENAI_API_KEY: undefined,
     }),
-    timeoutMs: 180_000,
   })
 }
 
@@ -185,15 +220,26 @@ describe('AC-18: nymbal eval assistant', () => {
     expect(anthropic.requests.length).toBe(0)
   }, 120_000)
 
-  it('AC-15: an OpenAI-compatible server on a host other than api.openai.com needs no key: with none in the block or the environment the eval runs and passes 28/28 against it', async () => {
-    const p = await storeProject(block('openai', openai))
-    openai.reset()
+  it('AC-15, AC-6: an OpenAI-compatible server on a host other than api.openai.com needs no key: with none in the block or the environment the eval passes 28/28 against it, sending no authorization header when the project’s @nymbalhq/ai-openai declares optionalWith and Bearer unused when its package still requires the key', async () => {
+    const runs: Array<{ code: number; summary: unknown; asked: number; sent: unknown[] }> = []
+    for (const requiredKeyOpenAi of [false, true]) {
+      const p = await storeProject(block('openai', openai), { requiredKeyOpenAi })
+      openai.reset()
 
-    const run = await evalAssistant(p)
+      const run = await evalAssistant(p)
 
-    expect(run.code, run.out).toBe(0)
-    expect(summaryOf(run.out)).toEqual({ passed: 28, total: 28, threshold: 25 })
-    expect(openai.requests.length).toBeGreaterThanOrEqual(GOLDEN_ROWS.length)
+      runs.push({
+        code: run.code,
+        summary: summaryOf(run.out),
+        asked: openai.requests.length,
+        sent: [...new Set(openai.requests.map((r) => r.headers['authorization']))],
+      })
+    }
+
+    const passed = { code: 0, summary: { passed: 28, total: 28, threshold: 25 } }
+    expect(runs.map(({ code, summary }) => ({ code, summary }))).toEqual([passed, passed])
+    expect(runs.every((r) => r.asked >= GOLDEN_ROWS.length)).toBe(true)
+    expect(runs.map((r) => r.sent)).toEqual([[undefined], ['Bearer unused']])
   }, 240_000)
 })
 
@@ -232,7 +278,7 @@ describe('nymbal eval assistant --stamp', () => {
     expect(run.code, run.out).toBe(0)
     expect(
       (JSON.parse(run.stdout) as { hash: string }).hash,
-      'the built CLI hashes what the platform source sends: rebuild',
+      'the command hashes what the platform source sends: rebuild',
     ).toBe(current)
   }, 120_000)
 })

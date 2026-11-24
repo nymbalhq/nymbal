@@ -337,12 +337,12 @@ const CATALOGUE_ELEMENTS = [
 ]
 
 describe('AC-1: renderElement renders every element', () => {
-  it('AC-1: the package has 36 server-rendered elements, every one but the payment element, the catalogue and page elements among them', () => {
+  it('AC-1: the package has 37 server-rendered elements, every one but the payment element, the catalogue and page elements among them', () => {
     expect(SERVER_RENDERED.length).toBe(SCHEMAS.length - 1)
     expect(CATALOGUE_ELEMENTS.filter((tag) => !SERVER_RENDERED.some((s) => s.tag === tag))).toEqual(
       [],
     )
-    expect(SERVER_RENDERED.length).toBe(22 + CATALOGUE_ELEMENTS.length)
+    expect(SERVER_RENDERED.length).toBe(23 + CATALOGUE_ELEMENTS.length)
   })
 
   for (const schema of SERVER_RENDERED) {

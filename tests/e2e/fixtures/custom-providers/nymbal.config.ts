@@ -2,6 +2,7 @@ import { env } from '@nymbalhq/config'
 import { EASYPOST_TEST_WEBHOOK_SECRET } from '../../../support/easypost'
 import { MAILGUN_TEST_SIGNING_KEY } from '../../../support/mailgun'
 import { createFixturePaymentsAdapter, createFixtureSearchAdapter } from './adapters'
+import { HEARTBEAT_ADDRESS, HEARTBEAT_EMAIL } from './heartbeat'
 
 // The swap config: the repository root's config with `search` and `payments` set to `custom`, the adapters injected
 // through the `adapters` export (`nymbal dev` passes it to createApp), and the API on 3011 so a custom E2E run never
@@ -45,6 +46,7 @@ export default {
       // Every checkout and order link request of the suite comes from one IP; the built-in limits are proven in the
       // http package.
       '/api/checkout': { requests: 1000, window: '1m', action: 'block' },
+      '/api/checkout/quote': { requests: 1000, window: '1m', action: 'block' },
       '/api/orders/link': { requests: 1000, window: '1m', action: 'block' },
       '/api/alerts/subscribe': { requests: 1000, window: '1m', action: 'block' },
       '/api/auth/forgot-password': { requests: 1000, window: '1m', action: 'block' },
@@ -112,5 +114,10 @@ export default {
   },
   deployment: {
     strategy: 'standard',
+  },
+  // The heartbeat's store check: a checkout with this address is placed and cancelled, and hidden from the admin.
+  features: { heartbeat: true },
+  heartbeat: {
+    store: { email: HEARTBEAT_EMAIL, address: HEARTBEAT_ADDRESS },
   },
 }

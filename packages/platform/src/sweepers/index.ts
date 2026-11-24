@@ -33,3 +33,4 @@ export {
   UNCONFIRMED_ACCOUNT_TTL_MS,
   type UnconfirmedAccountSweeperDeps,
 } from './unconfirmed-account-sweeper.js'
+export { startTaxDocumentSweeper, type TaxDocumentSweeperDeps } from './tax-document-sweeper.js'

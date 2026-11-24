@@ -1,4 +1,5 @@
 import { Mail, Phone, Calendar, ShoppingBag, TrendingUp } from 'lucide-react'
+import { useStoreCurrency } from '@/hooks/useMe'
 import { formatMoney } from '@/lib/money'
 import { formatDate, formatRelative } from '@/lib/dates'
 import { tid } from '@/lib/testid'
@@ -11,6 +12,8 @@ interface CustomerProfileCardProps {
 }
 
 export function CustomerProfileCard({ customer, stats }: CustomerProfileCardProps) {
+  const currency = useStoreCurrency()
+  const money = (minor: number) => (currency !== undefined ? formatMoney(minor, currency) : '—')
   const fullName =
     [customer.firstName, customer.lastName].filter(Boolean).join(' ') || customer.email
 
@@ -58,14 +61,14 @@ export function CustomerProfileCard({ customer, stats }: CustomerProfileCardProp
           icon={<TrendingUp className="h-4 w-4 text-green-500" />}
           label="Lifetime Value"
           data-testid={tid('customer', 'stat', 'lifetime-value')}
-          value={formatMoney(stats.lifetimeRevenueMinor, 'GBP')}
+          value={money(stats.lifetimeRevenueMinor)}
           mono
         />
         <StatCard
           icon={<TrendingUp className="h-4 w-4 text-indigo-500" />}
           label="Avg Order"
           data-testid={tid('customer', 'stat', 'avg-order')}
-          value={formatMoney(stats.avgOrderValueMinor, 'GBP')}
+          value={money(stats.avgOrderValueMinor)}
           mono
         />
       </div>

@@ -1,4 +1,4 @@
-import type { Customer } from '@nymbalhq/types'
+import type { Customer, CustomerSession } from '@nymbalhq/types'
 import type { CommerceAdapter } from '../adapter/commerce-adapter.js'
 import { forgetSession, hasSessionHint, isSessionRefusal, renewSession } from '../auth/session.js'
 import type { TokenManager } from '../auth/token-manager.js'
@@ -32,6 +32,15 @@ export interface AuthStore {
   /** Changes the password; the store ends every other session and this one holds the new token, as after `login`. */
   changePassword(currentPassword: string, newPassword: string): Promise<void>
   logout(): Promise<void>
+  /** The devices this customer is signed in on, this one marked `current`. */
+  sessions(): Promise<CustomerSession[]>
+  /**
+   * Signs one device out. Ending this device's own session leaves the store as `logout` does, once the store has said
+   * yes; a refusal rejects and leaves the shopper signed in.
+   */
+  endSession(id: string): Promise<void>
+  /** Signs every device out, this one included; as `logout` once it succeeds, and a refusal rejects. */
+  signOutEverywhere(): Promise<void>
   refreshToken(): Promise<void>
   updateProfile(updates: Partial<Pick<Customer, 'firstName' | 'lastName' | 'phone'>>): Promise<void>
   loadProfile(): Promise<void>
@@ -112,6 +121,23 @@ export function createAuthStore(
     }
   }
 
+  /** What a sign-out leaves: no token, no session hint, no customer. */
+  function signedOut(): void {
+    tokenManager.clear()
+    forgetSession()
+    store.setState({ customer: null, isAuthenticated: false, loading: false, error: null })
+  }
+
+  async function endSession(id: string): Promise<void> {
+    const { current } = await adapter.customers.endSession(id)
+    if (current) signedOut()
+  }
+
+  async function signOutEverywhere(): Promise<void> {
+    await adapter.customers.endAllSessions()
+    signedOut()
+  }
+
   async function refreshToken(): Promise<void> {
     try {
       const result = await adapter.customers.refresh()
@@ -185,6 +211,9 @@ export function createAuthStore(
       await signIn(() => adapter.customers.changePassword(currentPassword, newPassword), false)
     },
     logout,
+    sessions: () => adapter.customers.listSessions(),
+    endSession,
+    signOutEverywhere,
     refreshToken,
     updateProfile,
     loadProfile,

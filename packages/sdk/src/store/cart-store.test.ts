@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from 'vitest'
 import { createCartStore } from './cart-store.js'
 import type { CommerceAdapter } from '../adapter/commerce-adapter.js'
-import type { Cart } from '@nymbalhq/types'
+import type { ShopperCart } from '@nymbalhq/types'
 
-function makeCart(overrides?: Partial<Cart>): Cart {
+function makeCart(overrides?: Partial<ShopperCart>): ShopperCart {
   return {
     token: 'cart-1',
     customerId: null,
@@ -14,6 +14,19 @@ function makeCart(overrides?: Partial<Cart>): Cart {
     expiresAt: '',
     createdAt: '',
     updatedAt: '',
+    totals: {
+      currency: 'GBP',
+      subtotalMinor: 0,
+      discountTotalMinor: 0,
+      shippingTotalMinor: 0,
+      shippingDiscountMinor: 0,
+      taxTotalMinor: 0,
+      totalMinor: 0,
+      pricesIncludeTax: false,
+      lines: [],
+      applied: [],
+    },
+    promotions: { codes: [], unavailable: false },
     ...overrides,
   }
 }
@@ -36,11 +49,13 @@ function makeAdapter(overrides?: Partial<CommerceAdapter['cart']>): CommerceAdap
         ],
         subtotalMinor: 1000,
         itemCount: 1,
-      } as unknown as Partial<Cart>),
+      } as unknown as Partial<ShopperCart>),
     ),
     removeItem: vi.fn().mockResolvedValue(makeCart()),
     updateQuantity: vi.fn().mockResolvedValue(makeCart()),
     clear: vi.fn().mockResolvedValue(makeCart()),
+    addCode: vi.fn().mockResolvedValue(makeCart()),
+    removeCode: vi.fn().mockResolvedValue(makeCart()),
     ...overrides,
   }
   return { cart } as unknown as CommerceAdapter

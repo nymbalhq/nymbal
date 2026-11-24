@@ -130,11 +130,13 @@ describe('createStripePaymentsAdapter — client configuration', () => {
     )
   })
 
-  it('declares payments kind, stripe provider and capabilities, and initialize resolves', async () => {
+  it('declares payments kind, stripe provider and capabilities, saved-card among them, and initialize resolves', async () => {
     const adapter = buildAdapter()
     expect(adapter.kind).toBe('payments')
     expect(adapter.providerName).toBe('stripe')
-    expect(adapter.capabilities()).toEqual(['intent', 'capture', 'refund', 'webhook', 'delegated'])
+    expect([...adapter.capabilities()].sort()).toEqual(
+      ['capture', 'delegated', 'intent', 'refund', 'saved-card', 'webhook'].sort(),
+    )
     await expect(adapter.initialize({})).resolves.toBeUndefined()
   })
 })

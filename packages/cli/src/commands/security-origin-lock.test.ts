@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import repoConfig from '../../../../nymbal.config.js'
-import { cliEnv, runCli, type CliRun } from '../../../../tests/support/doctor.js'
+import { cliEnv, type CliRun } from '../../../../tests/support/doctor.js'
+import { runInProcess } from './fixtures/in-process.js'
 import { install, workspace } from '../../../../tests/support/project.js'
 import {
   startFakeCloudflare,
@@ -16,7 +17,7 @@ import type { SpecPlan } from '../../../adapters/security/cloudflare/src/tests/s
 // copies it from .env never sets a secret the edge does not send), then prints the host's command, never the value. A
 // zone that already sends another secret is a lock some other machine set: apply refuses to replace it unless told to
 // adopt it (.env takes the zone's value) or to make a new one. Rotation, the public-URL check and the masking of every
-// secret in every security command's output are here too. Spawns the built CLI (`pnpm build` first).
+// secret in every security command's output are here too. Runs the command in this process (fixtures/in-process.ts).
 
 const VAR = 'NYMBAL_ORIGIN_SECRET'
 const REF = 'nymbal:origin-lock'
@@ -40,7 +41,7 @@ afterAll(async () => {
 interface Project {
   dir: string
   zoneId: string
-  /** The built CLI in the project, with NYMBAL_ORIGIN_SECRET as given (unset when undefined). */
+  /** The command in the project, with NYMBAL_ORIGIN_SECRET as given (unset when undefined). */
   cli(args: string[], secret?: string): Promise<CliRun>
 }
 
@@ -89,7 +90,7 @@ function project(
     dir,
     zoneId,
     cli: (args, secret) =>
-      runCli(args, {
+      runInProcess(args, {
         cwd: dir,
         env: cliEnv({
           CLOUDFLARE_ZONE_ID: zoneId,

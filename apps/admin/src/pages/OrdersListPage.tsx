@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { MoreHorizontal, Search, Package, Trash2, CheckCheck } from 'lucide-react'
 import {
   Table,
@@ -168,6 +168,8 @@ export function OrdersListPage() {
             <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
             <Input
               placeholder="Search orders..."
+              aria-label="Search orders"
+              data-search-field
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-9 h-8 text-sm"
@@ -258,6 +260,7 @@ export function OrdersListPage() {
               {orders.map((order) => (
                 <TableRow
                   key={order.id}
+                  data-row-id={order.id}
                   data-testid={tid('orders', 'row', order.orderNumber)}
                   data-state={selected.has(order.id) ? 'selected' : undefined}
                   className={cn('cursor-pointer', selected.has(order.id) && 'bg-blue-50/50')}
@@ -266,14 +269,18 @@ export function OrdersListPage() {
                     <Checkbox
                       checked={selected.has(order.id)}
                       onCheckedChange={() => toggleSelect(order.id)}
+                      data-row-select
                       aria-label={`Select order ${order.orderNumber}`}
                     />
                   </TableCell>
-                  <TableCell
-                    className="font-mono text-sm font-medium text-blue-600 cursor-pointer"
-                    onClick={() => navigate(`/orders/${order.orderNumber}`)}
-                  >
-                    #{order.orderNumber}
+                  <TableCell className="font-mono text-sm font-medium text-blue-600">
+                    <Link
+                      to={`/orders/${order.orderNumber}`}
+                      data-row-link
+                      className="rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                    >
+                      #{order.orderNumber}
+                    </Link>
                   </TableCell>
                   <TableCell
                     className="text-zinc-600 cursor-pointer"

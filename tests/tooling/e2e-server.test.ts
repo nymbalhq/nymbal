@@ -37,7 +37,8 @@ function scratchRoot(): string {
   return root
 }
 
-async function until(check: () => boolean, label: string, ms = 10_000): Promise<void> {
+// A ceiling, not a wait: a check that holds returns at once, and a loaded gate has taken more than 10 s to start a node.
+async function until(check: () => boolean, label: string, ms = 20_000): Promise<void> {
   const deadline = Date.now() + ms
   while (!check()) {
     if (Date.now() > deadline) throw new Error(`timed out waiting for ${label}`)
@@ -139,7 +140,9 @@ describe('AC-10: the wrapper records a child that outlives its shutdown, and onl
   it.each(['SIGTERM', 'SIGINT'] as const)(
     'AC-10: a child that exits on %s gets it forwarded and leaves no file',
     async (signal) => {
-      const run = await startWrapped(false, { NYMBAL_E2E_SHUTDOWN_MS: '3000' })
+      // A ceiling the child never nears unless the signal is lost: a child starved past it under load is recorded and
+      // killed, and the test would read the record as the wrapper's fault.
+      const run = await startWrapped(false, { NYMBAL_E2E_SHUTDOWN_MS: '20000' })
       run.wrapper.kill(signal)
       await run.exited
       // Under a full gate's load the record has been read as missing right after the wrapper's exit: wait for it.

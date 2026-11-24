@@ -136,7 +136,8 @@ function isSetting(value: unknown): value is AdapterSetting {
     s.path !== '' &&
     typeof s.label === 'string' &&
     typeof s.secret === 'boolean' &&
-    (s.env === undefined || typeof s.env === 'string')
+    (s.env === undefined || typeof s.env === 'string') &&
+    (s.optionalWith === undefined || (typeof s.optionalWith === 'string' && s.optionalWith !== ''))
   )
 }
 
@@ -183,7 +184,7 @@ export function checkAdapterModule(
   const settings = m['settings']
   if (settings !== undefined && !(Array.isArray(settings) && settings.every(isSetting))) {
     throw new ConfigError(
-      `${pkg} exports \`settings\` that is not an array of { path, label, secret, env? }`,
+      `${pkg} exports \`settings\` that is not an array of { path, label, secret, env?, optionalWith? }`,
       { code: 'adapter.package_invalid', context: { ...context, export: 'settings' } },
     )
   }

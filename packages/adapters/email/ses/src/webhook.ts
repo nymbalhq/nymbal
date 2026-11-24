@@ -172,6 +172,20 @@ function occurredAtOf(value: unknown): string | null {
   return Number.isNaN(at.getTime()) ? null : at.toISOString()
 }
 
+/** The first SMTP enhanced status (`C.S.D`, RFC 3463) in `text` that is not part of a longer dotted number. */
+const STATUS = /(?<!\d\.?)[245]\.\d{1,3}\.\d{1,3}(?!\.?\d)/
+
+/** A bounced recipient's status: its own `status`, else its `diagnosticCode`, the first holding a status deciding. */
+function statusOf(entry: unknown): string | null {
+  if (!isObject(entry)) return null
+  for (const field of ['status', 'diagnosticCode']) {
+    const value = entry[field]
+    const match = typeof value === 'string' ? STATUS.exec(value) : null
+    if (match !== null) return match[0]
+  }
+  return null
+}
+
 function recipientsOf(list: unknown): unknown[] {
   return Array.isArray(list)
     ? list.map((entry: unknown) => (isObject(entry) ? entry['emailAddress'] : entry))
@@ -179,7 +193,8 @@ function recipientsOf(list: unknown): unknown[] {
 }
 
 /**
- * An SES message: a `Permanent` bounce is hard and any other bounce soft, one event per bounced recipient; a
+ * An SES message: a `Permanent` bounce is hard and any other bounce soft, one event per bounced recipient, except a
+ * recipient whose status is 5.7.x (its server refused the sender, which says nothing of the mailbox), which is soft; a
  * complaint is one event per complained recipient. Identity notifications name the kind in `notificationType`,
  * configuration-set events in `eventType`. Any other kind (`Delivery`, SES's subscription test) carries none.
  */
@@ -191,12 +206,23 @@ function eventsOf(text: string): WebhookEventDraft[] {
   const messageId = isObject(mail) && typeof mail['messageId'] === 'string' ? mail['messageId'] : null
   if (kind === 'Bounce' && isObject(ses['bounce'])) {
     const bounce = ses['bounce']
-    const hardness = bounce['bounceType'] === 'Permanent' ? 'hard' : 'soft'
+    const permanent = bounce['bounceType'] === 'Permanent'
     const occurredAt = occurredAtOf(bounce['timestamp'])
-    return recipientsOf(bounce['bouncedRecipients']).map((recipient) => ({
-      type: SES_BOUNCED,
-      payload: { recipient, bounce: hardness, messageId, occurredAt },
-    }))
+    const entries: unknown[] = Array.isArray(bounce['bouncedRecipients'])
+      ? bounce['bouncedRecipients']
+      : []
+    return recipientsOf(entries).map((recipient, i) => {
+      const policy = statusOf(entries[i])?.startsWith('5.7.') === true
+      return {
+        type: SES_BOUNCED,
+        payload: {
+          recipient,
+          bounce: permanent && !policy ? 'hard' : 'soft',
+          messageId,
+          occurredAt,
+        },
+      }
+    })
   }
   if (kind === 'Complaint' && isObject(ses['complaint'])) {
     const complaint = ses['complaint']

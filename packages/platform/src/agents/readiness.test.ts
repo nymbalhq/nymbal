@@ -1,7 +1,10 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { kernelConfig } from '../../tests/support/kernel.js'
+import { createNativeStubPaymentsAdapter } from '../adapters/payments/native-stub.js'
 import * as platform from '../index.js'
+import { createLogger } from '../logger.js'
+import { resolveAcpSettings } from './acp/settings.js'
 import { agentReadiness } from './readiness.js'
 
 // AC-1: doctor's `agents` line, judged from the config and the environment alone. UCP checkout advertised without a
@@ -137,6 +140,138 @@ describe('AC-10: the agents line names what each AI surface withholds', () => {
             status: degraded ? 'degraded' : 'ok',
             end: clause,
           })
+        },
+      ),
+      { numRuns: 400 },
+    )
+  })
+})
+
+// AC-8: the same line names the ACP keys the store serves, by name and never by value, immediately before the customer
+// fields clause: `acp off`, `acp keys: <names>`, or, on with no key, the refusal boot would start with (degraded).
+
+type AcpConfig = ReturnType<typeof kernelConfig>['agents']['acp']
+
+const ACP_NAME = fc.stringMatching(/^[a-z0-9][a-z0-9._-]{0,39}$/)
+/** Keys marked so a detail can only hold one by printing it. */
+const ACP_SECRET = fc.stringMatching(/^[A-Za-z0-9]{32,48}$/).map((s) => `acpk-${s}`)
+const namedKeys = fc
+  .uniqueArray(fc.record({ name: ACP_NAME, key: ACP_SECRET }), {
+    selector: (k) => k.name,
+    minLength: 1,
+    maxLength: 4,
+  })
+  .filter((keys) => new Set(keys.map((k) => k.key)).size === keys.length)
+
+/** What boot refuses a keyless ACP with, from boot itself, with no environment to read. */
+function bootRefusal(config: ReturnType<typeof kernelConfig>): string {
+  const payments = createNativeStubPaymentsAdapter({
+    logger: createLogger({ pretty: false, level: 'error' }),
+  })
+  try {
+    resolveAcpSettings(config, payments, {})
+  } catch (error) {
+    return (error as Error).message
+  }
+  throw new Error('boot started a keyless ACP')
+}
+
+describe('AC-8: the agents line names the ACP keys', () => {
+  // Kills: the clause missing, misplaced, or naming the keys out of the config's order.
+  it('AC-8: with ucp links in place and keys muse and dots, the line is ok and reads "ucp: search, lookup, checkout handoff; mcp proposal; acp keys: muse, dots; customer fields: mcp withholds …"', () => {
+    const base = kernelConfig('sqlite')
+    const config = {
+      ...base,
+      agents: {
+        ...base.agents,
+        ucp: {
+          enabled: true,
+          links: REQUIRED.map((type) => ({ type, url: `https://shop.example/${type}` })),
+        },
+        acp: {
+          enabled: true,
+          links: [],
+          keys: [
+            { name: 'muse', key: 'muse-'.padEnd(40, 'm') },
+            { name: 'dots', key: 'dots-'.padEnd(40, 'd') },
+          ],
+        } as AcpConfig,
+      },
+    }
+
+    const check = agentReadiness(config, {})
+
+    expect(check.status).toBe('ok')
+    expect(check.detail.split('; customer fields: ')[0]).toBe(
+      'ucp: search, lookup, checkout handoff; mcp proposal; acp keys: muse, dots',
+    )
+  })
+
+  // Kills: doctor omitting a key the store accepts or naming one it does not read; ok for a store that will not start;
+  // NYMBAL_ACP_API_KEY read as a key; a key printed; the ACP clause moving a status it should not.
+  it('AC-8: property: on the ok, degraded and ucp off cases the detail holds one ACP clause, immediately before "; customer fields:": "acp off" when off, "acp keys: <names in config order>" when on with keys, and boot’s refusal naming agents.acp.keys when on with none, whatever NYMBAL_ACP_API_KEY holds; keyless is degraded, otherwise the status is the ucp case’s; no key value appears', () => {
+    const base = kernelConfig('sqlite')
+    const acpState = fc.oneof(
+      fc.record({
+        enabled: fc.constant(false),
+        keys: fc.option(namedKeys, { nil: undefined }),
+      }),
+      fc.record({ enabled: fc.constant(true), keys: namedKeys }),
+      fc.record({
+        enabled: fc.constant(true),
+        keys: fc.constantFrom<undefined | []>(undefined, []),
+      }),
+    )
+    fc.assert(
+      fc.property(
+        fc.boolean(),
+        links,
+        fc.constantFrom(...ORIGINS),
+        acpState,
+        fc.option(ACP_SECRET, { nil: undefined }),
+        (ucpEnabled, ucpLinks, url, acp, envKey) => {
+          const config = {
+            ...base,
+            agents: {
+              ...base.agents,
+              ucp: { enabled: ucpEnabled, links: ucpLinks },
+              acp: {
+                enabled: acp.enabled,
+                links: [],
+                ...(acp.keys !== undefined && { keys: acp.keys }),
+              } as AcpConfig,
+            },
+          }
+          const env: NodeJS.ProcessEnv = {
+            ...(url !== undefined && { NYMBAL_PUBLIC_URL: url }),
+            ...(envKey !== undefined && { NYMBAL_ACP_API_KEY: envKey }),
+          }
+          const present = new Set(ucpLinks.map((l) => l.type))
+          const ucpDegraded =
+            ucpEnabled && (REQUIRED.some((type) => !present.has(type)) || url === PUBLIC_HTTP)
+          const keyless = acp.enabled && (acp.keys === undefined || acp.keys.length === 0)
+          const clause = !acp.enabled
+            ? 'acp off'
+            : keyless
+              ? bootRefusal(config)
+              : `acp keys: ${(acp.keys ?? []).map((k) => k.name).join(', ')}`
+
+          const check = agentReadiness(config, env)
+          const without = check.detail.replace(`; ${clause}`, '')
+
+          expect({
+            status: check.status,
+            placed: check.detail.includes(`; ${clause}; customer fields: `),
+            others: /acp/i.test(without),
+          }).toEqual({
+            status: keyless || ucpDegraded ? 'degraded' : 'ok',
+            placed: true,
+            others: false,
+          })
+          const secrets = [...(acp.keys ?? []).map((k) => k.key), ...(envKey ? [envKey] : [])]
+
+          expect(!keyless || clause.includes('agents.acp.keys')).toBe(true)
+          expect(secrets.filter((secret) => check.detail.includes(secret))).toEqual([])
         },
       ),
       { numRuns: 400 },

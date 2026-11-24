@@ -1,4 +1,5 @@
 // Reads: scripts/machine-budget.ts, vitest.config.ts, tests/e2e/playwright.config.ts, stryker.config.mjs, stryker.integration.config.mjs
+// Reads: tests/e2e/playwright.prod.config.ts, vitest.stryker.config.ts, vitest.stryker.integration.config.ts
 import { execFile, execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { availableParallelism, tmpdir } from 'node:os'
@@ -7,8 +8,6 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
-  BACKGROUND_VAR,
-  backgroundWanted,
   CAP_VARS,
   e2eBaseTimeoutMs,
   LOCAL_DEFAULTS,
@@ -48,8 +47,7 @@ function machineFile(lines: string[]): string {
 /** The environment of a run on a machine with no file and none of the budget's variables, plus `env`. */
 function runEnv(env: Record<string, string>): NodeJS.ProcessEnv {
   const base: NodeJS.ProcessEnv = { ...process.env }
-  for (const name of [...Object.values(CAP_VARS), BACKGROUND_VAR, 'CI', 'GITHUB_ACTIONS'])
-    delete base[name]
+  for (const name of [...Object.values(CAP_VARS), 'CI', 'GITHUB_ACTIONS']) delete base[name]
   base[MACHINE_ENV_FILE_VAR] = join(tmpdir(), 'nymbal-no-machine-file.env')
   return { ...base, ...env }
 }
@@ -58,10 +56,14 @@ function runEnv(env: Record<string, string>): NodeJS.ProcessEnv {
 const lastJson = (stdout: string): unknown =>
   JSON.parse(stdout.trimEnd().split('\n').pop() ?? 'null')
 
-/** `test.maxWorkers` as Vitest resolves vitest.config.ts; null when it is left to Vitest. */
-async function vitestMaxWorkers(env: Record<string, string>): Promise<number | null> {
+/** `test.maxWorkers` as Vitest resolves vitest.config.ts (or `config`); null when it is left to Vitest. */
+async function vitestMaxWorkers(
+  env: Record<string, string>,
+  config?: string,
+): Promise<number | null> {
+  const options = { watch: false, ...(config === undefined ? {} : { config }) }
   const script = `const { resolveConfig } = await import('vitest/node')
-const { vitestConfig } = await resolveConfig({ watch: false })
+const { vitestConfig } = await resolveConfig(${JSON.stringify(options)})
 process.stdout.write('\\n' + JSON.stringify(vitestConfig.maxWorkers ?? null) + '\\n')`
   const { stdout } = await exec(process.execPath, ['--input-type=module', '-e', script], {
     cwd: REPO,
@@ -74,11 +76,12 @@ process.stdout.write('\\n' + JSON.stringify(vitestConfig.maxWorkers ?? null) + '
 async function playwrightWorkers(
   env: Record<string, string>,
   key: 'workers' | 'globalTimeout' = 'workers',
+  config = 'tests/e2e/playwright.config.ts',
 ): Promise<number | null> {
   const script = `import(process.env.NYMBAL_TEST_CONFIG_URL).then((m) => {
   process.stdout.write('\\n' + JSON.stringify(m.default[${JSON.stringify(key)}] ?? null) + '\\n')
 })`
-  const url = pathToFileURL(join(REPO, 'tests/e2e/playwright.config.ts')).href
+  const url = pathToFileURL(join(REPO, config)).href
   const { stdout } = await exec(TSX, ['--eval', script], {
     cwd: join(REPO, 'tests/e2e'),
     env: runEnv({ ...env, NYMBAL_TEST_CONFIG_URL: url }),
@@ -129,6 +132,30 @@ describe('each tool takes the machine budget', () => {
     expect(ci).toBeNull()
     expect(gate).toBe(1)
   })
+
+  it('the production-build Playwright config takes the same cap, and its own under CI', async () => {
+    const prod = 'tests/e2e/playwright.prod.config.ts'
+    const [local, ci, dev] = await Promise.all([
+      playwrightWorkers({}, 'workers', prod),
+      playwrightWorkers({ CI: '1', GITHUB_ACTIONS: 'true' }, 'workers', prod),
+      playwrightWorkers({}),
+    ])
+    expect(local).toBe(dev)
+    expect(local).toBe(LOCAL_DEFAULTS.playwright)
+    expect(ci).toBeNull()
+  })
+
+  it.each(['vitest.stryker.config.ts', 'vitest.stryker.integration.config.ts'])(
+    '%s runs one Vitest worker, as Stryker runs it, not one per core',
+    async (config) => {
+      const [local, ci] = await Promise.all([
+        vitestMaxWorkers({}, config),
+        vitestMaxWorkers({ CI: 'true' }, config),
+      ])
+      expect(local).toBe(1)
+      expect(ci).toBe(local)
+    },
+  )
 
   it("Playwright's whole-run bound grows by the cut when it runs under fewer workers than its own", async () => {
     const own = playwrightOwnWorkers(availableParallelism())
@@ -211,13 +238,12 @@ describe('the machine file', () => {
     )
   })
 
-  it('background priority is off unless the file or the environment says 1, the environment winning; CI never has it', () => {
-    const on = { [MACHINE_ENV_FILE_VAR]: machineFile([`${BACKGROUND_VAR}=1`]) }
-    const none = { [MACHINE_ENV_FILE_VAR]: join(scratch(), 'absent.env') }
-    expect(backgroundWanted(none, REPO)).toBe(false)
-    expect(backgroundWanted(on, REPO)).toBe(true)
-    expect(backgroundWanted({ ...none, [BACKGROUND_VAR]: '1' }, REPO)).toBe(true)
-    expect(backgroundWanted({ ...on, [BACKGROUND_VAR]: '0' }, REPO)).toBe(false)
-    expect(backgroundWanted({ ...on, CI: '1' }, REPO)).toBe(false)
+  it('refuses the worktree slots and background priority, which nothing reads any more', () => {
+    for (const line of ['NYMBAL_GATE_SLOTS=3', 'NYMBAL_BACKGROUND=1']) {
+      const stale = machineFile([line])
+      expect(() => machineBudget({ [MACHINE_ENV_FILE_VAR]: stale }, REPO), line).toThrow(
+        new RegExp(`takes ${Object.values(CAP_VARS).join(', ')}; got "${line}"`),
+      )
+    }
   })
 })

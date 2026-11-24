@@ -23,6 +23,11 @@ export interface EmailFeedbackContractOptions {
   softBounce?: () => EmailFeedbackSample
   /** A delivery of a spam complaint. Given, the suite checks it is a complaint. */
   complaint?: () => EmailFeedbackSample
+  /**
+   * A delivery of a failure the provider calls permanent whose status says the recipient's server refused the sender
+   * (5.7.x). Given, the suite checks it is classified `soft`: a refused sender is not a dead address.
+   */
+  policyRejection?: () => EmailFeedbackSample
 }
 
 async function receive(
@@ -52,9 +57,12 @@ export function runEmailFeedbackContract(
   build: Build<CommerceAdapter>,
   options: EmailFeedbackContractOptions,
 ): void {
-  const samples = [options.bounce, options.softBounce, options.complaint].filter(
-    (sample): sample is () => EmailFeedbackSample => sample !== undefined,
-  )
+  const samples = [
+    options.bounce,
+    options.softBounce,
+    options.complaint,
+    options.policyRejection,
+  ].filter((sample): sample is () => EmailFeedbackSample => sample !== undefined)
 
   describe(`email feedback contract: ${name}`, () => {
     // Kills: a delivery id minted per call, so each provider retry of a bounce would be recorded again.
@@ -120,14 +128,12 @@ export function runEmailFeedbackContract(
       CASE_MS,
     )
 
-    const { softBounce, complaint } = options
-    if (softBounce !== undefined) {
-      // Kills: a transient failure handed on as hard, which would stop mail to a mailbox that is only full.
+    const softCase = (title: string, sample: () => EmailFeedbackSample): void => {
       it(
-        'classification: the soft bounce is soft for its recipient',
+        title,
         () =>
           using(build, async (adapter) => {
-            const { request, recipient } = softBounce()
+            const { request, recipient } = sample()
             const delivery = await receive(adapter, request)
             const bounces = eventsFor(
               delivery,
@@ -139,6 +145,17 @@ export function runEmailFeedbackContract(
           }),
         CASE_MS,
       )
+    }
+
+    const { softBounce, complaint, policyRejection } = options
+    // Kills: a transient failure handed on as hard, which would stop mail to a mailbox that is only full.
+    if (softBounce !== undefined) {
+      softCase('classification: the soft bounce is soft for its recipient', softBounce)
+    }
+
+    // Kills: a refusal of the sender handed on as hard, so a day on a blocklist suppresses the address for ever.
+    if (policyRejection !== undefined) {
+      softCase('classification: the policy rejection is soft for its recipient', policyRejection)
     }
 
     if (complaint !== undefined) {

@@ -36,7 +36,8 @@ const e2eStep = (steps: StepSpec[], target: string): StepSpec | undefined =>
 
 describe('AC-16 (review finding 5): each E2E project keeps its own Playwright output dir', () => {
   it('AC-16: every E2E step passes --output test-results/<target>, one dir per step', () => {
-    const { steps } = plan(INPUT)
+    // The mail outage step is planned only when `--only` names it.
+    const steps = [...plan(INPUT).steps, ...plan({ ...INPUT, only: ['e2e mail-outage'] }).steps]
     const dirs = TARGETS.map((target) => outputDir(e2eStep(steps, target)))
     expect(dirs).toEqual(TARGETS.map((target) => `test-results/${target}`))
     expect(new Set(dirs).size).toBe(steps.filter((s) => s.name.startsWith('e2e ')).length)

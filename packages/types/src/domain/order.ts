@@ -155,6 +155,10 @@ export interface OrderRefund {
   reason: string | null
   actor: string
   createdAt: string
+  /** The order line the refund is for, by its variant; null for one not tied to a product (shipping, goodwill). */
+  variantId: string | null
+  /** That line's product; null when the refund names no line. */
+  productId: string | null
 }
 
 export type PaymentState = 'unpaid' | 'paid' | 'partially_refunded' | 'refunded'

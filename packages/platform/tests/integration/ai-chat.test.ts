@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { AiAdapter } from '@nymbalhq/types'
+import { isNotConfigured } from '../../src/adapters/not-configured.js'
 import {
   startAiStandIn,
   type AiStandIn,
@@ -25,9 +26,11 @@ import {
 // - AC-10: the same store booted with `ai: anthropic` and then with only the ai block changed to `openai`: the slot's
 //   provider follows the config, @nymbalhq/ai-openai loads by its convention name, eval E2 passes through
 //   app.adapters.ai.chat on both, and each stand-in sees only its own run's requests.
-// - AC-11, per provider: with no key in the config or the environment chat() refuses `adapter.not_configured` and the
-//   stand-in sees nothing; after the admin saves ai.apiKey and the store starts again the stand-in sees that key; with
-//   the provider's env variable then exported, the env's key is the one sent.
+// - AC-11, per provider: with no key in the config or the environment (and, for openai, no baseUrl) chat() refuses
+//   `adapter.not_configured` and the stand-in sees nothing; after the admin saves ai.apiKey and the store starts again
+//   the stand-in sees that key; with the provider's env variable then exported, the env's key is the one sent.
+// - AC-2: an openai block with a baseUrl and no key anywhere (Ollama, vLLM) gets the real adapter, which answers and
+//   sends no authorization header. AC-3: the same block without a baseUrl (OpenAI's own host) stays not-configured.
 
 const ENV_OF: Record<AiWire, string> = {
   anthropic: 'ANTHROPIC_API_KEY',
@@ -130,7 +133,7 @@ describe('AC-10: the provider follows the ai block, and nothing else changes', (
 describe.each(['anthropic', 'openai'] as const)(
   'AC-11: a key saved in Settings reaches %s chat() after a restart, and the environment outranks it',
   (wire) => {
-    it(`AC-11: ${wire} with no key refuses adapter.not_configured and sends nothing; the saved ai.apiKey is sent after a restart; ${ENV_OF[wire]} then outranks it`, async () => {
+    it(`AC-11: ${wire} with no key${wire === 'openai' ? ' and no baseUrl' : ''} refuses adapter.not_configured and sends nothing; the saved ai.apiKey is sent after a restart; ${ENV_OF[wire]} then outranks it`, async () => {
       const target = await begin()
       const provider = await standIn(wire)
       const saved = `saved-${wire}-${randomUUID()}`
@@ -138,7 +141,13 @@ describe.each(['anthropic', 'openai'] as const)(
       const ask = (ai: AiAdapter) =>
         ai.chat([{ role: 'user', content: 'Reply with exactly the word PONG.' }])
 
-      const unkeyed = await boot(target, aiBlock(wire, provider))
+      // An openai block with a baseUrl needs no key (a keyless OpenAI-compatible host): only OpenAI's own host does.
+      const unkeyed = await boot(
+        target,
+        wire === 'openai'
+          ? { provider: 'openai', config: { model: MODEL } }
+          : aiBlock(wire, provider),
+      )
       const refused = await ask(aiOf(unkeyed)).then(
         () => 'resolved',
         (error: { code?: unknown }) => error.code,
@@ -164,3 +173,38 @@ describe.each(['anthropic', 'openai'] as const)(
     }, 60_000)
   },
 )
+
+describe('AC-2, AC-3: an openai block needs a key only for OpenAI’s own host', () => {
+  it('AC-2: an openai block with a baseUrl and no key in the block or OPENAI_API_KEY gets the real adapter: chat() returns the stand-in’s answer and no authorization header is sent', async () => {
+    const target = await begin()
+    const provider = await standIn('openai')
+    const store = await boot(target, aiBlock('openai', provider))
+    const ai = aiOf(store)
+
+    const answered = await ai
+      .chat([{ role: 'user', content: 'Reply with exactly the word PONG.' }])
+      .then(
+        (result) => result.text,
+        (error: { code?: unknown }) => `refused ${String(error.code)}`,
+      )
+
+    expect({ placeholder: isNotConfigured(ai), provider: ai.providerName }).toEqual({
+      placeholder: false,
+      provider: 'openai',
+    })
+    expect(answered).toBe(provider.answers.at(-1)?.text)
+    expect(answered).toContain('PONG')
+    expect(provider.requests.map((r) => r.headers['authorization'])).toEqual([undefined])
+  }, 60_000)
+
+  it('AC-3: an openai block with neither a baseUrl nor a key is the not-configured placeholder, down and naming ai.apiKey', async () => {
+    const target = await begin()
+    const store = await boot(target, { provider: 'openai', config: { model: MODEL } })
+    const ai = aiOf(store)
+
+    expect(isNotConfigured(ai)).toBe(true)
+    const health = await ai.healthCheck()
+    expect(health.status).toBe('down')
+    expect(health.detail).toMatch(/\bai\.apiKey\b/)
+  }, 60_000)
+})

@@ -806,7 +806,7 @@ describe('AC-23: a slow engine', () => {
       }),
       token,
     ])
-    expect((await cart.get(token))?.promotions?.codes).toEqual([code])
+    expect((await cart.get(token, { evaluate: false }))?.promotions?.codes).toEqual([code])
     return token
   }
 

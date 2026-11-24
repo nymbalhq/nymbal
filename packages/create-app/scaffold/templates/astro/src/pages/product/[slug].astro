@@ -4,7 +4,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro'
 import NymbalElement from '@nymbalhq/web-components/astro'
 import { cardProductOf } from '@nymbalhq/web-components/ssr'
 import { loadProduct, fetchReviews, fetchProducts, fetchCapabilities } from '../../lib/api'
-import { productJsonLd, breadcrumbJsonLd, descriptionText } from '../../lib/seo'
+import { productJsonLd, breadcrumbJsonLd, productHead } from '../../lib/seo'
 import { acceptsReviews } from '../../lib/reviews'
 
 const { slug } = Astro.params
@@ -36,6 +36,7 @@ const defaultVariant = product.variants?.[0]
 // A product with no variants has nothing to sell, so it reads as out of stock.
 const stock = defaultVariant?.stock ?? 0
 
+const head = productHead(product)
 const jsonLd = productJsonLd(product, Astro.url.origin)
 const breadcrumb = breadcrumbJsonLd([
   { name: 'Home', url: Astro.url.origin },
@@ -51,7 +52,7 @@ const offersAlerts = capabilities?.email?.delivers === true && defaultVariant !=
 const hasVariantChoice = (product.variants?.length ?? 0) > 1
 ---
 
-<BaseLayout title={`${product.name} | Nymbal`} description={descriptionText(product.shortDescription || product.description)} jsonLd={jsonLd}>
+<BaseLayout title={head.title} description={head.description} jsonLd={jsonLd}>
   <!-- The gallery's main image is the page's LCP: the browser starts it before it parses the body. -->
   <link slot="head" rel="preload" as="image" href={images[0]!.url} fetchpriority="high" />
   <div class="container section" data-product-slug={product.slug}>

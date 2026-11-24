@@ -78,8 +78,12 @@ function occurredAtOf(body: Json): string | null {
   return Number.isNaN(at.getTime()) ? null : at.toISOString()
 }
 
+/** The first SMTP enhanced status (`C.S.D`, RFC 3463) in `text` that is not part of a longer dotted number. */
+const STATUS = /(?<!\d\.?)[245]\.\d{1,3}\.\d{1,3}(?!\.?\d)/
+
 /**
- * A `Permanent` bounce, in any casing, is hard and any other bounce soft; one event per `data.to` address. Types
+ * A `Permanent` bounce, in any casing, is hard unless `bounce.message` carries a 5.7.x status (the recipient's server
+ * refused the sender, which says nothing of the mailbox); any other bounce is soft; one event per `data.to` address. Types
  * other than bounces and complaints carry none. Recipients are handed on as given: the kernel normalises them, and
  * refuses a delivery whose payload is malformed.
  */
@@ -90,9 +94,15 @@ function eventsOf(body: Json): WebhookEventDraft[] {
   const messageId = typeof data['email_id'] === 'string' ? data['email_id'] : null
   const occurredAt = occurredAtOf(body)
   if (body['type'] === 'email.bounced') {
-    const bounceType = isObject(data['bounce']) ? data['bounce']['type'] : undefined
-    const bounce =
-      typeof bounceType === 'string' && bounceType.toLowerCase() === 'permanent' ? 'hard' : 'soft'
+    const details = isObject(data['bounce']) ? data['bounce'] : {}
+    const bounceType = details['type']
+    const message = details['message']
+    const status = typeof message === 'string' ? STATUS.exec(message)?.[0] : undefined
+    const permanent =
+      typeof bounceType === 'string' &&
+      bounceType.toLowerCase() === 'permanent' &&
+      status?.startsWith('5.7.') !== true
+    const bounce = permanent ? 'hard' : 'soft'
     return to.map((recipient) => ({
       type: RESEND_BOUNCED,
       payload: { recipient, bounce, messageId, occurredAt },

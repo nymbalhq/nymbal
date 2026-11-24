@@ -28,6 +28,17 @@ export default {
     'packages/platform/src/events/publisher.ts',
     // The sunset sweep of imported password hashes, by the unit test beside it.
     'packages/platform/src/sweepers/legacy-password-sweeper.ts',
+    // The content role's copy rules and claim guard, by the unit tests beside them.
+    'packages/platform/src/roles/claims.ts',
+    'packages/platform/src/roles/seo-rules.ts',
+    // The sweep that retries filings owed to the tax provider, by the unit test beside it.
+    'packages/platform/src/sweepers/tax-document-sweeper.ts',
+    // Secret scrubbing for logs and error answers, by the unit test beside it.
+    'packages/platform/src/settings/secret-set.ts',
+    // The read models' document builders, the order timeline and the recently-viewed list, by the unit tests beside
+    // them and the projections'. The reprojection (settle) and the projections' row reads (sources) are measured by the
+    // integration run too.
+    'packages/platform/src/read-models/**/*.ts',
     'packages/importers/src/woocommerce/mappers/**/*.ts',
     // No unit test reaches these: stryker.integration.config.mjs measures them, and the services' composition root is
     // wiring every integration test runs through. Here they would score 0 and only cost time.
@@ -35,15 +46,28 @@ export default {
     '!packages/platform/src/services/description.ts',
     '!packages/platform/src/services/import-removal-service.ts',
     '!packages/platform/src/services/index.ts',
+    '!packages/platform/src/services/insight-service.ts',
     '!packages/platform/src/services/proposal-service.ts',
     '!packages/platform/src/services/recently-viewed-service.ts',
     '!packages/platform/src/repositories/alert-subscription.ts',
     '!packages/platform/src/repositories/email-suppression.ts',
     '!packages/platform/src/repositories/email-verification-token.ts',
+    '!packages/platform/src/repositories/order-tax-document.ts',
     '!packages/platform/src/repositories/password-reset-token.ts',
     '!packages/platform/src/repositories/proposal.ts',
     '!packages/platform/src/repositories/report-rollup.ts',
+    '!packages/platform/src/repositories/insight.ts',
     '!packages/platform/src/repositories/review.ts',
+    // The rebuilders run only at boot and in a replay, which no unit test reaches.
+    '!packages/platform/src/read-models/index.ts',
+    '!packages/platform/src/read-models/catalogue.ts',
+    '!packages/platform/src/read-models/customers.ts',
+    '!packages/platform/src/read-models/orders.ts',
+    '!packages/platform/src/read-models/search.ts',
+    '!packages/platform/src/read-models/model.ts',
+    // Only the CLI's replay opens the read models this way, and no platform test does: every mutant here survives,
+    // each against the whole suite, in either run.
+    '!packages/platform/src/read-models/open.ts',
     '!**/*.test.ts',
     // Test vectors and the helpers the tests derive from them, beside the code they test.
     '!packages/platform/src/services/fixtures/**',

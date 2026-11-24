@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { Slot } from '@nymbalhq/types'
+import { isCountryCode, US_STATES, type Slot } from '@nymbalhq/types'
 import { BUILT_IN, PROVIDER_NAME, slotFolder } from './adapter-names.js'
 import {
   COMMAND_STORES,
@@ -12,7 +12,6 @@ import {
   trustedProxyMessage,
   trustedProxyProblem,
 } from './trusted-proxies.js'
-import { US_STATES } from './us-states.js'
 
 const rateLimitRuleSchema = z.object({
   requests: z.number().int().positive(),
@@ -27,6 +26,18 @@ const rateLimitPathPattern = /^\/[\w\-/*:]*$/
 /** The schema's JWT secret when none is configured: fine for development, refused in production. */
 export const DEFAULT_JWT_SECRET = 'dev-secret-please-override-me-1234567890'
 
+/** A country a table row or the ship-from address names: one an address can carry, so a row cannot silently miss. */
+const countrySchema = z.string().superRefine((code, ctx) => {
+  if (isCountryCode(code)) return
+  ctx.addIssue({
+    code: z.ZodIssueCode.custom,
+    message:
+      code === 'UK'
+        ? 'country is an ISO 3166-1 two-letter code; use "GB" for the United Kingdom'
+        : `country is an ISO 3166-1 two-letter code in upper case, such as "GB"; '${code}' is not one`,
+  })
+})
+
 /** An address the store ships from; `region` may be empty, for countries without one. */
 const shipFromSchema = z.object({
   firstName: z.string().min(1),
@@ -37,7 +48,7 @@ const shipFromSchema = z.object({
   city: z.string().min(1),
   region: z.string(),
   postalCode: z.string().min(1),
-  country: z.string().regex(/^[A-Z]{2}$/, 'country must be two upper-case letters, such as "GB"'),
+  country: countrySchema,
   phone: z.string().optional(),
 })
 
@@ -359,7 +370,43 @@ function calendarDateMs(text: string): number | undefined {
   return !Number.isNaN(at) && new Date(at).toISOString().startsWith(text) ? at : undefined
 }
 
-/** When imported WordPress password hashes stop being honoured, and the costliest bcrypt among them the store accepts. */
+const LEGACY_REMOTE_URL = 'security.auth.legacy.remote.url'
+const LEGACY_REMOTE_TIMEOUT = 'security.auth.legacy.remote.timeoutMs'
+const LEGACY_REMOTE_TIMEOUT_MESSAGE = `${LEGACY_REMOTE_TIMEOUT} must be a whole number of milliseconds from 500 to 10000`
+
+/**
+ * The old platform's endpoint a sign-in asks about an address with no password here. HTTPS only, and never with
+ * credentials in the URL, where an error or a log line printing it would carry them: the shared secret is
+ * NYMBAL_LEGACY_AUTH_SECRET. No message echoes the URL.
+ */
+const legacyRemoteSchema = z.object({
+  url: z
+    .string({ error: `${LEGACY_REMOTE_URL} must be an https:// URL` })
+    .superRefine((url, ctx) => {
+      const parsed = URL.canParse(url) ? new URL(url) : null
+      const problem =
+        parsed === null
+          ? 'must be an https:// URL'
+          : parsed.protocol !== 'https:'
+            ? 'must use https://'
+            : parsed.username !== '' || parsed.password !== ''
+              ? 'must not hold a user name or password; the old platform is sent NYMBAL_LEGACY_AUTH_SECRET as a bearer'
+              : null
+      if (problem !== null)
+        ctx.addIssue({ code: 'custom', message: `${LEGACY_REMOTE_URL} ${problem}` })
+    }),
+  timeoutMs: z
+    .number({ error: LEGACY_REMOTE_TIMEOUT_MESSAGE })
+    .int(LEGACY_REMOTE_TIMEOUT_MESSAGE)
+    .min(500, LEGACY_REMOTE_TIMEOUT_MESSAGE)
+    .max(10_000, LEGACY_REMOTE_TIMEOUT_MESSAGE)
+    .default(5000),
+})
+
+/**
+ * When imported WordPress password hashes stop being honoured, the costliest bcrypt among them the store accepts, and
+ * the old platform asked until then about a shopper with no password here.
+ */
 const legacyPasswordsSchema = z.object({
   until: z
     .string({ error: `${LEGACY_UNTIL} must be a date written YYYY-MM-DD` })
@@ -390,6 +437,7 @@ const legacyPasswordsSchema = z.object({
       error: 'security.auth.legacy.maxCost must be 10, 11 or 12',
     })
     .default(10),
+  remote: legacyRemoteSchema.optional(),
 })
 
 const originLockHeaderSchema = z.string().superRefine((header, ctx) => {
@@ -570,7 +618,7 @@ const taxPercentSchema = z
 /** A jurisdiction the store collects tax in: a country, or one of its regions (a US state by its postal code). */
 const taxRateSchema = z
   .object({
-    country: z.string().regex(/^[A-Z]{2}$/, 'country must be two upper-case letters, such as "GB"'),
+    country: countrySchema,
     region: z.string().min(1).optional(),
     percent: taxPercentSchema,
     /** The rate for a tax code in this jurisdiction, over `percent`. */
@@ -632,10 +680,7 @@ const shippingRateSchema = z.object({
     ),
   name: z.string().min(1).max(64),
   /** Absent: every country no other row names. */
-  countries: z
-    .array(z.string().regex(/^[A-Z]{2}$/, 'country must be two upper-case letters, such as "GB"'))
-    .min(1)
-    .optional(),
+  countries: z.array(countrySchema).min(1).optional(),
   amountMinor: z.number().int().nonnegative(),
   /** Free when the goods, after their discount, come to at least this. */
   freeOverMinor: z.number().int().positive().optional(),
@@ -650,9 +695,35 @@ function shippingBlock() {
       config: z.record(z.string(), z.unknown()).optional(),
       package: packageNameSchema.optional(),
       rates: z.array(shippingRateSchema).default([]),
+      /** What prices checkout's shipping: the rate table (none: one free option), or the adapter's carrier rates. */
+      pricing: z.enum(['table', 'carrier']).default('table'),
+      /** The weight of one unit whose variant has none, for a carrier's parcel. */
+      defaultWeightGrams: z
+        .number()
+        .refine(
+          (grams) => Number.isInteger(grams) && grams > 0,
+          'defaultWeightGrams is a whole number of grams above 0',
+        )
+        .optional(),
     })
     .superRefine((block, ctx) => {
       packageBesideBuiltIn('shipping', block, ctx)
+      if (block.pricing === 'carrier' && block.rates.length > 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['rates'],
+          message:
+            "pricing is 'carrier' and rates has rows: the table and the carrier both price checkout; choose one",
+        })
+      }
+      if (block.pricing === 'carrier' && block.defaultWeightGrams === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['defaultWeightGrams'],
+          message:
+            "pricing 'carrier' needs defaultWeightGrams: the weight of one unit whose variant has none",
+        })
+      }
       const seen = new Set<string>()
       block.rates.forEach((row, i) => {
         if (seen.has(row.id)) {
@@ -757,7 +828,35 @@ export const deploymentSchema = z.object({
 export const featuresSchema = z.object({
   staging: z.boolean().default(false),
   heartbeat: z.boolean().default(false),
-  autoUpdates: z.boolean().default(false),
+})
+
+/**
+ * What `nymbal heartbeat` checks, once `features.heartbeat` is on. The store check checks out with `store.email`, which
+ * the store places and cancels at once; the card check charges and refunds the saved card when both ids are set.
+ */
+export const heartbeatSchema = z.object({
+  /** Default `http://127.0.0.1:<http.port>`. */
+  apiUrl: z.string().url().optional(),
+  /** Default `store.url`; with neither, the storefront pages are not checked. */
+  storefrontUrl: z.string().url().optional(),
+  store: z
+    .object({
+      email: z.string().min(1).optional(),
+      address: shipFromSchema.optional(),
+      /** The variant taken; absent, the first product whose first variant has stock. */
+      sku: z.string().min(1).optional(),
+    })
+    .prefault({}),
+  card: z
+    .object({
+      /** The provider's customer id (Stripe `cus_…`). */
+      customer: z.string().min(1).optional(),
+      /** The provider's payment method id (Stripe `pm_…`), saved to that customer. */
+      paymentMethod: z.string().min(1).optional(),
+      /** In `store.currency`: no one constant clears every currency's minimum charge. */
+      amountMinor: z.number().int().positive().default(100),
+    })
+    .prefault({}),
 })
 
 /**
@@ -785,6 +884,29 @@ export const eventsSchema = z
     /** Days a delivered event stays in the log. */
     retentionDays: z.number().int().min(1).default(30),
     archive: eventArchiveSchema.optional(),
+  })
+  .strict()
+
+/**
+ * The nightly look at the store's own figures. `at` is the store time (`store.timezone`) from which the night is due,
+ * as two-digit hours and minutes. The night is due from `at` until midnight, so the latest is 22:59: a later one leaves
+ * the scheduler's tick too few minutes of the day to land in.
+ */
+export const nightShiftSchema = z
+  .object({
+    enabled: z.boolean().default(true),
+    at: z
+      .string()
+      .regex(
+        /^([01]\d|2[0-2]):[0-5]\d$/,
+        'at must be a store time from "00:00" to "22:59", so the night has an hour to run',
+      )
+      .default('03:00'),
+    /** Guidance per insight from `commerce.ai`: how many of a night's insights are sent to the model; 0 sends none. */
+    ai: z
+      .object({ maxInsightsPerNight: z.number().int().min(0).max(20).default(5) })
+      .strict()
+      .default({ maxInsightsPerNight: 5 }),
   })
   .strict()
 
@@ -837,16 +959,80 @@ export const ACP_LINK_TYPES = [
   'support',
 ] as const
 
-/** The shortest ACP key the store takes, from the config or `NYMBAL_ACP_API_KEY`. */
+/** The shortest key `agents.acp.keys` takes. */
 export const ACP_KEY_MIN_LENGTH = 32
+
+/** What an ACP key's name may be: it becomes the order source `agent:<name>`. */
+export const ACP_KEY_NAME = /^[a-z0-9][a-z0-9._-]{0,39}$/
+
+/**
+ * One assistant's ACP key. A refusal never echoes what was typed: a key pasted into the wrong field would reach a
+ * terminal or a CI log.
+ */
+const acpKeyEntry = z
+  .object({
+    name: z.string().regex(ACP_KEY_NAME, {
+      error: `must match ${ACP_KEY_NAME.source}: a lower-case letter or digit, then up to 39 of a-z, 0-9, '.', '_' or '-'`,
+    }),
+    key: z
+      .string()
+      .min(ACP_KEY_MIN_LENGTH, { error: `must be at least ${ACP_KEY_MIN_LENGTH} characters` }),
+  })
+  .strict()
+
+/** Each name labels one key and each key has one name, so revoking one assistant never revokes another. */
+const acpKeys = z.array(acpKeyEntry).superRefine((entries, ctx) => {
+  entries.forEach((entry, j) => {
+    const sameName = entries.findIndex((other) => other.name === entry.name)
+    if (sameName < j) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [j, 'name'],
+        message: `is already the name of agents.acp.keys.${sameName}`,
+      })
+    }
+    const sameKey = entries.findIndex((other) => other.key === entry.key)
+    if (sameKey < j) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [j, 'key'],
+        message: `is already the key of agents.acp.keys.${sameKey} (${entries[sameKey]!.name}): give each assistant its own`,
+      })
+    }
+  })
+})
+
+/** The product fields the content role may propose. */
+export const CONTENT_ROLE_FIELDS = ['seoTitle', 'seoDescription'] as const
+
+/**
+ * The content role: a weekly (or daily) night-shift review that asks the store's model for SEO copy on products whose
+ * declared `fields` are missing or break the copy rules, and leaves each answer as a pending proposal. It writes
+ * nothing itself. `prompt` is the merchant's voice, added to the role's instructions; `maxProducts` bounds the
+ * requests of one run and `maxTokensPerRun` the tokens it may spend.
+ */
+const contentRoleSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+    schedule: z.enum(['weekly', 'daily']).default('weekly'),
+    fields: z
+      .array(z.enum(CONTENT_ROLE_FIELDS))
+      .min(1)
+      .transform((fields) => [...new Set(fields)])
+      .default(() => [...CONTENT_ROLE_FIELDS]),
+    prompt: z.string().min(1).max(2000).optional(),
+    maxProducts: z.number().int().min(1).max(50).default(20),
+    maxTokensPerRun: z.number().int().min(1000).default(100_000),
+  })
+  .strict()
 
 /**
  * How agents reach the store. Under `mcp.writes: 'proposal'` an admin command tool's call is kept as a proposal an
  * admin approves or rejects, unless `autoApprove` lists its command; `'apply'` approves every command at the call.
  * Either way the proposal is recorded. A command that moves money cannot be listed in `autoApprove`. `ucp` is the
  * Universal Commerce Protocol profile and its MCP endpoint; `links` are the legal pages a UCP checkout names. `acp`
- * is the Agentic Commerce Protocol's checkout (beta, off unless enabled), held by a bearer key of at least 32
- * characters (`apiKey`, else `NYMBAL_ACP_API_KEY`). `crawl` is what `robots.txt`, `llms.txt` and the product feed serve.
+ * is the Agentic Commerce Protocol's checkout (beta, off unless enabled), held by the bearer keys in `keys`, one per
+ * assistant by name, each at least 32 characters. `crawl` is what `robots.txt`, `llms.txt` and the product feed serve.
  * `assistant` is what the admin's assistant may send its AI provider.
  */
 export const agentsSchema = z
@@ -891,9 +1077,12 @@ export const agentsSchema = z
     acp: z
       .object({
         enabled: z.boolean().default(false),
+        keys: acpKeys.optional(),
         apiKey: z
-          .string()
-          .min(ACP_KEY_MIN_LENGTH, { error: `must be at least ${ACP_KEY_MIN_LENGTH} characters` })
+          .never({
+            error:
+              "agents.acp.apiKey was removed: name each key in agents.acp.keys, such as [{ name: 'muse', key: env('NYMBAL_ACP_API_KEY_MUSE') }]",
+          })
           .optional(),
         links: z
           .array(
@@ -939,6 +1128,10 @@ export const agentsSchema = z
       })
       .strict()
       .prefault({}),
+    roles: z
+      .object({ content: contentRoleSchema.prefault({}) })
+      .strict()
+      .prefault({}),
   })
   .strict()
 
@@ -954,12 +1147,33 @@ export const nymbalConfigSchema = z
     features: featuresSchema.default({
       staging: false,
       heartbeat: false,
-      autoUpdates: false,
     }),
     events: eventsSchema.prefault({}),
     agents: agentsSchema.prefault({}),
+    heartbeat: heartbeatSchema.prefault({}),
+    nightShift: nightShiftSchema.prefault({}),
   })
   .superRefine((cfg, ctx) => {
+    if (cfg.features.heartbeat) {
+      const { store, card } = cfg.heartbeat
+      for (const field of ['email', 'address'] as const) {
+        if (store[field] === undefined) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['heartbeat', 'store', field],
+            message: `heartbeat.store.${field} is required while features.heartbeat is on`,
+          })
+        }
+      }
+      if ((card.customer === undefined) !== (card.paymentMethod === undefined)) {
+        const missing = card.customer === undefined ? 'customer' : 'paymentMethod'
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['heartbeat', 'card', missing],
+          message: `heartbeat.card.${missing} is missing: set both card ids for the card check, or neither`,
+        })
+      }
+    }
     const archiveBucket = cfg.events.archive?.bucket
     if (
       archiveBucket !== undefined &&
@@ -972,6 +1186,21 @@ export const nymbalConfigSchema = z
         message: `events.archive.bucket is infrastructure.s3.bucket ('${archiveBucket}'), the media bucket, which serves its objects publicly; archive events to a private bucket of their own`,
       })
     }
+    if (cfg.agents.roles.content.enabled) {
+      const problem =
+        cfg.commerce.ai.provider === 'none'
+          ? 'the content role needs commerce.ai: set an AI provider, or leave the role off'
+          : !cfg.nightShift.enabled
+            ? 'the content role runs in the night shift: turn nightShift.enabled on, or leave the role off'
+            : null
+      if (problem !== null) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['agents', 'roles', 'content', 'enabled'],
+          message: problem,
+        })
+      }
+    }
     // SMTP left the kernel for @nymbalhq/email-smtp; a native block still asking for it would print to the console.
     const email = cfg.commerce.email
     if (email.provider === 'native' && email.config?.['transport'] === 'smtp') {
@@ -979,6 +1208,13 @@ export const nymbalConfigSchema = z
         code: z.ZodIssueCode.custom,
         path: ['commerce', 'email', 'config', 'transport'],
         message: `the native email provider only prints to the console; for SMTP mail set email.provider to 'smtp' (@nymbalhq/email-smtp)`,
+      })
+    }
+    if (cfg.commerce.shipping.pricing === 'carrier' && cfg.store.shipFrom === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['store', 'shipFrom'],
+        message: `commerce.shipping.pricing is 'carrier', which rates every parcel from store.shipFrom; set the address the store ships from`,
       })
     }
   })

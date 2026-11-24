@@ -19,7 +19,13 @@ export { createOpenAiAdapter, DEFAULT_BASE_URL, type OpenAiAdapterConfig }
 
 /** The fields the admin's Settings may fill when the config (and, for the key, OPENAI_API_KEY) leaves them unset. */
 export const settings: AdapterSetting[] = [
-  { path: 'apiKey', label: 'API key', secret: true, env: 'OPENAI_API_KEY' },
+  {
+    path: 'apiKey',
+    label: 'API key',
+    secret: true,
+    env: 'OPENAI_API_KEY',
+    optionalWith: 'baseUrl',
+  },
   { path: 'baseUrl', label: 'API base URL', secret: false },
 ]
 

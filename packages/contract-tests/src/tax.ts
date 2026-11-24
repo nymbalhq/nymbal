@@ -14,7 +14,8 @@ import {
 // per request line under the request's own ids, every amount a whole non-negative number of minor units, a total that
 // is the sum, and the same answer for the same request; an inclusive quote keeps each line's tax within the line. A
 // provider that files documents answers the same document for a repeated order and accepts a repeated refund, because
-// the kernel retries both. Any other answer is refused at checkout as an outage, so the suite refuses it first.
+// the kernel retries both. A quote names the adapter's own provider, because the kernel files an order only with the
+// provider that quoted it. Any other answer is refused at checkout as an outage, so the suite refuses it first.
 // Shipping is asked about as the kernel asks: no shipping tax when none was sent, a valid one when it was, and a shipping
 // tax above 0 for the request the runner names as one its provider taxes.
 
@@ -267,6 +268,25 @@ export function runTaxContract(
                 quote.lines.filter((l: QuoteLine) => !(l.taxMinor <= (asked.get(l.id) ?? -1))),
                 JSON.stringify(quote),
               ).toEqual([])
+            }),
+            RUNS,
+          )
+        }),
+      CASE_MS,
+    )
+
+    // Kills: quotes that name another provider, so the kernel, which files an order only with the provider its quote
+    // names, never files an order this provider quoted.
+    it(
+      'provider: property: a quote names the adapter’s providerName',
+      () =>
+        using(build, async (adapter) => {
+          await fc.assert(
+            fc.asyncProperty(arbAmounts, fc.boolean(), async (amounts, inclusive) => {
+              const quote = await adapter.quote(
+                request(shipTo, amounts, inclusive && declares(adapter, 'inclusive')),
+              )
+              expect(quote.provider).toBe(adapter.providerName)
             }),
             RUNS,
           )

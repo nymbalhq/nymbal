@@ -219,7 +219,9 @@ const refund = order ? refundLabel(order) : null
           </dl>
         </div>
 
-        <NymbalElement tag="nymbal-order-timeline" attributes={{ class: 'confirmation-summary', entries: JSON.stringify(order.timeline ?? []) }} />
+        {(order.timeline ?? []).length > 0 && (
+          <NymbalElement tag="nymbal-order-timeline" attributes={{ class: 'confirmation-summary', entries: JSON.stringify(order.timeline) }} />
+        )}
 
         <NymbalElement tag="nymbal-order-summary" attributes={{ class: 'confirmation-summary', ...summary }} />
 
