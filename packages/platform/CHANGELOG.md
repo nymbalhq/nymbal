@@ -1,5 +1,87 @@
 # @nymbalhq/platform
 
+## 1.10.0
+
+### Minor Changes
+
+- bad1a72: Breaking: `agents.acp.apiKey` and `NYMBAL_ACP_API_KEY` are removed; list each assistant's key by name in `agents.acp.keys`, such as `[{ name: 'muse', key: env('NYMBAL_ACP_API_KEY_MUSE') }]`.
+  An ACP order's source is `agent:<name>` of the key that opened it and each activity entry's actor `acp:<name>` of the key that sent it; `nymbal doctor` lists the keys by name.
+- 64b219c: Breaking: an address's country must be an ISO 3166-1 two-letter code (`UK`, `United Kingdom` and `GBR` are refused; use `GB`), and a US region a state's code or name; the config refuses a non-ISO country in `store.shipFrom`, tax and shipping rates.
+  The address form picks the country, and a US state, from a list.
+- 35ce5da: Admin routes under `/api/admin/categories` list, create, change, reorder and delete categories; a parent must exist and cannot be the category or one of its descendants, and a delete moves its products out and its children up to its parent.
+- 6e82231: The admin has a Reviews page: approve or reject submitted reviews, and change a decision from the Approved or Rejected tab.
+  `GET /api/admin/reviews` takes `status` (pending by default), and moderating a review that does not exist answers 404.
+- 4fdb102: The admin shows product prices and customer totals in the store's currency (`GET /api/admin/me` now answers `currency`).
+- d64b5ed: A product has a brand and each variant a GTIN, set in the admin and served in the product page's JSON-LD and the agent feeds; a number that is not a GTIN is refused.
+  Breaking: the product document gains a required `brand` and a `gtin` on each variant; run `nymbal replay --to catalogue` on an existing store so its documents carry them.
+- 689edc3: `commerce.shipping.pricing: 'carrier'` (default `'table'`) charges what the shipping adapter rates (EasyPost with an `apiKey`): it needs `defaultWeightGrams`, `store.shipFrom`, no table rows and an adapter that declares `rates`; the cart is one parcel of variant weights (set by the WooCommerce importer or the API until the admin has a weight field), and a carrier that is down or slower than 5 s answers 503 `checkout.shipping_unavailable`.
+  `POST /api/checkout/quote` has a built-in limit of 30 a minute per cart, counted as `/api/checkout`'s; raise it the same way for load tests. The shipping contract asks for a carrier and a service name that stay the same between calls.
+  Breaking: `CheckoutError` gains `shipping_unavailable` (an exhaustive switch over its codes stops compiling), an order's `metadata.shipping.provider` is any provider name rather than only `native`, and the ACP surface's deps take `shippingPricing`.
+- 452299f: `agents.roles.content`: a weekly night-shift review that proposes product SEO titles and descriptions for the Inbox, checked against copy rules and the product's own facts; `nymbal eval content` scores it.
+  Product pages use a product's `seoTitle` and `seoDescription` for the `<title>` and meta description when set. Breaking: the product document and the SDK's `DenormalisedProduct` gain required `seoTitle` and `seoDescription` (run `nymbal replay`), and the demo seed leaves both blank.
+- 14246b8: The dashboard's today figures follow `store.timezone` and count every paid order of the day, with refunds on the day they were made. Breaking: `GET /api/admin/dashboard` replaces `today.orderCount`, `today.revenueMinor` and `today.itemsShipped` with `paidOrders`, `units` and `money` (one row per currency, `netCapturedMinor`).
+- 8b16c14: Shoppers enter discount codes on the cart page and in the checkout summary, and see the discount and the total they will be charged before the address; ACP sessions take `discounts.codes` (or `coupons`) and answer `discounts`, MCP agents get `cart_addCode` and `cart_removeCode`, and UCP checkouts total the cart's discount.
+  Breaking: `CommerceAdapter.cart` methods resolve `ShopperCart` and it gains required `addCode` and `removeCode`; `CartState` gains `totals`, `promotions` and `errorCode`; the elements' `cart` projection needs `discountTotalMinor`, `totalMinor` and `codes` (the templates' `fetchCart` fills them).
+  ACP sessions now carry `discounts` and `capabilities.extensions`; `POST /api/cart/codes` refuses `.` and `..`.
+  A store already scaffolded copies `src/lib/api.ts` (Astro) or `lib/api.ts` (Next.js) from the new template.
+- 152c3c4: Breaking: `POST /api/admin/products/:id/duplicate` now takes the first free suffix (`-copy`, `-copy-2`, …) on the slug and SKUs, so a product can be duplicated again, and the copy starts with no stock. The admin's products row menu is always shown and reports each Duplicate and Archive; the sidebar's Orders badge shows the pending count.
+- 660a7a9: The admin's Inbox shows the night shift's open insights, most serious first, each with Dismiss: a dismissed subject stays quiet for 7 days. Agents read the list through `GET /api/admin/insights` and the `admin_insights_list` tool. New event `insight.dismissed.v1`.
+- 8efbf8d: Amounts read with each currency's ISO 4217 minor units, from `CURRENCY_MINOR_UNITS` and `currencyExponent` in `@nymbalhq/types`: the admin shows 1999 JPY as JP¥1,999 and 1999 KWD as KWD 1.999, and its refund and price inputs take amounts in those digits.
+  Breaking for HUF, IDR, COP, PKR, IQD and the other currencies where `Intl` and ISO 4217 differ: emails, the admin, the WooCommerce importer and EasyPost now read them with ISO's digits (1999 HUF reads HUF 19.99, was HUF 1,999); stored amounts do not change.
+  EasyPost refuses a rate in a currency with no ISO 4217 minor units, one listed without them (such as XXX) or not listed at all (such as ZZZ), and needs `@nymbalhq/types` 1.10.0 or later.
+- 924fe84: With `commerce.ai` set, the night shift's search, order and refund insights get a suggested next step from the model, shown only when every figure in it is one the store gave; `nightShift.ai.maxInsightsPerNight` caps it (5 by default, 0 turns it off). `InsightView` gains `guidance` and `guidanceWithheld`.
+- b598c5c: A nightly job writes insights about stock running out, searches that found nothing, falling orders or checkout success, rising refunds and the store's own failures, configured under `nightShift: { enabled, at }` (on, from 03:00 store time, by default). Each is published as the new event `insight.created.v1`.
+- 09d8bff: `nymbal heartbeat` checks once, for cron, that the store takes an order and that a saved card can be charged and refunded; turn on `features.heartbeat` and set the `heartbeat` block. A checkout with the heartbeat address is placed and cancelled without payment (`checkout.synthetic`) and kept out of the admin's lists (`?source=synthetic` lists them).
+  Payments adapters gain `chargeSavedCard` behind a `saved-card` capability (native stub and Stripe); Stripe ignores the heartbeat charge's webhooks.
+- da9c72b: `security.auth.legacy.remote.url` names an endpoint on your old platform that a sign-in asks, until `until`, about a shopper with no password here; set `NYMBAL_LEGACY_AUTH_SECRET` to its shared secret. The contract is in the importing guide.
+- c1411ad: New `@nymbalhq/promotions-talon-one`: `commerce.promotions: { provider: 'talon-one', config: { baseUrl, apiKey, currency } }` lets Talon.One decide every code and code-less campaign, priced under the store's totals rule.
+  A paid order closes its promotions engine session and a cancelled order cancels it, once, for an engine that supports it, so Talon.One counts a code's use and gives it back.
+- 84cecf1: A refund can name the order line it is for (`variantId` on `POST /api/admin/orders/:id/refund` and on each refund, with its `productId`), and the nightly refund insight names the product whose refunds rose.
+- 3e72f2b: `nymbal replay --to reports` rebuilds report figures from the event log for the days it still holds whole (`--dry-run` counts what would change); run it after upgrading or to repair reports, with the server stopped or idle on SQLite.
+- 322a42e: `GET /api/admin/reports` money totals now include today so far, marked `partial`; rates, funnel and top products still count closed days.
+- ce6de60: The profile page lists the devices a shopper is signed in on (`nymbal-session-list`, `SessionList`), and each can be signed out, or every one at once; signing out now ends only that browser's session, and the release signs nobody out.
+  Breaking: a custom `CommerceAdapter` must implement `customers.listSessions`, `endSession` and `endAllSessions`.
+- c17ff1c: Staff and system notes on an order are stored apart from the shopper's checkout note (new column `orders.staff_notes`; run migrations), so a checkout note is always shown word for word as the customer's. An order noted before this release shows its old note list as the shopper's note.
+- 7e965d7: `nymbal suppressions show <email>` says whether an address is suppressed, why and since when; `nymbal suppressions list [--limit n]` lists suppressed addresses, newest first. `EmailSuppressionRepository.list` backs it.
+- f7edde7: A tax provider that declares `commit` and `refund` now has paid orders and their refunds filed with it in the background, retried every 5 minutes, and `nymbal doctor` shows a `tax documents` line.
+
+### Patch Changes
+
+- 8112f97: Admin search now finds any product by part of its name or slug, not only among the oldest 200; the admin products list's `q` matches the slug too.
+- 5f9281b: Admin search now finds any order and any customer, not only recent orders and the customers who placed them, and an order whose number is the term comes first; on SQLite the admin orders list's `q` and `customer` filters now fold case in any script, not ASCII alone.
+- d92618d: Reading a cart re-checks its discount codes, so a code deactivated or expired since it was applied shows as refused at full price, as the checkout charges.
+- 7e6ec0c: A record's history names each change's own actor and command, so a payment an admin or a provider records after checkout no longer reads as the shopper's checkout; entries recorded before this release are unchanged (new column `events.command_id`; run migrations).
+- f5bfc9a: A provider package can declare a secret optional when another setting is set (`optionalWith` on a `settings` entry).
+  `@nymbalhq/ai-openai` works with Ollama, vLLM and other keyless OpenAI-compatible servers at a `baseUrl` without a dummy `apiKey`, and sends no `Authorization` header when it has no key.
+  A keyless host needs this release of `@nymbalhq/platform` too; with an older kernel the slot stays not configured.
+- e0f3f5d: A product viewed in the same millisecond as sign-in now lands on the same recently-viewed list live and after a rebuild.
+- 151fb67: Settings secrets inside a `Map` or `Set` are now scrubbed from logs and error responses, as they already were inside plain objects, arrays and errors.
+- 1193705: A Settings secret containing `*` can no longer be rebuilt in logs and error responses by the `***` mask and the text beside it.
+- 797f011: On Postgres, a refund whose tax filing failed while another filing of the same order was finishing stays due, so the sweeper retries it.
+- Updated dependencies [bad1a72]
+- Updated dependencies [64b219c]
+- Updated dependencies [ebf8ea0]
+- Updated dependencies [6e82231]
+- Updated dependencies [d64b5ed]
+- Updated dependencies [689edc3]
+- Updated dependencies [452299f]
+- Updated dependencies [14246b8]
+- Updated dependencies [8b16c14]
+- Updated dependencies [7e6ec0c]
+- Updated dependencies [660a7a9]
+- Updated dependencies [f5bfc9a]
+- Updated dependencies [8efbf8d]
+- Updated dependencies [924fe84]
+- Updated dependencies [b598c5c]
+- Updated dependencies [09d8bff]
+- Updated dependencies [aec9558]
+- Updated dependencies [da9c72b]
+- Updated dependencies [c1411ad]
+- Updated dependencies [84cecf1]
+- Updated dependencies [ce6de60]
+  - @nymbalhq/config@1.10.0
+  - @nymbalhq/types@1.10.0
+
 ## 1.9.0
 
 ### Minor Changes

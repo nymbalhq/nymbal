@@ -1,6 +1,6 @@
 {
   "name": "@nymbalhq/promotions-talon-one",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Talon.One promotions for Nymbal: the `talon-one` promotions provider (codes, code-less campaigns and line discounts decided by Talon.One)",
   "license": "MIT",
   "repository": {

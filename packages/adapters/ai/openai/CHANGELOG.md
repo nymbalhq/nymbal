@@ -1,5 +1,14 @@
 # @nymbalhq/ai-openai
 
+## 0.3.2
+
+### Patch Changes
+
+- 1eead46: `nymbal add ai openai` now says to set `commerce.ai.config.model` (the store does not start without it) and how to point `baseUrl` at an OpenAI-compatible server.
+- f5bfc9a: A provider package can declare a secret optional when another setting is set (`optionalWith` on a `settings` entry).
+  `@nymbalhq/ai-openai` works with Ollama, vLLM and other keyless OpenAI-compatible servers at a `baseUrl` without a dummy `apiKey`, and sends no `Authorization` header when it has no key.
+  A keyless host needs this release of `@nymbalhq/platform` too; with an older kernel the slot stays not configured.
+
 ## 0.3.1
 
 ### Patch Changes

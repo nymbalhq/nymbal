@@ -1,5 +1,36 @@
 # @nymbalhq/contract-tests
 
+## 1.10.0
+
+### Minor Changes
+
+- 689edc3: `commerce.shipping.pricing: 'carrier'` (default `'table'`) charges what the shipping adapter rates (EasyPost with an `apiKey`): it needs `defaultWeightGrams`, `store.shipFrom`, no table rows and an adapter that declares `rates`; the cart is one parcel of variant weights (set by the WooCommerce importer or the API until the admin has a weight field), and a carrier that is down or slower than 5 s answers 503 `checkout.shipping_unavailable`.
+  `POST /api/checkout/quote` has a built-in limit of 30 a minute per cart, counted as `/api/checkout`'s; raise it the same way for load tests. The shipping contract asks for a carrier and a service name that stay the same between calls.
+  Breaking: `CheckoutError` gains `shipping_unavailable` (an exhaustive switch over its codes stops compiling), an order's `metadata.shipping.provider` is any provider name rather than only `native`, and the ACP surface's deps take `shippingPricing`.
+- 7e965d7: `runEmailFeedbackContract` takes an optional `policyRejection` sample (a permanent failure with a 5.7.x status) and checks it is classified `soft`.
+
+### Patch Changes
+
+- Updated dependencies [64b219c]
+- Updated dependencies [ebf8ea0]
+- Updated dependencies [6e82231]
+- Updated dependencies [d64b5ed]
+- Updated dependencies [689edc3]
+- Updated dependencies [452299f]
+- Updated dependencies [14246b8]
+- Updated dependencies [8b16c14]
+- Updated dependencies [7e6ec0c]
+- Updated dependencies [660a7a9]
+- Updated dependencies [f5bfc9a]
+- Updated dependencies [8efbf8d]
+- Updated dependencies [924fe84]
+- Updated dependencies [b598c5c]
+- Updated dependencies [09d8bff]
+- Updated dependencies [da9c72b]
+- Updated dependencies [84cecf1]
+- Updated dependencies [ce6de60]
+  - @nymbalhq/types@1.10.0
+
 ## 1.9.0
 
 ### Minor Changes

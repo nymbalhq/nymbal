@@ -1,5 +1,11 @@
 # @nymbalhq/email-mailgun
 
+## 1.6.1
+
+### Patch Changes
+
+- 7e965d7: A recipient's server refusing the sender (SMTP status 5.7.x, such as a blocklisted sending IP) is now a soft bounce, so it no longer suppresses the address.
+
 ## 1.6.0
 
 ### Minor Changes

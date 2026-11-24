@@ -1,5 +1,60 @@
 # @nymbalhq/stack
 
+## 1.10.0
+
+### Patch Changes
+
+- Updated dependencies [bad1a72]
+- Updated dependencies [e948f4e]
+- Updated dependencies [64b219c]
+- Updated dependencies [35ce5da]
+- Updated dependencies [ebf8ea0]
+- Updated dependencies [6e82231]
+- Updated dependencies [8112f97]
+- Updated dependencies [5f9281b]
+- Updated dependencies [4fdb102]
+- Updated dependencies [d64b5ed]
+- Updated dependencies [689edc3]
+- Updated dependencies [d92618d]
+- Updated dependencies [1b92cb6]
+- Updated dependencies [1eead46]
+- Updated dependencies [452299f]
+- Updated dependencies [14246b8]
+- Updated dependencies [8b16c14]
+- Updated dependencies [152c3c4]
+- Updated dependencies [7e6ec0c]
+- Updated dependencies [9046d9b]
+- Updated dependencies [db79bd8]
+- Updated dependencies [660a7a9]
+- Updated dependencies [f5bfc9a]
+- Updated dependencies [8efbf8d]
+- Updated dependencies [924fe84]
+- Updated dependencies [b598c5c]
+- Updated dependencies [7e965d7]
+- Updated dependencies [09d8bff]
+- Updated dependencies [aec9558]
+- Updated dependencies [da9c72b]
+- Updated dependencies [c1411ad]
+- Updated dependencies [e0f3f5d]
+- Updated dependencies [84cecf1]
+- Updated dependencies [3e72f2b]
+- Updated dependencies [322a42e]
+- Updated dependencies [151fb67]
+- Updated dependencies [1193705]
+- Updated dependencies [ce6de60]
+- Updated dependencies [c17ff1c]
+- Updated dependencies [7e965d7]
+- Updated dependencies [f7edde7]
+- Updated dependencies [797f011]
+  - @nymbalhq/config@1.10.0
+  - @nymbalhq/platform@1.10.0
+  - nymbal@1.10.0
+  - @nymbalhq/web-components@1.10.0
+  - @nymbalhq/types@1.10.0
+  - @nymbalhq/sdk@1.10.0
+  - @nymbalhq/http@1.10.0
+  - @nymbalhq/react@1.10.0
+
 ## 1.9.0
 
 ### Patch Changes

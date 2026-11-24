@@ -1,5 +1,49 @@
 # @nymbalhq/config
 
+## 1.10.0
+
+### Minor Changes
+
+- bad1a72: Breaking: `agents.acp.apiKey` and `NYMBAL_ACP_API_KEY` are removed; list each assistant's key by name in `agents.acp.keys`, such as `[{ name: 'muse', key: env('NYMBAL_ACP_API_KEY_MUSE') }]`.
+  An ACP order's source is `agent:<name>` of the key that opened it and each activity entry's actor `acp:<name>` of the key that sent it; `nymbal doctor` lists the keys by name.
+- 64b219c: Breaking: an address's country must be an ISO 3166-1 two-letter code (`UK`, `United Kingdom` and `GBR` are refused; use `GB`), and a US region a state's code or name; the config refuses a non-ISO country in `store.shipFrom`, tax and shipping rates.
+  The address form picks the country, and a US state, from a list.
+- 689edc3: `commerce.shipping.pricing: 'carrier'` (default `'table'`) charges what the shipping adapter rates (EasyPost with an `apiKey`): it needs `defaultWeightGrams`, `store.shipFrom`, no table rows and an adapter that declares `rates`; the cart is one parcel of variant weights (set by the WooCommerce importer or the API until the admin has a weight field), and a carrier that is down or slower than 5 s answers 503 `checkout.shipping_unavailable`.
+  `POST /api/checkout/quote` has a built-in limit of 30 a minute per cart, counted as `/api/checkout`'s; raise it the same way for load tests. The shipping contract asks for a carrier and a service name that stay the same between calls.
+  Breaking: `CheckoutError` gains `shipping_unavailable` (an exhaustive switch over its codes stops compiling), an order's `metadata.shipping.provider` is any provider name rather than only `native`, and the ACP surface's deps take `shippingPricing`.
+- 452299f: `agents.roles.content`: a weekly night-shift review that proposes product SEO titles and descriptions for the Inbox, checked against copy rules and the product's own facts; `nymbal eval content` scores it.
+  Product pages use a product's `seoTitle` and `seoDescription` for the `<title>` and meta description when set. Breaking: the product document and the SDK's `DenormalisedProduct` gain required `seoTitle` and `seoDescription` (run `nymbal replay`), and the demo seed leaves both blank.
+- 924fe84: With `commerce.ai` set, the night shift's search, order and refund insights get a suggested next step from the model, shown only when every figure in it is one the store gave; `nightShift.ai.maxInsightsPerNight` caps it (5 by default, 0 turns it off). `InsightView` gains `guidance` and `guidanceWithheld`.
+- b598c5c: A nightly job writes insights about stock running out, searches that found nothing, falling orders or checkout success, rising refunds and the store's own failures, configured under `nightShift: { enabled, at }` (on, from 03:00 store time, by default). Each is published as the new event `insight.created.v1`.
+- 09d8bff: `nymbal heartbeat` checks once, for cron, that the store takes an order and that a saved card can be charged and refunded; turn on `features.heartbeat` and set the `heartbeat` block. A checkout with the heartbeat address is placed and cancelled without payment (`checkout.synthetic`) and kept out of the admin's lists (`?source=synthetic` lists them).
+  Payments adapters gain `chargeSavedCard` behind a `saved-card` capability (native stub and Stripe); Stripe ignores the heartbeat charge's webhooks.
+- aec9558: New stores get `renovate.json` (one pull request per Nymbal release) and a workflow job running `nymbal update-check`, which lets a security update merge itself only under the `renovate/auto-updates` preset and when it adds no migration and the compatibility matrix certifies it. Breaking: `features.autoUpdates` is removed from the config; delete it from `nymbal.config.ts`.
+- da9c72b: `security.auth.legacy.remote.url` names an endpoint on your old platform that a sign-in asks, until `until`, about a shopper with no password here; set `NYMBAL_LEGACY_AUTH_SECRET` to its shared secret. The contract is in the importing guide.
+- c1411ad: New `@nymbalhq/promotions-talon-one`: `commerce.promotions: { provider: 'talon-one', config: { baseUrl, apiKey, currency } }` lets Talon.One decide every code and code-less campaign, priced under the store's totals rule.
+  A paid order closes its promotions engine session and a cancelled order cancels it, once, for an engine that supports it, so Talon.One counts a code's use and gives it back.
+
+### Patch Changes
+
+- Updated dependencies [64b219c]
+- Updated dependencies [ebf8ea0]
+- Updated dependencies [6e82231]
+- Updated dependencies [d64b5ed]
+- Updated dependencies [689edc3]
+- Updated dependencies [452299f]
+- Updated dependencies [14246b8]
+- Updated dependencies [8b16c14]
+- Updated dependencies [7e6ec0c]
+- Updated dependencies [660a7a9]
+- Updated dependencies [f5bfc9a]
+- Updated dependencies [8efbf8d]
+- Updated dependencies [924fe84]
+- Updated dependencies [b598c5c]
+- Updated dependencies [09d8bff]
+- Updated dependencies [da9c72b]
+- Updated dependencies [84cecf1]
+- Updated dependencies [ce6de60]
+  - @nymbalhq/types@1.10.0
+
 ## 1.9.0
 
 ### Minor Changes
